@@ -1,7 +1,7 @@
 MAKEVN_BIN ?= makevn
 MAKEVN_REPO_ROOT ?= $(CURDIR)
 
-.PHONY: vn-help vn-doctor vn-init vn-uninstall vn-profile-refresh vn-compile vn-compile-tests vn-validate vn-package vn-build vn-clean vn-test vn-verify-ut vn-verify-ut-coverage vn-verify-it vn-verify-it-coverage vn-verify vn-verify-changes vn-pr-verify vn-docker-up vn-docker-down vn-docker-ps vn-run vn-jdk-current vn-jdk-list vn-exec
+.PHONY: vn-help vn-doctor vn-init vn-uninstall vn-profile-refresh vn-compile vn-compile-tests vn-validate vn-package vn-build vn-clean vn-test vn-verify-ut vn-verify-ut-coverage vn-verify-it vn-verify-it-coverage vn-verify vn-verify-changes vn-pr-verify vn-docker-up vn-docker-down vn-docker-ps vn-docker-ps-required vn-run vn-jdk-current vn-jdk-list vn-exec
 
 define makevn_run
 	@set +e; \
@@ -40,6 +40,7 @@ vn-help:
 	@printf '%s\n' '  make vn-docker-up'
 	@printf '%s\n' '  make vn-docker-down'
 	@printf '%s\n' '  make vn-docker-ps'
+	@printf '%s\n' '  make vn-docker-ps-required'
 	@printf '%s\n' '  make vn-run'
 	@printf '%s\n' '  make vn-jdk-current'
 	@printf '%s\n' '  make vn-jdk-list'
@@ -123,6 +124,9 @@ vn-docker-down:
 
 vn-docker-ps:
 	$(call makevn_run,docker-ps)
+
+vn-docker-ps-required:
+	$(call makevn_run,docker-ps-required)
 
 vn-run:
 	$(call makevn_run,run)

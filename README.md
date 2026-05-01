@@ -154,6 +154,13 @@ Selected-test notes:
 - `makevn test --name FooTest,BarTest` or repeated `--name` flags run selected tests sequentially
 - `makevn test --fast --name FooTest` uses the cached fast path for selected tests
 
+Verification notes:
+
+- `makevn verify-ut` runs the unit-test-only verification path
+- `makevn verify-it` runs the integration-test-only verification path
+- `makevn verify` runs the combined verification path
+- `makevn verify` rejects UT/IT skip flags that would silently turn it into a split workflow
+
 Command-chain notes:
 
 - the preferred public shape is `makevn [global_options] command [options] command [options] ...`

@@ -104,6 +104,8 @@ makevn init --mode make-bootstrap
 makevn uninstall
 makevn build
 makevn test
+makevn verify-ut
+makevn verify-it
 makevn verify
 makevn run
 makevn exec -- mvn -v
@@ -112,6 +114,13 @@ makevn jdk list
 ```
 
 When the repository is Java + Maven, prefer these commands over describing IDE actions.
+
+Verification intent:
+
+- use `makevn verify-ut` when the goal is unit-test-only verification
+- use `makevn verify-it` when the goal is integration-test-only verification
+- use `makevn verify` when the goal is the combined verification path
+- do not turn `makevn verify` into a split workflow with skip flags; pick the explicit command instead
 
 For the frozen public and internal contracts, see:
 

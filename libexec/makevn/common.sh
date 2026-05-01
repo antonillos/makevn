@@ -791,6 +791,18 @@ makevn_should_drop_verify_prop_flag() {
   return 1
 }
 
+makevn_should_drop_maven_cache_prop_flag() {
+  local token="$1"
+
+  case "${token}" in
+    -Dmaven.build.cache.enabled|-Dmaven.build.cache.enabled=*)
+      return 0
+      ;;
+  esac
+
+  return 1
+}
+
 makevn_command_profile_prefix() {
   case "$1" in
     compile) printf '%s\n' COMPILE ;;
@@ -1321,6 +1333,21 @@ makevn_detect_maven_cache_from_repo() {
   return 1
 }
 
+makevn_detect_testcontainers_from_repo() {
+  local maven_base_path="$1"
+  local pom_path=""
+
+  [[ -n "${maven_base_path}" ]] || return 1
+
+  while IFS= read -r pom_path; do
+    if grep -Eq '<groupId>org\.testcontainers</groupId>' "${pom_path}"; then
+      return 0
+    fi
+  done < <(find "${maven_base_path}" -name pom.xml -not -path '*/target/*' -not -path '*/node_modules/*' 2>/dev/null | LC_ALL=C sort)
+
+  return 1
+}
+
 makevn_detect_repo_profile() {
   local repo_root="$1"
   local maven_base_path=""
@@ -1340,6 +1367,12 @@ makevn_detect_repo_profile() {
     MAKEVN_DETECTED_MAVEN_CACHE_SOURCE="pom"
   else
     MAKEVN_DETECTED_MAVEN_CACHE_SOURCE="unresolved"
+  fi
+
+  if makevn_detect_testcontainers_from_repo "${maven_base_path}"; then
+    MAKEVN_DETECTED_VERIFY_IT_LOCAL_CONTAINERS="TRUE"
+  else
+    MAKEVN_DETECTED_VERIFY_IT_LOCAL_CONTAINERS=""
   fi
 
   MAKEVN_DETECTED_MAVEN_BASE_PATH="${maven_base_path}"
@@ -1382,6 +1415,7 @@ makevn_write_profile() {
     printf 'MAKEVN_PROFILE_VERIFY_CLI_FLAGS=%q\n' "${MAKEVN_DETECTED_VERIFY_CLI_FLAGS:-}"
     printf 'MAKEVN_PROFILE_VERIFY_PROP_FLAGS=%q\n' "${MAKEVN_DETECTED_VERIFY_PROP_FLAGS:-}"
     printf 'MAKEVN_PROFILE_VERIFY_PRE_GOALS=%q\n' "${MAKEVN_DETECTED_VERIFY_PRE_GOALS:-}"
+    printf 'MAKEVN_PROFILE_VERIFY_IT_LOCAL_CONTAINERS=%q\n' "${MAKEVN_DETECTED_VERIFY_IT_LOCAL_CONTAINERS:-}"
   } > "${profile_path}"
 }
 
@@ -1679,6 +1713,152 @@ makevn_run_selected_test() {
   fi
 
   makevn_run_logged_in_context "${repo_root}" code "${maven_base_path}" "${log_name}" test "${title}" "${maven_args[@]}"
+}
+
+makevn_detect_verify_it_workflow_invocation() {
+  local repo_root="$1"
+  local workflows_root="${repo_root}/.github/workflows"
+  local workflow_path=""
+  local invocation=""
+  local line=""
+  local token=""
+  local has_it_skip=false
+
+  [[ -d "${workflows_root}" ]] || return 1
+
+  while IFS= read -r workflow_path; do
+    while IFS= read -r line; do
+      invocation="$(makevn_extract_maven_invocation "${line}" || true)"
+      [[ -n "${invocation}" ]] || continue
+      [[ " ${invocation} " == *" install "* || " ${invocation} " == *" verify "* ]] || continue
+      [[ " ${invocation} " == *" -DskipUTs "* || " ${invocation} " == *" -Dskip.unit.tests=true "* ]] || continue
+
+      has_it_skip=false
+      for token in ${invocation}; do
+        if makevn_should_drop_verify_prop_flag "${token}"; then
+          has_it_skip=true
+          break
+        fi
+      done
+
+      if [[ "${has_it_skip}" == false ]]; then
+        printf '%s\n' "${invocation}"
+        return 0
+      fi
+    done < "${workflow_path}"
+  done < <(find "${workflows_root}" -type f \( -name '*integration*.yml' -o -name '*integration*.yaml' \) | LC_ALL=C sort)
+
+  return 1
+}
+
+makevn_run_verify_it_goal() {
+  local repo_root="$1"
+  local log_name="$2"
+  local maven_base_path=""
+  local maven_executable=""
+  local workflow_invocation=""
+  local maven_cli_flags_value=""
+  local maven_prop_flags_value=""
+  local filtered_prop_flags_value=""
+  local token=""
+  local skip_next=false
+  local local_containers=""
+  local -a workflow_tokens=()
+  local -a maven_cli_flags=()
+  local -a filtered_prop_flags=()
+  local -a maven_args=()
+
+  shift 2
+
+  makevn_load_profile "${repo_root}"
+  local_containers="${LOCAL_CONTAINERS:-${MAKEVN_PROFILE_VERIFY_IT_LOCAL_CONTAINERS:-}}"
+
+  workflow_invocation="$(makevn_detect_verify_it_workflow_invocation "${repo_root}" || true)"
+  if [[ -n "${workflow_invocation}" ]]; then
+    maven_base_path="$(makevn_detect_maven_base_path "${repo_root}" || true)"
+    if [[ -z "${maven_base_path}" ]]; then
+      makevn_die "No Maven project detected in ${repo_root}"
+    fi
+
+    maven_executable="$(makevn_maven_executable "${repo_root}" "${maven_base_path}")"
+    read -r -a workflow_tokens <<< "${workflow_invocation}"
+
+    if [[ -n "${local_containers}" ]]; then
+      maven_args=(env "LOCAL_CONTAINERS=${local_containers}" "${maven_executable}" -f "${maven_base_path}/pom.xml")
+    else
+      maven_args=("${maven_executable}" -f "${maven_base_path}/pom.xml")
+    fi
+    for token in "${workflow_tokens[@]:1}"; do
+      if [[ "${skip_next}" == true ]]; then
+        skip_next=false
+        continue
+      fi
+
+      case "${token}" in
+        -f|--file)
+          skip_next=true
+          ;;
+        -DskipIT|-DskipIT=*|-DskipITs|-DskipITs=*|-DskipITests|-DskipITests=*|-DskipIntegrationTests|-DskipIntegrationTests=*|-DskipFailsafeTests|-DskipFailsafeTests=*|-Dmaven.failsafe.skip|-Dmaven.failsafe.skip=*|-Dmaven.build.cache.enabled|-Dmaven.build.cache.enabled=*)
+          ;;
+        install)
+          maven_args+=(verify)
+          ;;
+        *)
+          maven_args+=("${token}")
+          ;;
+      esac
+    done
+    maven_args+=(-Dmaven.build.cache.enabled=false)
+    if [[ $# -gt 0 ]]; then
+      maven_args+=("$@")
+    fi
+
+    makevn_run_logged_in_context "${repo_root}" code "${maven_base_path}" "${log_name}" verify-it "${log_name}" "${maven_args[@]}"
+    return 0
+  fi
+
+  maven_base_path="$(makevn_detect_maven_base_path "${repo_root}" || true)"
+  if [[ -z "${maven_base_path}" ]]; then
+    makevn_die "No Maven project detected in ${repo_root}"
+  fi
+
+  maven_executable="$(makevn_maven_executable "${repo_root}" "${maven_base_path}")"
+  maven_cli_flags_value="$(makevn_maven_cli_flags_for_command "${repo_root}" verify)"
+  maven_prop_flags_value="$(makevn_maven_prop_flags_for_command "${repo_root}" verify)"
+
+  for token in ${maven_prop_flags_value}; do
+    if ! makevn_should_drop_maven_cache_prop_flag "${token}"; then
+      filtered_prop_flags_value="$(makevn_append_word "${filtered_prop_flags_value}" "${token}")"
+    fi
+  done
+
+  filtered_prop_flags_value="$(makevn_append_word "${filtered_prop_flags_value}" "-Djacoco.skip=false")"
+  filtered_prop_flags_value="$(makevn_append_word "${filtered_prop_flags_value}" "-Damiga.jacoco")"
+  filtered_prop_flags_value="$(makevn_append_word "${filtered_prop_flags_value}" "-DskipUTs")"
+  filtered_prop_flags_value="$(makevn_append_word "${filtered_prop_flags_value}" "-Dskip.unit.tests=true")"
+  filtered_prop_flags_value="$(makevn_append_word "${filtered_prop_flags_value}" "-DfailIfNoTests=false")"
+  filtered_prop_flags_value="$(makevn_append_word "${filtered_prop_flags_value}" "-Dmaven.test.failure.ignore=false")"
+  filtered_prop_flags_value="$(makevn_append_word "${filtered_prop_flags_value}" "-Dmaven.build.cache.enabled=false")"
+
+  if [[ -n "${local_containers}" ]]; then
+    maven_args=(env "LOCAL_CONTAINERS=${local_containers}" "${maven_executable}")
+  else
+    maven_args=("${maven_executable}")
+  fi
+  if [[ -n "${maven_cli_flags_value}" ]]; then
+    read -r -a maven_cli_flags <<< "${maven_cli_flags_value}"
+    maven_args+=("${maven_cli_flags[@]}")
+  fi
+  maven_args+=(-f "${maven_base_path}/pom.xml" verify)
+  if [[ -n "${filtered_prop_flags_value}" ]]; then
+    read -r -a filtered_prop_flags <<< "${filtered_prop_flags_value}"
+    maven_args+=("${filtered_prop_flags[@]}")
+  fi
+  if [[ $# -gt 0 ]]; then
+    maven_args+=("$@")
+  fi
+
+  makevn_run_logged_in_context "${repo_root}" code "${maven_base_path}" "${log_name}" verify-it "${log_name}" "${maven_args[@]}"
 }
 
 makevn_run_maven_goal() {

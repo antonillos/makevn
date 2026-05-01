@@ -59,10 +59,6 @@ fn main() {
         Action::PrintHelp { .. } => unreachable!(),
     };
 
-    if backend_invocations.iter().any(|invocation| invocation.tail) && !frontend_loader_is_available() {
-        exit_with_error(String::from("--tail requires an interactive terminal"));
-    }
-
     let exit_code = match dispatch_backend_invocations(
         &backend_path,
         &current_exe,
@@ -251,7 +247,8 @@ fn validate_command(
         "help" | "doctor" | "init" | "uninstall" | "exec" | "compile" | "compile-tests"
         | "validate" | "package" | "clean" | "build" | "test" | "verify-ut"
         | "verify-ut-coverage" | "verify-it" | "verify-it-coverage" | "verify"
-        | "verify-changes" | "pr-verify" | "docker-up" | "docker-down" | "docker-ps" | "run" => {
+        | "verify-changes" | "pr-verify" | "docker-up" | "docker-down" | "docker-ps"
+        | "docker-ps-required" | "run" => {
             Ok(CommandValidation::Valid)
         }
         "profile" => match trailing_args.first().map(|arg| arg.to_string_lossy()) {
@@ -331,6 +328,7 @@ fn is_top_level_command(arg: &OsString) -> bool {
             | "docker-up"
             | "docker-down"
             | "docker-ps"
+            | "docker-ps-required"
             | "run"
             | "jdk"
     )
@@ -442,6 +440,7 @@ fn dispatch_backend_invocations(
     backend_invocations: Vec<BackendInvocation>,
 ) -> Result<i32, String> {
     let mut last_exit_code = 0;
+    let started_at = Instant::now();
 
     for mut backend_invocation in backend_invocations {
         let use_frontend_loader = backend_invocation.frontend_loader && frontend_loader_is_available();
@@ -475,10 +474,24 @@ fn dispatch_backend_invocations(
 
         last_exit_code = exit_code;
         if exit_code != 0 {
+            let duration = format_duration(started_at.elapsed());
+            let _ = writeln!(
+                io::stdout(),
+                "{}{}",
+                warn_text("[fail]"),
+                dim_text(&format!(" exit {exit_code} | {duration} | check the log"))
+            );
             return Ok(exit_code);
         }
     }
 
+    let duration = format_duration(started_at.elapsed());
+    let _ = writeln!(
+        io::stdout(),
+        "{}{}",
+        style("32", "[ok]"),
+        dim_text(&format!(" {duration}"))
+    );
     Ok(last_exit_code)
 }
 
@@ -578,19 +591,20 @@ fn run_backend_with_loader(
                     tail_window
                         .clear()
                         .map_err(|error| format!("failed to clear tailed log: {error}"))?;
-                    if let Some(metadata) = metadata.as_ref() {
-                        print_backend_log_summary(metadata)
-                            .map_err(|error| format!("failed to print log summary: {error}"))?;
-                    }
                 }
             }
             if let Some(renderer) = renderer.as_mut() {
                 renderer.clear_line();
             }
+            if tail_enabled && header_printed && renderer.is_some() {
+                let _ = write!(io::stdout(), "\u{1b}[1A\r\u{1b}[2K");
+                let _ = io::stdout().flush();
+            }
             return Ok(summarize_backend_exit(
                 status,
                 started_at.elapsed(),
                 cancel_requested || signal_requested.load(Ordering::Relaxed),
+                metadata.as_ref(),
             ));
         }
 
@@ -621,7 +635,7 @@ fn run_backend_with_loader(
             }
         }
 
-        let mut toggle_expand = false;
+        let mut line_delta: i32 = 0;
         if let Some(renderer) = renderer.as_mut() {
             match renderer
                 .poll_input()
@@ -631,14 +645,15 @@ fn run_backend_with_loader(
                     interrupt_backend(child.id());
                     cancel_requested = true;
                 }
-                InputEvent::ToggleExpand => toggle_expand = true,
+                InputEvent::IncreaseLines => line_delta = 1,
+                InputEvent::DecreaseLines => line_delta = -1,
                 InputEvent::None => {}
             }
         }
 
         if let Some(tail_window) = tail_window.as_mut() {
-            if toggle_expand {
-                tail_window.toggle_expanded();
+            if line_delta != 0 {
+                tail_window.adjust_lines(line_delta);
             }
             tail_window
                 .refresh()
@@ -648,7 +663,7 @@ fn run_backend_with_loader(
                 renderer
                     .render_frame_with_hint(
                         child.id(),
-                        &tail_hint(&interrupt_hint, tail_window.expanded()),
+                        &tail_hint(&interrupt_hint),
                     )
                     .map_err(|error| format!("failed to render loader: {error}"))?;
             } else {
@@ -675,15 +690,16 @@ fn run_backend_with_loader(
             tail_window
                 .clear()
                 .map_err(|error| format!("failed to clear tailed log: {error}"))?;
-            if let Some(metadata) = metadata.as_ref() {
-                print_backend_log_summary(metadata)
-                    .map_err(|error| format!("failed to print log summary: {error}"))?;
-            }
         }
     }
 
     if let Some(renderer) = renderer.as_mut() {
         renderer.clear_line();
+    }
+
+    if tail_enabled && header_printed && renderer.is_some() {
+        let _ = write!(io::stdout(), "\u{1b}[1A\r\u{1b}[2K");
+        let _ = io::stdout().flush();
     }
 
     let status = child
@@ -693,6 +709,7 @@ fn run_backend_with_loader(
         status,
         started_at.elapsed(),
         cancel_requested || signal_requested.load(Ordering::Relaxed),
+        metadata.as_ref(),
     ))
 }
 
@@ -781,11 +798,11 @@ fn print_backend_log_notice(metadata: &BackendMetadata, tail_enabled: bool) -> i
         return writeln!(
             io::stdout(),
             "{} {} {} {}{}{}",
-            dim_text("::"),
+            dim_text("->"),
             dim_text(&format!("tailing log: {}", metadata.relative_log_path)),
             dim_text("|"),
             dim_text("press "),
-            style("97", "e"),
+            style("97", "+/-"),
             dim_text(" to expand")
         );
     }
@@ -820,36 +837,34 @@ fn summarize_backend_exit(
     status: process::ExitStatus,
     elapsed: Duration,
     interrupted: bool,
+    metadata: Option<&BackendMetadata>,
 ) -> i32 {
     let exit_code = exit_code_from_status(status, interrupted);
     let duration = format_duration(elapsed);
 
-    if exit_code == 130 {
-        let _ = writeln!(
-            io::stdout(),
-            "{} {}",
-            warn_text("[x]"),
-            warn_text(&duration)
-        );
-        return 130;
-    }
+    let title = metadata.map(|m| m.title.as_str()).unwrap_or("?");
+    let log = metadata.and_then(|m| {
+        if m.relative_log_path.is_empty() {
+            None
+        } else {
+            Some(m.relative_log_path.as_str())
+        }
+    });
 
     if exit_code == 0 {
-        let _ = writeln!(
-            io::stdout(),
-            "{} {}",
-            accent_text("[ok]"),
-            accent_text(&duration)
-        );
+        let rest = match log {
+            Some(log_path) => format!(" {} | {} | {}", title, duration, log_path),
+            None => format!(" {}", title),
+        };
+        let _ = writeln!(io::stdout(), "{}{}", accent_text("[✓]"), dim_text(&rest));
         return 0;
     }
 
-    let _ = writeln!(
-        io::stdout(),
-        "{} {}",
-        warn_text("[fail]"),
-        warn_text(&format!("exit {exit_code} | {duration} | check the log"))
-    );
+    let rest = match log {
+        Some(log_path) => format!(" {} | {} | {}", title, duration, log_path),
+        None => format!(" {}", title),
+    };
+    let _ = writeln!(io::stdout(), "{}{}", warn_text("[x]"), dim_text(&rest));
     exit_code
 }
 
@@ -916,6 +931,10 @@ fn dim_text(text: &str) -> String {
     style("90", text)
 }
 
+fn faint_text(text: &str) -> String {
+    style("2;90", text)
+}
+
 fn accent_text(text: &str) -> String {
     style("36", text)
 }
@@ -937,7 +956,7 @@ fn spinner_hint(message: &str) -> String {
     format!("esc {message}")
 }
 
-fn tail_hint(interrupt_hint: &str, _expanded: bool) -> String {
+fn tail_hint(interrupt_hint: &str) -> String {
     interrupt_hint.to_owned()
 }
 
@@ -960,7 +979,7 @@ fn tail_line_text(line: &str) -> String {
         truncated.push('~');
     }
 
-    dim_text(&truncated)
+    faint_text(&truncated)
 }
 
 struct LogTailWindow {
@@ -969,7 +988,7 @@ struct LogTailWindow {
     offset: u64,
     pending: Vec<u8>,
     lines: Vec<String>,
-    expanded: bool,
+    visible_lines: usize,
     rendered_lines: usize,
 }
 
@@ -981,17 +1000,13 @@ impl LogTailWindow {
             offset: 0,
             pending: Vec::new(),
             lines: Vec::new(),
-            expanded: false,
+            visible_lines: 4,
             rendered_lines: 0,
         }
     }
 
-    fn toggle_expanded(&mut self) {
-        self.expanded = !self.expanded;
-    }
-
-    fn expanded(&self) -> bool {
-        self.expanded
+    fn adjust_lines(&mut self, delta: i32) {
+        self.visible_lines = (self.visible_lines as i32 + delta).clamp(1, 20) as usize;
     }
 
     fn refresh(&mut self) -> io::Result<()> {
@@ -1067,11 +1082,7 @@ impl LogTailWindow {
     }
 
     fn max_lines(&self) -> usize {
-        if self.expanded {
-            20
-        } else {
-            4
-        }
+        self.visible_lines
     }
 
     fn render(&mut self) -> io::Result<()> {
@@ -1200,7 +1211,8 @@ struct SpinnerRenderer {
 enum InputEvent {
     None,
     Interrupt,
-    ToggleExpand,
+    IncreaseLines,
+    DecreaseLines,
 }
 
 impl SpinnerRenderer {
@@ -1239,7 +1251,8 @@ impl SpinnerRenderer {
                 self.second_escape_deadline = Some(now + Duration::from_secs(3));
                 Ok(InputEvent::None)
             }
-            Ok(1) if buffer[0] == b'e' || buffer[0] == b'E' => Ok(InputEvent::ToggleExpand),
+            Ok(1) if buffer[0] == b'+' => Ok(InputEvent::IncreaseLines),
+            Ok(1) if buffer[0] == b'-' => Ok(InputEvent::DecreaseLines),
             Ok(_) => Ok(InputEvent::None),
             Err(error) if error.kind() == io::ErrorKind::WouldBlock => Ok(InputEvent::None),
             Err(error) => Err(error),

@@ -154,6 +154,13 @@ Chaining rules:
 - command-local options apply only to the command they follow
 - trailing global options apply to the whole chain as compatibility sugar
 
+Verification intent:
+
+- `verify-ut` is the unit-test-only verification path
+- `verify-it` is the integration-test-only verification path
+- `verify` is the combined verification path and should run both suites according to the repository workflow
+- `verify` should reject UT/IT skip flags such as `-DskipUTs`, `-DskipITs`, and `-Dskip.unit.tests=true` because those belong to the split workflows instead
+
 ### Test Command
 
 ```bash
@@ -347,7 +354,7 @@ Purpose:
 Rules:
 
 - `--tail` must be rejected when combined with `--json`
-- `--tail` requires a TTY
+- `--tail` uses the interactive mini-log only when a TTY is available; without a TTY it must degrade to normal command execution
 - `--tail` is only valid for commands that produce a managed log file
 - the preferred public syntax is `makevn [global_options] command [options] command [options] ...`
 - `--tail` may be provided as a global option before the command chain and applies to every managed-log command in the chain

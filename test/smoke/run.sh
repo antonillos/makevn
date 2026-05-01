@@ -541,12 +541,54 @@ EOF
   ${CLI} --repo "${repo}" uninstall >/dev/null
 }
 
+test_tail_degrades_without_tty() {
+  local repo="${TMP_ROOT}/tail-without-tty"
+  local install_prefix="${TMP_ROOT}/tail-without-tty-install"
+  local tail_cli="${install_prefix}/bin/makevn"
+  local java_home
+
+  [[ -x "${ROOT_DIR}/target/release/makevn" ]] || return 0
+
+  mkdir -p "${repo}"
+  printf '<project/>\n' > "${repo}/pom.xml"
+  java_home="$(detect_java_home)"
+
+  PREFIX="${install_prefix}" "${ROOT_DIR}/install.sh" --rust >/dev/null
+  "${tail_cli}" --repo "${repo}" init --mode make-bootstrap >/dev/null
+  cat > "${repo}/mvnw" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+printf 'ARGS=%s\n' "$*" >> .mvnw.log
+printf 'JAVA_HOME=%s\n' "${JAVA_HOME:-}" >> .mvnw.log
+EOF
+  chmod +x "${repo}/mvnw"
+  cat > "${repo}/.makevn/config" <<EOF
+MAKEVN_JAVA_HOME="${java_home}"
+MAKEVN_CODE_JAVA_HOME=""
+MAKEVN_KARATE_JAVA_HOME=""
+MAKEVN_CODE_TOOL_VERSIONS=""
+MAKEVN_KARATE_TOOL_VERSIONS=""
+MAKEVN_RUN_CMD=""
+EOF
+
+  "${tail_cli}" --repo "${repo}" --tail validate >/dev/null
+
+  assert_matches "${repo}/.mvnw.log" '^ARGS=-f .*/pom\.xml validate$'
+  assert_contains "${repo}/.mvnw.log" "JAVA_HOME=${java_home}"
+
+  "${tail_cli}" --repo "${repo}" uninstall >/dev/null
+}
+
 test_command_routing() {
   local repo="${TMP_ROOT}/command-routing"
   local java_home
   local make_output
   mkdir -p "${repo}"
+  mkdir -p "${repo}/code/boot/src/test/resources/compose"
+  mkdir -p "${repo}/fake-bin"
   printf '<project/>\n' > "${repo}/pom.xml"
+  printf 'services:\n  db:\n    image: postgres:16\n' > "${repo}/code/boot/src/test/resources/compose/docker-compose.yml"
+  printf 'services:\n  db:\n    environment:\n      FOO: bar\n' > "${repo}/code/boot/src/test/resources/compose/docker-compose.override.yml"
   mkdir -p "${repo}/.github/workflows"
   mkdir -p "${repo}/module-a/src/test/java/com/example"
   java_home="$(detect_java_home)"
@@ -587,6 +629,42 @@ printf 'ARGS=%s\n' "$*" >> .mvnw.log
 printf 'JAVA_HOME=%s\n' "${JAVA_HOME:-}" >> .mvnw.log
 EOF
   chmod +x "${repo}/mvnw"
+  cat > "${repo}/fake-bin/docker-compose" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+printf 'docker-compose %s\n' "$*" >> .docker-compose.log
+if [[ "$1" == "-f" ]]; then
+  printf 'fake-service-id\n'
+fi
+EOF
+  chmod +x "${repo}/fake-bin/docker-compose"
+  cat > "${repo}/fake-bin/docker" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+printf 'docker %s\n' "$*" >> .docker.log
+if [[ "$1" == "compose" && "${2:-}" == "version" ]]; then
+  exit 0
+fi
+if [[ "$1" == "inspect" && "${2:-}" == "-f" ]]; then
+  case "$3" in
+    '{{.State.Status}}')
+      printf 'running\n'
+      ;;
+    '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}')
+      printf 'healthy\n'
+      ;;
+    '{{.Name}}')
+      printf '/fake-db\n'
+      ;;
+    *)
+      exit 1
+      ;;
+  esac
+  exit 0
+fi
+exit 0
+EOF
+  chmod +x "${repo}/fake-bin/docker"
   cat > "${repo}/.makevn/config" <<EOF
 MAKEVN_JAVA_HOME="${java_home}"
 MAKEVN_CODE_JAVA_HOME=""
@@ -597,19 +675,19 @@ MAKEVN_RUN_CMD="printf run-ok > run.out"
 EOF
   local build_output
   local package_output
-  build_output="$(${CLI} --repo "${repo}" build)"
-  ${CLI} --repo "${repo}" compile-tests >/dev/null
-  ${CLI} --repo "${repo}" validate >/dev/null
-  package_output="$(rtk make -f .makevn/makevn.mk -C "${repo}" vn-package)"
-  ${CLI} --repo "${repo}" clean >/dev/null
-  ${CLI} --repo "${repo}" test >/dev/null
-  ${CLI} --repo "${repo}" test --name UserRepositoryTest >/dev/null
-  ${CLI} --repo "${repo}" test --name UserRepositoryTest,OrderRepositoryTest >/dev/null
+  build_output="$(PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" build)"
+  PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" compile-tests >/dev/null
+  PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" validate >/dev/null
+  package_output="$(PATH="${repo}/fake-bin:${PATH}" rtk make -f .makevn/makevn.mk -C "${repo}" vn-package)"
+  PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" clean >/dev/null
+  PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" test >/dev/null
+  PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" test --name UserRepositoryTest >/dev/null
+  PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" test --name UserRepositoryTest,OrderRepositoryTest >/dev/null
   mkdir -p "${repo}/module-a/target/test-classes"
-  make_output="$(rtk make -f .makevn/makevn.mk -C "${repo}" vn-test NAME=UserRepositoryTest FAST=true)"
-  ${CLI} --repo "${repo}" verify >/dev/null
-  ${CLI} --repo "${repo}" exec -- bash -lc 'printf "%s" "$JAVA_HOME" > exec-java-home.txt' >/dev/null
-  ${CLI} --repo "${repo}" run >/dev/null
+  make_output="$(PATH="${repo}/fake-bin:${PATH}" rtk make -f .makevn/makevn.mk -C "${repo}" vn-test NAME=UserRepositoryTest FAST=true)"
+  PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" verify >/dev/null
+  PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" exec -- bash -lc 'printf "%s" "$JAVA_HOME" > exec-java-home.txt' >/dev/null
+  PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" run >/dev/null
   [[ "${build_output}" == *"[ok] "* ]] || fail "expected build output to include success summary"
   [[ "${package_output}" == *"[ok] "* ]] || fail "expected vn-package output to include success summary"
   [[ "${make_output}" == *"[ok] "* ]] || fail "expected vn-test fast output to include success summary"
@@ -791,14 +869,248 @@ EOF
   PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" verify-it-coverage >/dev/null
   output="$(rtk make -f .makevn/makevn.mk -C "${repo}" MAKEVN_BIN="${repo}/fake-bin/makevn-wrapper" vn-verify-ut)"
   pr_output="$(rtk make -f .makevn/makevn.mk -C "${repo}" MAKEVN_BIN="${repo}/fake-bin/makevn-wrapper" vn-pr-verify)"
+  rtk make -f .makevn/makevn.mk -C "${repo}" MAKEVN_BIN="${repo}/fake-bin/makevn-wrapper" vn-docker-ps-required >/dev/null
 
   assert_matches "${repo}/.mvnw.log" '^ARGS=-f .*/pom\.xml verify -Djacoco\.skip=false -Damiga\.jacoco -DskipITs -DfailIfNoTests=false -Dmaven\.test\.failure\.ignore=false$'
-  assert_matches "${repo}/.mvnw.log" '^ARGS=-f .*/pom\.xml verify -Djacoco\.skip=false -Damiga\.jacoco -DskipUTs -Dskip\.unit\.tests=true -DfailIfNoTests=false -Dmaven\.test\.failure\.ignore=false$'
+  assert_matches "${repo}/.mvnw.log" '^ARGS=-f .*/pom\.xml verify -Djacoco\.skip=false -Damiga\.jacoco -DskipUTs -Dskip\.unit\.tests=true -DfailIfNoTests=false -Dmaven\.test\.failure\.ignore=false -Dmaven\.build\.cache\.enabled=false$'
   assert_matches "${repo}/.mvnw.log" '^ARGS=-B -nsu -f .*/pom\.xml clean verify -Djacoco\.skip=false -Damiga\.jacoco -DskipITs -DfailIfNoTests=false -Dmaven\.test\.failure\.ignore=false -Damiga-javaformat\.skip=true -Dmaven\.build\.cache\.enabled=false$'
   assert_contains "${repo}/.mvnw.log" "JAVA_HOME=${java_home}"
   assert_matches "${repo}/.docker-compose.log" '^docker-compose -f .*/code/boot/src/test/resources/compose/docker-compose\.yml -f .*/code/boot/src/test/resources/compose/docker-compose\.override\.yml ps -q db$'
   [[ "${output}" == *"[ok] "* ]] || fail "expected vn-verify-ut output to include success summary"
   [[ "${pr_output}" == *"[ok] "* ]] || fail "expected vn-pr-verify output to include success summary"
+
+  ${CLI} --repo "${repo}" uninstall >/dev/null
+}
+
+test_verify_it_requires_running_services() {
+  local repo="${TMP_ROOT}/verify-it-missing-services"
+  local java_home
+  local output
+
+  mkdir -p "${repo}/code/boot/src/test/resources/compose"
+  mkdir -p "${repo}/fake-bin"
+  printf '<project/>\n' > "${repo}/pom.xml"
+  printf 'services:\n  db:\n    image: postgres:16\n' > "${repo}/code/boot/src/test/resources/compose/docker-compose.yml"
+  printf 'services:\n  db:\n    environment:\n      FOO: bar\n' > "${repo}/code/boot/src/test/resources/compose/docker-compose.override.yml"
+  java_home="$(detect_java_home)"
+
+  cat > "${repo}/mvnw" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+printf 'ARGS=%s\n' "$*" >> .mvnw.log
+printf 'JAVA_HOME=%s\n' "${JAVA_HOME:-}" >> .mvnw.log
+EOF
+  chmod +x "${repo}/mvnw"
+
+  cat > "${repo}/fake-bin/docker-compose" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+printf 'docker-compose %s\n' "$*" >> .docker-compose.log
+exit 0
+EOF
+  chmod +x "${repo}/fake-bin/docker-compose"
+
+  cat > "${repo}/fake-bin/docker" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+printf 'docker %s\n' "$*" >> .docker.log
+if [[ "$1" == "compose" && "${2:-}" == "version" ]]; then
+  exit 0
+fi
+exit 0
+EOF
+  chmod +x "${repo}/fake-bin/docker"
+
+  ${CLI} --repo "${repo}" init --mode make-bootstrap >/dev/null
+  cat > "${repo}/.makevn/config" <<EOF
+MAKEVN_JAVA_HOME="${java_home}"
+MAKEVN_CODE_JAVA_HOME=""
+MAKEVN_KARATE_JAVA_HOME=""
+MAKEVN_CODE_TOOL_VERSIONS=""
+MAKEVN_KARATE_TOOL_VERSIONS=""
+MAKEVN_RUN_CMD=""
+EOF
+
+  output="$(PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" verify-it 2>&1 || true)"
+
+  [[ "${output}" == *"db"* ]] || fail "expected verify-it failure output to mention missing db service"
+  [[ "${output}" == *"Required Docker services are not running or healthy"* ]] || fail "expected verify-it to fail on missing required services"
+  [[ ! -f "${repo}/.mvnw.log" ]] || fail "expected verify-it not to invoke Maven when services are missing"
+
+  ${CLI} --repo "${repo}" uninstall >/dev/null
+}
+
+test_verify_it_uses_verify_lifecycle_when_verify_workflow_skips_it() {
+  local repo="${TMP_ROOT}/verify-it-lifecycle"
+  local java_home
+
+  mkdir -p "${repo}/.github/workflows"
+  mkdir -p "${repo}/code/boot/src/test/resources/compose"
+  mkdir -p "${repo}/fake-bin"
+  printf '<project/>\n' > "${repo}/pom.xml"
+  printf 'services:\n  db:\n    image: postgres:16\n' > "${repo}/code/boot/src/test/resources/compose/docker-compose.yml"
+  printf 'services:\n  db:\n    environment:\n      FOO: bar\n' > "${repo}/code/boot/src/test/resources/compose/docker-compose.override.yml"
+  java_home="$(detect_java_home)"
+
+  cat > "${repo}/.github/workflows/verify.yml" <<'EOF'
+jobs:
+  verify:
+    steps:
+      - run: mvn -B -nsu clean verify -DskipITs -DfailIfNoTests=false -Damiga-javaformat.skip=true
+EOF
+
+  ${CLI} --repo "${repo}" init --mode make-bootstrap >/dev/null
+  ${CLI} --repo "${repo}" profile refresh >/dev/null
+
+  cat > "${repo}/mvnw" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+printf 'ARGS=%s\n' "$*" >> .mvnw.log
+printf 'JAVA_HOME=%s\n' "${JAVA_HOME:-}" >> .mvnw.log
+EOF
+  chmod +x "${repo}/mvnw"
+  cat > "${repo}/fake-bin/docker-compose" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+printf 'docker-compose %s\n' "$*" >> .docker-compose.log
+if [[ "$1" == "-f" ]]; then
+  printf 'fake-service-id\n'
+fi
+EOF
+  chmod +x "${repo}/fake-bin/docker-compose"
+  cat > "${repo}/fake-bin/docker" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+printf 'docker %s\n' "$*" >> .docker.log
+if [[ "$1" == "compose" && "${2:-}" == "version" ]]; then
+  exit 0
+fi
+if [[ "$1" == "inspect" && "${2:-}" == "-f" ]]; then
+  case "$3" in
+    '{{.State.Status}}')
+      printf 'running\n'
+      ;;
+    '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}')
+      printf 'healthy\n'
+      ;;
+    '{{.Name}}')
+      printf '/fake-db\n'
+      ;;
+    *)
+      exit 1
+      ;;
+  esac
+  exit 0
+fi
+exit 0
+EOF
+  chmod +x "${repo}/fake-bin/docker"
+
+  cat > "${repo}/.makevn/config" <<EOF
+MAKEVN_JAVA_HOME="${java_home}"
+MAKEVN_CODE_JAVA_HOME=""
+MAKEVN_KARATE_JAVA_HOME=""
+MAKEVN_CODE_TOOL_VERSIONS=""
+MAKEVN_KARATE_TOOL_VERSIONS=""
+MAKEVN_RUN_CMD=""
+EOF
+
+  PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" verify-it >/dev/null
+
+  assert_matches "${repo}/.mvnw.log" '^ARGS=-B -nsu -f .*/pom\.xml verify -DfailIfNoTests=false -Damiga-javaformat\.skip=true -Djacoco\.skip=false -Damiga\.jacoco -DskipUTs -Dskip\.unit\.tests=true -Dmaven\.test\.failure\.ignore=false -Dmaven\.build\.cache\.enabled=false$'
+  assert_contains "${repo}/.mvnw.log" "JAVA_HOME=${java_home}"
+
+  ${CLI} --repo "${repo}" uninstall >/dev/null
+}
+
+test_verify_it_prefers_integration_workflow_when_available() {
+  local repo="${TMP_ROOT}/verify-it-workflow"
+  local java_home
+
+  mkdir -p "${repo}/.github/workflows"
+  mkdir -p "${repo}/code/boot/src/test/resources/compose"
+  mkdir -p "${repo}/fake-bin"
+  printf '<project>\n  <dependencies>\n    <dependency>\n      <groupId>org.testcontainers</groupId>\n      <artifactId>testcontainers</artifactId>\n    </dependency>\n  </dependencies>\n</project>\n' > "${repo}/pom.xml"
+  printf 'services:\n  db:\n    image: postgres:16\n' > "${repo}/code/boot/src/test/resources/compose/docker-compose.yml"
+  printf 'services:\n  db:\n    environment:\n      FOO: bar\n' > "${repo}/code/boot/src/test/resources/compose/docker-compose.override.yml"
+  java_home="$(detect_java_home)"
+
+  cat > "${repo}/.github/workflows/unit.yml" <<'EOF'
+jobs:
+  unit:
+    steps:
+      - run: mvn -B clean verify -DskipITs -DfailIfNoTests=false
+EOF
+
+  cat > "${repo}/.github/workflows/integration.yml" <<'EOF'
+jobs:
+  integration:
+    steps:
+      - run: mvn -B -nsu install -Djacoco.skip=false -Damiga.jacoco -DskipUTs -Dskip.unit.tests=true -DfailIfNoTests=false -Dmaven.test.failure.ignore=false
+EOF
+
+  ${CLI} --repo "${repo}" init --mode make-bootstrap >/dev/null
+  ${CLI} --repo "${repo}" profile refresh >/dev/null
+
+  cat > "${repo}/mvnw" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+printf 'ARGS=%s\n' "$*" >> .mvnw.log
+printf 'JAVA_HOME=%s\n' "${JAVA_HOME:-}" >> .mvnw.log
+printf 'LOCAL_CONTAINERS=%s\n' "${LOCAL_CONTAINERS:-}" >> .mvnw.log
+EOF
+  chmod +x "${repo}/mvnw"
+  cat > "${repo}/fake-bin/docker-compose" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+printf 'docker-compose %s\n' "$*" >> .docker-compose.log
+if [[ "$1" == "-f" ]]; then
+  printf 'fake-service-id\n'
+fi
+EOF
+  chmod +x "${repo}/fake-bin/docker-compose"
+  cat > "${repo}/fake-bin/docker" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+printf 'docker %s\n' "$*" >> .docker.log
+if [[ "$1" == "compose" && "${2:-}" == "version" ]]; then
+  exit 0
+fi
+if [[ "$1" == "inspect" && "${2:-}" == "-f" ]]; then
+  case "$3" in
+    '{{.State.Status}}')
+      printf 'running\n'
+      ;;
+    '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}')
+      printf 'healthy\n'
+      ;;
+    '{{.Name}}')
+      printf '/fake-db\n'
+      ;;
+    *)
+      exit 1
+      ;;
+  esac
+  exit 0
+fi
+exit 0
+EOF
+  chmod +x "${repo}/fake-bin/docker"
+
+  cat > "${repo}/.makevn/config" <<EOF
+MAKEVN_JAVA_HOME="${java_home}"
+MAKEVN_CODE_JAVA_HOME=""
+MAKEVN_KARATE_JAVA_HOME=""
+MAKEVN_CODE_TOOL_VERSIONS=""
+MAKEVN_KARATE_TOOL_VERSIONS=""
+MAKEVN_RUN_CMD=""
+EOF
+
+  PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" verify-it >/dev/null
+
+  assert_matches "${repo}/.mvnw.log" '^ARGS=-f .*/pom\.xml -B -nsu verify -Djacoco\.skip=false -Damiga\.jacoco -DskipUTs -Dskip\.unit\.tests=true -DfailIfNoTests=false -Dmaven\.test\.failure\.ignore=false -Dmaven\.build\.cache\.enabled=false$'
+  assert_contains "${repo}/.mvnw.log" "JAVA_HOME=${java_home}"
+  assert_contains "${repo}/.mvnw.log" "LOCAL_CONTAINERS=TRUE"
 
   ${CLI} --repo "${repo}" uninstall >/dev/null
 }
@@ -849,6 +1161,19 @@ EOF
   ${CLI} --repo "${repo}" uninstall >/dev/null
 }
 
+test_verify_rejects_skip_flags() {
+  local repo="${TMP_ROOT}/verify-rejects-skip-flags"
+  local output=""
+
+  mkdir -p "${repo}"
+  printf '<project/>\n' > "${repo}/pom.xml"
+
+  output="$(${CLI} --repo "${repo}" verify -- -DskipITs 2>&1 || true)"
+
+  [[ "${output}" == *"verify does not accept UT/IT skip flags; use verify-ut or verify-it instead"* ]] \
+    || fail "expected verify to reject IT/UT skip flags"
+}
+
 test_sequential_commands() {
   local repo="${TMP_ROOT}/sequential-commands"
   local install_prefix="${TMP_ROOT}/sequential-install"
@@ -859,7 +1184,11 @@ test_sequential_commands() {
   PREFIX="${install_prefix}" "${ROOT_DIR}/install.sh" --rust >/dev/null
 
   mkdir -p "${repo}"
+  mkdir -p "${repo}/code/boot/src/test/resources/compose"
+  mkdir -p "${repo}/fake-bin"
   printf '<project/>\n' > "${repo}/pom.xml"
+  printf 'services:\n  db:\n    image: postgres:16\n' > "${repo}/code/boot/src/test/resources/compose/docker-compose.yml"
+  printf 'services:\n  db:\n    environment:\n      FOO: bar\n' > "${repo}/code/boot/src/test/resources/compose/docker-compose.override.yml"
   java_home="$(detect_java_home)"
 
   "${seq_cli}" --repo "${repo}" init --mode standalone >/dev/null
@@ -871,6 +1200,42 @@ printf 'ARGS=%s\n' "$*" >> .mvnw.log
 printf 'JAVA_HOME=%s\n' "${JAVA_HOME:-}" >> .mvnw.log
 EOF
   chmod +x "${repo}/mvnw"
+  cat > "${repo}/fake-bin/docker-compose" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+printf 'docker-compose %s\n' "$*" >> .docker-compose.log
+if [[ "$1" == "-f" ]]; then
+  printf 'fake-service-id\n'
+fi
+EOF
+  chmod +x "${repo}/fake-bin/docker-compose"
+  cat > "${repo}/fake-bin/docker" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+printf 'docker %s\n' "$*" >> .docker.log
+if [[ "$1" == "compose" && "${2:-}" == "version" ]]; then
+  exit 0
+fi
+if [[ "$1" == "inspect" && "${2:-}" == "-f" ]]; then
+  case "$3" in
+    '{{.State.Status}}')
+      printf 'running\n'
+      ;;
+    '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}')
+      printf 'healthy\n'
+      ;;
+    '{{.Name}}')
+      printf '/fake-db\n'
+      ;;
+    *)
+      exit 1
+      ;;
+  esac
+  exit 0
+fi
+exit 0
+EOF
+  chmod +x "${repo}/fake-bin/docker"
 
   cat > "${repo}/.makevn/config" <<EOF
 MAKEVN_JAVA_HOME="${java_home}"
@@ -881,12 +1246,12 @@ MAKEVN_KARATE_TOOL_VERSIONS=""
 MAKEVN_RUN_CMD=""
 EOF
 
-  "${seq_cli}" --repo "${repo}" clean verify-it >/dev/null
+  PATH="${repo}/fake-bin:${PATH}" "${seq_cli}" --repo "${repo}" clean verify-it >/dev/null
 
   assert_file_exists "${repo}/.makevn/logs/clean.log"
   assert_file_exists "${repo}/.makevn/logs/verify-it.log"
   assert_matches "${repo}/.mvnw.log" '^ARGS=-f .*/pom\.xml clean$'
-  assert_matches "${repo}/.mvnw.log" '^ARGS=-f .*/pom\.xml verify -Djacoco\.skip=false -Damiga\.jacoco -DskipUTs -Dskip\.unit\.tests=true -DfailIfNoTests=false -Dmaven\.test\.failure\.ignore=false$'
+  assert_matches "${repo}/.mvnw.log" '^ARGS=-f .*/pom\.xml verify -Djacoco\.skip=false -Damiga\.jacoco -DskipUTs -Dskip\.unit\.tests=true -DfailIfNoTests=false -Dmaven\.test\.failure\.ignore=false -Dmaven\.build\.cache\.enabled=false$'
   assert_contains "${repo}/.mvnw.log" "JAVA_HOME=${java_home}"
 
   "${seq_cli}" --repo "${repo}" uninstall >/dev/null
@@ -906,10 +1271,15 @@ main() {
   test_interactive_ctrl_c_interrupt
   test_make_interrupt_no_error
   test_make_failure_output
+  test_tail_degrades_without_tty
   test_command_routing
   test_docker_commands
   test_verify_split_commands
+  test_verify_it_requires_running_services
+  test_verify_it_uses_verify_lifecycle_when_verify_workflow_skips_it
+  test_verify_it_prefers_integration_workflow_when_available
   test_verify_changes_command
+  test_verify_rejects_skip_flags
   test_sequential_commands
   printf 'Smoke tests passed\n'
 }

@@ -39,6 +39,7 @@ Usage:
   makevn [--repo PATH] docker-up
   makevn [--repo PATH] docker-down
   makevn [--repo PATH] docker-ps
+  makevn [--repo PATH] docker-ps-required
   makevn [--repo PATH] run
   makevn [--repo PATH] exec [--context code|karate] -- COMMAND [ARGS...]
   makevn [--repo PATH] jdk current
@@ -70,6 +71,7 @@ Examples:
   makevn verify-changes
   makevn pr-verify
   makevn docker-up
+  makevn docker-ps-required
   makevn exec -- mvn -q -v
   make -f .makevn/makevn.mk vn-doctor
 
@@ -560,15 +562,8 @@ cmd_verify_it() {
   local repo_root="$1"
   shift
   [[ "${1:-}" == "--" ]] && shift
-  print_boot_docker_service_issues "${repo_root}"
-  makevn_run_maven_goal "${repo_root}" verify verify-it "" \
-    -Djacoco.skip=false \
-    -Damiga.jacoco \
-    -DskipUTs \
-    -Dskip.unit.tests=true \
-    -DfailIfNoTests=false \
-    -Dmaven.test.failure.ignore=false \
-    "$@"
+  cmd_docker_ps_required "${repo_root}"
+  makevn_run_verify_it_goal "${repo_root}" verify-it "$@"
 }
 
 cmd_verify_it_coverage() {
@@ -587,9 +582,17 @@ cmd_verify_it_coverage() {
 
 cmd_verify() {
   local repo_root="$1"
+  local arg=""
   shift
   [[ "${1:-}" == "--" ]] && shift
-  print_boot_docker_service_issues "${repo_root}"
+  for arg in "$@"; do
+    case "${arg}" in
+      -DskipUTs|-DskipUTs=*|-DskipITs|-DskipITs=*|-Dskip.unit.tests=true|-Dskip.unit.tests=false)
+        makevn_die "verify does not accept UT/IT skip flags; use verify-ut or verify-it instead"
+        ;;
+    esac
+  done
+  cmd_docker_ps_required "${repo_root}"
   makevn_run_maven_goal "${repo_root}" verify verify verify "$@"
 }
 
@@ -905,6 +908,9 @@ case "${COMMAND}" in
     ;;
   docker-ps)
     cmd_docker_ps "${REPO_ROOT}" "$@"
+    ;;
+  docker-ps-required)
+    cmd_docker_ps_required "${REPO_ROOT}" "$@"
     ;;
   run)
     cmd_run "${REPO_ROOT}" "$@"
