@@ -23,7 +23,7 @@ Current source install assumes:
 From the repository root:
 
 ```bash
-./scripts/build-rust-dispatcher.sh
+./build-rust-dispatcher.sh
 ./install.sh --rust
 ```
 
@@ -71,7 +71,7 @@ PREFIX="$HOME/.local" ./install.sh --rust
 For day-to-day Rust frontend development from a source checkout, the expected loop is:
 
 ```bash
-./scripts/build-rust-dispatcher.sh
+./build-rust-dispatcher.sh
 ./install.sh --rust
 ~/.local/bin/makevn --repo "/path/to/java-repo" doctor
 ~/.local/bin/makevn --repo "/path/to/java-repo" compile

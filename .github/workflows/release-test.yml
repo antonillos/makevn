@@ -1,0 +1,105 @@
+name: Release Test
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Release tag to create
+        required: true
+        default: v0.1.0-test.1
+      target_ref:
+        description: Branch or commit to release
+        required: true
+        default: main
+      prerelease:
+        description: Mark the GitHub release as a prerelease
+        required: true
+        type: boolean
+        default: true
+      draft:
+        description: Create the GitHub release as draft
+        required: true
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out target ref
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.target_ref }}
+          fetch-depth: 0
+
+      - name: Validate version input
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "${{ inputs.version }}" in
+            v*) ;;
+            *)
+              printf 'Error: version must start with v, got %s\n' "${{ inputs.version }}" >&2
+              exit 1
+              ;;
+          esac
+
+      - name: Build source archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash packaging/release/build-source-archive.sh "${{ inputs.version }}" dist
+
+      - name: Write release notes
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > dist/release-notes.md <<'EOF'
+          Test release for `makevn`.
+
+          Included assets:
+
+          - source archive for the tagged revision
+          - SHA-256 checksum for the source archive
+
+          Current install paths:
+
+          - source install through `./install.sh`
+          - Homebrew formula prepared for a future tap under `packaging/homebrew/makevn.rb`
+
+          See `docs/distribution.md` for the current release and Homebrew plan.
+          EOF
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ inputs.version }}
+          TARGET_REF: ${{ inputs.target_ref }}
+          PRERELEASE: ${{ inputs.prerelease }}
+          DRAFT: ${{ inputs.draft }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          args=(
+            "$VERSION"
+            "dist/makevn-${VERSION}.tar.gz"
+            "dist/makevn-${VERSION}.tar.gz.sha256"
+            "--target" "$TARGET_REF"
+            "--title" "$VERSION"
+            "--notes-file" "dist/release-notes.md"
+          )
+
+          if [[ "$PRERELEASE" == "true" ]]; then
+            args+=("--prerelease")
+          fi
+
+          if [[ "$DRAFT" == "true" ]]; then
+            args+=("--draft")
+          fi
+
+          gh release create "${args[@]}"

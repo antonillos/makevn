@@ -55,7 +55,7 @@ It supports three explicit modes:
 From this repository:
 
 ```bash
-./scripts/build-rust-dispatcher.sh
+./build-rust-dispatcher.sh
 ./install.sh --rust
 ~/.local/bin/makevn --help
 ```
@@ -232,10 +232,11 @@ The skill teaches agents to:
 .
 ├── README.md
 ├── bin/
+├── build-rust-dispatcher.sh
 ├── docs/
 ├── libexec/
+├── packaging/
 ├── rust/
-├── scripts/
 ├── test/
 ├── share/
 └── skills/
@@ -246,6 +247,7 @@ Notes:
 - `GNUmakefile`, `GNUmakefile.md`, `PLAN.md`, and `ROADMAP.md` are local development/reference material and are not part of the published repository surface.
 - the public runtime exposed by this repository is `bin/`, `libexec/`, `share/`, and `skills/`.
 - `rust/dispatcher/` contains the transitional Rust frontend crate.
+- `packaging/` contains release and future Homebrew distribution material.
 - the public interface is now the `makevn` CLI plus the optional `.makevn/makevn.mk` integration file.
 
 ## Documentation
@@ -256,6 +258,7 @@ Notes:
 - `docs/agents.md`
 - `docs/cli-contract.md`
 - `docs/backend-contract.md`
+- `docs/distribution.md`
 - `docs/philosophy.md`
 - `docs/github-about.md`
 

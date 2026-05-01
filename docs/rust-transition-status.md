@@ -68,7 +68,7 @@ Verification included:
 Current source-checkout flow:
 
 ```bash
-./scripts/build-rust-dispatcher.sh
+./build-rust-dispatcher.sh
 ./install.sh --rust
 ```
 
@@ -81,7 +81,7 @@ Installer modes:
 Important:
 
 - `install.sh` does not compile Rust
-- Rust compilation is intentionally separated into `./scripts/build-rust-dispatcher.sh`
+- Rust compilation is intentionally separated into `./build-rust-dispatcher.sh`
 
 ## Internal Boundary Today
 

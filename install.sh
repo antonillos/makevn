@@ -9,7 +9,7 @@ SHARE_DIR="${SHARE_DIR:-${PREFIX}/share/makevn}"
 SKILL_DIR="${SKILL_DIR:-${SHARE_DIR}/skills/makevn}"
 RUST_TARGET_DIR="${SCRIPT_DIR}/target"
 RUST_BIN="${RUST_TARGET_DIR}/release/makevn"
-BUILD_SCRIPT="${SCRIPT_DIR}/scripts/build-rust-dispatcher.sh"
+BUILD_SCRIPT="${SCRIPT_DIR}/build-rust-dispatcher.sh"
 FRONTEND_MODE="auto"
 
 while [[ $# -gt 0 ]]; do
@@ -52,11 +52,14 @@ fi
 cp "${SCRIPT_DIR}/libexec/makevn/cli.sh" "${LIBEXEC_DIR}/cli.sh"
 cp "${SCRIPT_DIR}/libexec/makevn/backend.sh" "${LIBEXEC_DIR}/backend.sh"
 cp "${SCRIPT_DIR}/libexec/makevn/common.sh" "${LIBEXEC_DIR}/common.sh"
+cp "${SCRIPT_DIR}/libexec/makevn/docker.sh" "${LIBEXEC_DIR}/docker.sh"
 cp "${SCRIPT_DIR}/libexec/makevn/jdk_manager.sh" "${LIBEXEC_DIR}/jdk_manager.sh"
+cp "${SCRIPT_DIR}/libexec/makevn/docker_ps.sh" "${LIBEXEC_DIR}/docker_ps.sh"
+cp "${SCRIPT_DIR}/libexec/makevn/extract_services.sh" "${LIBEXEC_DIR}/extract_services.sh"
 cp -R "${SCRIPT_DIR}/share/makevn/." "${SHARE_DIR}/"
 cp -R "${SCRIPT_DIR}/skills/makevn/." "${SKILL_DIR}/"
 
-chmod +x "${BIN_DIR}/makevn" "${LIBEXEC_DIR}/cli.sh" "${LIBEXEC_DIR}/backend.sh" "${LIBEXEC_DIR}/common.sh" "${LIBEXEC_DIR}/jdk_manager.sh"
+chmod +x "${BIN_DIR}/makevn" "${LIBEXEC_DIR}/cli.sh" "${LIBEXEC_DIR}/backend.sh" "${LIBEXEC_DIR}/common.sh" "${LIBEXEC_DIR}/docker.sh" "${LIBEXEC_DIR}/jdk_manager.sh" "${LIBEXEC_DIR}/docker_ps.sh" "${LIBEXEC_DIR}/extract_services.sh"
 
 printf 'Installed makevn to %s\n' "${PREFIX}"
 if [[ "${installed_frontend}" == "rust" ]]; then
