@@ -1,0 +1,13 @@
+[package]
+name = "makevn-dispatcher"
+version = "0.1.0-dev"
+edition = "2021"
+publish = false
+
+[[bin]]
+name = "makevn"
+path = "src/main.rs"
+
+[dependencies]
+libc = "0.2"
+signal-hook = "0.3"

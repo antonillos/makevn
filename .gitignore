@@ -1,0 +1,15 @@
+PLAN.md
+ROADMAP.md
+GNUmakefile
+GNUmakefile.md
+/target/
+rust/dispatcher/target/
+.makevn/
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+*.iml
+/scripts/

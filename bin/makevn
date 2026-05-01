@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+BIN_DIR="$(CDPATH= cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+INSTALL_ROOT="$(CDPATH= cd -- "${BIN_DIR}/.." && pwd)"
+CLI_SCRIPT="${INSTALL_ROOT}/libexec/makevn/cli.sh"
+
+if [[ ! -f "${CLI_SCRIPT}" ]]; then
+  printf 'Error: makevn runtime not found at %s\n' "${CLI_SCRIPT}" >&2
+  exit 1
+fi
+
+export MAKEVN_BIN_PATH="${BIN_DIR}/makevn"
+export MAKEVN_INSTALL_ROOT="${INSTALL_ROOT}"
+
+exec "${CLI_SCRIPT}" "$@"
