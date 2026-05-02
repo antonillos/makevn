@@ -95,7 +95,49 @@ MAKEVN_KARATE_JAVA_HOME=""
 MAKEVN_CODE_TOOL_VERSIONS=""
 MAKEVN_KARATE_TOOL_VERSIONS=""
 MAKEVN_RUN_CMD=""
+MAKEVN_COMPOSE_FILE=""
+MAKEVN_E2E_COMPOSE_FILE=""
 EOF
+}
+
+makevn_update_config_compose_file() {
+  local repo_root="$1"
+  local compose_file="$2"
+  local config_path
+  config_path="$(makevn_config_path "${repo_root}")"
+
+  if [[ ! -f "${config_path}" ]]; then
+    return 1
+  fi
+
+  if grep -q '^MAKEVN_COMPOSE_FILE=' "${config_path}"; then
+    local tmp_file
+    tmp_file="$(mktemp)"
+    awk -v val="${compose_file}" 'BEGIN{q="\""} /^MAKEVN_COMPOSE_FILE=/ { print "MAKEVN_COMPOSE_FILE=" q val q; next } { print }' "${config_path}" > "${tmp_file}"
+    mv "${tmp_file}" "${config_path}"
+  else
+    printf 'MAKEVN_COMPOSE_FILE=%q\n' "${compose_file}" >> "${config_path}"
+  fi
+}
+
+makevn_update_config_e2e_compose_file() {
+  local repo_root="$1"
+  local compose_file="$2"
+  local config_path
+  config_path="$(makevn_config_path "${repo_root}")"
+
+  if [[ ! -f "${config_path}" ]]; then
+    return 1
+  fi
+
+  if grep -q '^MAKEVN_E2E_COMPOSE_FILE=' "${config_path}"; then
+    local tmp_file
+    tmp_file="$(mktemp)"
+    awk -v val="${compose_file}" 'BEGIN{q="\""} /^MAKEVN_E2E_COMPOSE_FILE=/ { print "MAKEVN_E2E_COMPOSE_FILE=" q val q; next } { print }' "${config_path}" > "${tmp_file}"
+    mv "${tmp_file}" "${config_path}"
+  else
+    printf 'MAKEVN_E2E_COMPOSE_FILE=%q\n' "${compose_file}" >> "${config_path}"
+  fi
 }
 
 makevn_write_state_json() {

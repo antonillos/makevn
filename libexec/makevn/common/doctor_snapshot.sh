@@ -25,6 +25,8 @@ makevn_collect_doctor_snapshot() {
   local build_profile=""
   local test_profile=""
   local verify_profile=""
+  local compose_file=""
+  local e2e_compose_file=""
 
   if [[ -d "$(makevn_state_dir "${repo_root}")" ]]; then
     makevn_refresh_profile "${repo_root}"
@@ -39,6 +41,100 @@ makevn_collect_doctor_snapshot() {
   build_profile="$(makevn_detected_command_profile_summary build)"
   test_profile="$(makevn_detected_command_profile_summary test)"
   verify_profile="$(makevn_detected_command_profile_summary verify)"
+
+  # Resolve compose file: config > profile > auto-detect > interactive prompt
+  makevn_load_config "${repo_root}"
+  if [[ -n "${MAKEVN_COMPOSE_FILE:-}" && -f "${MAKEVN_COMPOSE_FILE}" ]]; then
+    compose_file="${MAKEVN_COMPOSE_FILE}"
+  elif [[ -n "${MAKEVN_DETECTED_COMPOSE_FILE:-}" ]]; then
+    compose_file="${MAKEVN_DETECTED_COMPOSE_FILE}"
+  else
+    # Multiple or zero compose files found - try to enumerate and ask
+    local -a _found=()
+    local _f
+    while IFS= read -r _f; do
+      [[ -n "${_f}" ]] && _found+=("${_f}")
+    done < <(makevn_find_compose_files "${repo_root}")
+
+    if [[ ${#_found[@]} -eq 0 ]]; then
+      compose_file="not found"
+    elif [[ ${#_found[@]} -eq 1 ]]; then
+      compose_file="${_found[0]}"
+    else
+      # Multiple: ask interactively if we have a TTY
+      if [[ -t 0 && -t 2 ]]; then
+        printf '\n' >&2
+        printf '%s\n' "$(makevn_warn "Multiple docker-compose.yml files found. Select one:")" >&2
+        local _i=1
+        for _f in "${_found[@]}"; do
+          printf '  [%d] %s\n' "${_i}" "${_f}" >&2
+          _i=$((_i + 1))
+        done
+        local _choice=""
+        while true; do
+          printf 'Enter number [1-%d]: ' "${#_found[@]}" >&2
+          read -r _choice </dev/tty
+          if [[ "${_choice}" =~ ^[0-9]+$ ]] && (( _choice >= 1 && _choice <= ${#_found[@]} )); then
+            break
+          fi
+          printf '%s\n' "$(makevn_warn "Invalid selection. Try again.")" >&2
+        done
+        compose_file="${_found[$((_choice - 1))]}"
+        # Persist in config if config exists
+        if [[ -f "$(makevn_config_path "${repo_root}")" ]]; then
+          makevn_update_config_compose_file "${repo_root}" "${compose_file}"
+          printf '%s\n' "$(makevn_dim "Saved to .makevn/config (MAKEVN_COMPOSE_FILE).")" >&2
+        fi
+      else
+        compose_file="ambiguous (${#_found[@]} files found; set MAKEVN_COMPOSE_FILE in .makevn/config)"
+      fi
+    fi
+  fi
+
+  # Resolve e2e compose file: config > profile > auto-detect > interactive prompt
+  if [[ -n "${MAKEVN_E2E_COMPOSE_FILE:-}" && -f "${MAKEVN_E2E_COMPOSE_FILE}" ]]; then
+    e2e_compose_file="${MAKEVN_E2E_COMPOSE_FILE}"
+  elif [[ -n "${MAKEVN_DETECTED_E2E_COMPOSE_FILE:-}" ]]; then
+    e2e_compose_file="${MAKEVN_DETECTED_E2E_COMPOSE_FILE}"
+  else
+    local -a _e2e_found=()
+    local _ef
+    while IFS= read -r _ef; do
+      [[ -n "${_ef}" ]] && _e2e_found+=("${_ef}")
+    done < <(makevn_find_e2e_compose_files "${repo_root}")
+
+    if [[ ${#_e2e_found[@]} -eq 0 ]]; then
+      e2e_compose_file="not found"
+    elif [[ ${#_e2e_found[@]} -eq 1 ]]; then
+      e2e_compose_file="${_e2e_found[0]}"
+    else
+      if [[ -t 0 && -t 2 ]]; then
+        printf '\n' >&2
+        printf '%s\n' "$(makevn_warn "Multiple e2e docker-compose.yml files found. Select one:")" >&2
+        local _i=1
+        for _ef in "${_e2e_found[@]}"; do
+          printf '  [%d] %s\n' "${_i}" "${_ef}" >&2
+          _i=$((_i + 1))
+        done
+        local _echoice=""
+        while true; do
+          printf 'Enter number [1-%d]: ' "${#_e2e_found[@]}" >&2
+          read -r _echoice </dev/tty
+          if [[ "${_echoice}" =~ ^[0-9]+$ ]] && (( _echoice >= 1 && _echoice <= ${#_e2e_found[@]} )); then
+            break
+          fi
+          printf '%s\n' "$(makevn_warn "Invalid selection. Try again.")" >&2
+        done
+        e2e_compose_file="${_e2e_found[$((_echoice - 1))]}"
+        if [[ -f "$(makevn_config_path "${repo_root}")" ]]; then
+          makevn_update_config_e2e_compose_file "${repo_root}" "${e2e_compose_file}"
+          printf '%s\n' "$(makevn_dim "Saved to .makevn/config (MAKEVN_E2E_COMPOSE_FILE).")" >&2
+        fi
+      else
+        e2e_compose_file="ambiguous (${#_e2e_found[@]} files found; set MAKEVN_E2E_COMPOSE_FILE in .makevn/config)"
+      fi
+    fi
+  fi
 
   maven_base_path="$(makevn_detect_maven_base_path "${repo_root}" || true)"
   code_tool_versions="$(makevn_detect_code_tool_versions "${repo_root}" "${maven_base_path}" || true)"
@@ -88,6 +184,8 @@ makevn_collect_doctor_snapshot() {
   MAKEVN_DOCTOR_RUN_CONFIGURED="${run_configured}"
   MAKEVN_DOCTOR_PROFILE_STATUS="${profile_status}"
   MAKEVN_DOCTOR_RECOMMENDED_MODE="${recommended_mode}"
+  MAKEVN_DOCTOR_COMPOSE_FILE="${compose_file}"
+  MAKEVN_DOCTOR_E2E_COMPOSE_FILE="${e2e_compose_file}"
   MAKEVN_DOCTOR_SUGGESTED_NEXT=""
   MAKEVN_DOCTOR_SUGGESTED_OPTIONAL=""
   MAKEVN_DOCTOR_SUGGESTED_NOTE=""

@@ -371,20 +371,95 @@ makevn_detect_boot_module_name() {
   printf '%s\n' boot
 }
 
+makevn_find_compose_files() {
+  local repo_root="$1"
+  find "${repo_root}" \
+    \( -name ".git" -o -name ".makevn" -o -name "e2e" -o -name "karate" \) -prune \
+    -o -name "docker-compose.yml" -print \
+    2>/dev/null | LC_ALL=C sort
+}
+
+makevn_find_e2e_compose_files() {
+  local repo_root="$1"
+  local _dir
+  for _dir in "${repo_root}/e2e" "${repo_root}/karate"; do
+    if [[ -d "${_dir}" ]]; then
+      find "${_dir}" \
+        \( -name ".git" -o -name ".makevn" \) -prune \
+        -o -name "docker-compose.yml" -print \
+        2>/dev/null
+    fi
+  done | LC_ALL=C sort
+}
+
 makevn_boot_compose_file_path() {
   local repo_root="$1"
-  local boot_module=""
+  local -a found=()
+  local f
 
-  boot_module="$(makevn_detect_boot_module_name "${repo_root}")"
-  printf '%s/code/%s/src/test/resources/compose/docker-compose.yml\n' "${repo_root}" "${boot_module}"
+  makevn_load_config "${repo_root}"
+  if [[ -n "${MAKEVN_COMPOSE_FILE:-}" && -f "${MAKEVN_COMPOSE_FILE}" ]]; then
+    printf '%s\n' "${MAKEVN_COMPOSE_FILE}"
+    return 0
+  fi
+
+  makevn_load_profile "${repo_root}"
+  if [[ -n "${MAKEVN_PROFILE_COMPOSE_FILE:-}" && -f "${MAKEVN_PROFILE_COMPOSE_FILE}" ]]; then
+    printf '%s\n' "${MAKEVN_PROFILE_COMPOSE_FILE}"
+    return 0
+  fi
+
+  while IFS= read -r f; do
+    [[ -n "${f}" ]] && found+=("${f}")
+  done < <(makevn_find_compose_files "${repo_root}")
+
+  if [[ ${#found[@]} -eq 1 ]]; then
+    printf '%s\n' "${found[0]}"
+    return 0
+  fi
+
+  return 1
 }
 
 makevn_boot_compose_override_file_path() {
   local repo_root="$1"
-  local boot_module=""
+  local compose_file=""
+  local compose_dir=""
 
-  boot_module="$(makevn_detect_boot_module_name "${repo_root}")"
-  printf '%s/code/%s/src/test/resources/compose/docker-compose.override.yml\n' "${repo_root}" "${boot_module}"
+  compose_file="$(makevn_boot_compose_file_path "${repo_root}" || true)"
+  [[ -n "${compose_file}" ]] || return 1
+
+  compose_dir="$(dirname "${compose_file}")"
+  printf '%s/docker-compose.override.yml\n' "${compose_dir}"
+}
+
+makevn_karate_compose_file_path() {
+  local repo_root="$1"
+  local -a found=()
+  local f
+
+  makevn_load_config "${repo_root}"
+  if [[ -n "${MAKEVN_E2E_COMPOSE_FILE:-}" && -f "${MAKEVN_E2E_COMPOSE_FILE}" ]]; then
+    printf '%s\n' "${MAKEVN_E2E_COMPOSE_FILE}"
+    return 0
+  fi
+
+  makevn_load_profile "${repo_root}"
+  if [[ -n "${MAKEVN_PROFILE_E2E_COMPOSE_FILE:-}" && -f "${MAKEVN_PROFILE_E2E_COMPOSE_FILE}" ]]; then
+    printf '%s\n' "${MAKEVN_PROFILE_E2E_COMPOSE_FILE}"
+    return 0
+  fi
+
+  while IFS= read -r f; do
+    [[ -n "${f}" ]] && found+=("${f}")
+  done < <(makevn_find_e2e_compose_files "${repo_root}")
+
+  if [[ ${#found[@]} -eq 1 ]]; then
+    printf '%s\n' "${found[0]}"
+    return 0
+  fi
+
+  return 1
 }
 
 makevn_detect_jacoco_module_name() {
@@ -617,6 +692,27 @@ makevn_detect_repo_profile() {
     MAKEVN_DETECTED_VERIFY_IT_LOCAL_CONTAINERS=""
   fi
 
+  local -a compose_found=()
+  local _cf
+  while IFS= read -r _cf; do
+    [[ -n "${_cf}" ]] && compose_found+=("${_cf}")
+  done < <(makevn_find_compose_files "${repo_root}")
+  if [[ ${#compose_found[@]} -eq 1 ]]; then
+    MAKEVN_DETECTED_COMPOSE_FILE="${compose_found[0]}"
+  else
+    MAKEVN_DETECTED_COMPOSE_FILE=""
+  fi
+
+  local -a e2e_found=()
+  while IFS= read -r _cf; do
+    [[ -n "${_cf}" ]] && e2e_found+=("${_cf}")
+  done < <(makevn_find_e2e_compose_files "${repo_root}")
+  if [[ ${#e2e_found[@]} -eq 1 ]]; then
+    MAKEVN_DETECTED_E2E_COMPOSE_FILE="${e2e_found[0]}"
+  else
+    MAKEVN_DETECTED_E2E_COMPOSE_FILE=""
+  fi
+
   MAKEVN_DETECTED_MAVEN_BASE_PATH="${maven_base_path}"
   MAKEVN_DETECTED_CODE_TOOL_VERSIONS="${code_tool_versions}"
   MAKEVN_DETECTED_KARATE_TOOL_VERSIONS="${karate_tool_versions}"
@@ -658,6 +754,8 @@ makevn_write_profile() {
     printf 'MAKEVN_PROFILE_VERIFY_PROP_FLAGS=%q\n' "${MAKEVN_DETECTED_VERIFY_PROP_FLAGS:-}"
     printf 'MAKEVN_PROFILE_VERIFY_PRE_GOALS=%q\n' "${MAKEVN_DETECTED_VERIFY_PRE_GOALS:-}"
     printf 'MAKEVN_PROFILE_VERIFY_IT_LOCAL_CONTAINERS=%q\n' "${MAKEVN_DETECTED_VERIFY_IT_LOCAL_CONTAINERS:-}"
+    printf 'MAKEVN_PROFILE_COMPOSE_FILE=%q\n' "${MAKEVN_DETECTED_COMPOSE_FILE:-}"
+    printf 'MAKEVN_PROFILE_E2E_COMPOSE_FILE=%q\n' "${MAKEVN_DETECTED_E2E_COMPOSE_FILE:-}"
   } > "${profile_path}"
 }
 
