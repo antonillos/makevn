@@ -138,6 +138,16 @@ makevn verify-changes [-- EXTRA_MAVEN_ARGS...]
 makevn pr-verify [-- EXTRA_MAVEN_ARGS...]
 ```
 
+### Coverage Analysis Commands
+
+```bash
+makevn coverage-changes [--threshold PCT]
+```
+
+`coverage-changes` requires an existing JaCoCo aggregate report. If the aggregate module has already been built but the HTML report is missing, the backend may run `jacoco:report-aggregate` for the detected aggregate module before analysis. The command compares changed Java production code against the detected parent branch and uses the internal coverage runtime packaged under `libexec/makevn/`.
+
+`verify-changes` owns its repository-aware command construction in the backend and keeps an internal legacy-compatible runtime script packaged at `libexec/makevn/verify_changes.sh` for parity and future consolidation. It must not call or depend on a target repository's `scripts/make/*` files.
+
 These commands may also be chained sequentially in one invocation:
 
 ```bash
@@ -283,6 +293,7 @@ Initial set:
 - `verify-it-coverage --json`
 - `verify --json`
 - `verify-changes --json`
+- `coverage-changes --json`
 - `pr-verify --json`
 - `exec --json`
 - `run --json`
@@ -393,7 +404,7 @@ Initially supported command family:
 - `verify-changes`
 - `pr-verify`
 
-Commands such as `doctor`, `init`, `uninstall`, `profile refresh`, `jdk current`, `jdk list`, and `docker-ps` should reject `--tail`.
+Commands such as `doctor`, `init`, `uninstall`, `profile refresh`, `coverage-changes`, `jdk current`, `jdk list`, and `docker-ps` should reject `--tail`.
 
 `exec`, `run`, `docker-up`, and `docker-down` may gain `--tail` support later if they are routed through the same managed log model, but that support is not assumed by this frozen contract.
 

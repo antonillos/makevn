@@ -85,7 +85,14 @@ struct BackendInvocation {
     tail: bool,
 }
 
-const COMMAND_SEQUENCE_BREAKERS: &[&str] = &["--", "--tail", "--name", "--mode", "--context"];
+const COMMAND_SEQUENCE_BREAKERS: &[&str] = &[
+    "--",
+    "--tail",
+    "--name",
+    "--mode",
+    "--context",
+    "--threshold",
+];
 
 #[derive(Debug)]
 struct BackendMetadataFile {
@@ -247,8 +254,8 @@ fn validate_command(
         "help" | "doctor" | "init" | "uninstall" | "exec" | "compile" | "compile-tests"
         | "validate" | "package" | "clean" | "build" | "test" | "verify-ut"
         | "verify-ut-coverage" | "verify-it" | "verify-it-coverage" | "verify"
-        | "verify-changes" | "pr-verify" | "docker-up" | "docker-down" | "docker-ps"
-        | "docker-ps-required" | "run" => {
+        | "verify-changes" | "coverage-changes" | "pr-verify" | "docker-up" | "docker-down"
+        | "docker-ps" | "docker-ps-required" | "run" => {
             Ok(CommandValidation::Valid)
         }
         "profile" => match trailing_args.first().map(|arg| arg.to_string_lossy()) {
@@ -324,6 +331,7 @@ fn is_top_level_command(arg: &OsString) -> bool {
             | "verify-it-coverage"
             | "verify"
             | "verify-changes"
+            | "coverage-changes"
             | "pr-verify"
             | "docker-up"
             | "docker-down"
@@ -335,7 +343,10 @@ fn is_top_level_command(arg: &OsString) -> bool {
 }
 
 fn command_option_takes_value(arg: &OsString) -> bool {
-    matches!(arg.to_string_lossy().as_ref(), "--name" | "--mode" | "--context")
+    matches!(
+        arg.to_string_lossy().as_ref(),
+        "--name" | "--mode" | "--context" | "--threshold"
+    )
 }
 
 fn is_global_option(arg: &OsString) -> bool {
@@ -443,6 +454,11 @@ fn dispatch_backend_invocations(
     let started_at = Instant::now();
 
     for mut backend_invocation in backend_invocations {
+        let fallback_title = backend_invocation
+            .args
+            .first()
+            .map(|arg| arg.to_string_lossy().into_owned())
+            .unwrap_or_else(|| String::from("command"));
         let use_frontend_loader = backend_invocation.frontend_loader && frontend_loader_is_available();
         let metadata_file = if use_frontend_loader {
             let metadata_file = BackendMetadataFile::new()?;
@@ -467,7 +483,12 @@ fn dispatch_backend_invocations(
 
         let exit_code = if use_frontend_loader {
             command.env("MAKEVN_FRONTEND_OWNS_LOADER", "1");
-            run_backend_with_loader(command, metadata_file.as_ref(), backend_invocation.tail)?
+            run_backend_with_loader(
+                command,
+                metadata_file.as_ref(),
+                backend_invocation.tail,
+                &fallback_title,
+            )?
         } else {
             run_backend_command(command, backend_path)?
         };
@@ -509,6 +530,7 @@ fn run_backend_with_loader(
     mut command: process::Command,
     metadata_file: Option<&BackendMetadataFile>,
     tail_enabled: bool,
+    fallback_title: &str,
 ) -> Result<i32, String> {
     let started_at = Instant::now();
     let mut child = command.spawn().map_err(|error| {
@@ -605,6 +627,7 @@ fn run_backend_with_loader(
                 started_at.elapsed(),
                 cancel_requested || signal_requested.load(Ordering::Relaxed),
                 metadata.as_ref(),
+                fallback_title,
             ));
         }
 
@@ -737,6 +760,7 @@ fn run_backend_with_loader(
         started_at.elapsed(),
         cancel_requested || signal_requested.load(Ordering::Relaxed),
         metadata.as_ref(),
+        fallback_title,
     ))
 }
 
@@ -865,11 +889,14 @@ fn summarize_backend_exit(
     elapsed: Duration,
     interrupted: bool,
     metadata: Option<&BackendMetadata>,
+    fallback_title: &str,
 ) -> i32 {
     let exit_code = exit_code_from_status(status, interrupted);
     let duration = format_duration(elapsed);
 
-    let title = metadata.map(|m| m.title.as_str()).unwrap_or("?");
+    let title = metadata
+        .map(|m| m.title.as_str())
+        .unwrap_or(fallback_title);
     let log = metadata.and_then(|m| {
         if m.relative_log_path.is_empty() {
             None
@@ -1648,6 +1675,7 @@ fn print_help(with_header: bool) {
     println!("  makevn [--repo PATH] verify-it-coverage [--tail] [-- EXTRA_MAVEN_ARGS...]");
     println!("  makevn [--repo PATH] verify [--tail] [-- EXTRA_MAVEN_ARGS...]");
     println!("  makevn [--repo PATH] verify-changes [--tail] [-- EXTRA_MAVEN_ARGS...]");
+    println!("  makevn [--repo PATH] coverage-changes [--threshold PCT]");
     println!("  makevn [--repo PATH] pr-verify [--tail] [-- EXTRA_MAVEN_ARGS...]");
     println!("  makevn [--repo PATH] docker-up");
     println!("  makevn [--repo PATH] docker-down");
@@ -1681,6 +1709,7 @@ fn print_help(with_header: bool) {
     println!("  makevn verify-ut-coverage");
     println!("  makevn verify-it");
     println!("  makevn verify-changes");
+    println!("  makevn coverage-changes");
     println!("  makevn pr-verify");
     println!("  makevn docker-up");
     println!("  makevn exec -- mvn -q -v");

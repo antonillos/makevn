@@ -131,6 +131,7 @@ makevn verify-it
 makevn verify-it-coverage
 makevn verify
 makevn verify-changes
+makevn coverage-changes
 makevn pr-verify
 makevn docker-up
 makevn docker-down
@@ -160,6 +161,8 @@ Verification notes:
 - `makevn verify-it` runs the integration-test-only verification path
 - `makevn verify` runs the combined verification path
 - `makevn verify` rejects UT/IT skip flags that would silently turn it into a split workflow
+- `makevn verify-changes` verifies only changed production modules or modified tests, using the same changed-file strategy as the legacy Makefile flow
+- `makevn coverage-changes` analyzes JaCoCo coverage for changed production code after a coverage-producing command, with `--threshold PCT` available when the default 90 percent gate is not desired
 
 Command-chain notes:
 
@@ -200,6 +203,7 @@ The shared include uses namespaced targets only:
 - `vn-verify-it-coverage`
 - `vn-verify`
 - `vn-verify-changes`
+- `vn-coverage-changes`
 - `vn-pr-verify`
 - `vn-docker-up`
 - `vn-docker-down`
@@ -232,6 +236,15 @@ The skill teaches agents to:
 - treat the installed `makevn` binary as the primary interface
 - prefer `--json` when structured output becomes publicly available
 - avoid `--tail` unless a human explicitly asks for an interactive local view
+
+For agent use, changed-code workflows should go through the public CLI:
+
+- `makevn verify-changes`
+- `makevn coverage-changes`
+
+Agents should not call target-repository legacy helpers under `scripts/make/*`.
+Those scripts can inform parity work, but the installed runtime lives under
+`libexec/makevn/` so humans and agents share the same command contract.
 
 ## Repository Layout
 

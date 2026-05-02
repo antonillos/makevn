@@ -56,10 +56,13 @@ cp "${SCRIPT_DIR}/libexec/makevn/docker.sh" "${LIBEXEC_DIR}/docker.sh"
 cp "${SCRIPT_DIR}/libexec/makevn/jdk_manager.sh" "${LIBEXEC_DIR}/jdk_manager.sh"
 cp "${SCRIPT_DIR}/libexec/makevn/docker_ps.sh" "${LIBEXEC_DIR}/docker_ps.sh"
 cp "${SCRIPT_DIR}/libexec/makevn/extract_services.sh" "${LIBEXEC_DIR}/extract_services.sh"
+cp "${SCRIPT_DIR}/libexec/makevn/calculate_coverage.sh" "${LIBEXEC_DIR}/calculate_coverage.sh"
+cp "${SCRIPT_DIR}/libexec/makevn/coverage_changes.sh" "${LIBEXEC_DIR}/coverage_changes.sh"
+cp "${SCRIPT_DIR}/libexec/makevn/verify_changes.sh" "${LIBEXEC_DIR}/verify_changes.sh"
 cp -R "${SCRIPT_DIR}/share/makevn/." "${SHARE_DIR}/"
 cp -R "${SCRIPT_DIR}/skills/makevn/." "${SKILL_DIR}/"
 
-chmod +x "${BIN_DIR}/makevn" "${LIBEXEC_DIR}/cli.sh" "${LIBEXEC_DIR}/backend.sh" "${LIBEXEC_DIR}/common.sh" "${LIBEXEC_DIR}/docker.sh" "${LIBEXEC_DIR}/jdk_manager.sh" "${LIBEXEC_DIR}/docker_ps.sh" "${LIBEXEC_DIR}/extract_services.sh"
+chmod +x "${BIN_DIR}/makevn" "${LIBEXEC_DIR}/cli.sh" "${LIBEXEC_DIR}/backend.sh" "${LIBEXEC_DIR}/common.sh" "${LIBEXEC_DIR}/docker.sh" "${LIBEXEC_DIR}/jdk_manager.sh" "${LIBEXEC_DIR}/docker_ps.sh" "${LIBEXEC_DIR}/extract_services.sh" "${LIBEXEC_DIR}/calculate_coverage.sh" "${LIBEXEC_DIR}/coverage_changes.sh" "${LIBEXEC_DIR}/verify_changes.sh"
 
 printf 'Installed makevn to %s\n' "${PREFIX}"
 if [[ "${installed_frontend}" == "rust" ]]; then

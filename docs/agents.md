@@ -17,6 +17,18 @@ The skill is meant to teach agents to:
 - prefer `--json` when it is available for the command being used
 - avoid `--tail` unless a human explicitly requests an interactive local log view
 
+Agent-facing commands should be stable without requiring agents to inspect or execute
+repository-owned helper scripts. For changed-code workflows, agents should call the
+public commands directly:
+
+- `makevn verify-changes`
+- `makevn coverage-changes`
+
+Those commands are intentionally backed by `makevn`'s installed `libexec/makevn/`
+runtime, not by a target repository's legacy `scripts/make/*` folder. Legacy
+Makefile scripts can be useful examples when improving parity, but they must not be
+part of the agent execution contract.
+
 ## Generic Workflow
 
 1. Load the `makevn` skill in the agent environment.
@@ -40,6 +52,13 @@ Inside OpenCode, the intended flow is:
 4. prefer `makevn ... --json` when machine-readable output is available and helps with decision making
 5. run `makevn build`, `makevn test`, `makevn verify`, or `makevn exec -- ...`
 6. avoid IDE-specific instructions unless the user explicitly asks for them
+
+For pull-request or task-final verification, agents should prefer the smallest
+command that proves the touched surface:
+
+- changed modules/tests: `makevn verify-changes`
+- changed-code coverage after a coverage-producing run: `makevn coverage-changes`
+- full confidence pass: `makevn verify`
 
 Because agent frameworks differ, this repository ships the skill contents and examples rather than hardcoding a single agent-specific installation path.
 

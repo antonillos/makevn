@@ -132,6 +132,7 @@ Run command family:
 - `verify-it-coverage`
 - `verify`
 - `verify-changes`
+- `coverage-changes`
 - `pr-verify`
 - `exec`
 - `run`
@@ -155,6 +156,7 @@ Transitional note:
 - `--metadata-out` is available for the Rust frontend to discover header and log metadata without scraping shell output
 - explicit `--log-path` is still pending target-state work
 - current execution still relies on the existing managed-log behavior in `cli.sh` and `common.sh`
+- changed-code verification and coverage analysis are self-contained in the installed backend; target repositories' legacy `scripts/make/*` trees are reference material only, not runtime dependencies
 
 ## Backend Output Modes
 
@@ -223,7 +225,7 @@ Currently implemented additive field:
 
 Definitions:
 
-- `command`: logical command name such as `build` or `verify-changes`
+- `command`: logical command name such as `build`, `verify-changes`, or `coverage-changes`
 - `repo`: absolute repository path
 - `cwd`: working directory used for delegated execution
 - `log_path`: absolute log path
@@ -312,6 +314,7 @@ Rules:
 
 - the backend must not require frontend-private environment variables for core correctness if an equivalent explicit flag exists
 - log path and metadata path should be passed as explicit flags, not hidden environment variables
+- agent-safe workflows must be reachable through public commands and installed backend runtime files; target-repository helper scripts are not part of the backend contract
 
 ## Option Forwarding Rules
 
@@ -344,6 +347,12 @@ The backend may evolve additively by:
 - adding JSON fields on state commands
 - adding optional metadata keys
 - adding support for managed logs to more run commands
+
+For both humans and AI agents, compatibility means the same invocation should work
+from an interactive terminal, a local automation, or an agent tool runner. Human-only
+features such as `--tail` must remain optional, while commands such as
+`verify-changes` and `coverage-changes` must remain usable in non-interactive runs
+without relying on IDE state or repository-local legacy scripts.
 
 ## Non-Goals
 

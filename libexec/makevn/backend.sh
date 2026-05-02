@@ -67,7 +67,7 @@ done
 [[ -z "${METADATA_OUT}" || "${METADATA_OUT}" = /* ]] || makevn_die "Backend --metadata-out must be an absolute path: ${METADATA_OUT}"
 
 case "${COMMAND}" in
-  doctor|init|uninstall|profile|exec|compile|compile-tests|validate|package|build|clean|test|verify-ut|verify-ut-coverage|verify-it|verify-it-coverage|verify|verify-changes|pr-verify|docker-up|docker-down|docker-ps|docker-ps-required|run|jdk)
+  doctor|init|uninstall|profile|exec|compile|compile-tests|validate|package|build|clean|test|verify-ut|verify-ut-coverage|verify-it|verify-it-coverage|verify|verify-changes|coverage-changes|pr-verify|docker-up|docker-down|docker-ps|docker-ps-required|run|jdk)
     ;;
   *)
     makevn_die "Unknown backend command: ${COMMAND}"

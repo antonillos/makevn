@@ -17,12 +17,14 @@ class Makevn < Formula
       "libexec/makevn/backend.sh",
       "libexec/makevn/cli.sh",
       "libexec/makevn/common.sh",
+      "libexec/makevn/calculate_coverage.sh",
+      "libexec/makevn/coverage_changes.sh",
+      "libexec/makevn/verify_changes.sh",
       "libexec/makevn/docker.sh",
       "libexec/makevn/docker_ps.sh",
       "libexec/makevn/extract_services.sh",
       "libexec/makevn/jdk_manager.sh",
     )
-
     (share/"makevn").install Dir["share/makevn/*"]
     (share/"makevn/skills/makevn").install Dir["skills/makevn/*"]
   end

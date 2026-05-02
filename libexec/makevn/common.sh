@@ -106,6 +106,43 @@ makevn_write_backend_metadata() {
   mv "${tmp_metadata_path}" "${metadata_path}"
 }
 
+makevn_write_quick_backend_log() {
+  local repo_root="$1"
+  local log_name="$2"
+  local command_key="$3"
+  local title="$4"
+  local command_display="$5"
+  local body="$6"
+  local logs_dir=""
+  local logfile=""
+  local relative_log_path=""
+  local metadata_out="${MAKEVN_BACKEND_METADATA_OUT:-}"
+
+  logs_dir="$(makevn_logs_dir "${repo_root}")"
+  mkdir -p "${logs_dir}"
+  logfile="${logs_dir}/${log_name}.log"
+  relative_log_path=".makevn/logs/${log_name}.log"
+
+  {
+    printf "started: %s\n" "$(date "+%Y-%m-%d %H:%M:%S")"
+    printf "title: %s\n" "${title}"
+    printf "command: %s\n" "${command_display}"
+    printf "%s\n" "${body}"
+    printf "finished: %s | exit_code: 0 | duration_seconds: 0\n" "$(date "+%Y-%m-%d %H:%M:%S")"
+  } > "${logfile}"
+
+  makevn_write_backend_metadata \
+    "${metadata_out}" \
+    "${command_key}" \
+    "${repo_root}" \
+    "${repo_root}" \
+    "${logfile}" \
+    "${relative_log_path}" \
+    "${command_display}" \
+    "" \
+    "${title}"
+}
+
 makevn_frontend_owns_loader() {
   [[ "${MAKEVN_FRONTEND:-}" == "rust" && "${MAKEVN_FRONTEND_OWNS_LOADER:-}" == "1" ]]
 }
@@ -1196,6 +1233,19 @@ makevn_print_jacoco_report_hint() {
   [[ -n "${report_dir}" ]] || return 0
   [[ -f "${report_dir}/index.html" ]] || return 0
   makevn_print_item "coverage report" "${report_dir}/index.html"
+}
+
+makevn_internal_make_script_path() {
+  local script_name="$1"
+  local candidate=""
+
+  candidate="${SCRIPT_DIR}/${script_name}"
+  if [[ -f "${candidate}" ]]; then
+    printf '%s\n' "${candidate}"
+    return 0
+  fi
+
+  return 1
 }
 
 makevn_detect_parent_branch_spec() {
