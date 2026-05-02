@@ -1,5 +1,5 @@
 <h1 align="center">
-  <img src="docs/assets/makevn-logo.svg" alt="makevn logo" width="96" /><br />
+  <img src="docs/assets/makevn-logo.svg" alt="makevn logo" width="180" style="margin-bottom: -12px;" /><br />
   makevn
 </h1>
 
