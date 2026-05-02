@@ -6,6 +6,7 @@
       .tile { fill: #101820; }
       .teal { stroke: #2dd4bf; }
       .ink { fill: #f8fafc; stroke: #f8fafc; }
+      .logo-text { fill: #cbd5e1; stroke: #cbd5e1; }
       .amber { fill: #f59e0b; stroke: #f59e0b; }
       .violet { fill: #8b5cf6; stroke: #8b5cf6; }
       .agent-line { stroke: #8b5cf6; stroke-width: 3; stroke-linecap: round; opacity: 0.78; }
@@ -51,7 +52,7 @@
     <circle class="agent-core" cx="272" cy="51" r="8"/>
   </g>
   <path class="stroke-sm teal" d="M36 66h268"/>
-  <text class="word ink" x="42" y="116">make</text>
+  <text class="word logo-text" x="42" y="116">make</text>
   <path class="stroke ink" d="M54 138l24 18-24 18"/>
   <text class="subword amber" x="104" y="170">mvn</text>
 </svg>

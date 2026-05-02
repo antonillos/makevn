@@ -1,6 +1,6 @@
 <h1 align="center">
-  <img src="docs/assets/makevn-logo.svg" alt="makevn logo" width="180" style="margin-bottom: -12px;" /><br />
-  make<span style="color:#64748b;">vn</span>
+  <img src="docs/assets/makevn-logo.svg" alt="makevn logo" width="180" /><br />
+  <img src="docs/assets/makevn-wordmark.svg" alt="makevn" width="220" />
 </h1>
 
 <p align="center">
