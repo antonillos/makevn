@@ -313,49 +313,8 @@ EOF
   assert_matches "${output_file}" 'pid:.*[0-9]+'
   assert_matches "${repo}/.makevn/logs/build.log" '^pid: [0-9]+$'
   [[ "$(tr -d '\r' < "${output_file}")" != *"running build"* ]] || fail "expected interactive output not to include redundant spinner status text"
-  [[ "$(tr -d '\r' < "${output_file}")" == *"■"* ]] || fail "expected interactive output to include kitt-style spinner glyphs"
+  [[ "$(tr -d '\r' < "${output_file}")" != *"■"* ]] || fail "expected shell backend output not to include kitt-style spinner glyphs"
   [[ "$(tr -d '\r' < "${output_file}")" != *"0s"* ]] || fail "expected interactive output not to include inline seconds"
-
-  ${CLI} --repo "${repo}" uninstall >/dev/null
-}
-
-test_interactive_double_esc_interrupt() {
-  local repo="${TMP_ROOT}/interactive-esc"
-  local java_home
-  local output_file="${TMP_ROOT}/interactive-esc.out"
-  local rc=0
-
-  mkdir -p "${repo}"
-  printf '<project/>\n' > "${repo}/pom.xml"
-  java_home="$(detect_java_home)"
-
-  ${CLI} --repo "${repo}" init --mode standalone >/dev/null
-
-  cat > "${repo}/mvnw" <<'EOF'
-#!/usr/bin/env bash
-set -euo pipefail
-sleep 5
-EOF
-  chmod +x "${repo}/mvnw"
-
-  cat > "${repo}/.makevn/config" <<EOF
-MAKEVN_JAVA_HOME="${java_home}"
-MAKEVN_CODE_JAVA_HOME=""
-MAKEVN_KARATE_JAVA_HOME=""
-MAKEVN_CODE_TOOL_VERSIONS=""
-MAKEVN_KARATE_TOOL_VERSIONS=""
-MAKEVN_RUN_CMD=""
-EOF
-
-  set +e
-  run_makevn_pty_interrupt double-esc "${repo}" "${output_file}"
-  rc=$?
-  set -e
-
-  [[ ${rc} -eq 130 ]] || fail "expected double esc interrupt to return 130, got ${rc}"
-  [[ ! -n "$(pgrep -f "${repo}/mvnw" || true)" ]] || fail "expected interrupted mvnw process to be stopped"
-  [[ ! -n "$(pgrep -f "/libexec/makevn/cli.sh --repo ${repo} build" || true)" ]] || fail "expected interrupted makevn process to be stopped"
-  [[ "$(tr -d '\r' < "${output_file}")" == *"interrupted after "* ]] || fail "expected double esc output to include interrupted message"
 
   ${CLI} --repo "${repo}" uninstall >/dev/null
 }
@@ -397,110 +356,6 @@ EOF
   [[ ! -n "$(pgrep -f "${repo}/mvnw" || true)" ]] || fail "expected ctrl+c interrupted mvnw process to be stopped"
   [[ ! -n "$(pgrep -f "/libexec/makevn/cli.sh --repo ${repo} build" || true)" ]] || fail "expected ctrl+c interrupted makevn process to be stopped"
   [[ "$(tr -d '\r' < "${output_file}")" == *"interrupted after "* ]] || fail "expected ctrl+c output to include interrupted message"
-
-  ${CLI} --repo "${repo}" uninstall >/dev/null
-}
-
-test_make_interrupt_no_error() {
-  local repo="${TMP_ROOT}/make-interrupt"
-  local java_home
-  local output_file="${TMP_ROOT}/make-interrupt.out"
-  local rc=0
-
-  mkdir -p "${repo}"
-  printf '<project/>\n' > "${repo}/pom.xml"
-  java_home="$(detect_java_home)"
-
-  ${CLI} --repo "${repo}" init --mode make-bootstrap >/dev/null
-
-  cat > "${repo}/mvnw" <<'EOF'
-#!/usr/bin/env bash
-set -euo pipefail
-sleep 5
-EOF
-  chmod +x "${repo}/mvnw"
-
-  cat > "${repo}/.makevn/config" <<EOF
-MAKEVN_JAVA_HOME="${java_home}"
-MAKEVN_CODE_JAVA_HOME=""
-MAKEVN_KARATE_JAVA_HOME=""
-MAKEVN_CODE_TOOL_VERSIONS=""
-MAKEVN_KARATE_TOOL_VERSIONS=""
-MAKEVN_RUN_CMD=""
-EOF
-
-  set +e
-  python3 - <<'PY' "${repo}" "${output_file}"
-import os
-import pty
-import select
-import sys
-import time
-
-repo, output_file = sys.argv[1:3]
-cmd = ['make', '-f', '.makevn/makevn.mk', '-C', repo, 'vn-test']
-
-pid, fd = pty.fork()
-if pid == 0:
-    os.execvp(cmd[0], cmd)
-
-output = bytearray()
-status = None
-sent_first_esc = False
-sent_second_esc = False
-start = time.time()
-
-while True:
-    readable, _, _ = select.select([fd], [], [], 0.1)
-    if fd in readable:
-        try:
-            chunk = os.read(fd, 4096)
-        except OSError:
-            break
-        if not chunk:
-            break
-        output.extend(chunk)
-
-    elapsed = time.time() - start
-    if elapsed > 0.5 and not sent_first_esc:
-        os.write(fd, b'\x1b')
-        sent_first_esc = True
-    if elapsed > 1.0 and not sent_second_esc:
-        os.write(fd, b'\x1b')
-        sent_second_esc = True
-
-    try:
-        waited = os.waitpid(pid, os.WNOHANG)
-    except ChildProcessError:
-        break
-    if waited != (0, 0):
-        status = waited[1]
-        break
-
-if status is None:
-    status = os.waitpid(pid, 0)[1]
-
-while True:
-    try:
-        chunk = os.read(fd, 4096)
-        if not chunk:
-            break
-        output.extend(chunk)
-    except OSError:
-        break
-
-with open(output_file, 'wb') as fh:
-    fh.write(output)
-
-raise SystemExit(os.waitstatus_to_exitcode(status))
-PY
-  rc=$?
-  set -e
-
-  [[ ${rc} -eq 0 ]] || fail "expected interrupted make target to exit cleanly, got ${rc}"
-  [[ ! -n "$(pgrep -f "${repo}/mvnw" || true)" ]] || fail "expected interrupted make target mvnw process to be stopped"
-  [[ "$(tr -d '\r' < "${output_file}")" == *"interrupted after "* ]] || fail "expected interrupted make target output to include interrupted message"
-  [[ "$(tr -d '\r' < "${output_file}")" != *"gmake: ***"* ]] || fail "expected interrupted make target output not to include gmake error"
 
   ${CLI} --repo "${repo}" uninstall >/dev/null
 }
@@ -1310,9 +1165,7 @@ main() {
   test_auto_mode
   test_profile_refresh
   test_interactive_pid_output
-  test_interactive_double_esc_interrupt
   test_interactive_ctrl_c_interrupt
-  test_make_interrupt_no_error
   test_make_failure_output
   test_tail_degrades_without_tty
   test_command_routing

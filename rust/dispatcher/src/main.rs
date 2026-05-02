@@ -1311,48 +1311,95 @@ impl LogTailWindow {
 
 fn spinner_kitt_frame(frame_index: usize) -> String {
     let width = 8usize;
-    let hold_frames = 4usize;
-    let forward_frames = width;
-    let backward_frames = width - 1;
-    let cycle_length = forward_frames + hold_frames + backward_frames + hold_frames;
+    let scan_frames = 30usize;
+    let edge_hold_frames = 4usize;
+    let half_cycle_frames = scan_frames + edge_hold_frames;
+    let cycle_length = half_cycle_frames * 2;
     let cycle_index = frame_index % cycle_length;
-    let pulse_codes = ["38;5;60", "38;5;61", "38;5;62", "38;5;61"];
+    let phase_index = cycle_index % half_cycle_frames;
+    let moving_right = cycle_index < half_cycle_frames;
+    let pulse_codes = [
+        Some("38;2;72;84;112"),
+        Some("38;2;72;84;112"),
+        Some("38;2;71;83;111"),
+        Some("38;2;70;82;109"),
+        Some("38;2;69;80;107"),
+        Some("38;2;67;78;104"),
+        Some("38;2;65;76;101"),
+        Some("38;2;63;73;98"),
+        Some("38;2;60;70;94"),
+        Some("38;2;57;67;90"),
+        Some("38;2;54;64;85"),
+        Some("38;2;51;60;80"),
+        Some("38;2;48;56;76"),
+        Some("38;2;45;53;71"),
+        Some("38;2;42;49;66"),
+        Some("38;2;38;45;60"),
+        Some("38;2;35;41;55"),
+        Some("38;2;32;38;50"),
+        Some("38;2;29;34;46"),
+        Some("38;2;26;30;41"),
+        Some("38;2;23;27;36"),
+        Some("38;2;20;24;32"),
+        Some("38;2;17;21;28"),
+        Some("38;2;15;18;25"),
+        Some("38;2;13;16;22"),
+        Some("38;2;11;14;19"),
+        Some("38;2;10;12;17"),
+        Some("38;2;9;11;15"),
+        Some("38;2;8;10;14"),
+        Some("38;2;8;10;14"),
+        Some("38;2;8;10;14"),
+        Some("38;2;8;10;14"),
+        Some("38;2;9;11;15"),
+        Some("38;2;10;12;17"),
+        Some("38;2;11;14;19"),
+        Some("38;2;13;16;22"),
+        Some("38;2;15;18;25"),
+        Some("38;2;17;21;28"),
+        Some("38;2;20;24;32"),
+        Some("38;2;23;27;36"),
+        Some("38;2;26;30;41"),
+        Some("38;2;29;34;46"),
+        Some("38;2;32;38;50"),
+        Some("38;2;35;41;55"),
+        Some("38;2;38;45;60"),
+        Some("38;2;42;49;66"),
+        Some("38;2;45;53;71"),
+        Some("38;2;48;56;76"),
+        Some("38;2;51;60;80"),
+        Some("38;2;54;64;85"),
+        Some("38;2;57;67;90"),
+        Some("38;2;60;70;94"),
+        Some("38;2;63;73;98"),
+        Some("38;2;65;76;101"),
+        Some("38;2;67;78;104"),
+        Some("38;2;69;80;107"),
+        Some("38;2;70;82;109"),
+        Some("38;2;71;83;111"),
+        Some("38;2;72;84;112"),
+        Some("38;2;72;84;112"),
+    ];
     let trail_codes = ["38;5;189", "38;5;153", "38;5;111", "38;5;68"];
-    let default_code = pulse_codes[frame_index % pulse_codes.len()];
-    let (active_position, moving_left, hold_progress) = if cycle_index < forward_frames {
-        (width - 1 - cycle_index, true, None)
-    } else if cycle_index < forward_frames + hold_frames {
-        (0, true, Some(cycle_index - forward_frames))
-    } else if cycle_index < forward_frames + hold_frames + backward_frames {
-        (cycle_index - forward_frames - hold_frames + 1, false, None)
-    } else {
-        (
-            width - 1,
-            false,
-            Some(cycle_index - forward_frames - hold_frames - backward_frames),
-        )
-    };
+    let fade_distance = trail_codes.len();
+    let travel_distance = width + fade_distance;
+    let active_position = phase_index.min(scan_frames - 1) * travel_distance / scan_frames;
     let mut output = String::new();
 
     for index in 0..width {
-        let directional_distance = if moving_left {
-            index as isize - active_position as isize
-        } else {
+        let color_index = if moving_right {
             active_position as isize - index as isize
+        } else {
+            index as isize - (width as isize - 1 - active_position as isize)
         };
-
-        let mut color_index = directional_distance;
-        if let Some(progress) = hold_progress {
-            color_index += progress as isize;
-        }
 
         if color_index >= 0 && (color_index as usize) < trail_codes.len() {
             output.push_str(&style(trail_codes[color_index as usize], "■"));
         } else {
-            if use_color() {
-                output.push_str(&style(default_code, "·"));
-            } else {
-                output.push('.');
+            match pulse_codes[frame_index % pulse_codes.len()] {
+                Some(code) if use_color() => output.push_str(&style(code, "·")),
+                Some(_) => output.push('.'),
+                None => output.push(' '),
             }
         }
     }
@@ -1392,7 +1439,7 @@ impl SpinnerRenderer {
             tty,
             tty_guard,
             frame: 0,
-            frame_interval: Duration::from_millis(100),
+            frame_interval: Duration::from_millis(33),
             next_frame_at: Instant::now(),
             second_escape_deadline: None,
             resource_sampler: ResourceSampler::new(),
@@ -1483,7 +1530,10 @@ impl SpinnerRenderer {
         let mut lines = Vec::with_capacity(completed_summaries.len() + 3);
         lines.push(format!(
             "{}",
-            dim_text(&format!("Working for {} >", format_duration(global_elapsed)))
+            dim_text(&format!(
+                "Working for {} >",
+                format_duration(global_elapsed)
+            ))
         ));
         for summary in completed_summaries {
             lines.push(completed_summary_line(summary));
@@ -1870,7 +1920,7 @@ impl fmt::Display for Lossy<'_> {
 mod tests {
     use super::{
         command_supports_frontend_loader, dim_text, insert_backend_option,
-        install_root_with_override, parse_invocation, read_backend_metadata,
+        install_root_with_override, parse_invocation, read_backend_metadata, spinner_kitt_frame,
         split_command_segments, strip_frontend_tail_flag, Action, BackendInvocation,
     };
     use std::env;
@@ -1907,6 +1957,19 @@ mod tests {
     fn preserves_global_help_dispatch() {
         let action = parse_invocation(vec![OsString::from("--help")]).unwrap();
         assert_eq!(action, Action::PrintHelp { with_header: false });
+    }
+
+    #[test]
+    fn kitt_spinner_scans_both_directions_and_fades_at_the_edges() {
+        assert_eq!(spinner_kitt_frame(0), "■.......");
+        assert_eq!(spinner_kitt_frame(18), "....■■■■");
+        assert_eq!(spinner_kitt_frame(29), "........");
+        assert_eq!(spinner_kitt_frame(33), "........");
+        assert_eq!(spinner_kitt_frame(34), ".......■");
+        assert_eq!(spinner_kitt_frame(48), "..■■■■..");
+        assert_eq!(spinner_kitt_frame(63), "........");
+        assert_eq!(spinner_kitt_frame(67), "........");
+        assert_eq!(spinner_kitt_frame(68), "■.......");
     }
 
     #[test]

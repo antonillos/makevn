@@ -180,188 +180,6 @@ makevn_format_duration() {
   printf '%sm %02ss\n' "${minutes}" "${seconds}"
 }
 
-makevn_spinner_hint() {
-  local message="$1"
-
-  if makevn_use_color; then
-    if [[ "${message}" == "again to interrupt" ]]; then
-      printf '%s %s' "$(makevn_style "97" "esc")" "$(makevn_style "94" "${message}")"
-      return 0
-    fi
-
-    printf '%s %s' "$(makevn_style "97" "esc")" "$(makevn_dim "${message}")"
-    return 0
-  fi
-
-  printf 'esc %s' "${message}"
-}
-
-makevn_spinner_kitt_frame() {
-  local frame_index="$1"
-  local width=8
-  local hold_frames=4
-  local forward_frames=${width}
-  local backward_frames=$((width - 1))
-  local cycle_length=$((forward_frames + hold_frames + backward_frames + hold_frames))
-  local cycle_index=$((frame_index % cycle_length))
-  local active_position=0
-  local moving_left=true
-  local hold_progress=-1
-  local pulse_codes=(60 61 62 61)
-  local trail_codes=(189 153 111 68)
-  local default_code="${pulse_codes[$((frame_index % ${#pulse_codes[@]}))]}"
-  local out=""
-  local i=0
-  local directional_distance=0
-  local color_code=""
-  local color_index=0
-  local glyph=""
-
-  if (( cycle_index < forward_frames )); then
-    active_position=$((width - 1 - cycle_index))
-  elif (( cycle_index < forward_frames + hold_frames )); then
-    active_position=0
-    hold_progress=$((cycle_index - forward_frames))
-  elif (( cycle_index < forward_frames + hold_frames + backward_frames )); then
-    active_position=$((cycle_index - forward_frames - hold_frames + 1))
-    moving_left=false
-  else
-    moving_left=false
-    active_position=$((width - 1))
-    hold_progress=$((cycle_index - forward_frames - hold_frames - backward_frames))
-  fi
-
-  for ((i = 0; i < width; i++)); do
-    if [[ "${moving_left}" == true ]]; then
-      directional_distance=$((i - active_position))
-    else
-      directional_distance=$((active_position - i))
-    fi
-
-    color_index=${directional_distance}
-    if (( hold_progress >= 0 )); then
-      color_index=$((color_index + hold_progress))
-    fi
-
-    if (( color_index >= 0 && color_index < ${#trail_codes[@]} )); then
-      color_code="${trail_codes[$color_index]}"
-      glyph="■"
-    else
-      color_code="${default_code}"
-      glyph="·"
-    fi
-
-    if makevn_use_color; then
-      out+="$(makevn_style "38;5;${color_code}" "${glyph}")"
-    else
-      out+="."
-    fi
-  done
-
-  printf '%s' "${out}"
-}
-
-makevn_wait_with_spinner() {
-  local pid="$1"
-  local frame=0
-  local hint="interrupt"
-  local key=""
-  local tty_state=""
-  local cancel_requested=false
-  local signal_requested=false
-  local trap_waited=false
-  local trap_exit_code=0
-  local second_escape_deadline=0
-  local now=0
-  local exit_code=0
-
-  MAKEVN_SPINNER_CANCEL_REQUESTED=false
-
-  if ! [[ -t 0 && -t 1 ]]; then
-    set +e
-    wait "${pid}"
-    exit_code=$?
-    set -e
-    return ${exit_code}
-  fi
-
-  tty_state="$(stty -g < /dev/tty)"
-  stty -echo -icanon min 0 time 1 < /dev/tty
-
-  cleanup_spinner_interrupt() {
-    if [[ "${signal_requested}" == true ]]; then
-      return 0
-    fi
-
-    cancel_requested=true
-    signal_requested=true
-    makevn_interrupt_process_tree "${pid}"
-
-    set +e
-    wait "${pid}" 2>/dev/null
-    trap_exit_code=$?
-    set -e
-    trap_waited=true
-  }
-
-  trap 'cleanup_spinner_interrupt' INT TERM
-
-  if makevn_use_color; then
-    printf '\033[?25l'
-  fi
-
-  while kill -0 "${pid}" 2>/dev/null; do
-    now="$(date +%s)"
-    if (( second_escape_deadline > now )); then
-      hint="again to interrupt"
-    else
-      hint="interrupt"
-      second_escape_deadline=0
-    fi
-
-    printf '\r\033[2K%s  %s' \
-      "$(makevn_spinner_kitt_frame "${frame}")" \
-      "$(makevn_spinner_hint "${hint}")"
-    frame=$((frame + 1))
-    key="$(dd bs=1 count=1 2>/dev/null < /dev/tty || true)"
-
-    if [[ "${signal_requested}" == true ]]; then
-      break
-    fi
-
-    if [[ "${key}" == $'\e' ]]; then
-      now="$(date +%s)"
-      if (( second_escape_deadline > now )); then
-        cancel_requested=true
-        makevn_interrupt_process_tree "${pid}"
-        break
-      fi
-      second_escape_deadline=$((now + 3))
-    fi
-  done
-
-  trap - INT TERM
-  stty "${tty_state}" < /dev/tty
-  printf '\r\033[2K'
-  if makevn_use_color; then
-    printf '\033[?25h'
-  fi
-
-  if [[ "${trap_waited}" == true ]]; then
-    exit_code=${trap_exit_code}
-  else
-    set +e
-    wait "${pid}"
-    exit_code=$?
-    set -e
-  fi
-  if [[ "${cancel_requested}" == true ]]; then
-    MAKEVN_SPINNER_CANCEL_REQUESTED=true
-    return 0
-  fi
-  return ${exit_code}
-}
-
 makevn_kill_child_processes() {
   local pid="$1"
   local signal="$2"
@@ -404,6 +222,7 @@ makevn_run_logged_in_context() {
   local command_display=""
   local relative_log_path=""
   local metadata_out="${MAKEVN_BACKEND_METADATA_OUT:-}"
+  local interrupted_by_shell=false
 
   shift 6
 
@@ -511,19 +330,22 @@ makevn_run_logged_in_context() {
   makevn_print_command_header "${title}" "${cmd_pid}" "${relative_log_path}"
   makevn_trace_command exec env JAVA_HOME="${java_home}" "$@"
 
-  MAKEVN_SPINNER_CANCEL_REQUESTED=false
+  cleanup_shell_wait_interrupt() {
+    interrupted_by_shell=true
+    makevn_interrupt_process_tree "${cmd_pid}"
+  }
+
+  trap 'cleanup_shell_wait_interrupt' INT TERM
   set +e
-  makevn_wait_with_spinner "${cmd_pid}"
+  wait "${cmd_pid}"
   exit_code=$?
   set -e
-  if [[ "${MAKEVN_SPINNER_CANCEL_REQUESTED:-false}" == true ]]; then
-    exit_code=130
-  fi
+  trap - INT TERM
   end_epoch="$(date +%s)"
   duration_seconds=$((end_epoch - start_epoch))
   duration_display="$(makevn_format_duration "${duration_seconds}")"
 
-  if [[ "${MAKEVN_SPINNER_CANCEL_REQUESTED:-false}" == true || ${exit_code} -eq 130 ]]; then
+  if [[ "${interrupted_by_shell}" == true || ${exit_code} -eq 130 ]]; then
     printf '\r\033[2K%s %s\n' "$(makevn_warn 'x')" "$(makevn_warn "interrupted after ${duration_display}")"
     return 130
   fi
