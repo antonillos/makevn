@@ -23,7 +23,6 @@ cmd_verify_changes() {
   local rc=0
   local -a cli_flags=()
   local -a extra_args
-  local -a build_args=()
   local -a verify_args=()
 
   shift
@@ -102,18 +101,6 @@ No modified Java files detected. Skipping verify-changes."
       cmd_verify "${repo_root}"
       return $?
     fi
-
-    build_args=("${maven_executable}")
-    if [[ ${#cli_flags[@]} -gt 0 ]]; then
-      build_args+=("${cli_flags[@]}")
-    fi
-    build_args+=(-f "${maven_base_path}/pom.xml" -pl "${modules}" -am install -DskipTests -Damiga-javaformat.skip=true -Dmaven.build.cache.enabled=false)
-    if [[ ${#extra_args[@]} -gt 0 ]]; then
-      build_args+=("${extra_args[@]}")
-    fi
-    makevn_run_logged_in_context "${repo_root}" code "${maven_base_path}" verify-changes-build verify-changes "verify-changes build" "${build_args[@]}"
-    rc=$?
-    [[ ${rc} -eq 0 ]] || return ${rc}
 
     jacoco_module="$(makevn_detect_jacoco_module_name "${maven_base_path}" || true)"
     module_selection="${modules}"

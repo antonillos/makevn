@@ -85,19 +85,7 @@ if [ -n "$CHANGED_JAVA_SRC" ]; then
     else
         echo "◇ Affected modules: $MODULES"
         echo ""
-        echo "🔨 Step 1/2: Building dependencies (compile only, no tests)..."
-        # Build dependencies (set +e temporarily to capture exit code)
-        set +e
-        mvn -f "${BASE_PATH}" -Damiga-javaformat.skip=true -DskipTests -Dmaven.build.cache.enabled=false -pl "$MODULES" -am install -q -nsu
-        BUILD_EXIT_CODE=$?
-        set -e
-        if [ $BUILD_EXIT_CODE -ne 0 ]; then
-            error "Build failed with exit code $BUILD_EXIT_CODE"
-            exit $BUILD_EXIT_CODE
-        fi
-        success "Dependencies built."
-        echo ""
-        echo "🧪 Step 2/2: Running unit and integration tests to generate complete coverage report..."
+        echo "🧪 Running unit and integration tests to generate complete coverage report..."
         echo "   (Note: This ensures make coverage works correctly)"
         echo ""
         # Run tests (set +e temporarily to capture exit code)
