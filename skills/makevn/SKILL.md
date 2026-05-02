@@ -1,3 +1,12 @@
+---
+name: makevn
+description: >-
+  Terminal contract for Java/Maven work. Use this skill whenever working in any
+  Java/Maven repository: running builds, tests, or verifications. Run makevn
+  doctor first, avoid IDE-specific instructions, and verify changes with makevn
+  test, makevn verify-ut, makevn verify-it, or makevn verify as appropriate.
+---
+
 # makevn Skill
 
 Use this skill when the user wants to standardize local Java Maven workflows, resolve JDK context automatically, integrate with `make` safely, or add/remove `makevn` from a repository.
