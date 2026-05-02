@@ -480,11 +480,28 @@ package com.example;
 
 class OrderRepositoryTest {}
 EOF
+  cat > "${repo}/module-a/src/test/java/com/example/UserFlowIT.java" <<'EOF'
+package com.example;
+
+class UserFlowIT {}
+EOF
   cat > "${repo}/mvnw" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
 printf 'ARGS=%s\n' "$*" >> .mvnw.log
 printf 'JAVA_HOME=%s\n' "${JAVA_HOME:-}" >> .mvnw.log
+for arg in "$@"; do
+  if [[ "${arg}" == "failsafe:integration-test" ]]; then
+    mkdir -p module-a/target/failsafe-reports
+    cat > module-a/target/failsafe-reports/failsafe-summary.xml <<'XML'
+<failsafe-summary result="null">
+  <completed>1</completed>
+  <errors>0</errors>
+  <failures>0</failures>
+</failsafe-summary>
+XML
+  fi
+done
 EOF
   chmod +x "${repo}/mvnw"
   cat > "${repo}/fake-bin/docker-compose" <<'EOF'
@@ -543,6 +560,7 @@ EOF
   PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" test --name UserRepositoryTest,OrderRepositoryTest >/dev/null
   mkdir -p "${repo}/module-a/target/test-classes"
   make_output="$(PATH="${repo}/fake-bin:${PATH}" rtk make -f .makevn/makevn.mk -C "${repo}" vn-test NAME=UserRepositoryTest FAST=true)"
+  PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" test --name UserFlowIT >/dev/null
   PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" verify >/dev/null
   PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" exec -- bash -lc 'printf "%s" "$JAVA_HOME" > exec-java-home.txt' >/dev/null
   PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" run >/dev/null
@@ -564,6 +582,7 @@ EOF
   assert_matches "${repo}/.mvnw.log" '^ARGS=-B -nsu -f .*/pom\.xml -pl module-a -am test -Dsurefire\.failIfNoSpecifiedTests=false -Damiga-javaformat\.skip=true -Dtest=com\.example\.UserRepositoryTest -Dfailsafe\.failIfNoSpecifiedTests=false -Dmaven\.build\.cache\.enabled=true -Dsurefire\.testFailureIgnore=false$'
   assert_matches "${repo}/.mvnw.log" '^ARGS=-B -nsu -f .*/pom\.xml -pl module-a -am test -Dsurefire\.failIfNoSpecifiedTests=false -Damiga-javaformat\.skip=true -Dtest=com\.example\.OrderRepositoryTest -Dfailsafe\.failIfNoSpecifiedTests=false -Dmaven\.build\.cache\.enabled=true -Dsurefire\.testFailureIgnore=false$'
   assert_matches "${repo}/.mvnw.log" '^ARGS=-B -nsu -f .*/pom\.xml -pl module-a -am surefire:test -Dsurefire\.failIfNoSpecifiedTests=false -Damiga-javaformat\.skip=true -Dtest=com\.example\.UserRepositoryTest -Dfailsafe\.failIfNoSpecifiedTests=false -Dmaven\.build\.cache\.enabled=true -Dsurefire\.testFailureIgnore=false$'
+  assert_matches "${repo}/.mvnw.log" '^ARGS=-B -nsu -f .*/pom\.xml -pl module-a -am test-compile failsafe:integration-test -Dsurefire\.failIfNoSpecifiedTests=false -Damiga-javaformat\.skip=true -Dit\.test=com\.example\.UserFlowIT -Dfailsafe\.failIfNoSpecifiedTests=false -Dmaven\.build\.cache\.enabled=true$'
   assert_matches "${repo}/.mvnw.log" '^ARGS=-B -nsu -f .*/pom\.xml verify -DfailIfNoTests=false$'
   assert_contains "${repo}/.mvnw.log" "JAVA_HOME=${java_home}"
   assert_contains "${repo}/exec-java-home.txt" "${java_home}"

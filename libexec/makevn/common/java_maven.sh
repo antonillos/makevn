@@ -152,6 +152,51 @@ makevn_test_log_token() {
   printf '%s\n' test
 }
 
+makevn_failsafe_summary_value() {
+  local summary_path="$1"
+  local element="$2"
+
+  sed -nE "s/.*<${element}>([^<]+)<\\/${element}>.*/\\1/p" "${summary_path}" | head -n 1
+}
+
+makevn_verify_selected_failsafe_summary() {
+  local maven_base_path="$1"
+  local module_path="$2"
+  local test_name="$3"
+  local summary_path="${maven_base_path}/${module_path}/target/failsafe-reports/failsafe-summary.xml"
+  local result=""
+  local completed=""
+  local errors=""
+  local failures=""
+
+  if [[ ! -f "${summary_path}" ]]; then
+    printf '%s\n' "$(makevn_warn "fail selected integration test did not produce a Failsafe summary: ${test_name}")" >&2
+    return 1
+  fi
+
+  result="$(sed -nE 's/.*<failsafe-summary[^>]* result="([^"]+)".*/\1/p' "${summary_path}" | head -n 1)"
+  completed="$(makevn_failsafe_summary_value "${summary_path}" completed)"
+  errors="$(makevn_failsafe_summary_value "${summary_path}" errors)"
+  failures="$(makevn_failsafe_summary_value "${summary_path}" failures)"
+  completed="${completed:-0}"
+  errors="${errors:-0}"
+  failures="${failures:-0}"
+
+  if [[ "${completed}" == "0" || "${errors}" != "0" || "${failures}" != "0" ]]; then
+    printf '%s\n' "$(makevn_warn "fail selected integration test failed: ${test_name}")" >&2
+    printf '%s\n' "$(makevn_dim "summary: ${summary_path}")" >&2
+    return 1
+  fi
+
+  if [[ -n "${result}" && "${result}" != "0" && "${result}" != "null" ]]; then
+    printf '%s\n' "$(makevn_warn "fail selected integration test failed: ${test_name}")" >&2
+    printf '%s\n' "$(makevn_dim "summary: ${summary_path}")" >&2
+    return 1
+  fi
+
+  return 0
+}
+
 makevn_run_selected_test() {
   local repo_root="$1"
   local test_name="$2"
@@ -171,6 +216,7 @@ makevn_run_selected_test() {
   local title=""
   local test_param=""
   local test_mode="unit"
+  local rc=0
   local -a cli_flags=()
   local -a prop_flags=()
   local -a maven_args=()
@@ -238,7 +284,7 @@ makevn_run_selected_test() {
         read -r -a cli_flags <<< "${cli_flags_value}"
         maven_args+=("${cli_flags[@]}")
       fi
-      maven_args+=(-f "${maven_base_path}/pom.xml" -pl "${module_path}" -am failsafe:integration-test failsafe:verify)
+      maven_args+=(-f "${maven_base_path}/pom.xml" -pl "${module_path}" -am failsafe:integration-test)
     else
       title="test ${test_name}"
       log_name="test-$(makevn_test_log_token "${test_name}")"
@@ -247,7 +293,7 @@ makevn_run_selected_test() {
         read -r -a cli_flags <<< "${cli_flags_value}"
         maven_args+=("${cli_flags[@]}")
       fi
-      maven_args+=(-f "${maven_base_path}/pom.xml" -pl "${module_path}" -am test-compile failsafe:integration-test failsafe:verify)
+      maven_args+=(-f "${maven_base_path}/pom.xml" -pl "${module_path}" -am test-compile failsafe:integration-test)
     fi
   else
     if [[ "${fast_mode}" == "true" ]]; then
@@ -284,7 +330,22 @@ makevn_run_selected_test() {
     maven_args+=("$@")
   fi
 
+  if [[ "${test_mode}" == "integration" ]]; then
+    rm -f "${maven_base_path}/${module_path}/target/failsafe-reports/failsafe-summary.xml"
+  fi
+
+  set +e
   makevn_run_logged_in_context "${repo_root}" code "${maven_base_path}" "${log_name}" test "${title}" "${maven_args[@]}"
+  rc=$?
+  set -e
+  [[ ${rc} -eq 0 ]] || return ${rc}
+
+  if [[ "${test_mode}" == "integration" ]]; then
+    makevn_verify_selected_failsafe_summary "${maven_base_path}" "${module_path}" "${test_name}"
+    return $?
+  fi
+
+  return 0
 }
 
 makevn_detect_verify_it_workflow_invocation() {
