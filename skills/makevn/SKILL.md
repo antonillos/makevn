@@ -160,7 +160,7 @@ Verification intent:
 
 ## Running Specific Tests
 
-**Always prefer `makevn test --name` over `makevn exec -- mvn -Dtest=...`** when the goal is to run one or more specific test classes.
+**Always prefer `makevn test --name` over `makevn exec -- mvn -Dtest=...`** when the goal is to run one or more specific test classes. This works for any test type — unit tests (UT) and integration tests (IT) alike.
 
 ```bash
 # Run a single test class
