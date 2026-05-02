@@ -7,6 +7,10 @@
       .teal { stroke: #2dd4bf; }
       .ink { fill: #f8fafc; stroke: #f8fafc; }
       .amber { fill: #f59e0b; stroke: #f59e0b; }
+      .violet { fill: #8b5cf6; stroke: #8b5cf6; }
+      .agent-line { stroke: #8b5cf6; stroke-width: 3; stroke-linecap: round; opacity: 0.78; }
+      .agent-core { fill: #f8fafc; stroke: #8b5cf6; stroke-width: 3; }
+      .agent-node { fill: #101820; stroke-width: 3; }
       .word {
         font: 800 58px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
         letter-spacing: -1px;
@@ -30,8 +34,23 @@
     </style>
   </defs>
 
-  <rect class="tile" x="0" y="0" width="340" height="210" rx="24"/>
-  <path class="stroke-sm teal" d="M36 42h268"/>
+  <rect class="tile" x="5" y="5" width="330" height="200" rx="24" stroke="#24313a" stroke-width="10"/>
+  <path d="M30 5h78" stroke="#2dd4bf" stroke-width="10" stroke-linecap="round"/>
+  <path d="M232 205h78" stroke="#f59e0b" stroke-width="10" stroke-linecap="round"/>
+  <rect x="24" y="24" width="292" height="28" rx="14" fill="#f8fafc" fill-opacity="0.06"/>
+  <circle cx="44" cy="38" r="5" fill="#2dd4bf"/>
+  <circle cx="63" cy="38" r="5" fill="#f59e0b"/>
+  <circle cx="82" cy="38" r="5" fill="#8b5cf6"/>
+  <g aria-label="AI agent network">
+    <path class="agent-line" d="M246 37l22-11 24 14"/>
+    <path class="agent-line" d="M268 26l4 25"/>
+    <path class="agent-line" d="M272 51l20-11"/>
+    <circle class="agent-node teal" cx="246" cy="37" r="6"/>
+    <circle class="agent-node amber" cx="268" cy="26" r="6"/>
+    <circle class="agent-node violet" cx="292" cy="40" r="6"/>
+    <circle class="agent-core" cx="272" cy="51" r="8"/>
+  </g>
+  <path class="stroke-sm teal" d="M36 66h268"/>
   <text class="word ink" x="42" y="116">make</text>
   <path class="stroke ink" d="M54 138l24 18-24 18"/>
   <text class="subword amber" x="104" y="170">mvn</text>
