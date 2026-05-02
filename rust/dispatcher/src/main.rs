@@ -111,6 +111,20 @@ struct BackendMetadata {
     context: Option<String>,
 }
 
+#[derive(Clone, Debug)]
+struct CommandSummary {
+    title: String,
+    duration: String,
+    relative_log_path: Option<String>,
+    exit_code: i32,
+}
+
+#[derive(Debug)]
+struct BackendRunResult {
+    exit_code: i32,
+    summary: CommandSummary,
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum CommandValidation {
     Valid,
@@ -255,9 +269,7 @@ fn validate_command(
         | "validate" | "package" | "clean" | "build" | "test" | "verify-ut"
         | "verify-ut-coverage" | "verify-it" | "verify-it-coverage" | "verify"
         | "verify-changes" | "coverage-changes" | "pr-verify" | "docker-up" | "docker-down"
-        | "docker-ps" | "docker-ps-required" | "run" => {
-            Ok(CommandValidation::Valid)
-        }
+        | "docker-ps" | "docker-ps-required" | "run" => Ok(CommandValidation::Valid),
         "profile" => match trailing_args.first().map(|arg| arg.to_string_lossy()) {
             Some(subcommand) if subcommand == "refresh" => Ok(CommandValidation::ProfileRefresh),
             _ => Err(String::from("Usage: makevn profile refresh")),
@@ -280,7 +292,10 @@ fn build_backend_invocations(
 ) -> Result<Vec<BackendInvocation>, String> {
     let repo_root = resolve_repo_root(repo_override)?;
     let (command_segments, global_options) = split_trailing_global_options(command_segments);
-    let global_tail = global_tail_prefix || global_options.iter().any(|arg| arg == &OsString::from("--tail"));
+    let global_tail = global_tail_prefix
+        || global_options
+            .iter()
+            .any(|arg| arg == &OsString::from("--tail"));
     let mut backend_invocations = Vec::with_capacity(command_segments.len());
 
     for (command, trailing_args) in command_segments {
@@ -452,6 +467,10 @@ fn dispatch_backend_invocations(
 ) -> Result<i32, String> {
     let mut last_exit_code = 0;
     let started_at = Instant::now();
+    let mut completed_summaries = Vec::new();
+    let use_dashboard = backend_invocations
+        .iter()
+        .any(|invocation| invocation.frontend_loader);
 
     for mut backend_invocation in backend_invocations {
         let fallback_title = backend_invocation
@@ -459,7 +478,8 @@ fn dispatch_backend_invocations(
             .first()
             .map(|arg| arg.to_string_lossy().into_owned())
             .unwrap_or_else(|| String::from("command"));
-        let use_frontend_loader = backend_invocation.frontend_loader && frontend_loader_is_available();
+        let use_frontend_loader =
+            backend_invocation.frontend_loader && frontend_loader_is_available();
         let metadata_file = if use_frontend_loader {
             let metadata_file = BackendMetadataFile::new()?;
             insert_backend_option(
@@ -481,38 +501,62 @@ fn dispatch_backend_invocations(
         command.env("MAKEVN_FRONTEND_VERSION", env!("CARGO_PKG_VERSION"));
         command.env("MAKEVN_VERSION", env!("CARGO_PKG_VERSION"));
 
-        let exit_code = if use_frontend_loader {
+        let run_result = if use_frontend_loader {
             command.env("MAKEVN_FRONTEND_OWNS_LOADER", "1");
             run_backend_with_loader(
                 command,
                 metadata_file.as_ref(),
                 backend_invocation.tail,
                 &fallback_title,
+                started_at,
+                &completed_summaries,
             )?
         } else {
-            run_backend_command(command, backend_path)?
+            let elapsed_before = started_at.elapsed();
+            let exit_code = run_backend_command(command, backend_path)?;
+            BackendRunResult {
+                exit_code,
+                summary: CommandSummary {
+                    title: fallback_title.clone(),
+                    duration: format_duration(started_at.elapsed().saturating_sub(elapsed_before)),
+                    relative_log_path: None,
+                    exit_code,
+                },
+            }
         };
 
-        last_exit_code = exit_code;
-        if exit_code != 0 {
+        last_exit_code = run_result.exit_code;
+        completed_summaries.push(run_result.summary);
+        if last_exit_code != 0 {
             let duration = format_duration(started_at.elapsed());
+            if use_dashboard {
+                print_final_dashboard(started_at.elapsed(), &completed_summaries, false)
+                    .map_err(|error| format!("failed to print run summary: {error}"))?;
+            }
             let _ = writeln!(
                 io::stdout(),
                 "[{}]{}",
                 warn_text("fail"),
-                dim_text(&format!(" exit {exit_code} | {duration} | check the log"))
+                dim_text(&format!(
+                    " exit {last_exit_code} | {duration} | check the log"
+                ))
             );
-            return Ok(exit_code);
+            return Ok(last_exit_code);
         }
     }
 
-    let duration = format_duration(started_at.elapsed());
-    let _ = writeln!(
-        io::stdout(),
-        "[{}]{}",
-        style("32", "ok"),
-        dim_text(&format!(" {duration}"))
-    );
+    if use_dashboard {
+        print_final_dashboard(started_at.elapsed(), &completed_summaries, true)
+            .map_err(|error| format!("failed to print run summary: {error}"))?;
+    } else {
+        let duration = format_duration(started_at.elapsed());
+        let _ = writeln!(
+            io::stdout(),
+            "[{}]{}",
+            style("32", "ok"),
+            dim_text(&format!(" {duration}"))
+        );
+    }
     Ok(last_exit_code)
 }
 
@@ -531,7 +575,9 @@ fn run_backend_with_loader(
     metadata_file: Option<&BackendMetadataFile>,
     tail_enabled: bool,
     fallback_title: &str,
-) -> Result<i32, String> {
+    global_started_at: Instant,
+    completed_summaries: &[CommandSummary],
+) -> Result<BackendRunResult, String> {
     let started_at = Instant::now();
     let mut child = command.spawn().map_err(|error| {
         format!(
@@ -577,6 +623,17 @@ fn run_backend_with_loader(
             print_backend_log_notice(metadata, tail_enabled)
                 .map_err(|error| format!("failed to print log location: {error}"))?;
             tail_window = Some(LogTailWindow::new(PathBuf::from(&metadata.log_path)));
+        } else if let Some(renderer) = renderer.as_mut() {
+            let hint = renderer.current_spinner_hint();
+            renderer
+                .render_dashboard(
+                    child.id(),
+                    global_started_at.elapsed(),
+                    completed_summaries,
+                    metadata,
+                    &hint,
+                )
+                .map_err(|error| format!("failed to render loader: {error}"))?;
         }
         header_printed = true;
     }
@@ -602,6 +659,17 @@ fn run_backend_with_loader(
                         print_backend_log_notice(metadata, tail_enabled)
                             .map_err(|error| format!("failed to print log location: {error}"))?;
                         tail_window = Some(LogTailWindow::new(PathBuf::from(&metadata.log_path)));
+                    } else if let Some(renderer) = renderer.as_mut() {
+                        let hint = renderer.current_spinner_hint();
+                        renderer
+                            .render_dashboard(
+                                child.id(),
+                                global_started_at.elapsed(),
+                                completed_summaries,
+                                metadata,
+                                &hint,
+                            )
+                            .map_err(|error| format!("failed to render loader: {error}"))?;
                     }
                 }
             }
@@ -652,6 +720,17 @@ fn run_backend_with_loader(
                     print_backend_log_notice(metadata, tail_enabled)
                         .map_err(|error| format!("failed to print log location: {error}"))?;
                     tail_window = Some(LogTailWindow::new(PathBuf::from(&metadata.log_path)));
+                } else if let Some(renderer) = renderer.as_mut() {
+                    let hint = renderer.current_spinner_hint();
+                    renderer
+                        .render_dashboard(
+                            child.id(),
+                            global_started_at.elapsed(),
+                            completed_summaries,
+                            metadata,
+                            &hint,
+                        )
+                        .map_err(|error| format!("failed to render loader: {error}"))?;
                 }
                 header_printed = true;
                 continue;
@@ -684,10 +763,7 @@ fn run_backend_with_loader(
             if let Some(renderer) = renderer.as_mut() {
                 let interrupt_hint = renderer.current_spinner_hint();
                 renderer
-                    .render_frame_with_hint(
-                        child.id(),
-                        &tail_hint(&interrupt_hint),
-                    )
+                    .render_frame_with_hint(child.id(), &tail_hint(&interrupt_hint))
                     .map_err(|error| format!("failed to render loader: {error}"))?;
             } else {
                 thread::sleep(Duration::from_millis(100));
@@ -698,33 +774,23 @@ fn run_backend_with_loader(
         if let Some(renderer) = renderer.as_mut() {
             let hint = renderer.current_spinner_hint();
             match metadata.as_ref() {
-                Some(m) if !tail_enabled => {
-                    let duration = format_duration(started_at.elapsed());
-                    let label = if m.relative_log_path.is_empty() {
-                        format!(
-                            "{} {}",
-                            dim_text("::"),
-                            accent_text(&format!("makevn {}", m.title))
-                        )
-                    } else {
-                        format!(
-                            "{} {} {} {} {} {}",
-                            dim_text("::"),
-                            accent_text(&format!("makevn {}", m.title)),
-                            dim_text("|"),
-                            dim_text(&m.relative_log_path),
-                            dim_text("|"),
-                            dim_text(&duration)
-                        )
-                    };
-                    renderer
-                        .render_frame_with_label(child.id(), &label, &hint)
-                        .map_err(|error| format!("failed to render loader: {error}"))?;
-                }
+                Some(m) if !tail_enabled => renderer
+                    .render_dashboard(
+                        child.id(),
+                        global_started_at.elapsed(),
+                        completed_summaries,
+                        m,
+                        &hint,
+                    )
+                    .map_err(|error| format!("failed to render loader: {error}"))?,
                 _ => {
-                    renderer
-                        .render_frame_with_hint(child.id(), &hint)
-                        .map_err(|error| format!("failed to render loader: {error}"))?;
+                    if completed_summaries.is_empty() {
+                        renderer
+                            .render_frame_with_hint(child.id(), &hint)
+                            .map_err(|error| format!("failed to render loader: {error}"))?;
+                    } else {
+                        thread::sleep(Duration::from_millis(50));
+                    }
                 }
             }
         } else {
@@ -870,6 +936,57 @@ fn print_backend_log_summary(metadata: &BackendMetadata) -> io::Result<()> {
     )
 }
 
+fn print_final_dashboard(
+    elapsed: Duration,
+    completed_summaries: &[CommandSummary],
+    success: bool,
+) -> io::Result<()> {
+    writeln!(
+        io::stdout(),
+        "{}",
+        dim_text(&format!("Worked for {}", format_duration(elapsed)))
+    )?;
+    for summary in completed_summaries {
+        writeln!(io::stdout(), "{}", completed_summary_line(summary))?;
+    }
+    if success {
+        writeln!(io::stdout(), "[{}]", style("32", "ok"))?;
+    }
+    Ok(())
+}
+
+fn completed_summary_line(summary: &CommandSummary) -> String {
+    let mark = if summary.exit_code == 0 {
+        accent_text("✓")
+    } else {
+        warn_text("x")
+    };
+    let rest = match summary.relative_log_path.as_deref() {
+        Some(log_path) => format!(" {} | {} | {}", summary.title, summary.duration, log_path),
+        None => format!(" {} | {}", summary.title, summary.duration),
+    };
+
+    format!("[{}]{}", mark, dim_text(&rest))
+}
+
+fn running_command_line(metadata: &BackendMetadata) -> String {
+    if metadata.relative_log_path.is_empty() {
+        format!(
+            "{} {}",
+            dim_text("->"),
+            accent_text(&format!("makevn {}", metadata.title))
+        )
+    } else {
+        format!(
+            "{} {} {} {}",
+            dim_text("->"),
+            accent_text(&format!("makevn {}", metadata.title)),
+            dim_text("|"),
+            dim_text(&metadata.relative_log_path)
+        )
+    }
+}
+
 #[cfg(unix)]
 fn register_signal_flag(signal_requested: &Arc<AtomicBool>) -> Result<(), String> {
     signal_hook::flag::register(SIGINT, Arc::clone(signal_requested))
@@ -890,36 +1007,27 @@ fn summarize_backend_exit(
     interrupted: bool,
     metadata: Option<&BackendMetadata>,
     fallback_title: &str,
-) -> i32 {
+) -> BackendRunResult {
     let exit_code = exit_code_from_status(status, interrupted);
     let duration = format_duration(elapsed);
-
-    let title = metadata
-        .map(|m| m.title.as_str())
-        .unwrap_or(fallback_title);
-    let log = metadata.and_then(|m| {
+    let title = metadata.map(|m| m.title.as_str()).unwrap_or(fallback_title);
+    let relative_log_path = metadata.and_then(|m| {
         if m.relative_log_path.is_empty() {
             None
         } else {
-            Some(m.relative_log_path.as_str())
+            Some(m.relative_log_path.clone())
         }
     });
 
-    if exit_code == 0 {
-        let rest = match log {
-            Some(log_path) => format!(" {} | {} | {}", title, duration, log_path),
-            None => format!(" {}", title),
-        };
-        let _ = writeln!(io::stdout(), "[{}]{}", accent_text("✓"), dim_text(&rest));
-        return 0;
+    BackendRunResult {
+        exit_code,
+        summary: CommandSummary {
+            title: title.to_owned(),
+            duration,
+            relative_log_path,
+            exit_code,
+        },
     }
-
-    let rest = match log {
-        Some(log_path) => format!(" {} | {} | {}", title, duration, log_path),
-        None => format!(" {}", title),
-    };
-    let _ = writeln!(io::stdout(), "[{}]{}", warn_text("x"), dim_text(&rest));
-    exit_code
 }
 
 fn exit_code_from_status(status: process::ExitStatus, interrupted: bool) -> i32 {
@@ -1260,7 +1368,7 @@ struct SpinnerRenderer {
     next_frame_at: Instant,
     second_escape_deadline: Option<Instant>,
     resource_sampler: ResourceSampler,
-    has_label_line: bool,
+    rendered_block_lines: usize,
 }
 
 enum InputEvent {
@@ -1288,7 +1396,7 @@ impl SpinnerRenderer {
             next_frame_at: Instant::now(),
             second_escape_deadline: None,
             resource_sampler: ResourceSampler::new(),
-            has_label_line: false,
+            rendered_block_lines: 0,
         })
     }
 
@@ -1352,7 +1460,14 @@ impl SpinnerRenderer {
         Ok(())
     }
 
-    fn render_frame_with_label(&mut self, pid: u32, label: &str, hint: &str) -> io::Result<()> {
+    fn render_dashboard(
+        &mut self,
+        pid: u32,
+        global_elapsed: Duration,
+        completed_summaries: &[CommandSummary],
+        metadata: &BackendMetadata,
+        hint: &str,
+    ) -> io::Result<()> {
         let now = Instant::now();
         if self.next_frame_at > now {
             thread::sleep(self.next_frame_at - now);
@@ -1365,26 +1480,32 @@ impl SpinnerRenderer {
             format!("{} {} {}", dim_text(&resource_text), dim_text("|"), hint)
         };
 
-        if self.has_label_line {
-            write!(
-                io::stdout(),
-                "\r\u{1b}[1A\u{1b}[2K{}\n\r\u{1b}[2K{}  {}",
-                label,
-                spinner_kitt_frame(self.frame),
-                spinner_suffix
-            )?;
-        } else {
-            write!(
-                io::stdout(),
-                "\r\u{1b}[2K{}\n\r\u{1b}[2K{}  {}",
-                label,
-                spinner_kitt_frame(self.frame),
-                spinner_suffix
-            )?;
-            self.has_label_line = true;
+        let mut lines = Vec::with_capacity(completed_summaries.len() + 3);
+        lines.push(format!(
+            "{}",
+            dim_text(&format!("Working for {} >", format_duration(global_elapsed)))
+        ));
+        for summary in completed_summaries {
+            lines.push(completed_summary_line(summary));
+        }
+        lines.push(running_command_line(metadata));
+        lines.push(format!(
+            "{}  {}",
+            spinner_kitt_frame(self.frame),
+            spinner_suffix
+        ));
+
+        self.clear_dynamic_block()?;
+        for (index, line) in lines.iter().enumerate() {
+            if index + 1 == lines.len() {
+                write!(io::stdout(), "\r\u{1b}[2K{}", line)?;
+            } else {
+                writeln!(io::stdout(), "\r\u{1b}[2K{}", line)?;
+            }
         }
 
         io::stdout().flush()?;
+        self.rendered_block_lines = lines.len();
         self.frame += 1;
         self.next_frame_at = Instant::now() + self.frame_interval;
         Ok(())
@@ -1399,14 +1520,26 @@ impl SpinnerRenderer {
     }
 
     fn clear_frame_line(&mut self) {
-        if self.has_label_line {
-            // Cursor is on spinner line; go up and clear both lines, leaving cursor at label position
-            let _ = write!(io::stdout(), "\r\u{1b}[2K\u{1b}[1A\r\u{1b}[2K");
-            self.has_label_line = false;
-        } else {
-            let _ = write!(io::stdout(), "\r\u{1b}[2K");
+        if self.rendered_block_lines > 0 {
+            let _ = self.clear_dynamic_block();
+            let _ = io::stdout().flush();
+            return;
         }
+        let _ = write!(io::stdout(), "\r\u{1b}[2K");
         let _ = io::stdout().flush();
+    }
+
+    fn clear_dynamic_block(&mut self) -> io::Result<()> {
+        if self.rendered_block_lines == 0 {
+            return Ok(());
+        }
+
+        write!(io::stdout(), "\r\u{1b}[2K")?;
+        for _ in 1..self.rendered_block_lines {
+            write!(io::stdout(), "\u{1b}[1A\r\u{1b}[2K")?;
+        }
+        self.rendered_block_lines = 0;
+        Ok(())
     }
 }
 
@@ -1738,8 +1871,7 @@ mod tests {
     use super::{
         command_supports_frontend_loader, dim_text, insert_backend_option,
         install_root_with_override, parse_invocation, read_backend_metadata,
-        split_command_segments,
-        strip_frontend_tail_flag, Action, BackendInvocation,
+        split_command_segments, strip_frontend_tail_flag, Action, BackendInvocation,
     };
     use std::env;
     use std::ffi::OsString;
@@ -1825,12 +1957,10 @@ mod tests {
 
         assert_eq!(
             segments,
-            vec![
-                (
-                    OsString::from("test"),
-                    vec![OsString::from("--name"), OsString::from("verify-it")],
-                ),
-            ]
+            vec![(
+                OsString::from("test"),
+                vec![OsString::from("--name"), OsString::from("verify-it")],
+            ),]
         );
     }
 
@@ -2090,7 +2220,10 @@ mod tests {
 
         let mut tail_window = super::LogTailWindow::new(log_path.clone());
         tail_window.read_available().unwrap();
-        assert_eq!(tail_window.lines, vec![String::from("first"), String::from("second")]);
+        assert_eq!(
+            tail_window.lines,
+            vec![String::from("first"), String::from("second")]
+        );
 
         let mut file = fs::File::create(&log_path).unwrap();
         file.write_all(b"third\n").unwrap();
@@ -2105,8 +2238,16 @@ mod tests {
     #[test]
     fn log_summary_uses_short_label() {
         assert_eq!(
-            format!("{} {}", dim_text("::"), dim_text("log: .makevn/logs/verify-it.log")),
-            format!("{} {}", dim_text("::"), dim_text("log: .makevn/logs/verify-it.log"))
+            format!(
+                "{} {}",
+                dim_text("::"),
+                dim_text("log: .makevn/logs/verify-it.log")
+            ),
+            format!(
+                "{} {}",
+                dim_text("::"),
+                dim_text("log: .makevn/logs/verify-it.log")
+            )
         );
     }
 
