@@ -1,56 +1,37 @@
-# makevn
+<h1 align="center">
+  <img src="docs/assets/makevn-logo.svg" alt="makevn logo" width="96" /><br />
+  makevn
+</h1>
 
-Terminal-first workflows for Java Maven repositories.
+<p align="center">
+  <img src="https://img.shields.io/badge/java-21%2B-orange" alt="Java 21+" />
+  <img src="https://img.shields.io/badge/maven-workflows-blue" alt="Maven workflows" />
+  <img src="https://img.shields.io/badge/agent-ready-2dd4bf" alt="Agent ready" />
+  <a href="LICENSE">
+    <img src="https://img.shields.io/badge/license-MIT-lightgrey" alt="MIT License" />
+  </a>
+</p>
 
-`makevn` is a CLI for teams and AI agents that want to run Java Maven workflows from the terminal with the correct local Java context, without depending on IDE-specific setup.
+<h3 align="center">
+  Run Java Maven builds, tests, verification, and changed-code coverage from one terminal command.
+</h3>
 
-The current public foundation is shell-first. The next major transition is a Rust frontend that preserves the same command surface while keeping shell as the execution backend.
+<p align="center">
+  <a href="#install">Install</a> •
+  <a href="#usage">Usage</a> •
+  <a href="#verification">Verification</a> •
+  <a href="#ai-agents">AI agents</a>
+</p>
 
-## Why
+---
 
-If a repository is already Java + Maven, the core local workflow already exists.
+`makevn` gives Java/Maven repositories a stable command surface for humans and
+AI agents. It resolves the local Java context, runs the normal Maven workflows,
+and avoids relying on IDE run configurations or repo-specific helper scripts.
 
-The build, test, verify, and packaging model is already described by:
+It does not overwrite an existing root `Makefile` or `GNUmakefile`.
 
-- `pom.xml`
-- module structure
-- Maven plugins and conventions
-- local toolchain signals such as `.tool-versions`
-
-The problem is usually not missing capability. The problem is that execution often gets hidden behind IDE configuration, shell state, or local tribal knowledge.
-
-`makevn` makes that execution contract explicit.
-
-## Scope
-
-This project is intentionally narrow:
-
-- Java repositories
-- Maven builds
-- local JDK resolution
-- terminal-first execution
-- optional `make` integration
-- agent-friendly command surface
-
-Planned product direction:
-
-- Rust frontend for CLI UX, help, `--json`, and optional `--tail`
-- shell backend for repository-aware execution and log creation
-- Homebrew and curl-install distribution as first-class install paths
-
-This repository is not trying to go beyond Java + Maven.
-
-## Key Guarantee
-
-`makevn` does not overwrite an existing root `Makefile` or `GNUmakefile`.
-
-It supports three explicit modes:
-
-- `standalone`
-- `make-include`
-- `make-bootstrap`
-
-## Quick Start
+## Install
 
 From this repository:
 
@@ -60,79 +41,58 @@ From this repository:
 ~/.local/bin/makevn --help
 ```
 
-If you want to install the current shell entrypoint explicitly:
+To install the shell entrypoint explicitly:
 
 ```bash
 ./install.sh --shell
 ```
 
-Current install status:
+## Usage
 
-- source install through `./install.sh` works today
-- `./install.sh` installs the Rust frontend when `target/release/makevn` already exists, otherwise it falls back to the shell entrypoint
-- `./install.sh` does not compile Rust; build the dispatcher first if you want the Rust frontend
-- `./install.sh --rust` fails fast when the Rust dispatcher has not been built yet
-- `./install.sh --shell` forces the current shell entrypoint explicitly
-- Homebrew and curl-install are planned distribution channels, but are not the current release path yet
-
-In a target repository:
+### Start in a Java Maven repo
 
 ```bash
 makevn doctor
 makevn init --mode standalone
 makevn test --name UserRepositoryTest
 makevn verify
-makevn --tail clean verify-it
 ```
 
-From another repository, you can also target a repo explicitly:
+Run against another repository:
 
 ```bash
-~/.local/bin/makevn --repo "/path/to/java-repo" doctor
-~/.local/bin/makevn --repo "/path/to/java-repo" compile
+makevn --repo "/path/to/java-repo" doctor
+makevn --repo "/path/to/java-repo" verify-changes
 ```
 
-If the target repository already has a `Makefile` and you want optional `make` usage without collisions:
+### Choose an initialization mode
+
+| Mode | Use it when |
+|------|-------------|
+| `standalone` | You want `.makevn/` only, with no root makefile changes |
+| `make-include` | The repo already has a makefile and you want optional `vn-*` targets |
+| `make-bootstrap` | The repo has no makefile and you want a root make entrypoint |
+
+For existing makefiles:
 
 ```bash
 makevn init --mode make-include
 make -f .makevn/makevn.mk vn-doctor
 ```
 
-If the target repository has no `Makefile` and you explicitly want one:
+### Run common commands
 
 ```bash
-makevn init --mode make-bootstrap
-make -f .makevn/makevn.mk vn-build
-```
-
-## Commands
-
-```bash
-makevn --tail clean verify-it
-makevn clean verify-it --tail
-makevn doctor
-makevn init --mode standalone
-makevn init --mode make-include
-makevn init --mode make-bootstrap
-makevn uninstall
 makevn compile
 makevn compile-tests
 makevn validate
 makevn package
 makevn build
+makevn clean
 makevn test
 makevn test --name UserRepositoryTest
 makevn test --name UserRepositoryTest,OrderRepositoryTest
 makevn test --fast --name UserRepositoryTest
-makevn verify-ut
-makevn verify-ut-coverage
-makevn verify-it
-makevn verify-it-coverage
-makevn verify
-makevn verify-changes
-makevn coverage-changes
-makevn pr-verify
 makevn docker-up
 makevn docker-down
 makevn docker-ps
@@ -142,180 +102,104 @@ makevn jdk current
 makevn jdk list
 ```
 
-Planned global UX additions during the Rust transition:
+Commands can be chained:
 
-- `--json` on every public command
-- `--tail` on managed long-running commands only, usable as a global option before or after a command chain
-- `--no-color` for explicit frontend color control
-
-Selected-test notes:
-
-- `makevn test` runs the full suite
-- `makevn test --name FooTest` runs one selected test
-- `makevn test --name FooTest,BarTest` or repeated `--name` flags run selected tests sequentially
-- `makevn test --fast --name FooTest` uses the cached fast path for selected tests
-
-Verification notes:
-
-- `makevn verify-ut` runs the unit-test-only verification path
-- `makevn verify-it` runs the integration-test-only verification path
-- `makevn verify` runs the combined verification path
-- `makevn verify` rejects UT/IT skip flags that would silently turn it into a split workflow
-- `makevn verify-changes` verifies only changed production modules or modified tests, using the same changed-file strategy as the legacy Makefile flow
-- `makevn coverage-changes` analyzes JaCoCo coverage for changed production code after a coverage-producing command, with `--threshold PCT` available when the default 90 percent gate is not desired
-
-Command-chain notes:
-
-- the preferred public shape is `makevn [global_options] command [options] command [options] ...`
-- `--repo` and `--tail` can be used as global options before the command chain
-- `--tail` is also accepted at the end of the chain as compatibility sugar
-- commands in a chain run sequentially and stop at the first non-zero exit code
-- command-local options apply only to the command they follow
-- when `--tail` is enabled, the final output remains compact and collapses to `:: log: ...` plus `[ok] <duration>` per command
-
-Example:
-
-```text
-~/.local/bin/makevn --repo . --tail clean verify-it
-:: makevn clean
-:: log: .makevn/logs/clean.log
-[ok] 4s
-:: makevn verify-it
-:: log: .makevn/logs/verify-it.log
-[ok] 1m 16s
+```bash
+makevn clean verify-it
+makevn --tail clean verify-it
 ```
 
-## Make Integration
+Use `--tail` only for a human interactive log view. Agents should prefer
+non-interactive runs and generated logs.
 
-The shared include uses namespaced targets only:
+## Verification
 
-- `vn-doctor`
-- `vn-compile`
-- `vn-compile-tests`
-- `vn-validate`
-- `vn-package`
-- `vn-build`
-- `vn-clean`
-- `vn-test`
-- `vn-verify-ut`
-- `vn-verify-ut-coverage`
-- `vn-verify-it`
-- `vn-verify-it-coverage`
-- `vn-verify`
-- `vn-verify-changes`
-- `vn-coverage-changes`
-- `vn-pr-verify`
-- `vn-docker-up`
-- `vn-docker-down`
-- `vn-docker-ps`
-- `vn-run`
-- `vn-jdk-current`
-- `vn-jdk-list`
+```bash
+makevn verify-ut
+makevn verify-ut-coverage
+makevn verify-it
+makevn verify-it-coverage
+makevn verify
+makevn verify-changes
+makevn coverage-changes
+makevn pr-verify
+```
 
-That is how `makevn` avoids colliding with repo-owned targets such as `build`, `test`, or `run`.
+| Command | What it does |
+|---------|--------------|
+| `verify-ut` | Runs unit-test-only verification |
+| `verify-it` | Runs integration-test-only verification |
+| `verify` | Runs combined verification and rejects UT/IT skip flags |
+| `verify-changes` | Verifies changed production modules or modified tests |
+| `coverage-changes` | Checks JaCoCo coverage for changed production code |
+| `pr-verify` | Runs a local PR-style verification flow |
 
-Examples:
+Changed-code coverage expects a coverage-producing command to run first:
+
+```bash
+makevn verify-changes
+makevn coverage-changes --threshold 90
+```
+
+## Make integration
+
+The generated make include uses namespaced targets only, so it does not collide
+with repo-owned targets such as `build`, `test`, or `run`.
 
 ```bash
 make -f .makevn/makevn.mk vn-test NAME=UserRepositoryTest
 make -f .makevn/makevn.mk vn-test NAMES="UserRepositoryTest,OrderRepositoryTest"
-make -f .makevn/makevn.mk vn-test NAME=UserRepositoryTest FAST=true
+make -f .makevn/makevn.mk vn-verify-changes
+make -f .makevn/makevn.mk vn-coverage-changes
+make -f .makevn/makevn.mk vn-pr-verify
 ```
 
-## AI Agent Skill
+## AI agents
 
-This repository ships a reusable agent skill under `skills/makevn/`.
+Agents should treat `makevn` as the primary interface for Java/Maven work:
 
-The skill teaches agents to:
+```bash
+makevn doctor
+makevn test --name SomeTest
+makevn verify-changes
+makevn coverage-changes
+```
 
-- run `makevn doctor` before `makevn init`
-- preserve existing `Makefile` compatibility
-- choose the least invasive mode
+Recommended agent behavior:
+
+- run `makevn doctor` before initialization
+- choose the least invasive initialization mode
+- preserve existing root makefiles
 - use `makevn uninstall` for rollback
-- operate the repository through terminal commands that also work from OpenCode
-- treat the installed `makevn` binary as the primary interface
-- prefer `--json` when structured output becomes publicly available
-- avoid `--tail` unless a human explicitly asks for an interactive local view
-
-For agent use, changed-code workflows should go through the public CLI:
-
-- `makevn verify-changes`
-- `makevn coverage-changes`
+- use `verify-changes` for changed modules/tests
+- use `coverage-changes` after a coverage-producing run
+- avoid `--tail` unless a human asks for interactive logs
 
 Agents should not call target-repository legacy helpers under `scripts/make/*`.
-Those scripts can inform parity work, but the installed runtime lives under
-`libexec/makevn/` so humans and agents share the same command contract.
+Those scripts can guide parity work, but runtime behavior must come from the
+installed backend under `libexec/makevn/`.
 
-## Repository Layout
+## What gets installed
 
 ```text
-.
-├── README.md
-├── bin/
-├── build-rust-dispatcher.sh
-├── docs/
-├── libexec/
-├── packaging/
-├── rust/
-├── test/
-├── share/
-└── skills/
+bin/makevn
+libexec/makevn/*.sh
+share/makevn/makevn.mk
+skills/makevn/
 ```
 
-Notes:
+Changed-code verification and coverage are self-contained in `libexec/makevn/`
+so developers and agents get the same behavior across Java Maven repositories.
 
-- `GNUmakefile`, `GNUmakefile.md`, `PLAN.md`, and `ROADMAP.md` are local development/reference material and are not part of the published repository surface.
-- the public runtime exposed by this repository is `bin/`, `libexec/`, `share/`, and `skills/`.
-- `rust/dispatcher/` contains the transitional Rust frontend crate.
-- `packaging/` contains release and future Homebrew distribution material.
-- the public interface is now the `makevn` CLI plus the optional `.makevn/makevn.mk` integration file.
+## Docs
 
-## Documentation
+- [Install](docs/install.md)
+- [Agents](docs/agents.md)
+- [CLI contract](docs/cli-contract.md)
+- [Backend contract](docs/backend-contract.md)
+- [Integration](docs/integration.md)
+- [Distribution](docs/distribution.md)
 
-- `docs/install.md`
-- `docs/rust-transition-status.md`
-- `docs/integration.md`
-- `docs/agents.md`
-- `docs/cli-contract.md`
-- `docs/backend-contract.md`
-- `docs/distribution.md`
-- `docs/philosophy.md`
-- `docs/github-about.md`
+## License
 
-## Status
-
-Early public foundation.
-
-The CLI, repo-local integration model, skill package, and smoke tests already exist.
-
-The current public CLI already covers:
-
-- compile/build/package/validate flows
-- full-suite and selected-test execution
-- split verification flows for UT, IT, coverage, changed-code verification, and PR-style verification
-- namespaced `make` integration for the same workflows
-
-Current public limitations to keep in mind:
-
-- public `--json` output is planned but not available yet
-- repository-aware execution still runs through the shell backend even when invoked from the Rust frontend
-- Homebrew and curl-install are planned distribution channels, not current release channels
-
-The next major phase is the Rust CLI transition:
-
-- preserve the public command surface
-- move public CLI UX ownership into Rust
-- keep shell as the execution backend
-- define `--json` across the command surface
-- add optional managed-log tailing for human use
-
-Current transition status:
-
-- the Rust dispatcher binary exists and can be built from `rust/dispatcher/`
-- `install.sh` is now install-only and can require a prebuilt Rust frontend with `--rust`
-- `libexec/makevn/backend.sh` now exists as the single internal shell entrypoint used by the Rust frontend
-- `--version`, global `--help`, command validation, repo normalization, the `help` command, and `compile` dispatch can now move into the Rust frontend without changing the backend execution path
-- `doctor` and `compile` have been verified through the installed Rust binary using the new backend entrypoint
-- the shell backend remains the execution path for repository-aware commands
-
-After that boundary is in place, the remaining parity work around formatting, mutation, and broader coverage/reporting can continue on a more stable interface.
+MIT. See [LICENSE](LICENSE).
