@@ -105,6 +105,27 @@ Optional when the user wants `make`:
 
 - `makevn init --mode make-bootstrap`
 
+## Using `makevn exec` with Subdirectory Maven Projects
+
+Some repositories keep the Maven project inside a subdirectory (e.g., `code/`) rather than at the repo root. `makevn doctor` reports this as `Maven base path`.
+
+**Always check `Maven base path` in the `makevn doctor` output before composing any `makevn exec -- mvn ...` command.**
+
+- If `Maven base path` equals the repo root → no `-f` flag needed.
+- If `Maven base path` is a subdirectory (e.g., `.../repo/code`) → you **must** add `-f <relative-path>/pom.xml` to every `mvn` invocation, where `<relative-path>` is the subdirectory relative to the repo root.
+
+Example: `makevn doctor` reports `Maven base path: /project/root/code`
+
+```bash
+# Wrong — Maven cannot find the reactor from the repo root
+makevn exec -- mvn -pl application test
+
+# Correct
+makevn exec -- mvn -f code/pom.xml -pl application test
+```
+
+`makevn exec` always runs from the repo root, so the `-f` flag is the only safe way to point Maven at the correct `pom.xml` when the project lives in a subdirectory.
+
 ## Command Reference
 
 ```bash
@@ -115,6 +136,10 @@ makevn init --mode make-bootstrap
 makevn uninstall
 makevn build
 makevn test
+makevn test --name MyTest
+makevn test --name MyTest,OtherTest
+makevn test --name MyTest --name OtherTest
+makevn test --fast --name MyTest
 makevn verify-ut
 makevn verify-it
 makevn verify
@@ -132,6 +157,24 @@ Verification intent:
 - use `makevn verify-it` when the goal is integration-test-only verification
 - use `makevn verify` when the goal is the combined verification path
 - do not turn `makevn verify` into a split workflow with skip flags; pick the explicit command instead
+
+## Running Specific Tests
+
+**Always prefer `makevn test --name` over `makevn exec -- mvn -Dtest=...`** when the goal is to run one or more specific test classes.
+
+```bash
+# Run a single test class
+makevn test --name SampleFeatureTogglesTest
+
+# Run multiple test classes (two equivalent forms)
+makevn test --name SampleFeatureTogglesTest,DeleteSampleItemsByVariantGroupCommandHandlerTest
+makevn test --name SampleFeatureTogglesTest --name DeleteSampleItemsByVariantGroupCommandHandlerTest
+
+# Skip compilation to run faster when sources have not changed
+makevn test --fast --name SampleFeatureTogglesTest
+```
+
+Only fall back to `makevn exec -- mvn` when you need Maven flags or options that `makevn test` does not expose (e.g., `-pl` to target a specific module, or additional `-D` properties). In that case, check `Maven base path` in `makevn doctor` output first and add `-f <path>/pom.xml` if the Maven root is a subdirectory.
 
 For the frozen public and internal contracts, see:
 
