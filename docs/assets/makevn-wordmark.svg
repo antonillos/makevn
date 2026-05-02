@@ -7,11 +7,8 @@
         font: 800 58px ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
         letter-spacing: 0;
       }
-      .wordmark-main { fill: #0f172a; }
+      .wordmark-main { fill: #ffffff; }
       .wordmark-muted { fill: #64748b; }
-      @media (prefers-color-scheme: dark) {
-        .wordmark-main { fill: #f8fafc; }
-      }
     </style>
   </defs>
 
