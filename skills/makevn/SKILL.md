@@ -39,6 +39,7 @@ It provides:
 7. When editing an existing makefile, use the explicit `--write-make-include` path only if the user asked for that integration.
 8. Prefer `--json` when the command supports structured output and the agent needs reliable machine-readable data.
 9. Avoid `--tail` unless the human explicitly asked for an interactive local log view.
+10. Treat `makevn` subcommands as the primary public interface. Do not translate them into bare `make` targets. For Docker commands, run `makevn docker-up`, `makevn docker-down`, `makevn docker-ps`, or `makevn docker-ps-required`; do not run bare targets such as `make docker-up` or `make docker-ps-required`.
 
 ## When A Command Counts As OK
 
@@ -141,8 +142,17 @@ makevn test --name MyTest,OtherTest
 makevn test --name MyTest --name OtherTest
 makevn test --fast --name MyTest
 makevn verify-ut
+makevn verify-ut-coverage
 makevn verify-it
+makevn verify-it-coverage
 makevn verify
+makevn verify-changes
+makevn coverage-changes
+makevn pr-verify
+makevn docker-up
+makevn docker-down
+makevn docker-ps
+makevn docker-ps-required
 makevn run
 makevn exec -- mvn -v
 makevn jdk current
@@ -181,17 +191,73 @@ For the frozen public and internal contracts, see:
 - `docs/cli-contract.md`
 - `docs/backend-contract.md`
 
+## Primary CLI vs Make Targets
+
+For agents, the installed `makevn` binary is the default command surface.
+
+Use direct `makevn` commands for normal repository work:
+
+```bash
+makevn doctor
+makevn test --name MyTest
+makevn verify-changes
+makevn coverage-changes
+makevn docker-up
+makevn docker-down
+makevn docker-ps
+makevn docker-ps-required
+```
+
+Do not guess a root `make` target from a `makevn` subcommand name. This is invalid unless the repository itself defines such a target:
+
+```bash
+# Wrong
+make docker-up
+make docker-down
+make docker-ps
+make docker-ps-required
+```
+
+The optional make integration only exposes namespaced `vn-*` targets. For Docker commands, the make target name is always prefixed with `vn-`. Use these only when the user explicitly wants to exercise the make integration or the generated makefile itself:
+
+```bash
+make -f .makevn/makevn.mk vn-docker-up
+make -f .makevn/makevn.mk vn-docker-down
+make -f .makevn/makevn.mk vn-docker-ps
+make -f .makevn/makevn.mk vn-docker-ps-required
+```
+
 ## Make Integration
 
 Shared targets are namespaced to avoid collisions:
 
 - `vn-doctor`
+- `vn-init`
+- `vn-uninstall`
+- `vn-profile-refresh`
+- `vn-compile`
+- `vn-compile-tests`
+- `vn-validate`
+- `vn-package`
 - `vn-build`
+- `vn-clean`
 - `vn-test`
+- `vn-verify-ut`
+- `vn-verify-ut-coverage`
+- `vn-verify-it`
+- `vn-verify-it-coverage`
 - `vn-verify`
+- `vn-verify-changes`
+- `vn-coverage-changes`
+- `vn-pr-verify`
+- `vn-docker-up`
+- `vn-docker-down`
+- `vn-docker-ps`
+- `vn-docker-ps-required`
 - `vn-run`
 - `vn-jdk-current`
 - `vn-jdk-list`
+- `vn-exec`
 
 Use either:
 

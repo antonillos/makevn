@@ -203,6 +203,7 @@ Rules:
 makevn docker-up
 makevn docker-down
 makevn docker-ps
+makevn docker-ps-required
 ```
 
 ### JDK Commands
@@ -252,6 +253,7 @@ Initial set:
 - `jdk current --json`
 - `jdk list --json`
 - `docker-ps --json`
+- `docker-ps-required --json`
 
 Minimum envelope:
 
@@ -273,6 +275,7 @@ Recommended command-specific fields:
 - `jdk current`: `global_java_home`, `code`, `karate`
 - `jdk list`: `jdks`
 - `docker-ps`: `services`
+- `docker-ps-required`: `services`
 
 #### NDJSON Commands
 
@@ -404,7 +407,7 @@ Initially supported command family:
 - `verify-changes`
 - `pr-verify`
 
-Commands such as `doctor`, `init`, `uninstall`, `profile refresh`, `coverage-changes`, `jdk current`, `jdk list`, and `docker-ps` should reject `--tail`.
+Commands such as `doctor`, `init`, `uninstall`, `profile refresh`, `coverage-changes`, `jdk current`, `jdk list`, `docker-ps`, and `docker-ps-required` should reject `--tail`.
 
 `exec`, `run`, `docker-up`, and `docker-down` may gain `--tail` support later if they are routed through the same managed log model, but that support is not assumed by this frozen contract.
 

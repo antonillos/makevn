@@ -16,6 +16,8 @@ The skill is meant to teach agents to:
 - treat `makevn` as the primary interface instead of relying on IDE actions
 - prefer `--json` when it is available for the command being used
 - avoid `--tail` unless a human explicitly requests an interactive local log view
+- use direct `makevn ...` subcommands by default instead of inventing bare
+  root `make` targets
 
 Agent-facing commands should be stable without requiring agents to inspect or execute
 repository-owned helper scripts. For changed-code workflows, agents should call the
@@ -28,6 +30,13 @@ Those commands are intentionally backed by `makevn`'s installed `libexec/makevn/
 runtime, not by a target repository's legacy `scripts/make/*` folder. Legacy
 Makefile scripts can be useful examples when improving parity, but they must not be
 part of the agent execution contract.
+
+The optional make integration exposes namespaced `vn-*` targets only. Agents should
+run public Docker CLI commands as `makevn docker-up`, `makevn docker-down`,
+`makevn docker-ps`, or `makevn docker-ps-required`, not as bare root targets
+such as `make docker-up` or `make docker-ps-required`. Use
+`make -f .makevn/makevn.mk vn-docker-*` only when explicitly validating make
+integration.
 
 ## Generic Workflow
 

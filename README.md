@@ -96,6 +96,7 @@ makevn test --fast --name UserRepositoryTest
 makevn docker-up
 makevn docker-down
 makevn docker-ps
+makevn docker-ps-required
 makevn run
 makevn exec -- mvn -v
 makevn jdk current
