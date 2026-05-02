@@ -183,9 +183,17 @@ installed backend under `libexec/makevn/`.
 
 ```text
 bin/makevn
-libexec/makevn/*.sh
+libexec/makevn/backend.sh
+libexec/makevn/cli.sh
+libexec/makevn/common.sh
+libexec/makevn/commands/
+libexec/makevn/common/
+libexec/makevn/compat/
+libexec/makevn/coverage/
+libexec/makevn/docker/
+libexec/makevn/jdk/
 share/makevn/makevn.mk
-skills/makevn/
+share/makevn/skills/makevn/
 ```
 
 Changed-code verification and coverage are self-contained in `libexec/makevn/`

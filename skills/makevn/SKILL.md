@@ -70,7 +70,9 @@ If the command exits `0` but the requested outcome is still not verified, do not
     - or `make -f .makevn/makevn.mk vn-doctor`
 6. If the user wants rollback, run `makevn uninstall`.
 
-In OpenCode specifically, the agent should treat `makevn` as the terminal contract for the repository. It does not need to invent IDE run configurations or rely on editor-specific behavior. When structured output exists, prefer `--json` over parsing prose.
+In OpenCode and Codex specifically, the agent should treat `makevn` as the terminal contract for the repository. It does not need to invent IDE run configurations or rely on editor-specific behavior. When structured output exists, prefer `--json` over parsing prose.
+
+For Codex, keep changes surgical: inspect the repo first, run the smallest `makevn` command that proves the touched behavior, and do not edit `.makevn/` state manually when `makevn init`, `profile refresh`, or `uninstall` owns that behavior.
 
 ## Mode Selection
 

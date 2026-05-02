@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Script to calculate coverage metrics from JaCoCo CSV report
-# Usage: calculate_coverage.sh <path_to_jacoco_csv> [min_threshold]
+# Usage: coverage/calculate.sh <path_to_jacoco_csv> [min_threshold]
 # Returns: exit code 0 if coverage >= threshold, 1 if < threshold
 
 set -e

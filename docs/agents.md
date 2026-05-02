@@ -12,7 +12,7 @@ The skill is meant to teach agents to:
 - select the least invasive mode
 - preserve compatibility with existing `Makefile` or `GNUmakefile`
 - prefer `makevn uninstall` over heuristic cleanup
-- operate the repository through terminal commands that also work from OpenCode
+- operate the repository through terminal commands that also work from OpenCode and Codex
 - treat `makevn` as the primary interface instead of relying on IDE actions
 - prefer `--json` when it is available for the command being used
 - avoid `--tail` unless a human explicitly requests an interactive local log view
@@ -61,6 +61,19 @@ command that proves the touched surface:
 - full confidence pass: `makevn verify`
 
 Because agent frameworks differ, this repository ships the skill contents and examples rather than hardcoding a single agent-specific installation path.
+
+## Codex Workflow
+
+Inside Codex, the intended flow is the same terminal contract:
+
+1. load or follow `skills/makevn/SKILL.md`
+2. inspect the repository shape before changing files
+3. run `makevn doctor`
+4. use `makevn init`, `makevn uninstall`, and verification commands instead of editing `.makevn/` by hand
+5. prefer the smallest proving command: `makevn test --name ...`, `makevn verify-changes`, `makevn coverage-changes`, or `makevn verify`
+6. avoid IDE-specific instructions unless the user explicitly asks for them
+
+Codex-specific repo work should still use normal engineering hygiene: keep edits scoped, verify with concrete commands, and leave the installed `libexec/makevn/` runtime as the source of behavior instead of calling target-repository helper scripts.
 
 See also:
 

@@ -26,8 +26,8 @@ print_boot_docker_service_issues() {
   local repo_root="$1"
   local compose_file=""
   local compose_override_file=""
-  local docker_ps_script="${MAKEVN_INSTALL_ROOT}/libexec/makevn/docker_ps.sh"
-  local extract_services_script="${MAKEVN_INSTALL_ROOT}/libexec/makevn/extract_services.sh"
+  local docker_ps_script="${MAKEVN_LIBEXEC_DIR}/docker/ps.sh"
+  local extract_services_script="${MAKEVN_LIBEXEC_DIR}/docker/extract_services.sh"
   local services=""
   local docker_compose_cmd=""
   local compose_args=""
@@ -59,8 +59,8 @@ cmd_docker_ps_required() {
   local repo_root="$1"
   local compose_file=""
   local compose_override_file=""
-  local docker_ps_script="${MAKEVN_INSTALL_ROOT}/libexec/makevn/docker_ps.sh"
-  local extract_services_script="${MAKEVN_INSTALL_ROOT}/libexec/makevn/extract_services.sh"
+  local docker_ps_script="${MAKEVN_LIBEXEC_DIR}/docker/ps.sh"
+  local extract_services_script="${MAKEVN_LIBEXEC_DIR}/docker/extract_services.sh"
   local services=""
   local docker_compose_cmd=""
   local compose_args=""
@@ -148,7 +148,7 @@ cmd_docker_down() {
 
 cmd_docker_ps() {
   local repo_root="$1"
-  local docker_ps_script="${MAKEVN_INSTALL_ROOT}/libexec/makevn/docker_ps.sh"
+  local docker_ps_script="${MAKEVN_LIBEXEC_DIR}/docker/ps.sh"
 
   [[ -f "${docker_ps_script}" ]] || makevn_die "Docker ps helper script not found: ${docker_ps_script}"
 

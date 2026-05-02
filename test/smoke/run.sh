@@ -222,7 +222,10 @@ test_installer() {
   local prefix="${TMP_ROOT}/install-prefix"
   PREFIX="${prefix}" "${ROOT_DIR}/install.sh" >/dev/null
   assert_file_exists "${prefix}/bin/makevn"
-  assert_file_exists "${prefix}/libexec/makevn/jdk_manager.sh"
+  assert_file_exists "${prefix}/libexec/makevn/jdk/manager.sh"
+  assert_file_exists "${prefix}/libexec/makevn/docker/ps.sh"
+  assert_file_exists "${prefix}/libexec/makevn/coverage/changes.sh"
+  assert_file_exists "${prefix}/libexec/makevn/compat/verify_changes.sh"
   assert_file_exists "${prefix}/share/makevn/makevn.mk"
   assert_file_exists "${prefix}/share/makevn/skills/makevn/SKILL.md"
   "${prefix}/bin/makevn" --help >/dev/null

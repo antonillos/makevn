@@ -1,17 +1,17 @@
 #!/usr/bin/env bash
 #
-# coverage_changes.sh - Incremental coverage analysis for changed production Java files.
+# coverage/changes.sh - Incremental coverage analysis for changed production Java files.
 #
 # Requires JaCoCo aggregate HTML report already generated.
 #
 # Usage:
-#   libexec/makevn/coverage_changes.sh <jacoco_base_dir> <base_ref> <min_coverage_pct>
+#   libexec/makevn/coverage/changes.sh <jacoco_base_dir> <base_ref> <min_coverage_pct>
 #
 # Environment Variables:
 #   BASE_PATH - Base directory for Java modules (default: code)
 #
 # Examples:
-#   libexec/makevn/coverage_changes.sh code/jacoco-report-aggregate/target/site/jacoco-aggregate origin/develop...HEAD 90
+#   libexec/makevn/coverage/changes.sh code/jacoco-report-aggregate/target/site/jacoco-aggregate origin/develop...HEAD 90
 #
 
 
@@ -321,7 +321,7 @@ echo "▓ Overall Project Coverage:"
 echo "================================"
 if [ -f "$JACOCO_BASE/jacoco.csv" ]; then
   SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-  bash "$SCRIPT_DIR/calculate_coverage.sh" "$JACOCO_BASE/jacoco.csv" "$MIN_COVERAGE_PCT"
+  bash "$SCRIPT_DIR/calculate.sh" "$JACOCO_BASE/jacoco.csv" "$MIN_COVERAGE_PCT"
   OVERALL_EXIT_CODE=$?
   if [ $OVERALL_EXIT_CODE -ne 0 ] && [ $EXIT_CODE -eq 0 ]; then
     EXIT_CODE=$OVERALL_EXIT_CODE
