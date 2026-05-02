@@ -1155,6 +1155,66 @@ EOF
   "${seq_cli}" --repo "${repo}" uninstall >/dev/null
 }
 
+test_command_typo_rejected_before_backend() {
+  local repo="${TMP_ROOT}/command-typo"
+  local install_prefix="${TMP_ROOT}/command-typo-install"
+  local typo_cli="${install_prefix}/bin/makevn"
+  local output=""
+
+  [[ -x "${ROOT_DIR}/target/release/makevn" ]] || return 0
+  PREFIX="${install_prefix}" "${ROOT_DIR}/install.sh" --rust >/dev/null
+
+  mkdir -p "${repo}"
+  printf '<project/>\n' > "${repo}/pom.xml"
+
+  output="$("${typo_cli}" --repo "${repo}" --tail compile verity-ut 2>&1 || true)"
+
+  [[ "${output}" == *"Unknown command: verity-ut"* ]] || fail "expected command typo to be rejected by frontend"
+  [[ "${output}" == *"Did you mean 'verify-ut'?"* ]] || fail "expected command typo to suggest verify-ut"
+  [[ "${output}" != *"check the log"* ]] || fail "expected command typo not to look like a backend run failure"
+  assert_not_exists "${repo}/.makevn/logs/compile.log"
+}
+
+test_command_failure_summary_omits_duplicate_elapsed() {
+  local repo="${TMP_ROOT}/command-failure-summary"
+  local install_prefix="${TMP_ROOT}/command-failure-summary-install"
+  local fail_cli="${install_prefix}/bin/makevn"
+  local java_home
+  local output=""
+
+  [[ -x "${ROOT_DIR}/target/release/makevn" ]] || return 0
+  PREFIX="${install_prefix}" "${ROOT_DIR}/install.sh" --rust >/dev/null
+
+  mkdir -p "${repo}"
+  printf '<project/>\n' > "${repo}/pom.xml"
+  java_home="$(detect_java_home)"
+
+  "${fail_cli}" --repo "${repo}" init --mode standalone >/dev/null
+  cat > "${repo}/.makevn/config" <<EOF
+MAKEVN_JAVA_HOME="${java_home}"
+MAKEVN_CODE_JAVA_HOME=""
+MAKEVN_KARATE_JAVA_HOME=""
+MAKEVN_CODE_TOOL_VERSIONS=""
+MAKEVN_KARATE_TOOL_VERSIONS=""
+MAKEVN_RUN_CMD=""
+EOF
+
+  cat > "${repo}/mvnw" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+exit 7
+EOF
+  chmod +x "${repo}/mvnw"
+
+  output="$("${fail_cli}" --repo "${repo}" compile 2>&1 || true)"
+
+  [[ "${output}" == *"Worked for "* ]] || fail "expected dashboard elapsed to be present"
+  [[ "${output}" == *"[fail] exit 7 | check the log"* ]] || fail "expected compact failure summary without duplicate elapsed"
+  if [[ "${output}" =~ \[fail\]\ exit\ 7\ \|\ [0-9]+s\ \|\ check\ the\ log ]]; then
+    fail "expected failure summary not to repeat elapsed after dashboard"
+  fi
+}
+
 main() {
   test_doctor_unsupported
   test_backend_doctor_json
@@ -1178,6 +1238,8 @@ main() {
   test_coverage_changes_command
   test_verify_rejects_skip_flags
   test_sequential_commands
+  test_command_typo_rejected_before_backend
+  test_command_failure_summary_omits_duplicate_elapsed
   printf 'Smoke tests passed\n'
 }
 

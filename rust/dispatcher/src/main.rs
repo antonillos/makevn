@@ -265,11 +265,16 @@ fn validate_command(
     trailing_args: &[OsString],
 ) -> Result<CommandValidation, String> {
     match command.to_string_lossy().as_ref() {
-        "help" | "doctor" | "init" | "uninstall" | "exec" | "compile" | "compile-tests"
-        | "validate" | "package" | "clean" | "build" | "test" | "verify-ut"
+        "compile" | "compile-tests" | "validate" | "package" | "clean" | "build" | "verify-ut"
         | "verify-ut-coverage" | "verify-it" | "verify-it-coverage" | "verify"
-        | "verify-changes" | "coverage-changes" | "pr-verify" | "docker-up" | "docker-down"
-        | "docker-ps" | "docker-ps-required" | "run" => Ok(CommandValidation::Valid),
+        | "verify-changes" | "pr-verify" => {
+            validate_maven_passthrough_args(command, trailing_args)?;
+            Ok(CommandValidation::Valid)
+        }
+        "help" | "doctor" | "init" | "uninstall" | "exec" | "test" | "coverage-changes"
+        | "docker-up" | "docker-down" | "docker-ps" | "docker-ps-required" | "run" => {
+            Ok(CommandValidation::Valid)
+        }
         "profile" => match trailing_args.first().map(|arg| arg.to_string_lossy()) {
             Some(subcommand) if subcommand == "refresh" => Ok(CommandValidation::ProfileRefresh),
             _ => Err(String::from("Usage: makevn profile refresh")),
@@ -281,6 +286,78 @@ fn validate_command(
             _ => Err(String::from("Usage: makevn jdk current|list")),
         },
         _ => Err(format!("Unknown command: {}", Lossy(command))),
+    }
+}
+
+fn validate_maven_passthrough_args(
+    command: &OsString,
+    trailing_args: &[OsString],
+) -> Result<(), String> {
+    let mut forwarding_passthrough_args = false;
+    let mut previous_option_takes_value = false;
+
+    for arg in trailing_args {
+        if forwarding_passthrough_args {
+            continue;
+        }
+
+        if arg == &OsString::from("--") {
+            forwarding_passthrough_args = true;
+            previous_option_takes_value = false;
+            continue;
+        }
+
+        if arg == &OsString::from("--tail") {
+            previous_option_takes_value = false;
+            continue;
+        }
+
+        if previous_option_takes_value {
+            previous_option_takes_value = false;
+            continue;
+        }
+
+        let arg_text = arg.to_string_lossy();
+        if arg_text.starts_with('-') {
+            previous_option_takes_value = maven_option_takes_value(arg);
+            continue;
+        }
+
+        return Err(format!(
+            "Unknown command: {}. Extra Maven arguments for {} must follow '--'.{}",
+            Lossy(arg),
+            Lossy(command),
+            command_suggestion_suffix(arg)
+        ));
+    }
+
+    Ok(())
+}
+
+fn maven_option_takes_value(arg: &OsString) -> bool {
+    matches!(
+        arg.to_string_lossy().as_ref(),
+        "-f" | "--file"
+            | "-pl"
+            | "--projects"
+            | "-P"
+            | "--activate-profiles"
+            | "-s"
+            | "--settings"
+            | "-gs"
+            | "--global-settings"
+            | "-t"
+            | "--toolchains"
+            | "-rf"
+            | "--resume-from"
+    )
+}
+
+fn command_suggestion_suffix(command: &OsString) -> String {
+    match command.to_string_lossy().as_ref() {
+        "verity-ut" => String::from(" Did you mean 'verify-ut'?"),
+        "verity-it" => String::from(" Did you mean 'verify-it'?"),
+        _ => String::new(),
     }
 }
 
@@ -528,19 +605,26 @@ fn dispatch_backend_invocations(
         last_exit_code = run_result.exit_code;
         completed_summaries.push(run_result.summary);
         if last_exit_code != 0 {
-            let duration = format_duration(started_at.elapsed());
             if use_dashboard {
                 print_final_dashboard(started_at.elapsed(), &completed_summaries, false)
                     .map_err(|error| format!("failed to print run summary: {error}"))?;
+                let _ = writeln!(
+                    io::stdout(),
+                    "[{}]{}",
+                    warn_text("fail"),
+                    dim_text(&format!(" exit {last_exit_code} | check the log"))
+                );
+            } else {
+                let duration = format_duration(started_at.elapsed());
+                let _ = writeln!(
+                    io::stdout(),
+                    "[{}]{}",
+                    warn_text("fail"),
+                    dim_text(&format!(
+                        " exit {last_exit_code} | {duration} | check the log"
+                    ))
+                );
             }
-            let _ = writeln!(
-                io::stdout(),
-                "[{}]{}",
-                warn_text("fail"),
-                dim_text(&format!(
-                    " exit {last_exit_code} | {duration} | check the log"
-                ))
-            );
             return Ok(last_exit_code);
         }
     }
@@ -1309,7 +1393,41 @@ impl LogTailWindow {
     }
 }
 
+#[derive(Clone, Copy)]
+struct Rgb {
+    r: u8,
+    g: u8,
+    b: u8,
+}
+
+impl Rgb {
+    const fn new(r: u8, g: u8, b: u8) -> Self {
+        Self { r, g, b }
+    }
+}
+
+fn interpolate_color(cool: Rgb, warm: Rgb, load: f32) -> Rgb {
+    let load = load.clamp(0.0, 1.0);
+    let interpolate =
+        |from: u8, to: u8| (from as f32 + (to as f32 - from as f32) * load).round() as u8;
+
+    Rgb::new(
+        interpolate(cool.r, warm.r),
+        interpolate(cool.g, warm.g),
+        interpolate(cool.b, warm.b),
+    )
+}
+
+fn rgb_code(color: Rgb) -> String {
+    format!("38;2;{};{};{}", color.r, color.g, color.b)
+}
+
+#[cfg(test)]
 fn spinner_kitt_frame(frame_index: usize) -> String {
+    spinner_kitt_frame_with_load(frame_index, 0.0)
+}
+
+fn spinner_kitt_frame_with_load(frame_index: usize, load: f32) -> String {
     let width = 8usize;
     let scan_frames = 30usize;
     let edge_hold_frames = 4usize;
@@ -1380,8 +1498,13 @@ fn spinner_kitt_frame(frame_index: usize) -> String {
         Some("38;2;72;84;112"),
         Some("38;2;72;84;112"),
     ];
-    let trail_codes = ["38;5;189", "38;5;153", "38;5;111", "38;5;68"];
-    let fade_distance = trail_codes.len();
+    let trail_colors = [
+        interpolate_color(Rgb::new(214, 236, 255), Rgb::new(255, 229, 168), load),
+        interpolate_color(Rgb::new(125, 211, 252), Rgb::new(255, 183, 107), load),
+        interpolate_color(Rgb::new(96, 165, 250), Rgb::new(248, 135, 80), load),
+        interpolate_color(Rgb::new(59, 130, 246), Rgb::new(214, 93, 63), load),
+    ];
+    let fade_distance = trail_colors.len();
     let travel_distance = width + fade_distance;
     let active_position = phase_index.min(scan_frames - 1) * travel_distance / scan_frames;
     let mut output = String::new();
@@ -1393,11 +1516,22 @@ fn spinner_kitt_frame(frame_index: usize) -> String {
             index as isize - (width as isize - 1 - active_position as isize)
         };
 
-        if color_index >= 0 && (color_index as usize) < trail_codes.len() {
-            output.push_str(&style(trail_codes[color_index as usize], "■"));
+        if color_index >= 0 && (color_index as usize) < trail_colors.len() {
+            output.push_str(&style(&rgb_code(trail_colors[color_index as usize]), "■"));
         } else {
             match pulse_codes[frame_index % pulse_codes.len()] {
-                Some(code) if use_color() => output.push_str(&style(code, "·")),
+                Some(code) if use_color() => {
+                    if load <= 0.01 {
+                        output.push_str(&style(code, "·"));
+                    } else {
+                        let cool = pulse_color(frame_index % pulse_codes.len());
+                        let warm = Rgb::new(72, 54, 48);
+                        output.push_str(&style(
+                            &rgb_code(interpolate_color(cool, warm, load * 0.55)),
+                            "·",
+                        ));
+                    }
+                }
                 Some(_) => output.push('.'),
                 None => output.push(' '),
             }
@@ -1405,6 +1539,21 @@ fn spinner_kitt_frame(frame_index: usize) -> String {
     }
 
     output
+}
+
+fn pulse_color(index: usize) -> Rgb {
+    let cycle_index = index.min(59);
+    let distance_from_edge = if cycle_index <= 29 {
+        cycle_index
+    } else {
+        59 - cycle_index
+    };
+    let brightness = 1.0 - distance_from_edge as f32 / 29.0;
+    let r = (8.0 + (72.0 - 8.0) * brightness).round() as u8;
+    let g = (10.0 + (84.0 - 10.0) * brightness).round() as u8;
+    let b = (14.0 + (112.0 - 14.0) * brightness).round() as u8;
+
+    Rgb::new(r, g, b)
 }
 
 struct SpinnerRenderer {
@@ -1415,6 +1564,7 @@ struct SpinnerRenderer {
     next_frame_at: Instant,
     second_escape_deadline: Option<Instant>,
     resource_sampler: ResourceSampler,
+    resource_visual_load: f32,
     rendered_block_lines: usize,
 }
 
@@ -1443,6 +1593,7 @@ impl SpinnerRenderer {
             next_frame_at: Instant::now(),
             second_escape_deadline: None,
             resource_sampler: ResourceSampler::new(),
+            resource_visual_load: 0.0,
             rendered_block_lines: 0,
         })
     }
@@ -1488,7 +1639,12 @@ impl SpinnerRenderer {
             thread::sleep(self.next_frame_at - now);
         }
 
-        let resource_text = self.resource_sampler.sample(pid).unwrap_or_default();
+        let resource_sample = self.resource_sampler.sample(pid).unwrap_or(None);
+        self.update_resource_visuals(resource_sample.as_ref());
+        let resource_text = resource_sample
+            .as_ref()
+            .map(format_resource_sample)
+            .unwrap_or_default();
         let suffix = if resource_text.is_empty() {
             hint.to_owned()
         } else {
@@ -1498,12 +1654,12 @@ impl SpinnerRenderer {
         write!(
             io::stdout(),
             "\r\u{1b}[2K{}  {}",
-            spinner_kitt_frame(self.frame),
+            spinner_kitt_frame_with_load(self.frame, self.resource_visual_load),
             suffix
         )?;
         io::stdout().flush()?;
         self.frame += 1;
-        self.next_frame_at = Instant::now() + self.frame_interval;
+        self.next_frame_at = Instant::now() + self.frame_interval();
         Ok(())
     }
 
@@ -1520,7 +1676,12 @@ impl SpinnerRenderer {
             thread::sleep(self.next_frame_at - now);
         }
 
-        let resource_text = self.resource_sampler.sample(pid).unwrap_or_default();
+        let resource_sample = self.resource_sampler.sample(pid).unwrap_or(None);
+        self.update_resource_visuals(resource_sample.as_ref());
+        let resource_text = resource_sample
+            .as_ref()
+            .map(format_resource_sample)
+            .unwrap_or_default();
         let spinner_suffix = if resource_text.is_empty() {
             hint.to_owned()
         } else {
@@ -1541,7 +1702,7 @@ impl SpinnerRenderer {
         lines.push(running_command_line(metadata));
         lines.push(format!(
             "{}  {}",
-            spinner_kitt_frame(self.frame),
+            spinner_kitt_frame_with_load(self.frame, self.resource_visual_load),
             spinner_suffix
         ));
 
@@ -1557,8 +1718,19 @@ impl SpinnerRenderer {
         io::stdout().flush()?;
         self.rendered_block_lines = lines.len();
         self.frame += 1;
-        self.next_frame_at = Instant::now() + self.frame_interval;
+        self.next_frame_at = Instant::now() + self.frame_interval();
         Ok(())
+    }
+
+    fn update_resource_visuals(&mut self, sample: Option<&ResourceSample>) {
+        let target_load = sample.map(resource_visual_load).unwrap_or(0.0);
+        self.resource_visual_load += (target_load - self.resource_visual_load) * 0.06;
+    }
+
+    fn frame_interval(&self) -> Duration {
+        let load = self.resource_visual_load.clamp(0.0, 1.0);
+        let millis = self.frame_interval.as_millis() as f32;
+        Duration::from_millis((millis - 6.0 * load).round() as u64)
     }
 
     fn clear_line(&mut self) {
@@ -1593,6 +1765,7 @@ impl SpinnerRenderer {
     }
 }
 
+#[derive(Clone, Copy)]
 struct ResourceSample {
     cpu_percent: f32,
     rss_kb: u64,
@@ -1611,9 +1784,9 @@ impl ResourceSampler {
         }
     }
 
-    fn sample(&mut self, pid: u32) -> io::Result<String> {
+    fn sample(&mut self, pid: u32) -> io::Result<Option<ResourceSample>> {
         if pid == 0 {
-            return Ok(String::new());
+            return Ok(None);
         }
 
         let now = Instant::now();
@@ -1621,16 +1794,14 @@ impl ResourceSampler {
             (self.last_sample_at, self.last_sample.as_ref())
         {
             if now.duration_since(last_sample_at) < Duration::from_secs(1) {
-                return Ok(format_resource_sample(last_sample));
+                return Ok(Some(*last_sample));
             }
         }
 
         let sample = read_resource_sample(pid)?;
         self.last_sample_at = Some(now);
         self.last_sample = Some(sample);
-        Ok(format_resource_sample(
-            self.last_sample.as_ref().expect("sample just stored"),
-        ))
+        Ok(self.last_sample)
     }
 }
 
@@ -1704,6 +1875,15 @@ fn format_resource_sample(sample: &ResourceSample) -> String {
         sample.cpu_percent,
         format_kib(sample.rss_kb)
     )
+}
+
+fn resource_visual_load(sample: &ResourceSample) -> f32 {
+    const KIB_PER_GIB: f32 = 1024.0 * 1024.0;
+
+    let cpu_load = (sample.cpu_percent / 250.0).clamp(0.0, 1.0);
+    let memory_load = (sample.rss_kb as f32 / (2.5 * KIB_PER_GIB)).clamp(0.0, 1.0);
+
+    cpu_load.max(memory_load)
 }
 
 fn format_kib(kib: u64) -> String {
