@@ -477,8 +477,8 @@ fn dispatch_backend_invocations(
             let duration = format_duration(started_at.elapsed());
             let _ = writeln!(
                 io::stdout(),
-                "{}{}",
-                warn_text("[fail]"),
+                "[{}]{}",
+                warn_text("fail"),
                 dim_text(&format!(" exit {exit_code} | {duration} | check the log"))
             );
             return Ok(exit_code);
@@ -488,8 +488,8 @@ fn dispatch_backend_invocations(
     let duration = format_duration(started_at.elapsed());
     let _ = writeln!(
         io::stdout(),
-        "{}{}",
-        style("32", "[ok]"),
+        "[{}]{}",
+        style("32", "ok"),
         dim_text(&format!(" {duration}"))
     );
     Ok(last_exit_code)
@@ -549,11 +549,11 @@ fn run_backend_with_loader(
         if let Some(renderer) = renderer.as_mut() {
             renderer.clear_frame_line();
         }
-        print_backend_header(metadata)
-            .map_err(|error| format!("failed to print command header: {error}"))?;
-        print_backend_log_notice(metadata, tail_enabled)
-            .map_err(|error| format!("failed to print log location: {error}"))?;
         if tail_enabled {
+            print_backend_header(metadata)
+                .map_err(|error| format!("failed to print command header: {error}"))?;
+            print_backend_log_notice(metadata, tail_enabled)
+                .map_err(|error| format!("failed to print log location: {error}"))?;
             tail_window = Some(LogTailWindow::new(PathBuf::from(&metadata.log_path)));
         }
         header_printed = true;
@@ -574,11 +574,11 @@ fn run_backend_with_loader(
                     if let Some(renderer) = renderer.as_mut() {
                         renderer.clear_frame_line();
                     }
-                    print_backend_header(metadata)
-                        .map_err(|error| format!("failed to print command header: {error}"))?;
-                    print_backend_log_notice(metadata, tail_enabled)
-                        .map_err(|error| format!("failed to print log location: {error}"))?;
                     if tail_enabled {
+                        print_backend_header(metadata)
+                            .map_err(|error| format!("failed to print command header: {error}"))?;
+                        print_backend_log_notice(metadata, tail_enabled)
+                            .map_err(|error| format!("failed to print log location: {error}"))?;
                         tail_window = Some(LogTailWindow::new(PathBuf::from(&metadata.log_path)));
                     }
                 }
@@ -623,11 +623,11 @@ fn run_backend_with_loader(
                 if let Some(renderer) = renderer.as_mut() {
                     renderer.clear_frame_line();
                 }
-                print_backend_header(metadata)
-                    .map_err(|error| format!("failed to print command header: {error}"))?;
-                print_backend_log_notice(metadata, tail_enabled)
-                    .map_err(|error| format!("failed to print log location: {error}"))?;
                 if tail_enabled {
+                    print_backend_header(metadata)
+                        .map_err(|error| format!("failed to print command header: {error}"))?;
+                    print_backend_log_notice(metadata, tail_enabled)
+                        .map_err(|error| format!("failed to print log location: {error}"))?;
                     tail_window = Some(LogTailWindow::new(PathBuf::from(&metadata.log_path)));
                 }
                 header_printed = true;
@@ -674,9 +674,36 @@ fn run_backend_with_loader(
 
         if let Some(renderer) = renderer.as_mut() {
             let hint = renderer.current_spinner_hint();
-            renderer
-                .render_frame_with_hint(child.id(), &hint)
-                .map_err(|error| format!("failed to render loader: {error}"))?;
+            match metadata.as_ref() {
+                Some(m) if !tail_enabled => {
+                    let duration = format_duration(started_at.elapsed());
+                    let label = if m.relative_log_path.is_empty() {
+                        format!(
+                            "{} {}",
+                            dim_text("::"),
+                            accent_text(&format!("makevn {}", m.title))
+                        )
+                    } else {
+                        format!(
+                            "{} {} {} {} {} {}",
+                            dim_text("::"),
+                            accent_text(&format!("makevn {}", m.title)),
+                            dim_text("|"),
+                            dim_text(&m.relative_log_path),
+                            dim_text("|"),
+                            dim_text(&duration)
+                        )
+                    };
+                    renderer
+                        .render_frame_with_label(child.id(), &label, &hint)
+                        .map_err(|error| format!("failed to render loader: {error}"))?;
+                }
+                _ => {
+                    renderer
+                        .render_frame_with_hint(child.id(), &hint)
+                        .map_err(|error| format!("failed to render loader: {error}"))?;
+                }
+            }
         } else {
             thread::sleep(Duration::from_millis(100));
         }
@@ -856,7 +883,7 @@ fn summarize_backend_exit(
             Some(log_path) => format!(" {} | {} | {}", title, duration, log_path),
             None => format!(" {}", title),
         };
-        let _ = writeln!(io::stdout(), "{}{}", accent_text("[✓]"), dim_text(&rest));
+        let _ = writeln!(io::stdout(), "[{}]{}", accent_text("✓"), dim_text(&rest));
         return 0;
     }
 
@@ -864,7 +891,7 @@ fn summarize_backend_exit(
         Some(log_path) => format!(" {} | {} | {}", title, duration, log_path),
         None => format!(" {}", title),
     };
-    let _ = writeln!(io::stdout(), "{}{}", warn_text("[x]"), dim_text(&rest));
+    let _ = writeln!(io::stdout(), "[{}]{}", warn_text("x"), dim_text(&rest));
     exit_code
 }
 
@@ -1206,6 +1233,7 @@ struct SpinnerRenderer {
     next_frame_at: Instant,
     second_escape_deadline: Option<Instant>,
     resource_sampler: ResourceSampler,
+    has_label_line: bool,
 }
 
 enum InputEvent {
@@ -1233,6 +1261,7 @@ impl SpinnerRenderer {
             next_frame_at: Instant::now(),
             second_escape_deadline: None,
             resource_sampler: ResourceSampler::new(),
+            has_label_line: false,
         })
     }
 
@@ -1296,6 +1325,44 @@ impl SpinnerRenderer {
         Ok(())
     }
 
+    fn render_frame_with_label(&mut self, pid: u32, label: &str, hint: &str) -> io::Result<()> {
+        let now = Instant::now();
+        if self.next_frame_at > now {
+            thread::sleep(self.next_frame_at - now);
+        }
+
+        let resource_text = self.resource_sampler.sample(pid).unwrap_or_default();
+        let spinner_suffix = if resource_text.is_empty() {
+            hint.to_owned()
+        } else {
+            format!("{} {} {}", dim_text(&resource_text), dim_text("|"), hint)
+        };
+
+        if self.has_label_line {
+            write!(
+                io::stdout(),
+                "\r\u{1b}[1A\u{1b}[2K{}\n\r\u{1b}[2K{}  {}",
+                label,
+                spinner_kitt_frame(self.frame),
+                spinner_suffix
+            )?;
+        } else {
+            write!(
+                io::stdout(),
+                "\r\u{1b}[2K{}\n\r\u{1b}[2K{}  {}",
+                label,
+                spinner_kitt_frame(self.frame),
+                spinner_suffix
+            )?;
+            self.has_label_line = true;
+        }
+
+        io::stdout().flush()?;
+        self.frame += 1;
+        self.next_frame_at = Instant::now() + self.frame_interval;
+        Ok(())
+    }
+
     fn clear_line(&mut self) {
         self.clear_frame_line();
         if use_color() {
@@ -1305,7 +1372,13 @@ impl SpinnerRenderer {
     }
 
     fn clear_frame_line(&mut self) {
-        let _ = write!(io::stdout(), "\r\u{1b}[2K");
+        if self.has_label_line {
+            // Cursor is on spinner line; go up and clear both lines, leaving cursor at label position
+            let _ = write!(io::stdout(), "\r\u{1b}[2K\u{1b}[1A\r\u{1b}[2K");
+            self.has_label_line = false;
+        } else {
+            let _ = write!(io::stdout(), "\r\u{1b}[2K");
+        }
         let _ = io::stdout().flush();
     }
 }
