@@ -445,7 +445,7 @@ test_command_routing() {
   mkdir -p "${repo}/code/boot/src/test/resources/compose"
   mkdir -p "${repo}/fake-bin"
   printf '<project/>\n' > "${repo}/pom.xml"
-  printf 'services:\n  db:\n    image: postgres:16\n' > "${repo}/code/boot/src/test/resources/compose/docker-compose.yml"
+  printf 'services:\n  db:\n    image: postgres:16\n  admin:\n    profiles: [local]\n    image: admin:latest\n  inspector:\n    profiles:\n      - debug\n    image: inspector:latest\n' > "${repo}/code/boot/src/test/resources/compose/docker-compose.yml"
   printf 'services:\n  db:\n    environment:\n      FOO: bar\n' > "${repo}/code/boot/src/test/resources/compose/docker-compose.override.yml"
   mkdir -p "${repo}/.github/workflows"
   mkdir -p "${repo}/module-a/src/test/java/com/example"
@@ -605,6 +605,9 @@ test_docker_commands() {
 #!/usr/bin/env bash
 set -euo pipefail
 printf 'docker-compose %s\n' "$*" >> .docker-compose.log
+if [[ "$*" == *" ps -q db" ]]; then
+  printf 'abc123def456\n'
+fi
 EOF
   chmod +x "${repo}/fake-bin/docker-compose"
 

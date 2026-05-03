@@ -10,7 +10,7 @@ result=''
 
 for service in ${services}; do
   section="$(sed -n "/^  ${service}:$/,/^  [a-z_-]*:$/p" "${compose_file}" | sed '$d')"
-  if ! printf '%s' "${section}" | grep -q 'profiles:.*local'; then
+  if ! printf '%s' "${section}" | grep -q '^[[:space:]]*profiles:'; then
     result+="${service} "
   fi
 done
