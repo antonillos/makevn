@@ -48,6 +48,27 @@ assert_matches() {
   grep -Eq "${pattern}" "${path}" || fail "expected ${path} to match regex: ${pattern}"
 }
 
+make_test_jar_with_manifest() {
+  local jar_file="$1"
+  local main_class="$2"
+  local start_class="${3:-}"
+  local tmp_dir="${TMP_ROOT}/jar.$RANDOM.$$"
+
+  mkdir -p "${tmp_dir}/META-INF"
+  {
+    printf 'Manifest-Version: 1.0\r\n'
+    if [[ -n "${main_class}" ]]; then
+      printf 'Main-Class: %s\r\n' "${main_class}"
+    fi
+    if [[ -n "${start_class}" ]]; then
+      printf 'Start-Class: %s\r\n' "${start_class}"
+    fi
+    printf '\r\n'
+  } > "${tmp_dir}/META-INF/MANIFEST.MF"
+  (cd "${tmp_dir}" && zip -qr "${jar_file}" META-INF)
+  rm -rf "${tmp_dir}"
+}
+
 run_makevn_pty_interrupt() {
   local mode="$1"
   local repo="$2"
@@ -728,6 +749,7 @@ EOF
 #!/usr/bin/env bash
 set -euo pipefail
 printf 'JAVA_ARGS=%s\n' "$*" >> .java.log
+printf 'LOCAL_CONTAINERS=%s\n' "${LOCAL_CONTAINERS:-}" >> .java.log
 if [[ "${1:-}" == "-jar" ]]; then
   trap 'exit 0' TERM INT
   while true; do
@@ -873,13 +895,74 @@ EOF
 
   output="$(PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" run-app-bg 2>&1 || true)"
 
-  [[ "${output}" == *"Application process exited before health check passed"* ]] \
+  [[ "${output}" == *"Application process exited during startup"* ]] \
     || fail "expected run-app-bg to report early process exit"
   [[ "${output}" == *"Check the log: "*".makevn/app/app.log"* ]] \
     || fail "expected run-app-bg failure to point to app log"
+  [[ "${output}" == *"startup failed"* ]] \
+    || fail "expected run-app-bg failure to print an app log excerpt"
   assert_contains "${repo}/.makevn/app/app.log" "startup failed"
+  assert_contains "${repo}/.makevn/app/app.log" "java_home: ${java_home}"
+  assert_matches "${repo}/.makevn/app/app.log" 'jar: .*/code/boot/target/app\.jar$'
   assert_not_exists "${repo}/.makevn/app/app.pid"
 
+  ${CLI} --repo "${repo}" uninstall >/dev/null
+}
+
+test_run_app_bg_prefers_executable_jar_candidate() {
+  local repo="${TMP_ROOT}/run-app-bg-executable-jar"
+  local java_home="${repo}/fake-java-home"
+
+  mkdir -p "${repo}/code/boot/target"
+  mkdir -p "${repo}/fake-java-home/bin"
+  mkdir -p "${repo}/fake-bin"
+  cat > "${repo}/code/pom.xml" <<'EOF'
+<project>
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>com.example</groupId>
+  <artifactId>sampleapp</artifactId>
+  <version>1.0.0</version>
+</project>
+EOF
+  make_test_jar_with_manifest "${repo}/code/boot/target/aaa-plain.jar" ""
+  make_test_jar_with_manifest "${repo}/code/boot/target/zzz-app.jar" "org.springframework.boot.loader.launch.JarLauncher" "com.example.Application"
+
+  cat > "${repo}/fake-java-home/bin/java" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+printf 'JAVA_ARGS=%s\n' "$*" >> .java.log
+sleep 30
+EOF
+  chmod +x "${repo}/fake-java-home/bin/java"
+
+  cat > "${repo}/fake-bin/curl" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+exit 0
+EOF
+  chmod +x "${repo}/fake-bin/curl"
+
+  ${CLI} --repo "${repo}" init --mode standalone >/dev/null
+  cat > "${repo}/.makevn/config" <<EOF
+MAKEVN_JAVA_HOME="${java_home}"
+MAKEVN_CODE_JAVA_HOME="${java_home}"
+MAKEVN_KARATE_JAVA_HOME=""
+MAKEVN_CODE_TOOL_VERSIONS=""
+MAKEVN_KARATE_TOOL_VERSIONS=""
+MAKEVN_RUN_CMD=""
+EOF
+
+  PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" run-app-bg >/dev/null
+
+  for _ in 1 2 3 4 5; do
+    [[ -f "${repo}/.java.log" ]] && break
+    sleep 1
+  done
+  assert_matches "${repo}/.java.log" '^JAVA_ARGS=-jar .*/code/boot/target/zzz-app\.jar$'
+  assert_contains "${repo}/.makevn/app/app.log" "main_class: org.springframework.boot.loader.launch.JarLauncher"
+  assert_contains "${repo}/.makevn/app/app.log" "start_class: com.example.Application"
+
+  PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" stop-app >/dev/null
   ${CLI} --repo "${repo}" uninstall >/dev/null
 }
 
@@ -1795,6 +1878,7 @@ main() {
   test_docker_commands
   test_karate_commands
   test_run_app_bg_reports_early_process_exit
+  test_run_app_bg_prefers_executable_jar_candidate
   test_run_app_bg_uses_tool_versions_jdk_before_global_fallback
   test_karate_all_rust_frontend_reports_run_app_bg_failure
   test_verify_split_commands

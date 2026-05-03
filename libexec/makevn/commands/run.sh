@@ -16,8 +16,19 @@ makevn_app_log_dir() {
 makevn_detect_app_jar() {
   local maven_base_path="$1"
   local boot_module="$2"
+  local first_candidate=""
+  local candidate=""
 
-  find "${maven_base_path}/${boot_module}/target" \
+  while IFS= read -r candidate; do
+    [[ -n "${candidate}" ]] || continue
+    if [[ -z "${first_candidate}" ]]; then
+      first_candidate="${candidate}"
+    fi
+    if makevn_app_jar_has_main_class "${candidate}"; then
+      printf '%s\n' "${candidate}"
+      return 0
+    fi
+  done < <(find "${maven_base_path}/${boot_module}/target" \
     -name "*.jar" \
     -not -name "*-sources.jar" \
     -not -name "*.original" \
@@ -26,6 +37,35 @@ makevn_detect_app_jar() {
     2>/dev/null \
     | grep -v "original" \
     | LC_ALL=C sort \
+  )
+
+  if [[ -n "${first_candidate}" ]]; then
+    printf '%s\n' "${first_candidate}"
+    return 0
+  fi
+
+  return 1
+}
+
+makevn_app_jar_manifest() {
+  local jar_file="$1"
+
+  unzip -p "${jar_file}" META-INF/MANIFEST.MF 2>/dev/null || true
+}
+
+makevn_app_jar_has_main_class() {
+  local jar_file="$1"
+
+  makevn_app_jar_manifest "${jar_file}" | grep -q '^Main-Class: '
+}
+
+makevn_app_jar_manifest_value() {
+  local jar_file="$1"
+  local key="$2"
+
+  makevn_app_jar_manifest "${jar_file}" \
+    | sed -nE "s/^${key}: //p" \
+    | tr -d '\r' \
     | head -n 1
 }
 
@@ -49,6 +89,40 @@ makevn_app_health_url() {
     || makevn_die "Could not detect application health URL. Run 'makevn doctor' or set MAKEVN_APP_HEALTH_URL in .makevn/config."
 }
 
+makevn_repo_has_legacy_local_containers_default() {
+  local repo_root="$1"
+  local makefile=""
+
+  for makefile in "${repo_root}/GNUmakefile" "${repo_root}/Makefile"; do
+    [[ -f "${makefile}" ]] || continue
+    grep -q 'LOCAL_TEST[[:space:]]*?=[[:space:]]*TRUE' "${makefile}" || continue
+    grep -q 'export[[:space:]]\+LOCAL_CONTAINERS[[:space:]]*:=' "${makefile}" || continue
+    return 0
+  done
+
+  return 1
+}
+
+makevn_effective_app_local_containers() {
+  local repo_root="$1"
+
+  makevn_load_config "${repo_root}"
+  if [[ -n "${LOCAL_CONTAINERS+x}" ]]; then
+    printf '%s\n' "${LOCAL_CONTAINERS}"
+    return 0
+  fi
+  if [[ -n "${MAKEVN_LOCAL_CONTAINERS+x}" ]]; then
+    printf '%s\n' "${MAKEVN_LOCAL_CONTAINERS}"
+    return 0
+  fi
+  if makevn_repo_has_legacy_local_containers_default "${repo_root}"; then
+    printf '%s\n' "${LOCAL_TEST:-TRUE}"
+    return 0
+  fi
+
+  return 1
+}
+
 makevn_wait_app_health() {
   local health_url="$1"
   local timeout_seconds="${2:-30}"
@@ -65,9 +139,10 @@ makevn_wait_app_health() {
       app_state="$(ps -p "${app_pid}" -o stat= 2>/dev/null || true)"
       if [[ -z "${app_state}" || "${app_state}" == Z* ]]; then
         if [[ -n "${log_file}" ]]; then
-          printf '%s\n' "$(makevn_warn "Error: Application process exited before health check passed: ${health_url}. Check the log: ${log_file}")" >&2
+          printf '%s\n' "$(makevn_warn "Error: Application process exited during startup. Check the log: ${log_file}")" >&2
+          makevn_print_app_log_excerpt "${log_file}" >&2
         else
-          printf '%s\n' "$(makevn_warn "Error: Application process exited before health check passed: ${health_url}")" >&2
+          printf '%s\n' "$(makevn_warn "Error: Application process exited during startup.")" >&2
         fi
         return 1
       fi
@@ -77,7 +152,18 @@ makevn_wait_app_health() {
   done
 
   printf '%s\n' "$(makevn_warn "Error: App health check did not pass within ${timeout_seconds}s: ${health_url}")" >&2
+  makevn_print_app_log_excerpt "${log_file}" >&2
   return 1
+}
+
+makevn_print_app_log_excerpt() {
+  local log_file="$1"
+  local lines="${MAKEVN_APP_LOG_TAIL_LINES:-80}"
+
+  [[ -n "${log_file}" && -f "${log_file}" ]] || return 0
+
+  printf '%s\n' "$(makevn_dim "last ${lines} log lines:")"
+  tail -n "${lines}" "${log_file}" 2>/dev/null || true
 }
 
 makevn_start_app_background() {
@@ -87,7 +173,10 @@ makevn_start_app_background() {
   local boot_module=""
   local java_home=""
   local jar_file=""
+  local jar_main_class=""
+  local jar_start_class=""
   local health_url=""
+  local local_containers=""
   local log_dir=""
   local log_file=""
   local pid_file=""
@@ -101,8 +190,11 @@ makevn_start_app_background() {
   boot_module="$(makevn_detect_boot_module_name "${repo_root}")"
   java_home="$(makevn_effective_java_home "${repo_root}" code "${maven_base_path}" || true)"
   [[ -n "${java_home}" ]] || makevn_die "Could not resolve code JDK. Run 'makevn doctor' or configure .makevn/config first."
+  local_containers="$(makevn_effective_app_local_containers "${repo_root}" || true)"
   jar_file="$(makevn_detect_app_jar "${maven_base_path}" "${boot_module}")"
   [[ -n "${jar_file}" ]] || makevn_die "Application jar not found in ${maven_base_path}/${boot_module}/target. Run 'makevn package' first."
+  jar_main_class="$(makevn_app_jar_manifest_value "${jar_file}" "Main-Class" || true)"
+  jar_start_class="$(makevn_app_jar_manifest_value "${jar_file}" "Start-Class" || true)"
   health_url="$(makevn_app_health_url "${repo_root}" "${maven_base_path}")"
 
   log_dir="$(makevn_app_log_dir "${repo_root}")"
@@ -118,7 +210,7 @@ makevn_start_app_background() {
     "${repo_root}" \
     "${log_file}" \
     ".makevn/app/app.log" \
-    "$(makevn_quote_command env JAVA_HOME="${java_home}" java -jar "${jar_file}")" \
+    "$(if [[ -n "${local_containers}" ]]; then makevn_quote_command env JAVA_HOME="${java_home}" LOCAL_CONTAINERS="${local_containers}" java -jar "${jar_file}"; else makevn_quote_command env JAVA_HOME="${java_home}" java -jar "${jar_file}"; fi)" \
     "code" \
     "${mode}"
 
@@ -133,12 +225,42 @@ makevn_start_app_background() {
 
   print_command_intro "${repo_root}" "${mode}"
   makevn_print_item "jar" "${jar_file}"
+  if [[ -n "${jar_main_class}" ]]; then
+    makevn_print_item "Main-Class" "${jar_main_class}"
+  fi
+  if [[ -n "${jar_start_class}" ]]; then
+    makevn_print_item "Start-Class" "${jar_start_class}"
+  fi
   makevn_print_item "log" "${log_file}"
   makevn_print_item "health" "${health_url}"
+  if [[ -n "${local_containers}" ]]; then
+    makevn_print_item "LOCAL_CONTAINERS" "${local_containers}"
+  fi
 
   (
     cd "${repo_root}"
-    exec env JAVA_HOME="${java_home}" PATH="${java_home}/bin:${PATH}" java -jar "${jar_file}" > "${log_file}" 2>&1
+    {
+      printf "started: %s\n" "$(date "+%Y-%m-%d %H:%M:%S")"
+      printf "java_home: %s\n" "${java_home}"
+      printf "jar: %s\n" "${jar_file}"
+      if [[ -n "${jar_main_class}" ]]; then
+        printf "main_class: %s\n" "${jar_main_class}"
+      fi
+      if [[ -n "${jar_start_class}" ]]; then
+        printf "start_class: %s\n" "${jar_start_class}"
+      fi
+      if [[ -n "${local_containers}" ]]; then
+        printf "LOCAL_CONTAINERS: %s\n" "${local_containers}"
+        printf "command: %s\n" "$(makevn_quote_command env JAVA_HOME="${java_home}" LOCAL_CONTAINERS="${local_containers}" java -jar "${jar_file}")"
+      else
+        printf "command: %s\n" "$(makevn_quote_command env JAVA_HOME="${java_home}" java -jar "${jar_file}")"
+      fi
+      printf '\n'
+    } > "${log_file}" 2>&1
+    if [[ -n "${local_containers}" ]]; then
+      exec env JAVA_HOME="${java_home}" PATH="${java_home}/bin:${PATH}" LOCAL_CONTAINERS="${local_containers}" java -jar "${jar_file}" >> "${log_file}" 2>&1
+    fi
+    exec env JAVA_HOME="${java_home}" PATH="${java_home}/bin:${PATH}" java -jar "${jar_file}" >> "${log_file}" 2>&1
   ) &
   app_pid=$!
   printf '%s\n' "${app_pid}" > "${pid_file}"
