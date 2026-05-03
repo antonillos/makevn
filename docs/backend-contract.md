@@ -121,6 +121,7 @@ These commands execute work over time and should use managed logs instead of str
 Run command family:
 
 - `compile`
+- `test-compile`
 - `compile-tests`
 - `validate`
 - `package`

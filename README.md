@@ -84,6 +84,7 @@ make -f .makevn/makevn.mk vn-doctor
 
 ```bash
 makevn compile
+makevn test-compile
 makevn compile-tests
 makevn validate
 makevn package

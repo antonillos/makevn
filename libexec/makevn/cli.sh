@@ -21,6 +21,7 @@ Usage:
   makevn [--repo PATH] uninstall [--dry-run]
   makevn [--repo PATH] profile refresh
   makevn [--repo PATH] compile [-- EXTRA_MAVEN_ARGS...]
+  makevn [--repo PATH] test-compile [-- EXTRA_MAVEN_ARGS...]
   makevn [--repo PATH] compile-tests [-- EXTRA_MAVEN_ARGS...]
   makevn [--repo PATH] validate [-- EXTRA_MAVEN_ARGS...]
   makevn [--repo PATH] package [-- EXTRA_MAVEN_ARGS...]
@@ -62,6 +63,7 @@ Examples:
   makevn init --mode standalone
   makevn profile refresh
   makevn compile
+  makevn test-compile
   makevn compile-tests
   makevn validate
   makevn package
@@ -181,6 +183,9 @@ case "${COMMAND}" in
     ;;
   compile)
     cmd_compile "${REPO_ROOT}" "$@"
+    ;;
+  test-compile)
+    cmd_test_compile "${REPO_ROOT}" "$@"
     ;;
   compile-tests)
     cmd_compile_tests "${REPO_ROOT}" "$@"

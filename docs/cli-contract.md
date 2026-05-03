@@ -124,6 +124,7 @@ These commands accept extra Maven arguments after `--`:
 
 ```bash
 makevn compile [-- EXTRA_MAVEN_ARGS...]
+makevn test-compile [-- EXTRA_MAVEN_ARGS...]
 makevn compile-tests [-- EXTRA_MAVEN_ARGS...]
 makevn validate [-- EXTRA_MAVEN_ARGS...]
 makevn package [-- EXTRA_MAVEN_ARGS...]
@@ -302,6 +303,7 @@ Commands that execute work over time should emit NDJSON event streams.
 Initial set:
 
 - `compile --json`
+- `test-compile --json`
 - `compile-tests --json`
 - `validate --json`
 - `package --json`
@@ -411,6 +413,7 @@ Example lifecycle for a successful tailed command:
 Initially supported command family:
 
 - `compile`
+- `test-compile`
 - `compile-tests`
 - `validate`
 - `package`

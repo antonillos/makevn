@@ -1,7 +1,7 @@
 MAKEVN_BIN ?= makevn
 MAKEVN_REPO_ROOT ?= $(CURDIR)
 
-.PHONY: vn-help vn-doctor vn-init vn-uninstall vn-profile-refresh vn-compile vn-compile-tests vn-validate vn-package vn-build vn-clean vn-test vn-verify-ut vn-verify-ut-coverage vn-verify-it vn-verify-it-coverage vn-verify vn-verify-changes vn-coverage-changes vn-pr-verify vn-docker-up vn-docker-down vn-docker-ps vn-docker-ps-required vn-karate-up vn-karate-down vn-karate-test vn-karate-all vn-run-app vn-run-app-bg vn-stop-app vn-run vn-jdk-current vn-jdk-list vn-exec
+.PHONY: vn-help vn-doctor vn-init vn-uninstall vn-profile-refresh vn-compile vn-test-compile vn-compile-tests vn-validate vn-package vn-build vn-clean vn-test vn-verify-ut vn-verify-ut-coverage vn-verify-it vn-verify-it-coverage vn-verify vn-verify-changes vn-coverage-changes vn-pr-verify vn-docker-up vn-docker-down vn-docker-ps vn-docker-ps-required vn-karate-up vn-karate-down vn-karate-test vn-karate-all vn-run-app vn-run-app-bg vn-stop-app vn-run vn-jdk-current vn-jdk-list vn-exec
 
 define makevn_run
 	@set +e; \
@@ -20,6 +20,7 @@ vn-help:
 	@printf '%s\n' '  make vn-uninstall'
 	@printf '%s\n' '  make vn-profile-refresh'
 	@printf '%s\n' '  make vn-compile'
+	@printf '%s\n' '  make vn-test-compile'
 	@printf '%s\n' '  make vn-compile-tests'
 	@printf '%s\n' '  make vn-validate'
 	@printf '%s\n' '  make vn-package'
@@ -69,6 +70,9 @@ vn-profile-refresh:
 
 vn-compile:
 	$(call makevn_run,compile $(MAKEVN_COMPILE_ARGS))
+
+vn-test-compile:
+	$(call makevn_run,test-compile $(MAKEVN_TEST_COMPILE_ARGS))
 
 vn-compile-tests:
 	$(call makevn_run,compile-tests $(MAKEVN_COMPILE_TESTS_ARGS))

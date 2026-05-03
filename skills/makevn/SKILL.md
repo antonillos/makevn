@@ -252,6 +252,7 @@ Shared targets are namespaced to avoid collisions:
 - `vn-uninstall`
 - `vn-profile-refresh`
 - `vn-compile`
+- `vn-test-compile`
 - `vn-compile-tests`
 - `vn-validate`
 - `vn-package`

@@ -266,15 +266,17 @@ fn validate_command(
     trailing_args: &[OsString],
 ) -> Result<CommandValidation, String> {
     match command.to_string_lossy().as_ref() {
-        "compile" | "compile-tests" | "validate" | "package" | "clean" | "build" | "verify-ut"
-        | "verify-ut-coverage" | "verify-it" | "verify-it-coverage" | "verify"
-        | "verify-changes" | "pr-verify" | "karate-test" | "karate-all" => {
+        "compile" | "test-compile" | "compile-tests" | "validate" | "package" | "clean"
+        | "build" | "verify-ut" | "verify-ut-coverage" | "verify-it" | "verify-it-coverage"
+        | "verify" | "verify-changes" | "pr-verify" | "karate-test" | "karate-all" => {
             validate_maven_passthrough_args(command, trailing_args)?;
             Ok(CommandValidation::Valid)
         }
         "help" | "doctor" | "init" | "uninstall" | "exec" | "test" | "coverage-changes"
         | "docker-up" | "docker-down" | "docker-ps" | "docker-ps-required" | "karate-up"
-        | "karate-down" | "run-app" | "run-app-bg" | "stop-app" | "run" => Ok(CommandValidation::Valid),
+        | "karate-down" | "run-app" | "run-app-bg" | "stop-app" | "run" => {
+            Ok(CommandValidation::Valid)
+        }
         "profile" => match trailing_args.first().map(|arg| arg.to_string_lossy()) {
             Some(subcommand) if subcommand == "refresh" => Ok(CommandValidation::ProfileRefresh),
             _ => Err(String::from("Usage: makevn profile refresh")),
@@ -411,6 +413,7 @@ fn is_top_level_command(arg: &OsString) -> bool {
             | "profile"
             | "exec"
             | "compile"
+            | "test-compile"
             | "compile-tests"
             | "validate"
             | "package"
@@ -523,6 +526,7 @@ fn command_supports_frontend_loader(command: &OsString) -> bool {
     matches!(
         command.to_string_lossy().as_ref(),
         "compile"
+            | "test-compile"
             | "compile-tests"
             | "validate"
             | "package"
@@ -2032,6 +2036,7 @@ fn print_help(with_header: bool) {
     println!("  makevn [--repo PATH] uninstall [--dry-run]");
     println!("  makevn [--repo PATH] profile refresh");
     println!("  makevn [--repo PATH] compile [--tail] [-- EXTRA_MAVEN_ARGS...]");
+    println!("  makevn [--repo PATH] test-compile [--tail] [-- EXTRA_MAVEN_ARGS...]");
     println!("  makevn [--repo PATH] compile-tests [--tail] [-- EXTRA_MAVEN_ARGS...]");
     println!("  makevn [--repo PATH] validate [--tail] [-- EXTRA_MAVEN_ARGS...]");
     println!("  makevn [--repo PATH] package [--tail] [-- EXTRA_MAVEN_ARGS...]");
@@ -2074,6 +2079,7 @@ fn print_help(with_header: bool) {
     println!("  makevn init --mode standalone");
     println!("  makevn profile refresh");
     println!("  makevn compile");
+    println!("  makevn test-compile");
     println!("  makevn compile-tests");
     println!("  makevn validate");
     println!("  makevn package");
@@ -2400,9 +2406,31 @@ mod tests {
     #[test]
     fn marks_compile_for_frontend_loader() {
         assert!(command_supports_frontend_loader(&OsString::from("compile")));
+        assert!(command_supports_frontend_loader(&OsString::from(
+            "test-compile"
+        )));
         assert!(command_supports_frontend_loader(&OsString::from("verify")));
         assert!(!command_supports_frontend_loader(&OsString::from("doctor")));
         assert!(!command_supports_frontend_loader(&OsString::from("run")));
+    }
+
+    #[test]
+    fn parses_test_compile_command_for_backend_dispatch() {
+        let current_dir = env::current_dir().unwrap();
+        let action = parse_invocation(vec![OsString::from("test-compile")]).unwrap();
+
+        assert_eq!(
+            action,
+            Action::DispatchToBackend(vec![BackendInvocation {
+                args: vec![
+                    OsString::from("test-compile"),
+                    OsString::from("--repo"),
+                    current_dir.into_os_string(),
+                ],
+                frontend_loader: true,
+                tail: false,
+            }])
+        );
     }
 
     #[test]

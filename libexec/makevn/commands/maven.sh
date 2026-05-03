@@ -15,6 +15,13 @@ cmd_compile() {
   makevn_run_maven_goal "${repo_root}" compile compile compile "$@"
 }
 
+cmd_test_compile() {
+  local repo_root="$1"
+  shift
+  [[ "${1:-}" == "--" ]] && shift
+  makevn_run_maven_goal "${repo_root}" test-compile test-compile "" "$@"
+}
+
 cmd_compile_tests() {
   local repo_root="$1"
   shift
@@ -247,4 +254,3 @@ cmd_pr_verify() {
   [[ ${rc} -eq 0 ]] && makevn_print_jacoco_report_hint "${maven_base_path}"
   return ${rc}
 }
-
