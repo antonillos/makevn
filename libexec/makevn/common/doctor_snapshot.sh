@@ -187,6 +187,24 @@ makevn_collect_doctor_snapshot() {
   fi
   [[ -n "${MAKEVN_RUN_CMD:-}" ]] && run_configured="yes"
 
+  # Resolve app health URL: config > detected > interactive prompt
+  makevn_load_config "${repo_root}"
+  if [[ -n "${MAKEVN_APP_HEALTH_URL:-}" ]]; then
+    detected_app_health_url="${MAKEVN_APP_HEALTH_URL} (from config)"
+  elif [[ -n "${detected_app_health_url}" && -f "$(makevn_config_path "${repo_root}")" && -t 0 && -t 2 ]]; then
+    printf '\n' >&2
+    printf '%s\n' "$(makevn_warn "Detected app health URL: ${detected_app_health_url}")" >&2
+    printf '%s\n' "  Is this correct? If not, enter the correct URL (or press Enter to keep it)." >&2
+    local _health_input=""
+    printf 'Health URL [%s]: ' "${detected_app_health_url}" >&2
+    read -r _health_input </dev/tty
+    if [[ -n "${_health_input}" ]]; then
+      detected_app_health_url="${_health_input}"
+    fi
+    makevn_update_config_app_health_url "${repo_root}" "${detected_app_health_url}"
+    printf '%s\n' "$(makevn_dim "Saved to .makevn/config (MAKEVN_APP_HEALTH_URL).")" >&2
+  fi
+
   if [[ -n "${code_java_home}" ]]; then
     code_java_version_line="$(makevn_java_version_line "${code_java_home}")"
   fi

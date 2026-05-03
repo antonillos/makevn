@@ -641,8 +641,6 @@ makevn_detect_app_health_path() {
   while IFS= read -r config_file; do
     value="$(sed -nE 's/^[[:space:]]*management\.endpoints\.web\.base-path[[:space:]]*[:=][[:space:]]*([^[:space:]#]+).*$/\1/p' "${config_file}" | head -n 1)"
     [[ -n "${value}" ]] && printf '%s/health\n' "${value%/}" && return 0
-    value="$(grep -Eo '/[[:alnum:]_.-]+/\*\*' "${config_file}" | head -n 1 | sed 's#/\*\*$##')"
-    [[ -n "${value}" ]] && printf '%s/health\n' "${value}" && return 0
   done < <(makevn_app_config_files "${maven_base_path}")
 
   printf '/actuator/health\n'

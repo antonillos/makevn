@@ -267,7 +267,7 @@ makevn_start_app_background() {
   printf '%s\n' "${jar_file}" > "${jar_record}"
 
   set +e
-  makevn_wait_app_health "${health_url}" "${MAKEVN_APP_HEALTH_TIMEOUT:-30}" "${app_pid}" "${log_file}"
+  makevn_wait_app_health "${health_url}" "${MAKEVN_APP_HEALTH_TIMEOUT:-60}" "${app_pid}" "${log_file}"
   local health_rc=$?
   set -e
   if [[ ${health_rc} -ne 0 ]]; then

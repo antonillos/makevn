@@ -156,6 +156,26 @@ makevn_update_config_e2e_compose_file() {
   fi
 }
 
+makevn_update_config_app_health_url() {
+  local repo_root="$1"
+  local app_health_url="$2"
+  local config_path
+  config_path="$(makevn_config_path "${repo_root}")"
+
+  if [[ ! -f "${config_path}" ]]; then
+    return 1
+  fi
+
+  if grep -q '^MAKEVN_APP_HEALTH_URL=' "${config_path}"; then
+    local tmp_file
+    tmp_file="$(mktemp)"
+    awk -v val="${app_health_url}" 'BEGIN{q="\""} /^MAKEVN_APP_HEALTH_URL=/ { print "MAKEVN_APP_HEALTH_URL=" q val q; next } { print }' "${config_path}" > "${tmp_file}"
+    mv "${tmp_file}" "${config_path}"
+  else
+    printf 'MAKEVN_APP_HEALTH_URL=%q\n' "${app_health_url}" >> "${config_path}"
+  fi
+}
+
 makevn_update_config_local_containers() {
   local repo_root="$1"
   local local_containers="$2"
