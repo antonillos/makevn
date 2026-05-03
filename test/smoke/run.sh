@@ -358,7 +358,7 @@ jobs:
 EOF
 
   ${CLI} --repo "${repo}" profile refresh >/dev/null
-  assert_contains "${repo}/.makevn/profile.env" 'MAKEVN_PROFILE_BUILD_PROP_FLAGS=-Dmaven.build.cache.enabled=false'
+  assert_contains "${repo}/.makevn/profile.env" "MAKEVN_PROFILE_BUILD_PROP_FLAGS=''"
   assert_contains "${repo}/.makevn/makevn.mk" 'define makevn_run'
 
   cat > "${repo}/.github/workflows/build.yml" <<'EOF'
@@ -370,7 +370,34 @@ EOF
 
   ${CLI} --repo "${repo}" profile refresh >/dev/null
   assert_contains "${repo}/.makevn/profile.env" 'MAKEVN_PROFILE_BUILD_PRE_GOALS=clean'
-  assert_contains "${repo}/.makevn/profile.env" 'MAKEVN_PROFILE_BUILD_PROP_FLAGS=-Dmaven.build.cache.enabled=true'
+  assert_contains "${repo}/.makevn/profile.env" "MAKEVN_PROFILE_BUILD_PROP_FLAGS=''"
+
+  ${CLI} --repo "${repo}" uninstall >/dev/null
+}
+
+test_profile_refresh_bans_ci_only_verify_flags() {
+  local repo="${TMP_ROOT}/profile-refresh-bans"
+  mkdir -p "${repo}/.github/workflows"
+  printf '<project/>\n' > "${repo}/pom.xml"
+
+  ${CLI} --repo "${repo}" init >/dev/null
+
+  cat > "${repo}/.github/workflows/verify.yml" <<'EOF'
+jobs:
+  verify:
+    steps:
+      - run: mvn -B verify -Dmaven.build.cache.enabled=true -DskipITs -DskipUTs -Dsonar.token=fake -DoutputName=report -Dexec.args=foo -DskipEnforceSnapshots -Djacoco.skip=false -Damiga.jacoco -DfailIfNoTests=false -Dmaven.test.failure.ignore=false
+EOF
+
+  ${CLI} --repo "${repo}" profile refresh >/dev/null
+  assert_contains "${repo}/.makevn/profile.env" 'MAKEVN_PROFILE_VERIFY_CLI_FLAGS=-B'
+  assert_contains "${repo}/.makevn/profile.env" 'MAKEVN_PROFILE_VERIFY_PROP_FLAGS=-DskipEnforceSnapshots -Djacoco.skip=false -Damiga.jacoco -DfailIfNoTests=false -Dmaven.test.failure.ignore=false'
+  assert_not_contains "${repo}/.makevn/profile.env" '-Dmaven.build.cache.enabled=true'
+  assert_not_contains "${repo}/.makevn/profile.env" '-DskipITs'
+  assert_not_contains "${repo}/.makevn/profile.env" '-DskipUTs'
+  assert_not_contains "${repo}/.makevn/profile.env" '-Dsonar.token=fake'
+  assert_not_contains "${repo}/.makevn/profile.env" '-DoutputName=report'
+  assert_not_contains "${repo}/.makevn/profile.env" '-Dexec.args=foo'
 
   ${CLI} --repo "${repo}" uninstall >/dev/null
 }
@@ -664,21 +691,21 @@ EOF
   [[ "${make_output}" == *"[ok] "* ]] || fail "expected vn-test fast output to include success summary"
   assert_contains "${repo}/.makevn/profile.env" 'MAKEVN_PROFILE_MAVEN_CLI_FLAGS=-B\ -nsu'
   assert_contains "${repo}/.makevn/profile.env" 'MAKEVN_PROFILE_BUILD_PRE_GOALS=clean'
-  assert_contains "${repo}/.makevn/profile.env" 'MAKEVN_PROFILE_BUILD_PROP_FLAGS=-Dmaven.build.cache.enabled=false\ -Damiga-javaformat.skip=true'
+  assert_contains "${repo}/.makevn/profile.env" 'MAKEVN_PROFILE_BUILD_PROP_FLAGS=-Damiga-javaformat.skip=true'
   assert_contains "${repo}/.makevn/profile.env" 'MAKEVN_PROFILE_TEST_PROP_FLAGS=-Dsurefire.failIfNoSpecifiedTests=false'
   assert_not_contains "${repo}/.makevn/profile.env" 'MAKEVN_PROFILE_VERIFY_PRE_GOALS=clean'
   assert_contains "${repo}/.makevn/profile.env" 'MAKEVN_PROFILE_VERIFY_PROP_FLAGS=-DfailIfNoTests=false'
-  assert_matches "${repo}/.mvnw.log" '^ARGS=-B -nsu -f .*/pom\.xml clean package -Dmaven\.build\.cache\.enabled=false -Damiga-javaformat\.skip=true -DskipTests$'
+  assert_matches "${repo}/.mvnw.log" '^ARGS=-B -nsu -f .*/pom\.xml clean package -Damiga-javaformat\.skip=true -DskipTests$'
   assert_matches "${repo}/.mvnw.log" '^ARGS=-B -nsu -f .*/pom\.xml test-compile$'
   assert_matches "${repo}/.mvnw.log" '^ARGS=-B -nsu -f .*/pom\.xml validate$'
-  assert_matches "${repo}/.mvnw.log" '^ARGS=-B -nsu -f .*/pom\.xml clean package -Dmaven\.build\.cache\.enabled=false -Damiga-javaformat\.skip=true$'
+  assert_matches "${repo}/.mvnw.log" '^ARGS=-B -nsu -f .*/pom\.xml clean package -Damiga-javaformat\.skip=true$'
   assert_matches "${repo}/.mvnw.log" '^ARGS=-B -nsu -f .*/pom\.xml clean$'
   assert_matches "${repo}/.mvnw.log" '^ARGS=-B -nsu -f .*/pom\.xml test -Dsurefire\.failIfNoSpecifiedTests=false$'
   assert_matches "${repo}/.mvnw.log" '^ARGS=-B -nsu -f .*/pom\.xml -pl module-a -am test -Dsurefire\.failIfNoSpecifiedTests=false -Damiga-javaformat\.skip=true -Dtest=com\.example\.UserRepositoryTest -Dfailsafe\.failIfNoSpecifiedTests=false -Dmaven\.build\.cache\.enabled=true -Dsurefire\.testFailureIgnore=false$'
   assert_matches "${repo}/.mvnw.log" '^ARGS=-B -nsu -f .*/pom\.xml -pl module-a -am test -Dsurefire\.failIfNoSpecifiedTests=false -Damiga-javaformat\.skip=true -Dtest=com\.example\.OrderRepositoryTest -Dfailsafe\.failIfNoSpecifiedTests=false -Dmaven\.build\.cache\.enabled=true -Dsurefire\.testFailureIgnore=false$'
   assert_matches "${repo}/.mvnw.log" '^ARGS=-B -nsu -f .*/pom\.xml -pl module-a -am surefire:test -Dsurefire\.failIfNoSpecifiedTests=false -Damiga-javaformat\.skip=true -Dtest=com\.example\.UserRepositoryTest -Dfailsafe\.failIfNoSpecifiedTests=false -Dmaven\.build\.cache\.enabled=true -Dsurefire\.testFailureIgnore=false$'
   assert_matches "${repo}/.mvnw.log" '^ARGS=-B -nsu -f .*/pom\.xml -pl module-a -am test-compile failsafe:integration-test -Dsurefire\.failIfNoSpecifiedTests=false -Damiga-javaformat\.skip=true -Dit\.test=com\.example\.UserFlowIT -Dfailsafe\.failIfNoSpecifiedTests=false -Dmaven\.build\.cache\.enabled=true$'
-  assert_matches "${repo}/.mvnw.log" '^ARGS=-B -nsu -f .*/pom\.xml verify -DfailIfNoTests=false$'
+  assert_matches "${repo}/.mvnw.log" '^ARGS=-B -nsu -f .*/pom\.xml verify -DfailIfNoTests=false -Dmaven\.build\.cache\.enabled=false$'
   assert_contains "${repo}/.mvnw.log" "JAVA_HOME=${java_home}"
   assert_contains "${repo}/.mvnw.log" "LOCAL_CONTAINERS="
   assert_not_contains "${repo}/.mvnw.log" "LOCAL_CONTAINERS=TRUE"
@@ -1816,6 +1843,28 @@ test_verify_rejects_skip_flags() {
     || fail "expected verify to reject IT/UT skip flags"
 }
 
+test_verify_split_commands_reject_wrong_skip_flags() {
+  local repo="${TMP_ROOT}/verify-split-reject-skips"
+  local output=""
+
+  mkdir -p "${repo}/code/boot/src/test/resources/compose"
+  printf '<project/>\n' > "${repo}/pom.xml"
+  printf 'services:\n  db:\n    image: postgres:16\n' > "${repo}/code/boot/src/test/resources/compose/docker-compose.yml"
+  printf 'services:\n  db:\n    environment:\n      FOO: bar\n' > "${repo}/code/boot/src/test/resources/compose/docker-compose.override.yml"
+
+  ${CLI} --repo "${repo}" init >/dev/null
+
+  output="$(${CLI} --repo "${repo}" verify-ut -- -DskipUTs 2>&1 || true)"
+  [[ "${output}" == *"verify-ut must not skip unit tests"* ]] \
+    || fail "expected verify-ut to reject UT skip flags"
+
+  output="$(${CLI} --repo "${repo}" verify-it -- -DskipITs 2>&1 || true)"
+  [[ "${output}" == *"verify-it must not skip integration tests"* ]] \
+    || fail "expected verify-it to reject IT skip flags"
+
+  ${CLI} --repo "${repo}" uninstall >/dev/null
+}
+
 test_sequential_commands() {
   local repo="${TMP_ROOT}/sequential-commands"
   local install_prefix="${TMP_ROOT}/sequential-install"
@@ -1989,6 +2038,7 @@ main() {
   test_verify_changes_command
   test_coverage_changes_command
   test_verify_rejects_skip_flags
+  test_verify_split_commands_reject_wrong_skip_flags
   test_sequential_commands
   test_command_typo_rejected_before_backend
   test_command_failure_summary_omits_duplicate_elapsed

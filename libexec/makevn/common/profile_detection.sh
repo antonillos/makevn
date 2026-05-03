@@ -20,6 +20,41 @@ makevn_should_drop_verify_prop_flag() {
   return 1
 }
 
+makevn_should_drop_inferred_prop_flag() {
+  local token="$1"
+
+  if makevn_should_drop_verify_prop_flag "${token}"; then
+    return 0
+  fi
+
+  case "${token}" in
+    -DskipUTs|-DskipUTs=*|\
+    -Dskip.unit.tests|-Dskip.unit.tests=*|\
+    -DskipTests|-DskipTests=*|\
+    -Dmaven.test.skip|-Dmaven.test.skip=*|\
+    -Dskip.integration.tests|-Dskip.integration.tests=*|\
+    -Dmaven.build.cache.enabled|-Dmaven.build.cache.enabled=*|\
+    -Dsonar.*|-DreleaseType|-DreleaseType=*|-DreleaseForce|-DreleaseForce=*|\
+    -DreleaseVersion|-DreleaseVersion=*|-DyankRelease|-DyankRelease=*|\
+    -DnewVersion|-DnewVersion=*|-DprojectType|-DprojectType=*|\
+    -DoutputName|-DoutputName=*|-DoutputFormat|-DoutputFormat=*|\
+    -DoutputDirectory|-DoutputDirectory=*|-DgenerateReports|-DgenerateReports=*|\
+    -DalwaysGenerateSurefireReport|-DalwaysGenerateSurefireReport=*|\
+    -DalwaysGenerateFailsafeReport|-DalwaysGenerateFailsafeReport=*|\
+    -Dexec.executable|-Dexec.executable=*|-Dexec.args|-Dexec.args=*|\
+    -Dexpression|-Dexpression=*|-DforceStdout|-DforceStdout=*|\
+    -Dartifact|-Dartifact=*|-Dtransitive|-Dtransitive=*|\
+    -DincludeTestScope|-DincludeTestScope=*|-Dkarate.*|-DAPP_PORT|-DAPP_PORT=*|\
+    -D*.token|-D*.token=*|-D*.password|-D*.password=*|-D*.secret|-D*.secret=*|\
+    -D*_token|-D*_token=*|-D*_password|-D*_password=*|-D*_secret|-D*_secret=*|\
+    -D*_accesskey|-D*_accesskey=*|-D*_secretkey|-D*_secretkey=*)
+      return 0
+      ;;
+  esac
+
+  return 1
+}
+
 makevn_should_drop_maven_cache_prop_flag() {
   local token="$1"
 
@@ -248,23 +283,13 @@ makevn_detect_command_profile_from_invocation() {
     fi
   done
 
-  if [[ "${command_name}" == "build" ]]; then
-    local filtered_prop_flags=""
-    for token in ${prop_flags}; do
-      if [[ "${token}" != "-DskipTests" ]]; then
-        filtered_prop_flags="$(makevn_append_word "${filtered_prop_flags}" "${token}")"
-      fi
-    done
-    prop_flags="${filtered_prop_flags}"
-  elif [[ "${command_name}" == "verify" ]]; then
-    local filtered_prop_flags=""
-    for token in ${prop_flags}; do
-      if ! makevn_should_drop_verify_prop_flag "${token}"; then
-        filtered_prop_flags="$(makevn_append_word "${filtered_prop_flags}" "${token}")"
-      fi
-    done
-    prop_flags="${filtered_prop_flags}"
-  fi
+  local filtered_prop_flags=""
+  for token in ${prop_flags}; do
+    if ! makevn_should_drop_inferred_prop_flag "${token}"; then
+      filtered_prop_flags="$(makevn_append_word "${filtered_prop_flags}" "${token}")"
+    fi
+  done
+  prop_flags="${filtered_prop_flags}"
 
   score=10
   if makevn_command_profile_path_match "${command_name}" "${workflow_file}"; then

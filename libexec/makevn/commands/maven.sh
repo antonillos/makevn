@@ -1,6 +1,27 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+makevn_reject_verify_skip_flags() {
+  local command_name="$1"
+  local arg=""
+
+  shift
+
+  for arg in "$@"; do
+    case "${command_name}:${arg}" in
+      verify:-DskipUTs|verify:-DskipUTs=*|verify:-DskipITs|verify:-DskipITs=*|verify:-Dskip.unit.tests=true|verify:-Dskip.unit.tests=false)
+        makevn_die "verify does not accept UT/IT skip flags; use verify-ut or verify-it instead"
+        ;;
+      verify-ut:-DskipUTs|verify-ut:-DskipUTs=*|verify-ut:-Dskip.unit.tests=true|verify-ut:-Dskip.unit.tests=false)
+        makevn_die "verify-ut must not skip unit tests"
+        ;;
+      verify-it:-DskipIT|verify-it:-DskipIT=*|verify-it:-DskipITs|verify-it:-DskipITs=*|verify-it:-DskipITests|verify-it:-DskipITests=*|verify-it:-DskipIntegrationTests|verify-it:-DskipIntegrationTests=*|verify-it:-DskipFailsafeTests|verify-it:-DskipFailsafeTests=*|verify-it:-Dmaven.failsafe.skip|verify-it:-Dmaven.failsafe.skip=*)
+        makevn_die "verify-it must not skip integration tests"
+        ;;
+    esac
+  done
+}
+
 cmd_build() {
   local repo_root="$1"
   shift
@@ -149,6 +170,7 @@ cmd_verify_ut() {
   local repo_root="$1"
   shift
   [[ "${1:-}" == "--" ]] && shift
+  makevn_reject_verify_skip_flags verify-ut "$@"
   makevn_run_maven_goal "${repo_root}" verify verify-ut "" \
     -Djacoco.skip=false \
     -Damiga.jacoco \
@@ -177,6 +199,7 @@ cmd_verify_it() {
   local repo_root="$1"
   shift
   [[ "${1:-}" == "--" ]] && shift
+  makevn_reject_verify_skip_flags verify-it "$@"
   cmd_docker_ps_required "${repo_root}"
   makevn_run_verify_it_goal "${repo_root}" verify-it "$@"
 }
@@ -197,24 +220,17 @@ cmd_verify_it_coverage() {
 
 cmd_verify() {
   local repo_root="$1"
-  local arg=""
   local local_containers=""
   shift
   [[ "${1:-}" == "--" ]] && shift
-  for arg in "$@"; do
-    case "${arg}" in
-      -DskipUTs|-DskipUTs=*|-DskipITs|-DskipITs=*|-Dskip.unit.tests=true|-Dskip.unit.tests=false)
-        makevn_die "verify does not accept UT/IT skip flags; use verify-ut or verify-it instead"
-        ;;
-    esac
-  done
+  makevn_reject_verify_skip_flags verify "$@"
   cmd_docker_ps_required "${repo_root}"
   makevn_load_profile "${repo_root}"
   local_containers="$(makevn_effective_local_containers "${repo_root}" "${MAKEVN_PROFILE_VERIFY_IT_LOCAL_CONTAINERS:-}")"
   if [[ -n "${local_containers}" ]]; then
-    LOCAL_CONTAINERS="${local_containers}" makevn_run_maven_goal "${repo_root}" verify verify verify "$@"
+    LOCAL_CONTAINERS="${local_containers}" makevn_run_maven_goal "${repo_root}" verify verify verify -Dmaven.build.cache.enabled=false "$@"
   else
-    makevn_run_maven_goal "${repo_root}" verify verify verify "$@"
+    makevn_run_maven_goal "${repo_root}" verify verify verify -Dmaven.build.cache.enabled=false "$@"
   fi
 }
 
