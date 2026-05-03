@@ -883,6 +883,181 @@ EOF
   ${CLI} --repo "${repo}" uninstall >/dev/null
 }
 
+test_run_app_bg_uses_tool_versions_jdk_before_global_fallback() {
+  local repo="${TMP_ROOT}/run-app-bg-tool-versions-jdk"
+  local output=""
+
+  mkdir -p "${repo}/code/boot/src/main/resources"
+  mkdir -p "${repo}/code/boot/target"
+  mkdir -p "${repo}/fake-code-java-home/bin"
+  mkdir -p "${repo}/wrong-java-home/bin"
+  mkdir -p "${repo}/fake-bin"
+
+  printf '<project/>\n' > "${repo}/code/pom.xml"
+  printf 'ivm-java zulu-21.0.1\n' > "${repo}/code/.tool-versions"
+  printf 'server:\n  port: 18082\n' > "${repo}/code/boot/src/main/resources/application.yml"
+  printf 'fake jar\n' > "${repo}/code/boot/target/app.jar"
+
+  cat > "${repo}/fake-code-java-home/bin/java" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+if [[ "${1:-}" == "-version" ]]; then
+  printf 'openjdk version "21.0.1"\n' >&2
+  exit 0
+fi
+printf 'JAVA_HOME=%s\n' "${JAVA_HOME:-}" >> .java.log
+printf 'JAVA_ARGS=%s\n' "$*" >> .java.log
+if [[ "${1:-}" == "-jar" ]]; then
+  trap 'exit 0' TERM INT
+  while true; do
+    sleep 1
+  done
+fi
+EOF
+  chmod +x "${repo}/fake-code-java-home/bin/java"
+
+  cat > "${repo}/wrong-java-home/bin/java" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+if [[ "${1:-}" == "-version" ]]; then
+  printf 'openjdk version "17.0.1"\n' >&2
+  exit 0
+fi
+printf 'wrong java selected\n' >> .java.log
+exit 64
+EOF
+  chmod +x "${repo}/wrong-java-home/bin/java"
+
+  cat > "${repo}/fake-bin/curl" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+exit 0
+EOF
+  chmod +x "${repo}/fake-bin/curl"
+
+  JAVA_HOME="${repo}/fake-code-java-home" ${CLI} --repo "${repo}" init --mode standalone >/dev/null
+  cat > "${repo}/.makevn/config" <<EOF
+MAKEVN_JAVA_HOME="${repo}/wrong-java-home"
+MAKEVN_CODE_JAVA_HOME=""
+MAKEVN_KARATE_JAVA_HOME=""
+MAKEVN_CODE_TOOL_VERSIONS=""
+MAKEVN_KARATE_TOOL_VERSIONS=""
+MAKEVN_RUN_CMD=""
+EOF
+
+  output="$(JAVA_HOME="${repo}/fake-code-java-home" PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" run-app-bg 2>&1)"
+
+  assert_contains "${repo}/.java.log" "JAVA_HOME=${repo}/fake-code-java-home"
+  assert_matches "${repo}/.java.log" '^JAVA_ARGS=-jar .*/code/boot/target/app\.jar$'
+  [[ "${output}" == *"ok application is ready"* ]] || fail "expected run-app-bg to start with the tool-versions JDK"
+
+  JAVA_HOME="${repo}/fake-code-java-home" ${CLI} --repo "${repo}" stop-app >/dev/null
+  JAVA_HOME="${repo}/fake-code-java-home" ${CLI} --repo "${repo}" uninstall >/dev/null
+}
+
+test_karate_all_rust_frontend_reports_run_app_bg_failure() {
+  local repo="${TMP_ROOT}/karate-all-run-app-bg-failure"
+  local install_prefix="${TMP_ROOT}/karate-all-run-app-bg-failure-install"
+  local rust_cli="${install_prefix}/bin/makevn"
+  local output_file="${TMP_ROOT}/karate-all-run-app-bg-failure.out"
+  local clean_output_file="${TMP_ROOT}/karate-all-run-app-bg-failure.clean.out"
+
+  [[ -x "${ROOT_DIR}/target/release/makevn" ]] || return 0
+  PREFIX="${install_prefix}" "${ROOT_DIR}/install.sh" --rust >/dev/null
+
+  mkdir -p "${repo}/code/boot/src/main/resources"
+  mkdir -p "${repo}/code/boot/target"
+  mkdir -p "${repo}/e2e/karate/src/test/resources/compose"
+  mkdir -p "${repo}/fake-java-home/bin"
+  mkdir -p "${repo}/fake-bin"
+
+  printf '<project/>\n' > "${repo}/code/pom.xml"
+  printf '<project/>\n' > "${repo}/e2e/karate/pom.xml"
+  printf 'server:\n  port: 18081\n' > "${repo}/code/boot/src/main/resources/application.yml"
+  printf 'services:\n  db:\n    image: postgres:16\n' > "${repo}/e2e/karate/src/test/resources/compose/docker-compose.yml"
+  printf 'fake jar\n' > "${repo}/code/boot/target/app.jar"
+
+  cat > "${repo}/mvnw" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+for arg in "$@"; do
+  if [[ "${arg}" == "package" ]]; then
+    mkdir -p code/boot/target
+    printf 'fake jar\n' > code/boot/target/app.jar
+  fi
+done
+EOF
+  chmod +x "${repo}/mvnw"
+
+  cat > "${repo}/fake-java-home/bin/java" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+printf 'app startup failed\n' >&2
+exit 42
+EOF
+  chmod +x "${repo}/fake-java-home/bin/java"
+
+  cat > "${repo}/fake-bin/docker-compose" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+if [[ "$*" == *" ps -q "* ]]; then
+  printf 'fake-service-id\n'
+fi
+EOF
+  chmod +x "${repo}/fake-bin/docker-compose"
+
+  cat > "${repo}/fake-bin/docker" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+if [[ "${1:-}" == "volume" ]]; then
+  exit 0
+fi
+if [[ "${1:-}" == "inspect" && "${2:-}" == "-f" ]]; then
+  case "$3" in
+    '{{.State.Status}}')
+      printf 'running\n'
+      ;;
+    '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}')
+      printf 'healthy\n'
+      ;;
+    '{{.Name}}')
+      printf '/fake-db\n'
+      ;;
+  esac
+fi
+EOF
+  chmod +x "${repo}/fake-bin/docker"
+
+  cat > "${repo}/fake-bin/curl" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+exit 7
+EOF
+  chmod +x "${repo}/fake-bin/curl"
+
+  "${rust_cli}" --repo "${repo}" init --mode standalone >/dev/null
+  cat > "${repo}/.makevn/config" <<EOF
+MAKEVN_JAVA_HOME="${repo}/fake-java-home"
+MAKEVN_CODE_JAVA_HOME="${repo}/fake-java-home"
+MAKEVN_KARATE_JAVA_HOME=""
+MAKEVN_CODE_TOOL_VERSIONS=""
+MAKEVN_KARATE_TOOL_VERSIONS=""
+MAKEVN_RUN_CMD=""
+MAKEVN_APP_HEALTH_TIMEOUT=5
+EOF
+
+  PATH="${repo}/fake-bin:${PATH}" script -q /dev/null bash -lc "\"${rust_cli}\" --repo \"${repo}\" karate-all" > "${output_file}" 2>&1 || true
+  tr -d '\r' < "${output_file}" > "${clean_output_file}"
+
+  assert_contains "${clean_output_file}" "[x] run-app-bg"
+  assert_contains "${clean_output_file}" ".makevn/app/app.log"
+  assert_not_contains "${clean_output_file}" "[x] karate-docker-up"
+  assert_contains "${repo}/.makevn/app/app.log" "app startup failed"
+  assert_not_exists "${repo}/.makevn/app/app.pid"
+
+  "${rust_cli}" --repo "${repo}" uninstall >/dev/null
+}
+
 test_verify_split_commands() {
   local repo="${TMP_ROOT}/verify-split"
   local java_home
@@ -1620,6 +1795,8 @@ main() {
   test_docker_commands
   test_karate_commands
   test_run_app_bg_reports_early_process_exit
+  test_run_app_bg_uses_tool_versions_jdk_before_global_fallback
+  test_karate_all_rust_frontend_reports_run_app_bg_failure
   test_verify_split_commands
   test_verify_it_requires_running_services
   test_verify_it_uses_verify_lifecycle_when_verify_workflow_skips_it

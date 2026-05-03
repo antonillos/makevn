@@ -392,6 +392,7 @@ Rules:
 - `--tail` must be rejected when combined with `--json`
 - `--tail` uses the interactive mini-log only when a TTY is available; without a TTY it must degrade to normal command execution
 - `--tail` is only valid for commands that produce a managed log file
+- when a managed-log command is running without `--tail`, pressing `t` may switch the current command into the same interactive mini-log view
 - the preferred public syntax is `makevn [global_options] command [options] command [options] ...`
 - `--tail` may be provided as a global option before the command chain and applies to every managed-log command in the chain
 - `--tail` may also be accepted at the end of the command chain as compatibility sugar with the same global meaning

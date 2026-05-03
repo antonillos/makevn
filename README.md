@@ -118,7 +118,8 @@ makevn clean verify-it
 makevn --tail clean verify-it
 ```
 
-Use `--tail` only for a human interactive log view. Agents should prefer
+Use `--tail` only for a human interactive log view. During a normal interactive
+run, press `t` to tail the current managed log. Agents should prefer
 non-interactive runs and generated logs.
 
 ## Verification

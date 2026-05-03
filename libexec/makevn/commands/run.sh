@@ -111,6 +111,17 @@ makevn_start_app_background() {
   pid_file="${log_dir}/app.pid"
   jar_record="${log_dir}/app.jar"
 
+  makevn_write_backend_metadata \
+    "${MAKEVN_BACKEND_METADATA_OUT:-}" \
+    "${mode}" \
+    "${repo_root}" \
+    "${repo_root}" \
+    "${log_file}" \
+    ".makevn/app/app.log" \
+    "$(makevn_quote_command env JAVA_HOME="${java_home}" java -jar "${jar_file}")" \
+    "code" \
+    "${mode}"
+
   if [[ -f "${pid_file}" ]]; then
     existing_pid="$(cat "${pid_file}" 2>/dev/null || true)"
     existing_cmd="$(ps -p "${existing_pid}" -o args= 2>/dev/null || true)"

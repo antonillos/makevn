@@ -273,9 +273,8 @@ fn validate_command(
             Ok(CommandValidation::Valid)
         }
         "help" | "doctor" | "init" | "uninstall" | "exec" | "test" | "coverage-changes"
-        | "docker-up" | "docker-down" | "docker-ps" | "docker-ps-required"
-        | "karate-docker-up" | "karate-docker-down" | "run-app" | "run-app-bg"
-        | "stop-app" | "run" => {
+        | "docker-up" | "docker-down" | "docker-ps" | "docker-ps-required" | "karate-docker-up"
+        | "karate-docker-down" | "run-app" | "run-app-bg" | "stop-app" | "run" => {
             Ok(CommandValidation::Valid)
         }
         "profile" => match trailing_args.first().map(|arg| arg.to_string_lossy()) {
@@ -698,6 +697,7 @@ fn run_backend_with_loader(
     let mut cancel_requested = false;
     let mut header_printed = false;
     let mut tail_window = None;
+    let mut tail_active = tail_enabled;
     let mut metadata = if let Some(metadata_file) = metadata_file {
         read_backend_metadata(metadata_file.path())?
     } else {
@@ -721,14 +721,14 @@ fn run_backend_with_loader(
         if let Some(renderer) = renderer.as_mut() {
             renderer.clear_frame_line();
         }
-        if tail_enabled {
+        if tail_active {
             print_backend_header(metadata)
                 .map_err(|error| format!("failed to print command header: {error}"))?;
-            print_backend_log_notice(metadata, tail_enabled)
+            print_backend_log_notice(metadata, tail_active)
                 .map_err(|error| format!("failed to print log location: {error}"))?;
             tail_window = Some(LogTailWindow::new(PathBuf::from(&metadata.log_path)));
         } else if let Some(renderer) = renderer.as_mut() {
-            let hint = renderer.current_spinner_hint();
+            let hint = renderer.current_dashboard_hint();
             renderer
                 .render_dashboard(
                     child.id(),
@@ -743,10 +743,30 @@ fn run_backend_with_loader(
     }
 
     loop {
+        if let Some(metadata_file) = metadata_file {
+            let latest_metadata = read_backend_metadata(metadata_file.path())?;
+            if latest_metadata.is_some() && latest_metadata != metadata {
+                metadata = latest_metadata;
+                if let Some(renderer) = renderer.as_mut() {
+                    renderer.clear_frame_line();
+                }
+                if tail_active {
+                    if let Some(metadata) = metadata.as_ref() {
+                        tail_window = Some(LogTailWindow::new(PathBuf::from(&metadata.log_path)));
+                    }
+                }
+            }
+        }
+
         if let Some(status) = child
             .try_wait()
             .map_err(|error| format!("failed while waiting for backend: {error}"))?
         {
+            if let Some(metadata_file) = metadata_file {
+                if let Some(latest_metadata) = read_backend_metadata(metadata_file.path())? {
+                    metadata = Some(latest_metadata);
+                }
+            }
             if !header_printed {
                 if metadata.is_none() {
                     if let Some(metadata_file) = metadata_file {
@@ -757,14 +777,14 @@ fn run_backend_with_loader(
                     if let Some(renderer) = renderer.as_mut() {
                         renderer.clear_frame_line();
                     }
-                    if tail_enabled {
+                    if tail_active {
                         print_backend_header(metadata)
                             .map_err(|error| format!("failed to print command header: {error}"))?;
-                        print_backend_log_notice(metadata, tail_enabled)
+                        print_backend_log_notice(metadata, tail_active)
                             .map_err(|error| format!("failed to print log location: {error}"))?;
                         tail_window = Some(LogTailWindow::new(PathBuf::from(&metadata.log_path)));
                     } else if let Some(renderer) = renderer.as_mut() {
-                        let hint = renderer.current_spinner_hint();
+                        let hint = renderer.current_dashboard_hint();
                         renderer
                             .render_dashboard(
                                 child.id(),
@@ -781,7 +801,7 @@ fn run_backend_with_loader(
                 tail_window
                     .finish()
                     .map_err(|error| format!("failed to render tailed log: {error}"))?;
-                if tail_enabled {
+                if tail_active {
                     tail_window
                         .clear()
                         .map_err(|error| format!("failed to clear tailed log: {error}"))?;
@@ -790,7 +810,7 @@ fn run_backend_with_loader(
             if let Some(renderer) = renderer.as_mut() {
                 renderer.clear_line();
             }
-            if tail_enabled && header_printed && renderer.is_some() {
+            if tail_active && header_printed && renderer.is_some() {
                 let _ = write!(io::stdout(), "\u{1b}[1A\r\u{1b}[2K");
                 let _ = io::stdout().flush();
             }
@@ -818,14 +838,14 @@ fn run_backend_with_loader(
                 if let Some(renderer) = renderer.as_mut() {
                     renderer.clear_frame_line();
                 }
-                if tail_enabled {
+                if tail_active {
                     print_backend_header(metadata)
                         .map_err(|error| format!("failed to print command header: {error}"))?;
-                    print_backend_log_notice(metadata, tail_enabled)
+                    print_backend_log_notice(metadata, tail_active)
                         .map_err(|error| format!("failed to print log location: {error}"))?;
                     tail_window = Some(LogTailWindow::new(PathBuf::from(&metadata.log_path)));
                 } else if let Some(renderer) = renderer.as_mut() {
-                    let hint = renderer.current_spinner_hint();
+                    let hint = renderer.current_dashboard_hint();
                     renderer
                         .render_dashboard(
                             child.id(),
@@ -850,6 +870,22 @@ fn run_backend_with_loader(
                 InputEvent::Interrupt => {
                     interrupt_backend(child.id());
                     cancel_requested = true;
+                }
+                InputEvent::StartTail => {
+                    if !tail_active {
+                        if let Some(metadata) = metadata.as_ref() {
+                            renderer.clear_frame_line();
+                            print_backend_header(metadata).map_err(|error| {
+                                format!("failed to print command header: {error}")
+                            })?;
+                            print_backend_log_notice(metadata, true).map_err(|error| {
+                                format!("failed to print log location: {error}")
+                            })?;
+                            tail_window =
+                                Some(LogTailWindow::new(PathBuf::from(&metadata.log_path)));
+                            tail_active = true;
+                        }
+                    }
                 }
                 InputEvent::IncreaseLines => line_delta = 1,
                 InputEvent::DecreaseLines => line_delta = -1,
@@ -876,18 +912,21 @@ fn run_backend_with_loader(
         }
 
         if let Some(renderer) = renderer.as_mut() {
-            let hint = renderer.current_spinner_hint();
             match metadata.as_ref() {
-                Some(m) if !tail_enabled => renderer
-                    .render_dashboard(
-                        child.id(),
-                        global_started_at.elapsed(),
-                        completed_summaries,
-                        m,
-                        &hint,
-                    )
-                    .map_err(|error| format!("failed to render loader: {error}"))?,
+                Some(m) if !tail_active => {
+                    let hint = renderer.current_dashboard_hint();
+                    renderer
+                        .render_dashboard(
+                            child.id(),
+                            global_started_at.elapsed(),
+                            completed_summaries,
+                            m,
+                            &hint,
+                        )
+                        .map_err(|error| format!("failed to render loader: {error}"))?
+                }
                 _ => {
+                    let hint = renderer.current_spinner_hint();
                     if completed_summaries.is_empty() {
                         renderer
                             .render_frame_with_hint(child.id(), &hint)
@@ -906,7 +945,7 @@ fn run_backend_with_loader(
         tail_window
             .finish()
             .map_err(|error| format!("failed to render tailed log: {error}"))?;
-        if tail_enabled {
+        if tail_active {
             tail_window
                 .clear()
                 .map_err(|error| format!("failed to clear tailed log: {error}"))?;
@@ -917,7 +956,7 @@ fn run_backend_with_loader(
         renderer.clear_line();
     }
 
-    if tail_enabled && header_printed && renderer.is_some() {
+    if tail_active && header_printed && renderer.is_some() {
         let _ = write!(io::stdout(), "\u{1b}[1A\r\u{1b}[2K");
         let _ = io::stdout().flush();
     }
@@ -1220,6 +1259,19 @@ fn spinner_hint(message: &str) -> String {
     }
 
     format!("esc {message}")
+}
+
+fn dashboard_hint(interrupt_hint: &str) -> String {
+    if use_color() {
+        return format!(
+            "{} {} {}",
+            style("97", "t"),
+            dim_text("tail |"),
+            interrupt_hint
+        );
+    }
+
+    format!("t tail | {interrupt_hint}")
 }
 
 fn tail_hint(interrupt_hint: &str) -> String {
@@ -1591,6 +1643,7 @@ struct SpinnerRenderer {
 enum InputEvent {
     None,
     Interrupt,
+    StartTail,
     IncreaseLines,
     DecreaseLines,
 }
@@ -1633,6 +1686,7 @@ impl SpinnerRenderer {
                 self.second_escape_deadline = Some(now + Duration::from_secs(3));
                 Ok(InputEvent::None)
             }
+            Ok(1) if buffer[0] == b't' || buffer[0] == b'T' => Ok(InputEvent::StartTail),
             Ok(1) if buffer[0] == b'+' => Ok(InputEvent::IncreaseLines),
             Ok(1) if buffer[0] == b'-' => Ok(InputEvent::DecreaseLines),
             Ok(_) => Ok(InputEvent::None),
@@ -1651,6 +1705,10 @@ impl SpinnerRenderer {
             self.second_escape_deadline = None;
             spinner_hint("interrupt")
         }
+    }
+
+    fn current_dashboard_hint(&mut self) -> String {
+        dashboard_hint(&self.current_spinner_hint())
     }
 
     fn render_frame_with_hint(&mut self, pid: u32, hint: &str) -> io::Result<()> {
@@ -2119,7 +2177,7 @@ fn print_help(with_header: bool) {
     println!(
         "  - 'make-bootstrap' is only for repositories that do not already have a make entrypoint."
     );
-    println!("  - '--tail' keeps managed-log command output compact and ends each command with ':: log: ...' plus '[ok] <duration>'.");
+    println!("  - '--tail' starts managed-log commands in tail mode; without it, press 't' while a command is running to tail the current log.");
 }
 
 struct Lossy<'a>(&'a OsString);
@@ -2133,9 +2191,10 @@ impl fmt::Display for Lossy<'_> {
 #[cfg(test)]
 mod tests {
     use super::{
-        command_supports_frontend_loader, dim_text, insert_backend_option,
-        install_root_with_override, parse_invocation, read_backend_metadata, spinner_kitt_frame,
-        split_command_segments, strip_frontend_tail_flag, Action, BackendInvocation,
+        command_supports_frontend_loader, dashboard_hint, dim_text, insert_backend_option,
+        install_root_with_override, parse_invocation, read_backend_metadata, spinner_hint,
+        spinner_kitt_frame, split_command_segments, strip_frontend_tail_flag, Action,
+        BackendInvocation,
     };
     use std::env;
     use std::ffi::OsString;
@@ -2184,6 +2243,14 @@ mod tests {
         assert_eq!(spinner_kitt_frame(63), "........");
         assert_eq!(spinner_kitt_frame(67), "........");
         assert_eq!(spinner_kitt_frame(68), "■.......");
+    }
+
+    #[test]
+    fn dashboard_hint_advertises_tail_toggle() {
+        assert_eq!(
+            dashboard_hint(&spinner_hint("interrupt")),
+            "t tail | esc interrupt"
+        );
     }
 
     #[test]
@@ -2419,7 +2486,9 @@ mod tests {
             "test-compile"
         )));
         assert!(command_supports_frontend_loader(&OsString::from("verify")));
-        assert!(command_supports_frontend_loader(&OsString::from("docker-up")));
+        assert!(command_supports_frontend_loader(&OsString::from(
+            "docker-up"
+        )));
         assert!(command_supports_frontend_loader(&OsString::from(
             "docker-ps-required"
         )));
@@ -2442,11 +2511,8 @@ mod tests {
     #[test]
     fn parses_karate_all_as_frontend_loader_command() {
         let current_dir = env::current_dir().unwrap();
-        let action = parse_invocation(vec![
-            OsString::from("karate-all"),
-            OsString::from("--tail"),
-        ])
-        .unwrap();
+        let action =
+            parse_invocation(vec![OsString::from("karate-all"), OsString::from("--tail")]).unwrap();
 
         assert_eq!(
             action,

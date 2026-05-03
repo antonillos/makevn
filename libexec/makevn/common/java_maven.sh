@@ -35,19 +35,25 @@ makevn_effective_java_home() {
     return 0
   fi
 
-  if [[ -n "${MAKEVN_JAVA_HOME:-}" ]]; then
-    printf '%s\n' "${MAKEVN_JAVA_HOME}"
-    return 0
-  fi
-
   if [[ "${context}" == "karate" ]]; then
-    tool_versions_file="$(makevn_detect_karate_tool_versions "${repo_root}" || true)"
+    tool_versions_file="${MAKEVN_KARATE_TOOL_VERSIONS:-}"
+    if [[ -z "${tool_versions_file}" ]]; then
+      tool_versions_file="$(makevn_detect_karate_tool_versions "${repo_root}" || true)"
+    fi
   else
-    tool_versions_file="$(makevn_detect_code_tool_versions "${repo_root}" "${maven_base_path}" || true)"
+    tool_versions_file="${MAKEVN_CODE_TOOL_VERSIONS:-}"
+    if [[ -z "${tool_versions_file}" ]]; then
+      tool_versions_file="$(makevn_detect_code_tool_versions "${repo_root}" "${maven_base_path}" || true)"
+    fi
   fi
 
   if [[ -n "${tool_versions_file}" ]]; then
     makevn_resolve_tool_versions_home "${tool_versions_file}"
+    return 0
+  fi
+
+  if [[ -n "${MAKEVN_JAVA_HOME:-}" ]]; then
+    printf '%s\n' "${MAKEVN_JAVA_HOME}"
     return 0
   fi
 
