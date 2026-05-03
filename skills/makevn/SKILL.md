@@ -42,6 +42,7 @@ It provides:
 10. Treat `makevn` subcommands as the primary public interface. Do not translate them into bare `make` targets. For Docker commands, run `makevn docker-up`, `makevn docker-down`, `makevn docker-ps`, or `makevn docker-ps-required`; do not run bare targets such as `make docker-up` or `make docker-ps-required`.
 11. Treat Karate workflows the same way: run `makevn karate-up`, `makevn karate-down`, `makevn karate-test`, or `makevn karate-all` only when `makevn doctor` detects Karate files. Do not assume every repository has Karate.
 12. Karate tests need the real app running. Use `makevn run-app-bg` before `makevn karate-test`, and always finish with `makevn stop-app`; `makevn karate-all` owns that lifecycle for the full flow.
+13. Do not assume every repository uses `LOCAL_CONTAINERS`. Let `makevn doctor`, `.makevn/config`, the repository profile, or the user's exported `LOCAL_CONTAINERS` decide that behavior.
 
 ## When A Command Counts As OK
 
@@ -137,7 +138,14 @@ makevn init --mode standalone
 makevn init --mode make-include
 makevn init --mode make-bootstrap
 makevn uninstall
+makevn profile refresh
+makevn compile
+makevn test-compile
+makevn compile-tests
+makevn validate
+makevn package
 makevn build
+makevn clean
 makevn test
 makevn test --name MyTest
 makevn test --name MyTest,OtherTest
@@ -155,11 +163,16 @@ makevn docker-up
 makevn docker-down
 makevn docker-ps
 makevn docker-ps-required
+makevn docker-up --tail
+makevn docker-down --tail
+makevn docker-ps --tail
+makevn docker-ps-required --tail
 makevn karate-up
 makevn karate-down
 makevn karate-test
 makevn karate-test --tag @smoke
 makevn karate-all
+makevn run-app
 makevn run-app-bg
 makevn stop-app
 makevn run
@@ -220,6 +233,8 @@ makevn karate-test --tag @smoke
 makevn run-app-bg
 makevn stop-app
 ```
+
+For `docker-*`, `--tail` is supported but remains a human-facing option. Agents should omit it unless the human asks for an interactive local view.
 
 Do not guess a root `make` target from a `makevn` subcommand name. This is invalid unless the repository itself defines such a target:
 

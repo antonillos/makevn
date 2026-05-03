@@ -22,6 +22,19 @@ makevn_collect_compose_args() {
   fi
 }
 
+makevn_parse_docker_args() {
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --tail)
+        shift
+        ;;
+      *)
+        makevn_die "Unknown docker option: $1"
+        ;;
+    esac
+  done
+}
+
 makevn_wait_for_required_docker_services() {
   local repo_root="$1"
   local compose_file="$2"
@@ -101,7 +114,9 @@ cmd_docker_ps_required() {
   local services=""
   local docker_compose_cmd=""
   local compose_args=""
-  local output=""
+
+  shift
+  makevn_parse_docker_args "$@"
 
   compose_file="$(makevn_boot_compose_file_path "${repo_root}")"
   compose_override_file="$(makevn_boot_compose_override_file_path "${repo_root}")"
@@ -119,10 +134,13 @@ cmd_docker_ps_required() {
     compose_args+=" -f ${compose_override_file}"
   fi
 
-  print_command_intro "${repo_root}" docker-ps-required
-  output="$(cd "${repo_root}" && COMPOSE_ARGS="${compose_args}" SERVICES="${services}" DOCKER_COMPOSE="${docker_compose_cmd}" bash "${docker_ps_script}" || true)"
-  if [[ -n "${output}" ]]; then
-    printf '%s\n' "${output}"
+  if ! makevn_run_logged "${repo_root}" docker-ps-required docker-ps-required docker-ps-required bash -c '
+    output="$(COMPOSE_ARGS="$1" SERVICES="$2" DOCKER_COMPOSE="$3" bash "$4" || true)"
+    if [[ -n "${output}" ]]; then
+      printf "%s\n" "${output}"
+      exit 1
+    fi
+  ' bash "${compose_args}" "${services}" "${docker_compose_cmd}" "${docker_ps_script}"; then
     makevn_die "Required Docker services are not running or healthy. Run 'makevn docker-up' first."
   fi
 }
@@ -135,6 +153,9 @@ cmd_docker_up() {
   local -a docker_compose=()
   local -a compose_args=()
 
+  shift
+  makevn_parse_docker_args "$@"
+
   compose_file="$(makevn_boot_compose_file_path "${repo_root}")"
   compose_override_file="$(makevn_boot_compose_override_file_path "${repo_root}")"
   [[ -f "${compose_file}" ]] || makevn_die "Docker compose file not found: ${compose_file}"
@@ -147,13 +168,11 @@ cmd_docker_up() {
     compose_args+=("${arg}")
   done < <(makevn_collect_compose_args "${compose_file}" "${compose_override_file}")
 
-  print_command_intro "${repo_root}" docker-up
-  makevn_trace_command exec "${docker_compose[@]}" "${compose_args[@]}" down -v --remove-orphans
-  (cd "${repo_root}" && "${docker_compose[@]}" "${compose_args[@]}" down -v --remove-orphans)
-  makevn_trace_command exec docker volume prune -f
-  (cd "${repo_root}" && docker volume prune -f)
-  makevn_trace_command exec "${docker_compose[@]}" "${compose_args[@]}" up --detach
-  (cd "${repo_root}" && "${docker_compose[@]}" "${compose_args[@]}" up --detach)
+  makevn_run_logged "${repo_root}" docker-up docker-up docker-up bash -c '
+    "$@" down -v --remove-orphans
+    docker volume prune -f
+    "$@" up --detach
+  ' bash "${docker_compose[@]}" "${compose_args[@]}"
   makevn_wait_for_required_docker_services "${repo_root}" "${compose_file}" "${compose_override_file}" "${docker_compose_cmd}"
 }
 
@@ -165,6 +184,9 @@ cmd_docker_down() {
   local -a docker_compose=()
   local -a compose_args=()
 
+  shift
+  makevn_parse_docker_args "$@"
+
   compose_file="$(makevn_boot_compose_file_path "${repo_root}")"
   compose_override_file="$(makevn_boot_compose_override_file_path "${repo_root}")"
   [[ -f "${compose_file}" ]] || makevn_die "Docker compose file not found: ${compose_file}"
@@ -177,20 +199,20 @@ cmd_docker_down() {
     compose_args+=("${arg}")
   done < <(makevn_collect_compose_args "${compose_file}" "${compose_override_file}")
 
-  print_command_intro "${repo_root}" docker-down
-  makevn_trace_command exec "${docker_compose[@]}" "${compose_args[@]}" down -v --remove-orphans
-  (cd "${repo_root}" && "${docker_compose[@]}" "${compose_args[@]}" down -v --remove-orphans)
-  makevn_trace_command exec docker volume prune -f
-  (cd "${repo_root}" && docker volume prune -f)
+  makevn_run_logged "${repo_root}" docker-down docker-down docker-down bash -c '
+    "$@" down -v --remove-orphans
+    docker volume prune -f
+  ' bash "${docker_compose[@]}" "${compose_args[@]}"
 }
 
 cmd_docker_ps() {
   local repo_root="$1"
   local docker_ps_script="${MAKEVN_LIBEXEC_DIR}/docker/ps.sh"
 
+  shift
+  makevn_parse_docker_args "$@"
+
   [[ -f "${docker_ps_script}" ]] || makevn_die "Docker ps helper script not found: ${docker_ps_script}"
 
-  print_command_intro "${repo_root}" docker-ps
-  makevn_trace_command exec bash "${docker_ps_script}"
-  (cd "${repo_root}" && bash "${docker_ps_script}")
+  makevn_run_logged "${repo_root}" docker-ps docker-ps docker-ps bash "${docker_ps_script}"
 }

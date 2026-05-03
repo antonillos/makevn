@@ -219,10 +219,10 @@ Rules:
 ### Docker Helpers
 
 ```bash
-makevn docker-up
-makevn docker-down
-makevn docker-ps
-makevn docker-ps-required
+makevn docker-up [--tail]
+makevn docker-down [--tail]
+makevn docker-ps [--tail]
+makevn docker-ps-required [--tail]
 ```
 
 ### JDK Commands
@@ -427,11 +427,15 @@ Initially supported command family:
 - `verify`
 - `verify-changes`
 - `pr-verify`
+- `docker-up`
+- `docker-down`
+- `docker-ps`
+- `docker-ps-required`
 - `karate-test`
 
-Commands such as `doctor`, `init`, `uninstall`, `profile refresh`, `coverage-changes`, `jdk current`, `jdk list`, `docker-ps`, `docker-ps-required`, `karate-up`, `karate-down`, `karate-all`, `run-app`, `run-app-bg`, and `stop-app` should reject `--tail`.
+Commands such as `doctor`, `init`, `uninstall`, `profile refresh`, `coverage-changes`, `jdk current`, `jdk list`, `karate-up`, `karate-down`, `karate-all`, `run-app`, `run-app-bg`, and `stop-app` should reject `--tail`.
 
-`exec`, `run`, `docker-up`, and `docker-down` may gain `--tail` support later if they are routed through the same managed log model, but that support is not assumed by this frozen contract.
+`exec` and `run` may gain `--tail` support later if they are routed through the same managed log model, but that support is not assumed by this frozen contract.
 
 ## Exit Codes
 

@@ -36,10 +36,10 @@ Usage:
   makevn [--repo PATH] verify-changes [-- EXTRA_MAVEN_ARGS...]
   makevn [--repo PATH] coverage-changes [--threshold PCT]
   makevn [--repo PATH] pr-verify [-- EXTRA_MAVEN_ARGS...]
-  makevn [--repo PATH] docker-up
-  makevn [--repo PATH] docker-down
-  makevn [--repo PATH] docker-ps
-  makevn [--repo PATH] docker-ps-required
+  makevn [--repo PATH] docker-up [--tail]
+  makevn [--repo PATH] docker-down [--tail]
+  makevn [--repo PATH] docker-ps [--tail]
+  makevn [--repo PATH] docker-ps-required [--tail]
   makevn [--repo PATH] karate-up
   makevn [--repo PATH] karate-down
   makevn [--repo PATH] karate-test [--tag TAG] [-- EXTRA_MAVEN_ARGS...]

@@ -296,3 +296,148 @@ makevn_run_logged_in_context() {
   return ${exit_code}
 }
 
+makevn_run_logged() {
+  local repo_root="$1"
+  local log_name="$2"
+  local command_key="$3"
+  local title="$4"
+  local logs_dir=""
+  local logfile=""
+  local cmd_pid=""
+  local exit_code=0
+  local start_epoch=0
+  local end_epoch=0
+  local duration_seconds=0
+  local duration_display=""
+  local command_display=""
+  local relative_log_path=""
+  local metadata_out="${MAKEVN_BACKEND_METADATA_OUT:-}"
+  local interrupted_by_shell=false
+
+  shift 4
+
+  logs_dir="$(makevn_logs_dir "${repo_root}")"
+  mkdir -p "${logs_dir}"
+  logfile="${logs_dir}/${log_name}.log"
+  relative_log_path=".makevn/logs/${log_name}.log"
+
+  start_epoch="$(date +%s)"
+  command_display="$(makevn_quote_command "$@")"
+  makevn_write_backend_metadata \
+    "${metadata_out}" \
+    "${command_key}" \
+    "${repo_root}" \
+    "${repo_root}" \
+    "${logfile}" \
+    "${relative_log_path}" \
+    "${command_display}" \
+    "" \
+    "${title}"
+
+  if ! [[ -t 1 ]]; then
+    makevn_print_command_header "${title}" "" "${relative_log_path}"
+    makevn_trace_command exec "$@"
+    set +e
+    (
+      cd "${repo_root}"
+      "$@"
+    ) 2>&1 | tee "${logfile}"
+    exit_code=${PIPESTATUS[0]}
+    set -e
+    end_epoch="$(date +%s)"
+    duration_seconds=$((end_epoch - start_epoch))
+    duration_display="$(makevn_format_duration "${duration_seconds}")"
+    if [[ ${exit_code} -eq 0 ]]; then
+      printf '%s %s\n' "$(makevn_accent '[ok]')" "$(makevn_accent "${duration_display}")"
+    else
+      printf '%s %s\n' "$(makevn_warn 'fail')" "$(makevn_warn "exit ${exit_code} after ${duration_display}; check the log for details")"
+    fi
+    return ${exit_code}
+  fi
+
+  bash -c '
+    repo_root="$1"
+    title="$2"
+    start_epoch="$3"
+    logfile="$4"
+    command_display="$5"
+    shift 5
+
+    cd "${repo_root}" || exit 1
+    {
+      printf "started: %s\n" "$(date "+%Y-%m-%d %H:%M:%S")"
+      printf "pid: %s\n" "$$"
+      printf "title: %s\n" "${title}"
+      printf "command: %s\n" "${command_display}"
+      printf "duration_started_epoch: %s\n" "${start_epoch}"
+      set +e
+      "$@"
+      command_exit_code=$?
+      set -e
+      printf "finished: %s | exit_code: %s | duration_seconds: %s\n" \
+        "$(date "+%Y-%m-%d %H:%M:%S")" \
+        "${command_exit_code}" \
+        "$(( $(date +%s) - start_epoch ))"
+      exit "${command_exit_code}"
+    } > "${logfile}" 2>&1
+  ' bash "${repo_root}" "${title}" "${start_epoch}" "${logfile}" "${command_display}" "$@" &
+  cmd_pid=$!
+
+  if makevn_frontend_owns_loader; then
+    local interrupted_by_frontend=false
+
+    cleanup_frontend_loader_interrupt() {
+      interrupted_by_frontend=true
+      makevn_interrupt_process_tree "${cmd_pid}"
+
+      set +e
+      wait "${cmd_pid}" 2>/dev/null
+      exit_code=$?
+      set -e
+    }
+
+    trap 'cleanup_frontend_loader_interrupt' INT TERM
+    set +e
+    wait "${cmd_pid}"
+    exit_code=$?
+    set -e
+    trap - INT TERM
+
+    if [[ "${interrupted_by_frontend}" == true || ${exit_code} -eq 130 ]]; then
+      return 130
+    fi
+
+    return ${exit_code}
+  fi
+
+  makevn_print_command_header "${title}" "${cmd_pid}" "${relative_log_path}"
+  makevn_trace_command exec "$@"
+
+  cleanup_shell_wait_interrupt() {
+    interrupted_by_shell=true
+    makevn_interrupt_process_tree "${cmd_pid}"
+  }
+
+  trap 'cleanup_shell_wait_interrupt' INT TERM
+  set +e
+  wait "${cmd_pid}"
+  exit_code=$?
+  set -e
+  trap - INT TERM
+  end_epoch="$(date +%s)"
+  duration_seconds=$((end_epoch - start_epoch))
+  duration_display="$(makevn_format_duration "${duration_seconds}")"
+
+  if [[ "${interrupted_by_shell}" == true || ${exit_code} -eq 130 ]]; then
+    printf '\r\033[2K%s %s\n' "$(makevn_warn 'x')" "$(makevn_warn "interrupted after ${duration_display}")"
+    return 130
+  fi
+
+  if [[ ${exit_code} -eq 0 ]]; then
+    printf '%s %s\n' "$(makevn_accent '[ok]')" "$(makevn_accent "${duration_display}")"
+    return 0
+  fi
+
+  printf '\r\033[2K%s %s\n' "$(makevn_warn 'fail')" "$(makevn_warn "exit ${exit_code} after ${duration_display}; check the log for details")"
+  return ${exit_code}
+}

@@ -540,6 +540,10 @@ fn command_supports_frontend_loader(command: &OsString) -> bool {
             | "verify"
             | "verify-changes"
             | "pr-verify"
+            | "docker-up"
+            | "docker-down"
+            | "docker-ps"
+            | "docker-ps-required"
             | "karate-test"
     )
 }
@@ -2053,9 +2057,10 @@ fn print_help(with_header: bool) {
     println!("  makevn [--repo PATH] verify-changes [--tail] [-- EXTRA_MAVEN_ARGS...]");
     println!("  makevn [--repo PATH] coverage-changes [--threshold PCT]");
     println!("  makevn [--repo PATH] pr-verify [--tail] [-- EXTRA_MAVEN_ARGS...]");
-    println!("  makevn [--repo PATH] docker-up");
-    println!("  makevn [--repo PATH] docker-down");
-    println!("  makevn [--repo PATH] docker-ps");
+    println!("  makevn [--repo PATH] docker-up [--tail]");
+    println!("  makevn [--repo PATH] docker-down [--tail]");
+    println!("  makevn [--repo PATH] docker-ps [--tail]");
+    println!("  makevn [--repo PATH] docker-ps-required [--tail]");
     println!("  makevn [--repo PATH] karate-up");
     println!("  makevn [--repo PATH] karate-down");
     println!("  makevn [--repo PATH] karate-test [--tail] [--tag TAG] [-- EXTRA_MAVEN_ARGS...]");
@@ -2410,6 +2415,10 @@ mod tests {
             "test-compile"
         )));
         assert!(command_supports_frontend_loader(&OsString::from("verify")));
+        assert!(command_supports_frontend_loader(&OsString::from("docker-up")));
+        assert!(command_supports_frontend_loader(&OsString::from(
+            "docker-ps-required"
+        )));
         assert!(!command_supports_frontend_loader(&OsString::from("doctor")));
         assert!(!command_supports_frontend_loader(&OsString::from("run")));
     }

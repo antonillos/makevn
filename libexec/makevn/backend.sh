@@ -75,7 +75,7 @@ case "${COMMAND}" in
 esac
 
 case "${COMMAND}" in
-  doctor|init|uninstall|profile|docker-ps|docker-ps-required|karate-up|karate-down|run-app|run-app-bg|stop-app|jdk)
+  doctor|init|uninstall|profile|karate-up|karate-down|run-app|run-app-bg|stop-app|jdk)
     if [[ "${COMMAND}" == "doctor" ]]; then
       if [[ -n "${FORMAT}" && "${FORMAT}" != "text" && "${FORMAT}" != "json" ]]; then
         makevn_die "Backend format not implemented yet for ${COMMAND}: ${FORMAT}"
