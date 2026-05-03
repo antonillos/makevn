@@ -374,7 +374,7 @@ makevn_detect_boot_module_name() {
 makevn_find_compose_files() {
   local repo_root="$1"
   find "${repo_root}" \
-    \( -name ".git" -o -name ".makevn" -o -name "e2e" -o -name "karate" \) -prune \
+    \( -name ".git" -o -name ".makevn" -o -name "target" -o -name "e2e" -o -name "karate" \) -prune \
     -o -name "docker-compose.yml" -print \
     2>/dev/null | LC_ALL=C sort
 }
@@ -385,7 +385,7 @@ makevn_find_e2e_compose_files() {
   for _dir in "${repo_root}/e2e" "${repo_root}/karate"; do
     if [[ -d "${_dir}" ]]; then
       find "${_dir}" \
-        \( -name ".git" -o -name ".makevn" \) -prune \
+        \( -name ".git" -o -name ".makevn" -o -name "target" \) -prune \
         -o -name "docker-compose.yml" -print \
         2>/dev/null
     fi
@@ -460,6 +460,45 @@ makevn_karate_compose_file_path() {
   fi
 
   return 1
+}
+
+makevn_karate_compose_override_file_path() {
+  local repo_root="$1"
+  local compose_file=""
+  local compose_dir=""
+
+  compose_file="$(makevn_karate_compose_file_path "${repo_root}" || true)"
+  [[ -n "${compose_file}" ]] || return 1
+
+  compose_dir="$(dirname "${compose_file}")"
+  printf '%s/docker-compose.override.yml\n' "${compose_dir}"
+}
+
+makevn_detect_karate_base_path() {
+  local repo_root="$1"
+
+  if [[ -f "${repo_root}/e2e/karate/pom.xml" ]]; then
+    printf '%s\n' "${repo_root}/e2e/karate"
+    return 0
+  fi
+
+  if [[ -f "${repo_root}/karate/pom.xml" ]]; then
+    printf '%s\n' "${repo_root}/karate"
+    return 0
+  fi
+
+  return 1
+}
+
+makevn_detect_project_key() {
+  local maven_base_path="$1"
+  local pom_path="${maven_base_path}/pom.xml"
+
+  [[ -f "${pom_path}" ]] || return 1
+
+  tail -n +11 "${pom_path}" \
+    | sed -nE 's/.*<groupId>com\.inditex\.([^<]+)<\/groupId>.*/\1/p' \
+    | head -n 1
 }
 
 makevn_detect_jacoco_module_name() {
@@ -764,4 +803,3 @@ makevn_refresh_profile() {
   mkdir -p "$(makevn_state_dir "${repo_root}")"
   makevn_write_profile "${repo_root}"
 }
-

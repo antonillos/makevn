@@ -92,6 +92,7 @@ const COMMAND_SEQUENCE_BREAKERS: &[&str] = &[
     "--mode",
     "--context",
     "--threshold",
+    "--tag",
 ];
 
 #[derive(Debug)]
@@ -267,14 +268,13 @@ fn validate_command(
     match command.to_string_lossy().as_ref() {
         "compile" | "compile-tests" | "validate" | "package" | "clean" | "build" | "verify-ut"
         | "verify-ut-coverage" | "verify-it" | "verify-it-coverage" | "verify"
-        | "verify-changes" | "pr-verify" => {
+        | "verify-changes" | "pr-verify" | "karate-test" | "karate-all" => {
             validate_maven_passthrough_args(command, trailing_args)?;
             Ok(CommandValidation::Valid)
         }
         "help" | "doctor" | "init" | "uninstall" | "exec" | "test" | "coverage-changes"
-        | "docker-up" | "docker-down" | "docker-ps" | "docker-ps-required" | "run" => {
-            Ok(CommandValidation::Valid)
-        }
+        | "docker-up" | "docker-down" | "docker-ps" | "docker-ps-required" | "karate-up"
+        | "karate-down" | "run-app" | "run-app-bg" | "stop-app" | "run" => Ok(CommandValidation::Valid),
         "profile" => match trailing_args.first().map(|arg| arg.to_string_lossy()) {
             Some(subcommand) if subcommand == "refresh" => Ok(CommandValidation::ProfileRefresh),
             _ => Err(String::from("Usage: makevn profile refresh")),
@@ -429,6 +429,13 @@ fn is_top_level_command(arg: &OsString) -> bool {
             | "docker-down"
             | "docker-ps"
             | "docker-ps-required"
+            | "karate-up"
+            | "karate-down"
+            | "karate-test"
+            | "karate-all"
+            | "run-app"
+            | "run-app-bg"
+            | "stop-app"
             | "run"
             | "jdk"
     )
@@ -437,7 +444,7 @@ fn is_top_level_command(arg: &OsString) -> bool {
 fn command_option_takes_value(arg: &OsString) -> bool {
     matches!(
         arg.to_string_lossy().as_ref(),
-        "--name" | "--mode" | "--context" | "--threshold"
+        "--name" | "--mode" | "--context" | "--threshold" | "--tag"
     )
 }
 
@@ -529,6 +536,7 @@ fn command_supports_frontend_loader(command: &OsString) -> bool {
             | "verify"
             | "verify-changes"
             | "pr-verify"
+            | "karate-test"
     )
 }
 
@@ -2043,6 +2051,13 @@ fn print_help(with_header: bool) {
     println!("  makevn [--repo PATH] docker-up");
     println!("  makevn [--repo PATH] docker-down");
     println!("  makevn [--repo PATH] docker-ps");
+    println!("  makevn [--repo PATH] karate-up");
+    println!("  makevn [--repo PATH] karate-down");
+    println!("  makevn [--repo PATH] karate-test [--tail] [--tag TAG] [-- EXTRA_MAVEN_ARGS...]");
+    println!("  makevn [--repo PATH] karate-all [--tag TAG] [-- EXTRA_MAVEN_ARGS...]");
+    println!("  makevn [--repo PATH] run-app");
+    println!("  makevn [--repo PATH] run-app-bg");
+    println!("  makevn [--repo PATH] stop-app");
     println!("  makevn [--repo PATH] run");
     println!("  makevn [--repo PATH] exec [--context code|karate] -- COMMAND [ARGS...]");
     println!("  makevn [--repo PATH] jdk current");
@@ -2075,6 +2090,10 @@ fn print_help(with_header: bool) {
     println!("  makevn coverage-changes");
     println!("  makevn pr-verify");
     println!("  makevn docker-up");
+    println!("  makevn karate-test");
+    println!("  makevn karate-test --tag @smoke");
+    println!("  makevn run-app-bg");
+    println!("  makevn stop-app");
     println!("  makevn exec -- mvn -q -v");
     println!("  make -f .makevn/makevn.mk vn-doctor");
     println!();

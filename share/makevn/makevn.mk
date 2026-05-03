@@ -1,7 +1,7 @@
 MAKEVN_BIN ?= makevn
 MAKEVN_REPO_ROOT ?= $(CURDIR)
 
-.PHONY: vn-help vn-doctor vn-init vn-uninstall vn-profile-refresh vn-compile vn-compile-tests vn-validate vn-package vn-build vn-clean vn-test vn-verify-ut vn-verify-ut-coverage vn-verify-it vn-verify-it-coverage vn-verify vn-verify-changes vn-coverage-changes vn-pr-verify vn-docker-up vn-docker-down vn-docker-ps vn-docker-ps-required vn-run vn-jdk-current vn-jdk-list vn-exec
+.PHONY: vn-help vn-doctor vn-init vn-uninstall vn-profile-refresh vn-compile vn-compile-tests vn-validate vn-package vn-build vn-clean vn-test vn-verify-ut vn-verify-ut-coverage vn-verify-it vn-verify-it-coverage vn-verify vn-verify-changes vn-coverage-changes vn-pr-verify vn-docker-up vn-docker-down vn-docker-ps vn-docker-ps-required vn-karate-up vn-karate-down vn-karate-test vn-karate-all vn-run-app vn-run-app-bg vn-stop-app vn-run vn-jdk-current vn-jdk-list vn-exec
 
 define makevn_run
 	@set +e; \
@@ -42,6 +42,14 @@ vn-help:
 	@printf '%s\n' '  make vn-docker-down'
 	@printf '%s\n' '  make vn-docker-ps'
 	@printf '%s\n' '  make vn-docker-ps-required'
+	@printf '%s\n' '  make vn-karate-up'
+	@printf '%s\n' '  make vn-karate-down'
+	@printf '%s\n' '  make vn-karate-test'
+	@printf '%s\n' '  make vn-karate-test TAG=@smoke'
+	@printf '%s\n' '  make vn-karate-all'
+	@printf '%s\n' '  make vn-run-app'
+	@printf '%s\n' '  make vn-run-app-bg'
+	@printf '%s\n' '  make vn-stop-app'
 	@printf '%s\n' '  make vn-run'
 	@printf '%s\n' '  make vn-jdk-current'
 	@printf '%s\n' '  make vn-jdk-list'
@@ -131,6 +139,47 @@ vn-docker-ps:
 
 vn-docker-ps-required:
 	$(call makevn_run,docker-ps-required)
+
+vn-karate-up:
+	$(call makevn_run,karate-up)
+
+vn-karate-down:
+	$(call makevn_run,karate-down)
+
+vn-karate-test:
+	@set +e; \
+	args="$(MAKEVN_KARATE_TEST_ARGS)"; \
+	if [ -n "$(strip $(TAG))" ]; then \
+		args="$$args --tag $(TAG)"; \
+	fi; \
+	"$(MAKEVN_BIN)" --repo "$(MAKEVN_REPO_ROOT)" karate-test $$args; \
+	rc=$$?; \
+	if [ "$$rc" -eq 130 ]; then \
+		exit 0; \
+	fi; \
+	exit "$$rc"
+
+vn-karate-all:
+	@set +e; \
+	args="$(MAKEVN_KARATE_ALL_ARGS)"; \
+	if [ -n "$(strip $(TAG))" ]; then \
+		args="$$args --tag $(TAG)"; \
+	fi; \
+	"$(MAKEVN_BIN)" --repo "$(MAKEVN_REPO_ROOT)" karate-all $$args; \
+	rc=$$?; \
+	if [ "$$rc" -eq 130 ]; then \
+		exit 0; \
+	fi; \
+	exit "$$rc"
+
+vn-run-app:
+	$(call makevn_run,run-app)
+
+vn-run-app-bg:
+	$(call makevn_run,run-app-bg)
+
+vn-stop-app:
+	$(call makevn_run,stop-app)
 
 vn-run:
 	$(call makevn_run,run)

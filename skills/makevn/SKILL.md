@@ -40,6 +40,8 @@ It provides:
 8. Prefer `--json` when the command supports structured output and the agent needs reliable machine-readable data.
 9. Avoid `--tail` unless the human explicitly asked for an interactive local log view.
 10. Treat `makevn` subcommands as the primary public interface. Do not translate them into bare `make` targets. For Docker commands, run `makevn docker-up`, `makevn docker-down`, `makevn docker-ps`, or `makevn docker-ps-required`; do not run bare targets such as `make docker-up` or `make docker-ps-required`.
+11. Treat Karate workflows the same way: run `makevn karate-up`, `makevn karate-down`, `makevn karate-test`, or `makevn karate-all` only when `makevn doctor` detects Karate files. Do not assume every repository has Karate.
+12. Karate tests need the real app running. Use `makevn run-app-bg` before `makevn karate-test`, and always finish with `makevn stop-app`; `makevn karate-all` owns that lifecycle for the full flow.
 
 ## When A Command Counts As OK
 
@@ -153,6 +155,13 @@ makevn docker-up
 makevn docker-down
 makevn docker-ps
 makevn docker-ps-required
+makevn karate-up
+makevn karate-down
+makevn karate-test
+makevn karate-test --tag @smoke
+makevn karate-all
+makevn run-app-bg
+makevn stop-app
 makevn run
 makevn exec -- mvn -v
 makevn jdk current
@@ -206,6 +215,10 @@ makevn docker-up
 makevn docker-down
 makevn docker-ps
 makevn docker-ps-required
+makevn karate-test
+makevn karate-test --tag @smoke
+makevn run-app-bg
+makevn stop-app
 ```
 
 Do not guess a root `make` target from a `makevn` subcommand name. This is invalid unless the repository itself defines such a target:
@@ -225,6 +238,9 @@ make -f .makevn/makevn.mk vn-docker-up
 make -f .makevn/makevn.mk vn-docker-down
 make -f .makevn/makevn.mk vn-docker-ps
 make -f .makevn/makevn.mk vn-docker-ps-required
+make -f .makevn/makevn.mk vn-karate-test
+make -f .makevn/makevn.mk vn-run-app-bg
+make -f .makevn/makevn.mk vn-stop-app
 ```
 
 ## Make Integration
@@ -254,6 +270,13 @@ Shared targets are namespaced to avoid collisions:
 - `vn-docker-down`
 - `vn-docker-ps`
 - `vn-docker-ps-required`
+- `vn-karate-up`
+- `vn-karate-down`
+- `vn-karate-test`
+- `vn-karate-all`
+- `vn-run-app`
+- `vn-run-app-bg`
+- `vn-stop-app`
 - `vn-run`
 - `vn-jdk-current`
 - `vn-jdk-list`

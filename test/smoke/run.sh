@@ -663,6 +663,153 @@ EOF
   ${CLI} --repo "${repo}" uninstall >/dev/null
 }
 
+test_karate_commands() {
+  local repo="${TMP_ROOT}/karate-commands"
+  local java_home
+  local output
+
+  mkdir -p "${repo}/code/boot/src/test/resources/compose"
+  mkdir -p "${repo}/code/boot/target"
+  mkdir -p "${repo}/e2e/karate/src/test/resources/compose"
+  mkdir -p "${repo}/fake-java-home/bin"
+  mkdir -p "${repo}/fake-bin"
+  cat > "${repo}/code/pom.xml" <<'EOF'
+<project>
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>com.example.parent</groupId>
+  <artifactId>parent</artifactId>
+  <version>1.0.0</version>
+  <packaging>pom</packaging>
+  <modules>
+    <module>boot</module>
+  </modules>
+  <properties>
+    <java.version>21</java.version>
+  </properties>
+  <groupId>com.inditex.icdmfpbcqaproductsample</groupId>
+</project>
+EOF
+  printf '<project/>\n' > "${repo}/e2e/karate/pom.xml"
+  printf 'services:\n  db:\n    image: postgres:16\n' > "${repo}/e2e/karate/src/test/resources/compose/docker-compose.yml"
+  printf 'services:\n  db:\n    environment:\n      FOO: bar\n' > "${repo}/e2e/karate/src/test/resources/compose/docker-compose.override.yml"
+  java_home="$(detect_java_home)"
+
+  cat > "${repo}/mvnw" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+printf 'ARGS=%s\n' "$*" >> .mvnw.log
+printf 'JAVA_HOME=%s\n' "${JAVA_HOME:-}" >> .mvnw.log
+for arg in "$@"; do
+  if [[ "${arg}" == "package" ]]; then
+    mkdir -p code/boot/target
+    printf 'not-a-real-jar\n' > code/boot/target/app.jar
+  fi
+done
+EOF
+  chmod +x "${repo}/mvnw"
+
+  cat > "${repo}/fake-java-home/bin/java" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+printf 'JAVA_ARGS=%s\n' "$*" >> .java.log
+if [[ "${1:-}" == "-jar" ]]; then
+  trap 'exit 0' TERM INT
+  while true; do
+    sleep 1
+  done
+fi
+EOF
+  chmod +x "${repo}/fake-java-home/bin/java"
+
+  cat > "${repo}/fake-bin/docker-compose" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+printf 'docker-compose %s\n' "$*" >> .docker-compose.log
+if [[ "$*" == *" ps -q "* ]]; then
+  printf 'fake-service-id\n'
+fi
+EOF
+  chmod +x "${repo}/fake-bin/docker-compose"
+
+  cat > "${repo}/fake-bin/docker" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+printf 'docker %s\n' "$*" >> .docker.log
+if [[ "$1" == "compose" && "${2:-}" == "version" ]]; then
+  exit 0
+fi
+if [[ "$1" == "volume" && "${2:-}" == "prune" && "${3:-}" == "-f" ]]; then
+  exit 0
+fi
+if [[ "$1" == "inspect" && "${2:-}" == "-f" ]]; then
+  case "$3" in
+    '{{.State.Status}}')
+      printf 'running\n'
+      ;;
+    '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}')
+      printf 'healthy\n'
+      ;;
+    '{{.Name}}')
+      printf '/fake-db\n'
+      ;;
+    *)
+      exit 1
+      ;;
+  esac
+  exit 0
+fi
+exit 0
+EOF
+  chmod +x "${repo}/fake-bin/docker"
+
+  cat > "${repo}/fake-bin/curl" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+printf 'curl %s\n' "$*" >> .curl.log
+exit 0
+EOF
+  chmod +x "${repo}/fake-bin/curl"
+
+  cat > "${repo}/fake-bin/makevn-wrapper" <<EOF
+#!/usr/bin/env bash
+set -euo pipefail
+export PATH="${repo}/fake-bin:\$PATH"
+exec "${CLI}" "\$@"
+EOF
+  chmod +x "${repo}/fake-bin/makevn-wrapper"
+
+  PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" init --mode make-bootstrap >/dev/null
+  cat > "${repo}/.makevn/config" <<EOF
+MAKEVN_JAVA_HOME="${java_home}"
+MAKEVN_CODE_JAVA_HOME="${repo}/fake-java-home"
+MAKEVN_KARATE_JAVA_HOME=""
+MAKEVN_CODE_TOOL_VERSIONS=""
+MAKEVN_KARATE_TOOL_VERSIONS=""
+MAKEVN_RUN_CMD=""
+EOF
+
+  PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" karate-up >/dev/null
+  PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" karate-down >/dev/null
+  printf 'not-a-real-jar\n' > "${repo}/code/boot/target/app.jar"
+  PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" run-app-bg >/dev/null
+  PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" stop-app >/dev/null
+  PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" karate-test --tag @smoke >/dev/null
+  output="$(PATH="${repo}/fake-bin:${PATH}" rtk make -f .makevn/makevn.mk -C "${repo}" MAKEVN_BIN="${repo}/fake-bin/makevn-wrapper" vn-karate-all TAG=@smoke)"
+
+  assert_matches "${repo}/.docker-compose.log" '^docker-compose -f .*/e2e/karate/src/test/resources/compose/docker-compose\.yml -f .*/e2e/karate/src/test/resources/compose/docker-compose\.override\.yml down -v --remove-orphans$'
+  assert_matches "${repo}/.docker-compose.log" '^docker-compose -f .*/e2e/karate/src/test/resources/compose/docker-compose\.yml -f .*/e2e/karate/src/test/resources/compose/docker-compose\.override\.yml up --detach$'
+  assert_matches "${repo}/.docker-compose.log" '^docker-compose -f .*/e2e/karate/src/test/resources/compose/docker-compose\.yml -f .*/e2e/karate/src/test/resources/compose/docker-compose\.override\.yml ps -q db$'
+  assert_matches "${repo}/.mvnw.log" '^ARGS=-nsu -f .*/e2e/karate/pom\.xml test -Dkarate\.env=local -Dkarate\.report\.options=--showLog true -Dkarate\.options=-t@smoke$'
+  assert_matches "${repo}/.mvnw.log" '^ARGS=-f .*/code/pom\.xml package$'
+  assert_contains "${repo}/.mvnw.log" "JAVA_HOME=${java_home}"
+  assert_matches "${repo}/.java.log" '^JAVA_ARGS=-jar .*/code/boot/target/app\.jar$'
+  assert_contains "${repo}/.curl.log" "http://localhost:8080/icdmfpbcqaproductsample/amiga/health"
+  assert_not_exists "${repo}/.makevn/app/app.pid"
+  [[ "${output}" == *"[ok] "* ]] || fail "expected vn-karate-all output to include success summary"
+
+  ${CLI} --repo "${repo}" uninstall >/dev/null
+}
+
 test_verify_split_commands() {
   local repo="${TMP_ROOT}/verify-split"
   local java_home
@@ -1252,6 +1399,7 @@ main() {
   test_tail_degrades_without_tty
   test_command_routing
   test_docker_commands
+  test_karate_commands
   test_verify_split_commands
   test_verify_it_requires_running_services
   test_verify_it_uses_verify_lifecycle_when_verify_workflow_skips_it

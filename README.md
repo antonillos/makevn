@@ -97,6 +97,12 @@ makevn docker-up
 makevn docker-down
 makevn docker-ps
 makevn docker-ps-required
+makevn karate-up
+makevn karate-down
+makevn karate-test
+makevn karate-test --tag @smoke
+makevn run-app-bg
+makevn stop-app
 makevn run
 makevn exec -- mvn -v
 makevn jdk current

@@ -31,11 +31,30 @@ runtime, not by a target repository's legacy `scripts/make/*` folder. Legacy
 Makefile scripts can be useful examples when improving parity, but they must not be
 part of the agent execution contract.
 
+Karate workflows are optional. Agents should first use `makevn doctor` to confirm
+that `Karate .tool-versions` and `Docker e2e compose file` are detected. When they
+are present, use public commands such as:
+
+- `makevn karate-test`
+- `makevn karate-test --tag @smoke`
+- `makevn karate-up`
+- `makevn karate-down`
+- `makevn karate-all`
+- `makevn run-app-bg`
+- `makevn stop-app`
+
+Agents should not guess root targets such as `make karate-test`; those may exist in
+some repositories, but they are not the portable `makevn` contract.
+
+Karate tests need the real application running. For a manual chain, agents should
+use `makevn run-app-bg` before `makevn karate-test` and always finish with
+`makevn stop-app`. For the full flow, `makevn karate-all` owns that lifecycle.
+
 The optional make integration exposes namespaced `vn-*` targets only. Agents should
 run public Docker CLI commands as `makevn docker-up`, `makevn docker-down`,
 `makevn docker-ps`, or `makevn docker-ps-required`, not as bare root targets
 such as `make docker-up` or `make docker-ps-required`. Use
-`make -f .makevn/makevn.mk vn-docker-*` only when explicitly validating make
+`make -f .makevn/makevn.mk vn-docker-*` or `vn-karate-*` only when explicitly validating make
 integration.
 
 ## Generic Workflow

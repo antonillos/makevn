@@ -135,6 +135,11 @@ Run command family:
 - `verify-changes`
 - `coverage-changes`
 - `pr-verify`
+- `karate-test`
+- `karate-all`
+- `run-app`
+- `run-app-bg`
+- `stop-app`
 - `exec`
 - `run`
 - `docker-up`
