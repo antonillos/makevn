@@ -797,6 +797,8 @@ EOF
 
   PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" karate-docker-up >/dev/null
   PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" karate-docker-down >/dev/null
+  PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" docker-ps-required --compose karate >/dev/null
+  PATH="${repo}/fake-bin:${PATH}" rtk make -f .makevn/makevn.mk -C "${repo}" MAKEVN_BIN="${repo}/fake-bin/makevn-wrapper" vn-docker-ps-required MAKEVN_DOCKER_PS_REQUIRED_ARGS="--compose karate" >/dev/null
   printf 'not-a-real-jar\n' > "${repo}/code/boot/target/app.jar"
   PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" run-app-bg >/dev/null
   PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" stop-app >/dev/null

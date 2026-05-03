@@ -98,6 +98,7 @@ makevn docker-up
 makevn docker-down
 makevn docker-ps
 makevn docker-ps-required
+makevn docker-ps-required --compose karate
 makevn karate-docker-up
 makevn karate-docker-down
 makevn karate-test

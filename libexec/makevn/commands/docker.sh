@@ -35,6 +35,40 @@ makevn_parse_docker_args() {
   done
 }
 
+makevn_docker_compose_file_for_kind() {
+  local repo_root="$1"
+  local compose_kind="$2"
+
+  case "${compose_kind}" in
+    boot)
+      makevn_boot_compose_file_path "${repo_root}"
+      ;;
+    karate)
+      makevn_karate_compose_file_path "${repo_root}"
+      ;;
+    *)
+      makevn_die "Unknown docker compose selection: ${compose_kind}. Expected boot or karate."
+      ;;
+  esac
+}
+
+makevn_docker_compose_override_file_for_kind() {
+  local repo_root="$1"
+  local compose_kind="$2"
+
+  case "${compose_kind}" in
+    boot)
+      makevn_boot_compose_override_file_path "${repo_root}"
+      ;;
+    karate)
+      makevn_karate_compose_override_file_path "${repo_root}"
+      ;;
+    *)
+      makevn_die "Unknown docker compose selection: ${compose_kind}. Expected boot or karate."
+      ;;
+  esac
+}
+
 makevn_wait_for_required_docker_services() {
   local repo_root="$1"
   local compose_file="$2"
@@ -107,6 +141,7 @@ print_boot_docker_service_issues() {
 
 cmd_docker_ps_required() {
   local repo_root="$1"
+  local compose_kind="boot"
   local compose_file=""
   local compose_override_file=""
   local docker_ps_script="${MAKEVN_LIBEXEC_DIR}/docker/ps.sh"
@@ -116,11 +151,25 @@ cmd_docker_ps_required() {
   local compose_args=""
 
   shift
-  makevn_parse_docker_args "$@"
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --tail)
+        shift
+        ;;
+      --compose)
+        [[ $# -ge 2 ]] || makevn_die "Missing value for --compose"
+        compose_kind="$2"
+        shift 2
+        ;;
+      *)
+        makevn_die "Unknown docker option: $1"
+        ;;
+    esac
+  done
 
-  compose_file="$(makevn_boot_compose_file_path "${repo_root}")"
-  compose_override_file="$(makevn_boot_compose_override_file_path "${repo_root}")"
-  [[ -f "${compose_file}" ]] || makevn_die "Docker compose file not found: ${compose_file}"
+  compose_file="$(makevn_docker_compose_file_for_kind "${repo_root}" "${compose_kind}" || true)"
+  compose_override_file="$(makevn_docker_compose_override_file_for_kind "${repo_root}" "${compose_kind}" || true)"
+  [[ -f "${compose_file}" ]] || makevn_die "Docker compose file not found for ${compose_kind}: ${compose_file}"
   [[ -f "${docker_ps_script}" && -f "${extract_services_script}" ]] || makevn_die "Docker helper scripts not found"
 
   services="$(bash "${extract_services_script}" "${compose_file}" || true)"

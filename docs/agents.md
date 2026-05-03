@@ -46,6 +46,11 @@ are present, use public commands such as:
 Agents should not guess root targets such as `make karate-test`; those may exist in
 some repositories, but they are not the portable `makevn` contract.
 
+`makevn karate-docker-up` waits for the required services in the detected Karate
+E2E compose to be running and healthy before returning. For a standalone service
+validation, use `makevn docker-ps-required --compose karate`; plain
+`makevn docker-ps-required` validates the boot compose.
+
 Karate tests need the real application running. For a manual chain, agents should
 use `makevn run-app-bg` before `makevn karate-test` and always finish with
 `makevn stop-app`. For the full flow, `makevn karate-all` owns that lifecycle.

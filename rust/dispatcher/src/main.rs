@@ -448,7 +448,7 @@ fn is_top_level_command(arg: &OsString) -> bool {
 fn command_option_takes_value(arg: &OsString) -> bool {
     matches!(
         arg.to_string_lossy().as_ref(),
-        "--name" | "--mode" | "--context" | "--threshold" | "--tag"
+        "--name" | "--mode" | "--context" | "--threshold" | "--tag" | "--compose"
     )
 }
 
@@ -2063,7 +2063,7 @@ fn print_help(with_header: bool) {
     println!("  makevn [--repo PATH] docker-up [--tail]");
     println!("  makevn [--repo PATH] docker-down [--tail]");
     println!("  makevn [--repo PATH] docker-ps [--tail]");
-    println!("  makevn [--repo PATH] docker-ps-required [--tail]");
+    println!("  makevn [--repo PATH] docker-ps-required [--tail] [--compose boot|karate]");
     println!("  makevn [--repo PATH] karate-docker-up [--tail]");
     println!("  makevn [--repo PATH] karate-docker-down [--tail]");
     println!("  makevn [--repo PATH] karate-test [--tail] [--tag TAG] [-- EXTRA_MAVEN_ARGS...]");

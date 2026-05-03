@@ -43,6 +43,7 @@ vn-help:
 	@printf '%s\n' '  make vn-docker-down'
 	@printf '%s\n' '  make vn-docker-ps'
 	@printf '%s\n' '  make vn-docker-ps-required'
+	@printf '%s\n' '  make vn-docker-ps-required MAKEVN_DOCKER_PS_REQUIRED_ARGS="--compose karate"'
 	@printf '%s\n' '  make vn-karate-docker-up'
 	@printf '%s\n' '  make vn-karate-docker-down'
 	@printf '%s\n' '  make vn-karate-test'
@@ -142,7 +143,7 @@ vn-docker-ps:
 	$(call makevn_run,docker-ps)
 
 vn-docker-ps-required:
-	$(call makevn_run,docker-ps-required)
+	$(call makevn_run,docker-ps-required $(MAKEVN_DOCKER_PS_REQUIRED_ARGS))
 
 vn-karate-docker-up:
 	$(call makevn_run,karate-docker-up)

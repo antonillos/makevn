@@ -13,40 +13,6 @@ makevn_collect_karate_compose_args() {
   fi
 }
 
-makevn_karate_services_required() {
-  local repo_root="$1"
-  local compose_file=""
-  local compose_override_file=""
-  local docker_ps_script="${MAKEVN_LIBEXEC_DIR}/docker/ps.sh"
-  local extract_services_script="${MAKEVN_LIBEXEC_DIR}/docker/extract_services.sh"
-  local services=""
-  local docker_compose_cmd=""
-  local compose_args=""
-  local output=""
-
-  compose_file="$(makevn_karate_compose_file_path "${repo_root}" || true)"
-  compose_override_file="$(makevn_karate_compose_override_file_path "${repo_root}" || true)"
-  [[ -f "${compose_file}" ]] || makevn_die "Karate docker compose file not found. Configure MAKEVN_E2E_COMPOSE_FILE or add e2e/karate/src/test/resources/compose/docker-compose.yml."
-  [[ -f "${docker_ps_script}" && -f "${extract_services_script}" ]] || makevn_die "Docker helper scripts not found"
-
-  services="$(bash "${extract_services_script}" "${compose_file}" || true)"
-  [[ -n "${services}" ]] || makevn_die "No services defined in Karate compose file: ${compose_file}"
-
-  docker_compose_cmd="$(makevn_resolve_docker_compose_command || true)"
-  [[ -n "${docker_compose_cmd}" ]] || makevn_die "Neither docker-compose nor 'docker compose' is available."
-
-  compose_args="-f ${compose_file}"
-  if [[ -f "${compose_override_file}" ]]; then
-    compose_args+=" -f ${compose_override_file}"
-  fi
-
-  output="$(cd "${repo_root}" && COMPOSE_ARGS="${compose_args}" SERVICES="${services}" DOCKER_COMPOSE="${docker_compose_cmd}" bash "${docker_ps_script}" || true)"
-  if [[ -n "${output}" ]]; then
-    printf '%s\n' "${output}"
-    makevn_die "Required Karate Docker services are not running or healthy. Run 'makevn karate-docker-up' first."
-  fi
-}
-
 makevn_wait_app_health() {
   local health_url="$1"
   local timeout_seconds="${2:-120}"
@@ -131,6 +97,7 @@ cmd_karate_docker_up() {
       "$@" up --detach
     ' bash "${docker_compose[@]}" "${compose_args[@]}"
   fi
+  makevn_wait_for_required_docker_services "${repo_root}" "${compose_file}" "${compose_override_file}" "${docker_compose_cmd}"
 }
 
 cmd_karate_test() {
@@ -192,7 +159,6 @@ cmd_karate_all() {
   shift
 
   cmd_karate_docker_up "${repo_root}"
-  makevn_karate_services_required "${repo_root}"
 
   if [[ "${SKIP_PACKAGE:-false}" == "false" ]]; then
     cmd_package "${repo_root}"

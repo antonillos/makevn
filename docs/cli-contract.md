@@ -153,7 +153,7 @@ makevn run-app-bg
 makevn stop-app
 ```
 
-`karate-docker-up` and `karate-docker-down` use the detected E2E compose file and include a sibling `docker-compose.override.yml` when present. `karate-test --tag @tag` maps to Karate's tag filtering.
+`karate-docker-up` waits for required services from the detected E2E compose to become running and healthy before returning. `karate-docker-up` and `karate-docker-down` include a sibling `docker-compose.override.yml` when present. `karate-test --tag @tag` maps to Karate's tag filtering.
 
 `run-app-bg` starts the built application jar, records its PID under `.makevn/app/`, waits for `/amiga/health`, and returns so it can be chained before `karate-test`. `stop-app` validates the recorded jar before stopping the process. `karate-all` composes `karate-docker-up`, `package` unless `SKIP_PACKAGE=true`, `run-app-bg`, `karate-test`, and `stop-app`.
 
@@ -222,8 +222,10 @@ Rules:
 makevn docker-up [--tail]
 makevn docker-down [--tail]
 makevn docker-ps [--tail]
-makevn docker-ps-required [--tail]
+makevn docker-ps-required [--tail] [--compose boot|karate]
 ```
+
+`docker-ps-required` validates the boot compose by default. Use `--compose karate` to validate the detected E2E Karate compose.
 
 ### JDK Commands
 

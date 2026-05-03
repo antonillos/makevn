@@ -163,6 +163,7 @@ makevn docker-up
 makevn docker-down
 makevn docker-ps
 makevn docker-ps-required
+makevn docker-ps-required --compose karate
 makevn docker-up --tail
 makevn docker-down --tail
 makevn docker-ps --tail
@@ -237,6 +238,8 @@ makevn stop-app
 ```
 
 For Docker-backed commands (`docker-*`, `karate-docker-up`, and `karate-docker-down`), `--tail` is supported but remains a human-facing option. Agents should omit it unless the human asks for an interactive local view.
+
+`makevn docker-ps-required` validates the boot compose by default. Use `makevn docker-ps-required --compose karate` when the required services belong to the detected Karate E2E compose. `makevn karate-docker-up` already waits for required Karate services to be running and healthy before it returns; agents should not add a separate immediate service check after `karate-docker-up` unless they explicitly need a standalone validation command.
 
 Do not guess a root `make` target from a `makevn` subcommand name. This is invalid unless the repository itself defines such a target:
 
