@@ -2,6 +2,19 @@
 set -euo pipefail
 
 makevn_die() {
+  if [[ -n "${MAKEVN_BACKEND_METADATA_OUT:-}" && -n "${MAKEVN_BACKEND_REPO_ROOT:-}" && -n "${MAKEVN_BACKEND_COMMAND:-}" ]] \
+    && declare -F makevn_write_quick_backend_log >/dev/null 2>&1; then
+    makevn_write_quick_backend_log \
+      "${MAKEVN_BACKEND_REPO_ROOT}" \
+      "${MAKEVN_BACKEND_COMMAND}" \
+      "${MAKEVN_BACKEND_COMMAND}" \
+      "${MAKEVN_BACKEND_COMMAND}" \
+      "${MAKEVN_BACKEND_COMMAND_DISPLAY:-makevn ${MAKEVN_BACKEND_COMMAND}}" \
+      "Error: $*"
+  fi
+  if makevn_frontend_owns_loader 2>/dev/null; then
+    exit 1
+  fi
   printf '%s\n' "$(makevn_warn "Error: $*")" >&2
   exit 1
 }

@@ -421,6 +421,45 @@ makevn_boot_compose_file_path() {
   return 1
 }
 
+makevn_boot_compose_resolution_error() {
+  local repo_root="$1"
+  local -a found=()
+  local f=""
+
+  makevn_load_config "${repo_root}"
+  if [[ -n "${MAKEVN_COMPOSE_FILE:-}" && ! -f "${MAKEVN_COMPOSE_FILE}" ]]; then
+    printf '%s\n' "Configured MAKEVN_COMPOSE_FILE does not exist: ${MAKEVN_COMPOSE_FILE}"
+    return 0
+  fi
+
+  makevn_load_profile "${repo_root}"
+  if [[ -n "${MAKEVN_PROFILE_COMPOSE_FILE:-}" && ! -f "${MAKEVN_PROFILE_COMPOSE_FILE}" ]]; then
+    printf '%s\n' "Persisted profile compose file does not exist: ${MAKEVN_PROFILE_COMPOSE_FILE}. Run 'makevn doctor' or 'makevn profile refresh'."
+    return 0
+  fi
+
+  while IFS= read -r f; do
+    [[ -n "${f}" ]] && found+=("${f}")
+  done < <(makevn_find_compose_files "${repo_root}")
+
+  if [[ ${#found[@]} -eq 0 ]]; then
+    printf '%s\n' "No docker-compose.yml found under ${repo_root}"
+    return 0
+  fi
+
+  if [[ ${#found[@]} -gt 1 ]]; then
+    printf '%s' "Multiple docker-compose.yml files found"
+    local candidate
+    for candidate in "${found[@]}"; do
+      printf '\n - %s' "${candidate}"
+    done
+    printf '\n%s\n' "Set MAKEVN_COMPOSE_FILE in .makevn/config to choose one."
+    return 0
+  fi
+
+  printf '%s\n' "Docker compose resolution failed unexpectedly."
+}
+
 makevn_boot_compose_override_file_path() {
   local repo_root="$1"
   local compose_file=""

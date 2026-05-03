@@ -145,6 +145,66 @@ raise SystemExit(os.waitstatus_to_exitcode(status))
 PY
 }
 
+run_makevn_pty_command() {
+  local cli="$1"
+  local repo="$2"
+  local command="$3"
+  local output_file="$4"
+
+  python3 - "${cli}" "${repo}" "${command}" "${output_file}" <<'PY'
+import os
+import pty
+import select
+import sys
+
+cli, repo, command, output_file = sys.argv[1:5]
+cmd = [cli, '--repo', repo, command]
+
+pid, fd = pty.fork()
+if pid == 0:
+    os.execv(cmd[0], cmd)
+
+output = bytearray()
+status = None
+
+while True:
+    readable, _, _ = select.select([fd], [], [], 0.1)
+    if fd in readable:
+        try:
+            chunk = os.read(fd, 4096)
+        except OSError:
+            break
+        if not chunk:
+            break
+        output.extend(chunk)
+
+    try:
+        waited = os.waitpid(pid, os.WNOHANG)
+    except ChildProcessError:
+        break
+    if waited != (0, 0):
+        status = waited[1]
+        break
+
+if status is None:
+    status = os.waitpid(pid, 0)[1]
+
+while True:
+    try:
+        chunk = os.read(fd, 4096)
+        if not chunk:
+            break
+        output.extend(chunk)
+    except OSError:
+        break
+
+with open(output_file, 'wb') as fh:
+    fh.write(output)
+
+raise SystemExit(os.waitstatus_to_exitcode(status))
+PY
+}
+
 detect_java_home() {
   local java_home=""
   if [[ -n "${JAVA_HOME:-}" && -x "${JAVA_HOME}/bin/java" ]]; then
@@ -703,6 +763,29 @@ EOF
   [[ "${output}" == *"fake-db"* ]] || fail "expected docker ps output to include fake container name"
 
   ${CLI} --repo "${repo}" uninstall >/dev/null
+}
+
+test_docker_up_missing_compose_writes_log() {
+  local repo="${TMP_ROOT}/docker-up-missing-compose"
+  local install_prefix="${TMP_ROOT}/docker-up-missing-compose-install"
+  local fail_cli="${install_prefix}/bin/makevn"
+  local output_file="${repo}/docker-up.out"
+
+  [[ -x "${ROOT_DIR}/target/release/makevn" ]] || return 0
+  PREFIX="${install_prefix}" "${ROOT_DIR}/install.sh" --rust >/dev/null
+
+  mkdir -p "${repo}"
+
+  set +e
+  run_makevn_pty_command "${fail_cli}" "${repo}" docker-up "${output_file}"
+  local status=$?
+  set -e
+
+  [[ ${status} -ne 0 ]] || fail "expected docker-up without compose to fail"
+  assert_contains "${output_file}" "[x] docker-up"
+  assert_contains "${output_file}" ".makevn/logs/docker-up.log"
+  assert_contains "${repo}/.makevn/logs/docker-up.log" "Error: Docker compose file not found."
+  assert_contains "${repo}/.makevn/logs/docker-up.log" "command: makevn docker-up"
 }
 
 test_karate_commands() {
@@ -1891,6 +1974,7 @@ main() {
   test_tail_degrades_without_tty
   test_command_routing
   test_docker_commands
+  test_docker_up_missing_compose_writes_log
   test_karate_commands
   test_run_app_bg_reports_early_process_exit
   test_run_app_bg_prefers_executable_jar_candidate

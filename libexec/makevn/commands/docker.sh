@@ -117,8 +117,8 @@ print_boot_docker_service_issues() {
   local compose_args=""
   local output=""
 
-  compose_file="$(makevn_boot_compose_file_path "${repo_root}")"
-  compose_override_file="$(makevn_boot_compose_override_file_path "${repo_root}")"
+  compose_file="$(makevn_boot_compose_file_path "${repo_root}" || true)"
+  compose_override_file="$(makevn_boot_compose_override_file_path "${repo_root}" || true)"
   [[ -f "${compose_file}" ]] || return 0
   [[ -f "${docker_ps_script}" && -f "${extract_services_script}" ]] || return 0
 
@@ -199,15 +199,19 @@ cmd_docker_up() {
   local compose_file=""
   local compose_override_file=""
   local docker_compose_cmd=""
+  local compose_error=""
   local -a docker_compose=()
   local -a compose_args=()
 
   shift
   makevn_parse_docker_args "$@"
 
-  compose_file="$(makevn_boot_compose_file_path "${repo_root}")"
-  compose_override_file="$(makevn_boot_compose_override_file_path "${repo_root}")"
-  [[ -f "${compose_file}" ]] || makevn_die "Docker compose file not found: ${compose_file}"
+  compose_file="$(makevn_boot_compose_file_path "${repo_root}" || true)"
+  compose_override_file="$(makevn_boot_compose_override_file_path "${repo_root}" || true)"
+  if [[ ! -f "${compose_file}" ]]; then
+    compose_error="$(makevn_boot_compose_resolution_error "${repo_root}")"
+    makevn_die "Docker compose file not found. ${compose_error}"
+  fi
 
   docker_compose_cmd="$(makevn_resolve_docker_compose_command || true)"
   [[ -n "${docker_compose_cmd}" ]] || makevn_die "Neither docker-compose nor 'docker compose' is available."
@@ -230,15 +234,19 @@ cmd_docker_down() {
   local compose_file=""
   local compose_override_file=""
   local docker_compose_cmd=""
+  local compose_error=""
   local -a docker_compose=()
   local -a compose_args=()
 
   shift
   makevn_parse_docker_args "$@"
 
-  compose_file="$(makevn_boot_compose_file_path "${repo_root}")"
-  compose_override_file="$(makevn_boot_compose_override_file_path "${repo_root}")"
-  [[ -f "${compose_file}" ]] || makevn_die "Docker compose file not found: ${compose_file}"
+  compose_file="$(makevn_boot_compose_file_path "${repo_root}" || true)"
+  compose_override_file="$(makevn_boot_compose_override_file_path "${repo_root}" || true)"
+  if [[ ! -f "${compose_file}" ]]; then
+    compose_error="$(makevn_boot_compose_resolution_error "${repo_root}")"
+    makevn_die "Docker compose file not found. ${compose_error}"
+  fi
 
   docker_compose_cmd="$(makevn_resolve_docker_compose_command || true)"
   [[ -n "${docker_compose_cmd}" ]] || makevn_die "Neither docker-compose nor 'docker compose' is available."

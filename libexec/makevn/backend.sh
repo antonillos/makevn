@@ -92,8 +92,14 @@ esac
 
 if [[ -n "${METADATA_OUT}" ]]; then
   export MAKEVN_BACKEND_METADATA_OUT="${METADATA_OUT}"
+  export MAKEVN_BACKEND_REPO_ROOT="${REPO_ROOT}"
+  export MAKEVN_BACKEND_COMMAND="${COMMAND}"
+  export MAKEVN_BACKEND_COMMAND_DISPLAY="makevn ${COMMAND}"
 else
   unset MAKEVN_BACKEND_METADATA_OUT || true
+  unset MAKEVN_BACKEND_REPO_ROOT || true
+  unset MAKEVN_BACKEND_COMMAND || true
+  unset MAKEVN_BACKEND_COMMAND_DISPLAY || true
 fi
 
 if [[ "${COMMAND}" == "doctor" && "${FORMAT:-text}" == "json" ]]; then

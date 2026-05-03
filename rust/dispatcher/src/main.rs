@@ -116,6 +116,7 @@ struct BackendMetadata {
 struct CommandSummary {
     title: String,
     duration: String,
+    log_path: Option<String>,
     relative_log_path: Option<String>,
     exit_code: i32,
 }
@@ -622,6 +623,7 @@ fn dispatch_backend_invocations(
                 summary: CommandSummary {
                     title: fallback_title.clone(),
                     duration: format_duration(started_at.elapsed().saturating_sub(elapsed_before)),
+                    log_path: None,
                     relative_log_path: None,
                     exit_code,
                 },
@@ -629,6 +631,7 @@ fn dispatch_backend_invocations(
         };
 
         last_exit_code = run_result.exit_code;
+        let failure_hint = read_failure_hint(run_result.summary.log_path.as_deref());
         completed_summaries.push(run_result.summary);
         if last_exit_code != 0 {
             if use_dashboard {
@@ -638,7 +641,11 @@ fn dispatch_backend_invocations(
                     io::stdout(),
                     "[{}]{}",
                     warn_text("fail"),
-                    dim_text(&format!(" exit {last_exit_code} | check the log"))
+                    dim_text(&format_failure_summary(
+                        last_exit_code,
+                        None,
+                        failure_hint.as_deref(),
+                    ))
                 );
             } else {
                 let duration = format_duration(started_at.elapsed());
@@ -646,8 +653,10 @@ fn dispatch_backend_invocations(
                     io::stdout(),
                     "[{}]{}",
                     warn_text("fail"),
-                    dim_text(&format!(
-                        " exit {last_exit_code} | {duration} | check the log"
+                    dim_text(&format_failure_summary(
+                        last_exit_code,
+                        Some(duration.as_str()),
+                        failure_hint.as_deref(),
                     ))
                 );
             }
@@ -668,6 +677,35 @@ fn dispatch_backend_invocations(
         );
     }
     Ok(last_exit_code)
+}
+
+fn format_failure_summary(
+    exit_code: i32,
+    duration: Option<&str>,
+    failure_hint: Option<&str>,
+) -> String {
+    let mut summary = format!(" exit {exit_code}");
+    if let Some(duration) = duration {
+        summary.push_str(&format!(" | {duration}"));
+    }
+    if let Some(hint) = failure_hint.filter(|hint| !hint.is_empty()) {
+        summary.push_str(" | ");
+        summary.push_str(hint);
+    } else {
+        summary.push_str(" | check the log");
+    }
+    summary
+}
+
+fn read_failure_hint(log_path: Option<&str>) -> Option<String> {
+    let content = fs::read_to_string(log_path?).ok()?;
+    for line in content.lines() {
+        let trimmed = line.trim();
+        if let Some(error) = trimmed.strip_prefix("Error: ") {
+            return Some(error.to_owned());
+        }
+    }
+    None
 }
 
 fn run_backend_command(mut command: process::Command, backend_path: &Path) -> Result<i32, String> {
@@ -1174,6 +1212,7 @@ fn summarize_backend_exit(
         summary: CommandSummary {
             title: title.to_owned(),
             duration,
+            log_path: metadata.map(|m| m.log_path.clone()),
             relative_log_path,
             exit_code,
         },
