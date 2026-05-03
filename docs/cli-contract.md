@@ -106,17 +106,12 @@ Global option rules:
 
 ```bash
 makevn doctor
-makevn init --mode MODE [--dry-run] [--write-make-include] [--force]
+makevn init [--dry-run] [--force]
+makevn make install [--dry-run]
+makevn make uninstall [--dry-run]
 makevn uninstall [--dry-run]
 makevn profile refresh
 ```
-
-Mode values:
-
-- `standalone`
-- `make-include`
-- `make-bootstrap`
-- `auto`
 
 ### Maven-Oriented Commands
 
@@ -289,8 +284,10 @@ Minimum envelope:
 
 Recommended command-specific fields:
 
-- `doctor`: `supported`, `recommended_mode`, `current_mode`, `maven_base_path`, `makefiles`, `detected_profile`, `jdk`
-- `init`: `dry_run`, `resolved_mode`, `created`, `updated`, `would_create`, `would_update`
+- `doctor`: `supported`, `current_makevn_status`, `make_integration_status`, `maven_base_path`, `makefiles`, `detected_profile`, `jdk`
+- `init`: `dry_run`, `created`, `updated`, `would_create`, `would_update`
+- `make install`: `dry_run`, `created`, `updated`, `would_create`, `would_update`
+- `make uninstall`: `dry_run`, `removed`, `updated`, `would_remove`, `would_update`
 - `uninstall`: `dry_run`, `removed`, `updated`, `would_remove`, `would_update`, `managed_assets`
 - `profile refresh`: `profile_path`, `cache_source`, `workflow_files`
 - `jdk current`: `global_java_home`, `code`, `karate`

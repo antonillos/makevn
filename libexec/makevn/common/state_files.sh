@@ -48,14 +48,9 @@ makevn_manifest_value() {
   awk -F= -v key="${key}" '$1 == key { print substr($0, index($0, "=") + 1); exit }' "${manifest_path}"
 }
 
-makevn_recommended_mode() {
+makevn_repository_support_status() {
   local repo_root="$1"
   local maven_base_path=""
-
-  if [[ -f "$(makevn_manifest_path "${repo_root}")" ]]; then
-    printf '%s\n' "$(makevn_manifest_value "${repo_root}" mode || true)"
-    return 0
-  fi
 
   maven_base_path="$(makevn_detect_maven_base_path "${repo_root}" || true)"
   if [[ -z "${maven_base_path}" ]]; then
@@ -63,12 +58,33 @@ makevn_recommended_mode() {
     return 0
   fi
 
-  if [[ -f "${repo_root}/Makefile" || -f "${repo_root}/GNUmakefile" ]]; then
-    printf '%s\n' make-include
+  printf '%s\n' supported
+}
+
+makevn_make_integration_status() {
+  local repo_root="$1"
+  local managed_makefile=""
+  local generated_root_makefile=""
+
+  [[ -f "$(makevn_manifest_path "${repo_root}")" ]] || {
+    printf '%s\n' 'not installed'
+    return 0
+  }
+
+  managed_makefile="$(makevn_manifest_value "${repo_root}" managed_makefile || true)"
+  generated_root_makefile="$(makevn_manifest_value "${repo_root}" generated_root_makefile || true)"
+
+  if [[ -n "${managed_makefile}" ]]; then
+    printf 'include:%s\n' "${managed_makefile}"
     return 0
   fi
 
-  printf '%s\n' standalone
+  if [[ -n "${generated_root_makefile}" ]]; then
+    printf 'bootstrap:%s\n' "${generated_root_makefile}"
+    return 0
+  fi
+
+  printf '%s\n' 'not installed'
 }
 
 makevn_render_make_include() {
@@ -162,16 +178,14 @@ makevn_update_config_local_containers() {
 
 makevn_write_state_json() {
   local repo_root="$1"
-  local mode="$2"
-  local managed_makefile="$3"
-  local generated_root_makefile="$4"
+  local managed_makefile="$2"
+  local generated_root_makefile="$3"
   local state_path
 
   state_path="$(makevn_state_json_path "${repo_root}")"
   cat > "${state_path}" <<EOF
 {
   "version": 1,
-  "mode": "${mode}",
   "repo_root": "${repo_root}",
   "managed_makefile": "${managed_makefile}",
   "generated_root_makefile": "${generated_root_makefile}",
@@ -182,18 +196,25 @@ EOF
 
 makevn_write_manifest() {
   local repo_root="$1"
-  local mode="$2"
-  local managed_makefile="$3"
-  local generated_root_makefile="$4"
+  local managed_makefile="$2"
+  local generated_root_makefile="$3"
   local manifest_path
 
   manifest_path="$(makevn_manifest_path "${repo_root}")"
   cat > "${manifest_path}" <<EOF
-mode=${mode}
 managed_makefile=${managed_makefile}
 generated_root_makefile=${generated_root_makefile}
 generated_at=$(makevn_now_utc)
 EOF
+}
+
+makevn_update_manifest_make_integration() {
+  local repo_root="$1"
+  local managed_makefile="$2"
+  local generated_root_makefile="$3"
+
+  makevn_write_manifest "${repo_root}" "${managed_makefile}" "${generated_root_makefile}"
+  makevn_write_state_json "${repo_root}" "${managed_makefile}" "${generated_root_makefile}"
 }
 
 makevn_insert_include_block() {

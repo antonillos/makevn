@@ -13,8 +13,9 @@ makevn_collect_doctor_snapshot() {
   local run_configured="no"
   local existing_makefile="no"
   local existing_gnumakefile="no"
-  local current_mode="not initialized"
-  local recommended_mode=""
+  local current_status="not initialized"
+  local repo_support_status=""
+  local make_integration_status="not installed"
   local profile_path=""
   local profile_status="not generated"
   local detected_workflow_files=""
@@ -144,11 +145,14 @@ makevn_collect_doctor_snapshot() {
   karate_tool_versions="$(makevn_detect_karate_tool_versions "${repo_root}" || true)"
   code_java_home="$(makevn_effective_java_home "${repo_root}" code "${maven_base_path}" || true)"
   karate_java_home="$(makevn_effective_java_home "${repo_root}" karate "${maven_base_path}" || true)"
-  recommended_mode="$(makevn_recommended_mode "${repo_root}")"
+  repo_support_status="$(makevn_repository_support_status "${repo_root}")"
 
   [[ -f "${repo_root}/Makefile" ]] && existing_makefile="${repo_root}/Makefile"
   [[ -f "${repo_root}/GNUmakefile" ]] && existing_gnumakefile="${repo_root}/GNUmakefile"
-  [[ -f "$(makevn_manifest_path "${repo_root}")" ]] && current_mode="$(makevn_manifest_value "${repo_root}" mode || true)"
+  if [[ -f "$(makevn_manifest_path "${repo_root}")" ]]; then
+    current_status="initialized"
+    make_integration_status="$(makevn_make_integration_status "${repo_root}")"
+  fi
   profile_path="$(makevn_profile_path "${repo_root}")"
   [[ -f "${profile_path}" ]] && profile_status="${profile_path}"
 
@@ -197,7 +201,7 @@ makevn_collect_doctor_snapshot() {
   MAKEVN_DOCTOR_EXISTING_MAKEFILE="${existing_makefile}"
   MAKEVN_DOCTOR_EXISTING_GNUMAKEFILE="${existing_gnumakefile}"
   MAKEVN_DOCTOR_EXISTING_STATE_DIR="$(if [[ -d "$(makevn_state_dir "${repo_root}")" ]]; then printf yes; else printf no; fi)"
-  MAKEVN_DOCTOR_CURRENT_MODE="${current_mode}"
+  MAKEVN_DOCTOR_CURRENT_STATUS="${current_status}"
   MAKEVN_DOCTOR_CODE_TOOL_VERSIONS="${code_tool_versions:-unresolved}"
   MAKEVN_DOCTOR_KARATE_TOOL_VERSIONS="${karate_tool_versions:-unresolved}"
   MAKEVN_DOCTOR_DETECTED_WORKFLOW_FILES="${detected_workflow_files:-none}"
@@ -215,7 +219,8 @@ makevn_collect_doctor_snapshot() {
   MAKEVN_DOCTOR_KARATE_JAVA_VERSION_LINE="${karate_java_version_line}"
   MAKEVN_DOCTOR_RUN_CONFIGURED="${run_configured}"
   MAKEVN_DOCTOR_PROFILE_STATUS="${profile_status}"
-  MAKEVN_DOCTOR_RECOMMENDED_MODE="${recommended_mode}"
+  MAKEVN_DOCTOR_REPO_SUPPORT_STATUS="${repo_support_status}"
+  MAKEVN_DOCTOR_MAKE_INTEGRATION_STATUS="${make_integration_status}"
   MAKEVN_DOCTOR_COMPOSE_FILE="${compose_file}"
   MAKEVN_DOCTOR_E2E_COMPOSE_FILE="${e2e_compose_file}"
   local_containers_preference="$(makevn_effective_local_containers "${repo_root}" "${MAKEVN_DETECTED_VERIFY_IT_LOCAL_CONTAINERS:-}")"
@@ -224,24 +229,30 @@ makevn_collect_doctor_snapshot() {
   MAKEVN_DOCTOR_SUGGESTED_OPTIONAL=""
   MAKEVN_DOCTOR_SUGGESTED_NOTE=""
 
-  case "${recommended_mode}" in
-    make-include)
-      MAKEVN_DOCTOR_SUGGESTED_NEXT="makevn init --mode make-include"
-      MAKEVN_DOCTOR_SUGGESTED_OPTIONAL="makevn init --mode make-include --write-make-include"
-      ;;
-    standalone)
-      MAKEVN_DOCTOR_SUGGESTED_NEXT="makevn init --mode standalone"
-      MAKEVN_DOCTOR_SUGGESTED_OPTIONAL="makevn init --mode make-bootstrap"
-      ;;
-    make-bootstrap)
-      MAKEVN_DOCTOR_SUGGESTED_NEXT="makevn init --mode make-bootstrap"
-      ;;
+  if [[ "${current_status}" == "not initialized" ]]; then
+    case "${repo_support_status}" in
+      supported)
+        MAKEVN_DOCTOR_SUGGESTED_NEXT="makevn init"
+        ;;
+      unsupported)
+        MAKEVN_DOCTOR_SUGGESTED_NOTE="no automatic recommendation: Maven repository signals were not detected"
+        MAKEVN_DOCTOR_SUGGESTED_OPTIONAL="makevn init"
+        ;;
+    esac
+  elif [[ "${make_integration_status}" == "not installed" ]]; then
+    MAKEVN_DOCTOR_SUGGESTED_OPTIONAL="makevn make install"
+  else
+    case "${make_integration_status}" in
+      include:*|bootstrap:*)
+        MAKEVN_DOCTOR_SUGGESTED_OPTIONAL="makevn make uninstall"
+        ;;
+    esac
+  fi
+
+  case "${repo_support_status}" in
     unsupported)
       MAKEVN_DOCTOR_SUGGESTED_NOTE="no automatic recommendation: Maven repository signals were not detected"
-      MAKEVN_DOCTOR_SUGGESTED_OPTIONAL="use an explicit mode with makevn init --mode ..."
-      ;;
-    *)
-      MAKEVN_DOCTOR_SUGGESTED_NEXT="makevn uninstall"
+      [[ -n "${MAKEVN_DOCTOR_SUGGESTED_OPTIONAL}" ]] || MAKEVN_DOCTOR_SUGGESTED_OPTIONAL="makevn init"
       ;;
   esac
 }
@@ -257,7 +268,7 @@ makevn_print_doctor_json() {
   printf '    "existing_makefile": "%s",\n' "$(makevn_json_escape "${MAKEVN_DOCTOR_EXISTING_MAKEFILE}")"
   printf '    "existing_gnumakefile": "%s",\n' "$(makevn_json_escape "${MAKEVN_DOCTOR_EXISTING_GNUMAKEFILE}")"
   printf '    "existing_makevn": "%s",\n' "$(makevn_json_escape "${MAKEVN_DOCTOR_EXISTING_STATE_DIR}")"
-  printf '    "current_makevn_mode": "%s",\n' "$(makevn_json_escape "${MAKEVN_DOCTOR_CURRENT_MODE}")"
+  printf '    "current_makevn_status": "%s",\n' "$(makevn_json_escape "${MAKEVN_DOCTOR_CURRENT_STATUS}")"
   printf '    "code_tool_versions": "%s",\n' "$(makevn_json_escape "${MAKEVN_DOCTOR_CODE_TOOL_VERSIONS}")"
   printf '    "karate_tool_versions": "%s",\n' "$(makevn_json_escape "${MAKEVN_DOCTOR_KARATE_TOOL_VERSIONS}")"
   printf '    "detected_workflow_files": "%s",\n' "$(makevn_json_escape "${MAKEVN_DOCTOR_DETECTED_WORKFLOW_FILES}")"
@@ -276,7 +287,8 @@ makevn_print_doctor_json() {
   printf '    "run_command_configured": "%s",\n' "$(makevn_json_escape "${MAKEVN_DOCTOR_RUN_CONFIGURED}")"
   printf '    "local_containers_default": "%s",\n' "$(makevn_json_escape "${MAKEVN_DOCTOR_LOCAL_CONTAINERS}")"
   printf '    "persisted_profile": "%s",\n' "$(makevn_json_escape "${MAKEVN_DOCTOR_PROFILE_STATUS}")"
-  printf '    "recommended_mode": "%s"\n' "$(makevn_json_escape "${MAKEVN_DOCTOR_RECOMMENDED_MODE}")"
+  printf '    "repository_support_status": "%s",\n' "$(makevn_json_escape "${MAKEVN_DOCTOR_REPO_SUPPORT_STATUS}")"
+  printf '    "make_integration_status": "%s"\n' "$(makevn_json_escape "${MAKEVN_DOCTOR_MAKE_INTEGRATION_STATUS}")"
   printf '  },\n'
   printf '  "suggested_next_step": {\n'
   printf '    "next": "%s",\n' "$(makevn_json_escape "${MAKEVN_DOCTOR_SUGGESTED_NEXT}")"

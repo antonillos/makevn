@@ -9,12 +9,13 @@ Recommended flow:
 
 ```bash
 makevn doctor
-makevn init --mode make-include
+makevn init
+makevn make install
 make -f .makevn/makevn.mk vn-doctor
 ```
 
 Only use this if the user explicitly wants to edit the existing makefile:
 
 ```bash
-makevn init --mode make-include --write-make-include
+makevn make install
 ```

@@ -1,79 +1,48 @@
-# Integration Modes
+# Integration Workflow
 
-These modes are stable product concepts and remain valid across the planned Rust frontend transition. The frontend implementation may change, but the repo integration model should not.
+The repository integration model is intentionally small and stable:
 
-## `standalone`
-
-Use only the CLI:
+## Initialize `makevn`
 
 ```bash
 makevn doctor
-makevn build
-makevn verify
+makevn init
 ```
 
-This does not touch `Makefile` or `GNUmakefile`.
+`init` creates `.makevn/` and does not touch `Makefile` or `GNUmakefile`.
 
-This is still the safest mode for:
+## Install Make integration
 
-- first-time users
-- AI agents that want the least invasive adoption path
-- repos where `make` integration is not needed
-
-## `make-include`
-
-Generate `.makevn/makevn.mk` and keep any existing root make entrypoint intact.
-
-Use it directly:
+When a repo wants optional `vn-*` make targets:
 
 ```bash
-make -f .makevn/makevn.mk vn-doctor
+makevn make install
 ```
 
-Or add an explicit include yourself:
+Behavior:
 
-```make
-include .makevn/makevn.mk
-```
+- if the repo already has a single `Makefile` or `GNUmakefile`, `makevn` adds an include block for `.makevn/makevn.mk`
+- if the repo has no make entrypoint, `makevn` creates a minimal root `Makefile`
+- if the repo has both `Makefile` and `GNUmakefile`, `makevn` refuses the automatic edit
 
-Optional edit through `makevn` itself:
+## Remove Make integration
 
 ```bash
-makevn init --mode make-include --write-make-include
+makevn make uninstall
 ```
 
-`makevn` will refuse this automatic edit if both `Makefile` and `GNUmakefile` exist, because that would be ambiguous.
+This removes only the Make integration and keeps `.makevn/` intact.
 
-This remains the recommended mode when a repo already has a make entrypoint and the user wants optional namespaced `vn-*` targets.
-
-## `make-bootstrap`
-
-Use this only when the repo has no `Makefile` and no `GNUmakefile`.
-
-```bash
-makevn init --mode make-bootstrap
-```
-
-This creates a minimal root `Makefile` that delegates to `.makevn/makevn.mk`.
-
-Use this only as an explicit opt-in when the repo has no existing make entrypoint and the user actually wants one.
-
-## Uninstall
-
-Always use:
+## Uninstall `makevn`
 
 ```bash
 makevn uninstall
 ```
 
-Preview first if needed:
-
-```bash
-makevn uninstall --dry-run
-```
+This removes `.makevn/` and any Make integration managed by `makevn`.
 
 ## Agent Notes
 
-- agents should still run `makevn doctor` before recommending one of these modes
-- when structured output becomes available for a command, agents should prefer `--json`
-- these integration modes are independent from the future Rust frontend, so adoption guidance should stay stable
+- agents should run `makevn doctor` before `makevn init`
+- agents should prefer `makevn init` as the default adoption path
+- agents should only run `makevn make install` when the user explicitly wants Make integration

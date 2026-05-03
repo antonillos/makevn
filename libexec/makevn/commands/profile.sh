@@ -11,7 +11,7 @@ cmd_profile_refresh() {
   shift
   [[ $# -eq 0 ]] || makevn_die "Usage: makevn profile refresh"
 
-  [[ -f "$(makevn_manifest_path "${repo_root}")" ]] || makevn_die "makevn is not initialized in ${repo_root}. Run 'makevn init --mode ...' first."
+  [[ -f "$(makevn_manifest_path "${repo_root}")" ]] || makevn_die "makevn is not initialized in ${repo_root}. Run 'makevn init' first."
 
   makevn_refresh_profile "${repo_root}"
   profile_path="$(makevn_profile_path "${repo_root}")"
@@ -30,4 +30,3 @@ cmd_profile_refresh() {
   makevn_print_item "workflows" "${MAKEVN_DETECTED_WORKFLOW_FILES:-none}"
   [[ -f "${profile_path}" ]] || makevn_die "Profile refresh failed: ${profile_path} was not created"
 }
-

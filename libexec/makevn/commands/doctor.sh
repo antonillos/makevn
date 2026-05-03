@@ -14,7 +14,7 @@ print_doctor() {
   makevn_print_item "Existing Makefile" "${MAKEVN_DOCTOR_EXISTING_MAKEFILE}"
   makevn_print_item "Existing GNUmakefile" "${MAKEVN_DOCTOR_EXISTING_GNUMAKEFILE}"
   makevn_print_item "Existing .makevn/" "${MAKEVN_DOCTOR_EXISTING_STATE_DIR}"
-  makevn_print_item "Current makevn mode" "${MAKEVN_DOCTOR_CURRENT_MODE}"
+  makevn_print_item "Current makevn status" "${MAKEVN_DOCTOR_CURRENT_STATUS}"
   makevn_print_item "Code .tool-versions" "${MAKEVN_DOCTOR_CODE_TOOL_VERSIONS}"
   makevn_print_item "Karate .tool-versions" "${MAKEVN_DOCTOR_KARATE_TOOL_VERSIONS}"
   makevn_print_item "Detected workflow files" "${MAKEVN_DOCTOR_DETECTED_WORKFLOW_FILES}"
@@ -39,7 +39,8 @@ print_doctor() {
   makevn_print_item "Docker e2e compose file" "${MAKEVN_DOCTOR_E2E_COMPOSE_FILE}"
   makevn_print_item "LOCAL_CONTAINERS default" "${MAKEVN_DOCTOR_LOCAL_CONTAINERS}"
   makevn_print_item "Persisted profile" "${MAKEVN_DOCTOR_PROFILE_STATUS}"
-  makevn_print_item "Recommended mode" "${MAKEVN_DOCTOR_RECOMMENDED_MODE}"
+  makevn_print_item "Repository support status" "${MAKEVN_DOCTOR_REPO_SUPPORT_STATUS}"
+  makevn_print_item "Make integration status" "${MAKEVN_DOCTOR_MAKE_INTEGRATION_STATUS}"
 
   printf '\n'
   makevn_print_header "Suggested next step"

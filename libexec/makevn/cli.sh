@@ -17,7 +17,9 @@ from the terminal without IDE-specific setup. Agents in OpenCode should prefer
 
 Usage:
   makevn [--repo PATH] doctor
-  makevn [--repo PATH] init [--mode MODE] [--dry-run] [--write-make-include]
+  makevn [--repo PATH] init [--dry-run] [--force]
+  makevn [--repo PATH] make install [--dry-run]
+  makevn [--repo PATH] make uninstall [--dry-run]
   makevn [--repo PATH] uninstall [--dry-run]
   makevn [--repo PATH] profile refresh
   makevn [--repo PATH] compile [-- EXTRA_MAVEN_ARGS...]
@@ -52,15 +54,11 @@ Usage:
   makevn [--repo PATH] jdk current
   makevn [--repo PATH] jdk list
 
-Modes:
-  standalone
-  make-include
-  make-bootstrap
-  auto
-
 Examples:
   makevn doctor
-  makevn init --mode standalone
+  makevn init
+  makevn make install
+  makevn make uninstall
   makevn profile refresh
   makevn compile
   makevn test-compile
@@ -90,10 +88,10 @@ Examples:
   make -f .makevn/makevn.mk vn-doctor
 
 Notes:
-  - 'doctor' inspects the repository and recommends the least invasive mode.
-  - 'standalone' keeps everything under '.makevn/' and leaves root makefiles alone.
-  - 'make-include' adds optional namespaced 'vn-*' targets without taking over repo-owned targets.
-  - 'make-bootstrap' is only for repositories that do not already have a make entrypoint.
+  - 'doctor' inspects the repository before and after initialization.
+  - 'init' always creates '.makevn/' without touching root makefiles.
+  - 'make install' adds optional 'vn-*' targets by updating one existing makefile or creating a minimal root Makefile.
+  - 'make uninstall' removes only the Make integration and keeps '.makevn/' intact.
 EOF
 }
 
@@ -163,6 +161,22 @@ case "${COMMAND}" in
     ;;
   init)
     cmd_init "${REPO_ROOT}" "$@"
+    ;;
+  make)
+    SUBCOMMAND="${1:-}"
+    case "${SUBCOMMAND}" in
+      install)
+        shift
+        cmd_make_install "${REPO_ROOT}" "$@"
+        ;;
+      uninstall)
+        shift
+        cmd_make_uninstall "${REPO_ROOT}" "$@"
+        ;;
+      *)
+        makevn_die "Usage: makevn make install|uninstall"
+        ;;
+    esac
     ;;
   uninstall)
     cmd_uninstall "${REPO_ROOT}" "$@"

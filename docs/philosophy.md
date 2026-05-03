@@ -59,13 +59,13 @@ The intended product shape is also simple:
 
 `makevn` is not trying to force a root `Makefile` into every repository.
 
-Instead it supports three explicit modes:
+Instead it keeps initialization and Make adoption separate:
 
-- `standalone`
-- `make-include`
-- `make-bootstrap`
+- `makevn init`
+- `makevn make install`
+- `makevn make uninstall`
 
-This keeps existing `Makefile` or `GNUmakefile` setups compatible while still allowing `make`-based adoption where useful.
+This keeps the core path small for agents while still allowing `make`-based adoption where useful.
 
 ## Small Public Contract
 
@@ -73,6 +73,8 @@ The public contract should stay small and explainable:
 
 - `makevn doctor`
 - `makevn init`
+- `makevn make install`
+- `makevn make uninstall`
 - `makevn uninstall`
 - `makevn build`
 - `makevn test`

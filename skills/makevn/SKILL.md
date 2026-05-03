@@ -32,11 +32,11 @@ It provides:
 
 1. Run `makevn doctor` before recommending `init`.
 2. Never overwrite an existing `Makefile` or `GNUmakefile`.
-3. Prefer `make-include` when a repo already has a make entrypoint.
-4. Prefer `standalone` when the user wants the lowest-risk adoption path.
-5. Use `make-bootstrap` only when the repo has no `Makefile` or `GNUmakefile` and the user explicitly wants `make` support.
+3. Prefer `makevn init` as the default adoption path.
+4. Use `makevn make install` only when the user explicitly wants `make` support.
+5. Let `makevn make install` choose whether to update one existing makefile or create a minimal root `Makefile`.
 6. Prefer `makevn uninstall` over manual cleanup.
-7. When editing an existing makefile, use the explicit `--write-make-include` path only if the user asked for that integration.
+7. Do not edit makefiles manually when `makevn make install` or `makevn make uninstall` owns that behavior.
 8. Prefer `--json` when the command supports structured output and the agent needs reliable machine-readable data.
 9. Avoid `--tail` unless the human explicitly asked for an interactive local log view.
 10. Treat `makevn` subcommands as the primary public interface. Do not translate them into bare `make` targets. For Docker commands, run `makevn docker-up`, `makevn docker-down`, `makevn docker-ps`, or `makevn docker-ps-required`; do not run bare targets such as `make docker-up` or `make docker-ps-required`.
@@ -57,8 +57,10 @@ A command is only OK when all of these are true:
 
 Preferred verification signals:
 
-- `makevn doctor`: the repo is recognized correctly and the reported mode/recommendation matches the repo shape
+- `makevn doctor`: the repo is recognized correctly and the reported initialization and Make integration status match the repo shape
 - `makevn init`: the expected files were created or updated, and a follow-up `makevn doctor` or `vn-doctor` confirms the integration works
+- `makevn make install`: `.makevn/makevn.mk` exists and a follow-up `make` command or `makevn doctor` confirms the integration works
+- `makevn make uninstall`: the managed Make integration is gone while `.makevn/` still exists
 - `makevn uninstall`: the managed assets are gone, and a follow-up check confirms cleanup
 - `makevn build`, `makevn test`, `makevn verify`: the command exits `0` and no follow-up evidence contradicts the requested outcome
 - selected workflow changes: rerun the smallest relevant validating command instead of assuming success from the edit alone
@@ -74,11 +76,8 @@ If the command exits `0` but the requested outcome is still not verified, do not
    - `GNUmakefile`
    - `.makevn/`
 2. Run `makevn doctor`.
-3. Explain the recommended mode:
-   - `standalone`
-   - `make-include`
-   - `make-bootstrap`
-4. If the user wants installation, run `makevn init --mode ...`.
+3. If the repo is not initialized and the user wants installation, run `makevn init`.
+4. If the user explicitly wants Make integration, run `makevn make install`.
 5. Validate the result with:
     - `makevn doctor`
     - or `make -f .makevn/makevn.mk vn-doctor`
@@ -88,27 +87,15 @@ In OpenCode and Codex specifically, the agent should treat `makevn` as the termi
 
 For Codex, keep changes surgical: inspect the repo first, run the smallest `makevn` command that proves the touched behavior, and do not edit `.makevn/` state manually when `makevn init`, `profile refresh`, or `uninstall` owns that behavior.
 
-## Mode Selection
+## Adoption Model
 
-### Existing `Makefile` or `GNUmakefile`
+Default:
 
-Recommended:
-
-- `makevn init --mode make-include`
-
-Alternative:
-
-- `makevn init --mode standalone`
-
-### No Existing Make Entrypoint
-
-Recommended:
-
-- `makevn init --mode standalone`
+- `makevn init`
 
 Optional when the user wants `make`:
 
-- `makevn init --mode make-bootstrap`
+- `makevn make install`
 
 ## Using `makevn exec` with Subdirectory Maven Projects
 
@@ -147,9 +134,9 @@ If the detected URL is wrong, update `.makevn/config` with `MAKEVN_APP_HEALTH_UR
 
 ```bash
 makevn doctor
-makevn init --mode standalone
-makevn init --mode make-include
-makevn init --mode make-bootstrap
+makevn init
+makevn make install
+makevn make uninstall
 makevn uninstall
 makevn profile refresh
 makevn compile

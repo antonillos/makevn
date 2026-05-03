@@ -89,10 +89,10 @@ const COMMAND_SEQUENCE_BREAKERS: &[&str] = &[
     "--",
     "--tail",
     "--name",
-    "--mode",
     "--context",
     "--threshold",
     "--tag",
+    "--compose",
 ];
 
 #[derive(Debug)]
@@ -277,6 +277,12 @@ fn validate_command(
         | "karate-docker-down" | "run-app" | "run-app-bg" | "stop-app" | "run" => {
             Ok(CommandValidation::Valid)
         }
+        "make" => match trailing_args.first().map(|arg| arg.to_string_lossy()) {
+            Some(subcommand) if subcommand == "install" || subcommand == "uninstall" => {
+                Ok(CommandValidation::Valid)
+            }
+            _ => Err(String::from("Usage: makevn make install|uninstall")),
+        },
         "profile" => match trailing_args.first().map(|arg| arg.to_string_lossy()) {
             Some(subcommand) if subcommand == "refresh" => Ok(CommandValidation::ProfileRefresh),
             _ => Err(String::from("Usage: makevn profile refresh")),
@@ -409,6 +415,7 @@ fn is_top_level_command(arg: &OsString) -> bool {
         "help"
             | "doctor"
             | "init"
+            | "make"
             | "uninstall"
             | "profile"
             | "exec"
@@ -447,7 +454,7 @@ fn is_top_level_command(arg: &OsString) -> bool {
 fn command_option_takes_value(arg: &OsString) -> bool {
     matches!(
         arg.to_string_lossy().as_ref(),
-        "--name" | "--mode" | "--context" | "--threshold" | "--tag" | "--compose"
+        "--name" | "--context" | "--threshold" | "--tag" | "--compose"
     )
 }
 
@@ -2098,7 +2105,9 @@ fn print_help(with_header: bool) {
     println!();
     println!("Usage:");
     println!("  makevn [--repo PATH] doctor");
-    println!("  makevn [--repo PATH] init [--mode MODE] [--dry-run] [--write-make-include]");
+    println!("  makevn [--repo PATH] init [--dry-run] [--force]");
+    println!("  makevn [--repo PATH] make install [--dry-run]");
+    println!("  makevn [--repo PATH] make uninstall [--dry-run]");
     println!("  makevn [--repo PATH] uninstall [--dry-run]");
     println!("  makevn [--repo PATH] profile refresh");
     println!("  makevn [--repo PATH] compile [--tail] [-- EXTRA_MAVEN_ARGS...]");
@@ -2135,15 +2144,11 @@ fn print_help(with_header: bool) {
     println!("  makevn [--repo PATH] jdk current");
     println!("  makevn [--repo PATH] jdk list");
     println!();
-    println!("Modes:");
-    println!("  standalone");
-    println!("  make-include");
-    println!("  make-bootstrap");
-    println!("  auto");
-    println!();
     println!("Examples:");
     println!("  makevn doctor");
-    println!("  makevn init --mode standalone");
+    println!("  makevn init");
+    println!("  makevn make install");
+    println!("  makevn make uninstall");
     println!("  makevn profile refresh");
     println!("  makevn compile");
     println!("  makevn test-compile");
@@ -2171,12 +2176,10 @@ fn print_help(with_header: bool) {
     println!("  make -f .makevn/makevn.mk vn-doctor");
     println!();
     println!("Notes:");
-    println!("  - 'doctor' inspects the repository and recommends the least invasive mode.");
-    println!("  - 'standalone' keeps everything under '.makevn/' and leaves root makefiles alone.");
-    println!("  - 'make-include' adds optional namespaced 'vn-*' targets without taking over repo-owned targets.");
-    println!(
-        "  - 'make-bootstrap' is only for repositories that do not already have a make entrypoint."
-    );
+    println!("  - 'doctor' inspects the repository before and after initialization.");
+    println!("  - 'init' always creates '.makevn/' without touching root makefiles.");
+    println!("  - 'make install' adds optional 'vn-*' targets by updating one existing makefile or creating a minimal root Makefile.");
+    println!("  - 'make uninstall' removes only the Make integration and keeps '.makevn/' intact.");
     println!("  - '--tail' starts managed-log commands in tail mode; without it, press 't' while a command is running to tail the current log.");
 }
 

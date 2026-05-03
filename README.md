@@ -53,7 +53,7 @@ To install the shell entrypoint explicitly:
 
 ```bash
 makevn doctor
-makevn init --mode standalone
+makevn init
 makevn test --name UserRepositoryTest
 makevn verify
 ```
@@ -65,18 +65,14 @@ makevn --repo "/path/to/java-repo" doctor
 makevn --repo "/path/to/java-repo" verify-changes
 ```
 
-### Choose an initialization mode
+### Optional Make integration
 
-| Mode | Use it when |
-|------|-------------|
-| `standalone` | You want `.makevn/` only, with no root makefile changes |
-| `make-include` | The repo already has a makefile and you want optional `vn-*` targets |
-| `make-bootstrap` | The repo has no makefile and you want a root make entrypoint |
+`init` always creates `.makevn/` without touching root makefiles.
 
-For existing makefiles:
+If you also want `vn-*` make targets:
 
 ```bash
-makevn init --mode make-include
+makevn make install
 make -f .makevn/makevn.mk vn-doctor
 ```
 

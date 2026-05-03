@@ -66,8 +66,8 @@ integration.
 
 1. Load the `makevn` skill in the agent environment.
 2. Run `makevn doctor` in the target repo.
-3. Recommend a mode.
-4. Only then run `makevn init --mode ...` if the user wants installation.
+3. If the repo is not initialized and the user wants installation, run `makevn init`.
+4. Use `makevn make install` only when the user explicitly wants Make integration.
 5. Validate the result.
 6. Use `makevn uninstall` to revert.
 

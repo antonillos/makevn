@@ -10,13 +10,14 @@ Lowest-risk flow:
 
 ```bash
 makevn doctor
-makevn init --mode standalone
+makevn init
 makevn verify
 ```
 
 If the user wants native `make` support:
 
 ```bash
-makevn init --mode make-bootstrap
+makevn init
+makevn make install
 make -f .makevn/makevn.mk vn-doctor
 ```

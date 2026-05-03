@@ -1,7 +1,7 @@
 MAKEVN_BIN ?= makevn
 MAKEVN_REPO_ROOT ?= $(CURDIR)
 
-.PHONY: vn-help vn-doctor vn-init vn-uninstall vn-profile-refresh vn-compile vn-test-compile vn-compile-tests vn-validate vn-package vn-build vn-clean vn-test vn-verify-ut vn-verify-ut-coverage vn-verify-it vn-verify-it-coverage vn-verify vn-verify-changes vn-coverage-changes vn-pr-verify vn-docker-up vn-docker-down vn-docker-ps vn-docker-ps-required vn-karate-docker-up vn-karate-docker-down vn-karate-test vn-karate-all vn-run-app vn-run-app-bg vn-stop-app vn-run vn-jdk-current vn-jdk-list vn-exec
+.PHONY: vn-help vn-doctor vn-init vn-make-install vn-make-uninstall vn-uninstall vn-profile-refresh vn-compile vn-test-compile vn-compile-tests vn-validate vn-package vn-build vn-clean vn-test vn-verify-ut vn-verify-ut-coverage vn-verify-it vn-verify-it-coverage vn-verify vn-verify-changes vn-coverage-changes vn-pr-verify vn-docker-up vn-docker-down vn-docker-ps vn-docker-ps-required vn-karate-docker-up vn-karate-docker-down vn-karate-test vn-karate-all vn-run-app vn-run-app-bg vn-stop-app vn-run vn-jdk-current vn-jdk-list vn-exec
 
 define makevn_run
 	@set +e; \
@@ -16,7 +16,9 @@ endef
 vn-help:
 	@printf '%s\n' 'makevn make targets:'
 	@printf '%s\n' '  make vn-doctor'
-	@printf '%s\n' '  make vn-init MAKEVN_INIT_ARGS="--mode make-include"'
+	@printf '%s\n' '  make vn-init'
+	@printf '%s\n' '  make vn-make-install'
+	@printf '%s\n' '  make vn-make-uninstall'
 	@printf '%s\n' '  make vn-uninstall'
 	@printf '%s\n' '  make vn-profile-refresh'
 	@printf '%s\n' '  make vn-compile'
@@ -62,6 +64,12 @@ vn-doctor:
 
 vn-init:
 	$(call makevn_run,init $(MAKEVN_INIT_ARGS))
+
+vn-make-install:
+	$(call makevn_run,make install $(MAKEVN_MAKE_INSTALL_ARGS))
+
+vn-make-uninstall:
+	$(call makevn_run,make uninstall $(MAKEVN_MAKE_UNINSTALL_ARGS))
 
 vn-uninstall:
 	$(call makevn_run,uninstall $(MAKEVN_UNINSTALL_ARGS))
