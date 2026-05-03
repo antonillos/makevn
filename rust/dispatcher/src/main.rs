@@ -548,6 +548,7 @@ fn command_supports_frontend_loader(command: &OsString) -> bool {
             | "karate-docker-up"
             | "karate-docker-down"
             | "karate-test"
+            | "karate-all"
     )
 }
 
@@ -2428,8 +2429,37 @@ mod tests {
         assert!(command_supports_frontend_loader(&OsString::from(
             "karate-docker-down"
         )));
+        assert!(command_supports_frontend_loader(&OsString::from(
+            "karate-test"
+        )));
+        assert!(command_supports_frontend_loader(&OsString::from(
+            "karate-all"
+        )));
         assert!(!command_supports_frontend_loader(&OsString::from("doctor")));
         assert!(!command_supports_frontend_loader(&OsString::from("run")));
+    }
+
+    #[test]
+    fn parses_karate_all_as_frontend_loader_command() {
+        let current_dir = env::current_dir().unwrap();
+        let action = parse_invocation(vec![
+            OsString::from("karate-all"),
+            OsString::from("--tail"),
+        ])
+        .unwrap();
+
+        assert_eq!(
+            action,
+            Action::DispatchToBackend(vec![BackendInvocation {
+                args: vec![
+                    OsString::from("karate-all"),
+                    OsString::from("--repo"),
+                    current_dir.into_os_string(),
+                ],
+                frontend_loader: true,
+                tail: true,
+            }])
+        );
     }
 
     #[test]
