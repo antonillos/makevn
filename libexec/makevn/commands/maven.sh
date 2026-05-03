@@ -61,7 +61,7 @@ cmd_package() {
   local repo_root="$1"
   shift
   [[ "${1:-}" == "--" ]] && shift
-  makevn_run_maven_goal "${repo_root}" package package build "$@"
+  makevn_run_maven_goal "${repo_root}" package package build -DskipTests -Dmaven.build.cache.enabled=false "$@"
 }
 
 cmd_clean() {
