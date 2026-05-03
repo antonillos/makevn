@@ -140,6 +140,26 @@ makevn_update_config_e2e_compose_file() {
   fi
 }
 
+makevn_update_config_local_containers() {
+  local repo_root="$1"
+  local local_containers="$2"
+  local config_path
+  config_path="$(makevn_config_path "${repo_root}")"
+
+  if [[ ! -f "${config_path}" ]]; then
+    return 1
+  fi
+
+  if grep -q '^MAKEVN_LOCAL_CONTAINERS=' "${config_path}"; then
+    local tmp_file
+    tmp_file="$(mktemp)"
+    awk -v val="${local_containers}" 'BEGIN{q="\""} /^MAKEVN_LOCAL_CONTAINERS=/ { print "MAKEVN_LOCAL_CONTAINERS=" q val q; next } { print }' "${config_path}" > "${tmp_file}"
+    mv "${tmp_file}" "${config_path}"
+  else
+    printf 'MAKEVN_LOCAL_CONTAINERS=%q\n' "${local_containers}" >> "${config_path}"
+  fi
+}
+
 makevn_write_state_json() {
   local repo_root="$1"
   local mode="$2"
@@ -222,4 +242,3 @@ makevn_is_managed_bootstrap_makefile() {
   [[ -f "${makefile_path}" ]] || return 1
   cmp -s <(makevn_bootstrap_makefile_content) "${makefile_path}"
 }
-

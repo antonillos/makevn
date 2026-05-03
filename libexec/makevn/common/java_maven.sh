@@ -209,7 +209,7 @@ makevn_run_selected_test() {
   local package_name=""
   local full_test_class=""
   local boot_module=""
-  local local_containers="${LOCAL_CONTAINERS:-TRUE}"
+  local local_containers=""
   local cli_flags_value=""
   local prop_flags_value=""
   local log_name=""
@@ -222,6 +222,8 @@ makevn_run_selected_test() {
   local -a maven_args=()
 
   shift 3
+  makevn_load_profile "${repo_root}"
+  local_containers="$(makevn_effective_local_containers "${repo_root}" "${MAKEVN_PROFILE_VERIFY_IT_LOCAL_CONTAINERS:-}")"
 
   maven_base_path="$(makevn_detect_maven_base_path "${repo_root}" || true)"
   if [[ -z "${maven_base_path}" ]]; then
@@ -279,7 +281,11 @@ makevn_run_selected_test() {
       fi
       title="test ${test_name} --fast"
       log_name="test-fast-$(makevn_test_log_token "${test_name}")"
-      maven_args=(env "LOCAL_CONTAINERS=${local_containers}" "${maven_executable}")
+      if [[ -n "${local_containers}" ]]; then
+        maven_args=(env "LOCAL_CONTAINERS=${local_containers}" "${maven_executable}")
+      else
+        maven_args=("${maven_executable}")
+      fi
       if [[ -n "${cli_flags_value}" ]]; then
         read -r -a cli_flags <<< "${cli_flags_value}"
         maven_args+=("${cli_flags[@]}")
@@ -288,7 +294,11 @@ makevn_run_selected_test() {
     else
       title="test ${test_name}"
       log_name="test-$(makevn_test_log_token "${test_name}")"
-      maven_args=(env "LOCAL_CONTAINERS=${local_containers}" "${maven_executable}")
+      if [[ -n "${local_containers}" ]]; then
+        maven_args=(env "LOCAL_CONTAINERS=${local_containers}" "${maven_executable}")
+      else
+        maven_args=("${maven_executable}")
+      fi
       if [[ -n "${cli_flags_value}" ]]; then
         read -r -a cli_flags <<< "${cli_flags_value}"
         maven_args+=("${cli_flags[@]}")
@@ -404,7 +414,7 @@ makevn_run_verify_it_goal() {
   shift 2
 
   makevn_load_profile "${repo_root}"
-  local_containers="${LOCAL_CONTAINERS:-${MAKEVN_PROFILE_VERIFY_IT_LOCAL_CONTAINERS:-}}"
+  local_containers="$(makevn_effective_local_containers "${repo_root}" "${MAKEVN_PROFILE_VERIFY_IT_LOCAL_CONTAINERS:-}")"
 
   workflow_invocation="$(makevn_detect_verify_it_workflow_invocation "${repo_root}" || true)"
   if [[ -n "${workflow_invocation}" ]]; then

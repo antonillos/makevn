@@ -27,6 +27,7 @@ makevn_collect_doctor_snapshot() {
   local verify_profile=""
   local compose_file=""
   local e2e_compose_file=""
+  local local_containers_preference=""
 
   if [[ -d "$(makevn_state_dir "${repo_root}")" ]]; then
     makevn_refresh_profile "${repo_root}"
@@ -150,6 +151,34 @@ makevn_collect_doctor_snapshot() {
   [[ -f "${profile_path}" ]] && profile_status="${profile_path}"
 
   makevn_load_config "${repo_root}"
+  if [[ -f "$(makevn_config_path "${repo_root}")" && -n "${MAKEVN_DETECTED_VERIFY_IT_LOCAL_CONTAINERS:-}" && -z "${LOCAL_CONTAINERS+x}" && -z "${MAKEVN_LOCAL_CONTAINERS+x}" && -t 0 && -t 2 ]]; then
+    printf '\n' >&2
+    printf '%s\n' "$(makevn_warn "Use LOCAL_CONTAINERS=TRUE by default for makevn test/verify commands?")" >&2
+    printf '  [1] yes, use local containers\n' >&2
+    printf '  [2] no, leave LOCAL_CONTAINERS unset unless I export it\n' >&2
+    local _local_choice=""
+    while true; do
+      printf 'Enter number [1-2]: ' >&2
+      read -r _local_choice </dev/tty
+      case "${_local_choice}" in
+        1)
+          makevn_update_config_local_containers "${repo_root}" "TRUE"
+          MAKEVN_LOCAL_CONTAINERS="TRUE"
+          printf '%s\n' "$(makevn_dim "Saved to .makevn/config (MAKEVN_LOCAL_CONTAINERS).")" >&2
+          break
+          ;;
+        2)
+          makevn_update_config_local_containers "${repo_root}" ""
+          MAKEVN_LOCAL_CONTAINERS=""
+          printf '%s\n' "$(makevn_dim "Saved to .makevn/config (MAKEVN_LOCAL_CONTAINERS).")" >&2
+          break
+          ;;
+        *)
+          printf '%s\n' "$(makevn_warn "Invalid selection. Try again.")" >&2
+          ;;
+      esac
+    done
+  fi
   [[ -n "${MAKEVN_RUN_CMD:-}" ]] && run_configured="yes"
 
   if [[ -n "${code_java_home}" ]]; then
@@ -186,6 +215,8 @@ makevn_collect_doctor_snapshot() {
   MAKEVN_DOCTOR_RECOMMENDED_MODE="${recommended_mode}"
   MAKEVN_DOCTOR_COMPOSE_FILE="${compose_file}"
   MAKEVN_DOCTOR_E2E_COMPOSE_FILE="${e2e_compose_file}"
+  local_containers_preference="$(makevn_effective_local_containers "${repo_root}" "${MAKEVN_DETECTED_VERIFY_IT_LOCAL_CONTAINERS:-}")"
+  MAKEVN_DOCTOR_LOCAL_CONTAINERS="${local_containers_preference:-unset}"
   MAKEVN_DOCTOR_SUGGESTED_NEXT=""
   MAKEVN_DOCTOR_SUGGESTED_OPTIONAL=""
   MAKEVN_DOCTOR_SUGGESTED_NOTE=""
@@ -239,6 +270,7 @@ makevn_print_doctor_json() {
   printf '    "resolved_karate_java_home": "%s",\n' "$(makevn_json_escape "${MAKEVN_DOCTOR_KARATE_JAVA_HOME}")"
   printf '    "resolved_karate_java_version": "%s",\n' "$(makevn_json_escape "${MAKEVN_DOCTOR_KARATE_JAVA_VERSION_LINE}")"
   printf '    "run_command_configured": "%s",\n' "$(makevn_json_escape "${MAKEVN_DOCTOR_RUN_CONFIGURED}")"
+  printf '    "local_containers_default": "%s",\n' "$(makevn_json_escape "${MAKEVN_DOCTOR_LOCAL_CONTAINERS}")"
   printf '    "persisted_profile": "%s",\n' "$(makevn_json_escape "${MAKEVN_DOCTOR_PROFILE_STATUS}")"
   printf '    "recommended_mode": "%s"\n' "$(makevn_json_escape "${MAKEVN_DOCTOR_RECOMMENDED_MODE}")"
   printf '  },\n'
@@ -249,4 +281,3 @@ makevn_print_doctor_json() {
   printf '  }\n'
   printf '}\n'
 }
-

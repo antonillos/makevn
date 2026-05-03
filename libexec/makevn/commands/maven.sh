@@ -198,6 +198,7 @@ cmd_verify_it_coverage() {
 cmd_verify() {
   local repo_root="$1"
   local arg=""
+  local local_containers=""
   shift
   [[ "${1:-}" == "--" ]] && shift
   for arg in "$@"; do
@@ -208,7 +209,13 @@ cmd_verify() {
     esac
   done
   cmd_docker_ps_required "${repo_root}"
-  LOCAL_CONTAINERS="${LOCAL_CONTAINERS:-TRUE}" makevn_run_maven_goal "${repo_root}" verify verify verify "$@"
+  makevn_load_profile "${repo_root}"
+  local_containers="$(makevn_effective_local_containers "${repo_root}" "${MAKEVN_PROFILE_VERIFY_IT_LOCAL_CONTAINERS:-}")"
+  if [[ -n "${local_containers}" ]]; then
+    LOCAL_CONTAINERS="${local_containers}" makevn_run_maven_goal "${repo_root}" verify verify verify "$@"
+  else
+    makevn_run_maven_goal "${repo_root}" verify verify verify "$@"
+  fi
 }
 
 cmd_pr_verify() {

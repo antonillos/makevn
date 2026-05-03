@@ -36,6 +36,7 @@ print_doctor() {
   makevn_print_item "Run command configured" "${MAKEVN_DOCTOR_RUN_CONFIGURED}"
   makevn_print_item "Docker compose file" "${MAKEVN_DOCTOR_COMPOSE_FILE}"
   makevn_print_item "Docker e2e compose file" "${MAKEVN_DOCTOR_E2E_COMPOSE_FILE}"
+  makevn_print_item "LOCAL_CONTAINERS default" "${MAKEVN_DOCTOR_LOCAL_CONTAINERS}"
   makevn_print_item "Persisted profile" "${MAKEVN_DOCTOR_PROFILE_STATUS}"
   makevn_print_item "Recommended mode" "${MAKEVN_DOCTOR_RECOMMENDED_MODE}"
 
@@ -51,4 +52,3 @@ print_doctor() {
     makevn_print_item "optional" "${MAKEVN_DOCTOR_SUGGESTED_OPTIONAL}"
   fi
 }
-

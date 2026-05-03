@@ -587,7 +587,8 @@ EOF
   assert_matches "${repo}/.mvnw.log" '^ARGS=-B -nsu -f .*/pom\.xml -pl module-a -am test-compile failsafe:integration-test -Dsurefire\.failIfNoSpecifiedTests=false -Damiga-javaformat\.skip=true -Dit\.test=com\.example\.UserFlowIT -Dfailsafe\.failIfNoSpecifiedTests=false -Dmaven\.build\.cache\.enabled=true$'
   assert_matches "${repo}/.mvnw.log" '^ARGS=-B -nsu -f .*/pom\.xml verify -DfailIfNoTests=false$'
   assert_contains "${repo}/.mvnw.log" "JAVA_HOME=${java_home}"
-  assert_contains "${repo}/.mvnw.log" "LOCAL_CONTAINERS=TRUE"
+  assert_contains "${repo}/.mvnw.log" "LOCAL_CONTAINERS="
+  assert_not_contains "${repo}/.mvnw.log" "LOCAL_CONTAINERS=TRUE"
   assert_contains "${repo}/exec-java-home.txt" "${java_home}"
   assert_contains "${repo}/run.out" "run-ok"
   ${CLI} --repo "${repo}" uninstall >/dev/null
@@ -1145,6 +1146,152 @@ EOF
   ${CLI} --repo "${repo}" uninstall >/dev/null
 }
 
+test_verify_respects_local_containers_config() {
+  local repo="${TMP_ROOT}/verify-local-containers-config"
+  local java_home
+
+  mkdir -p "${repo}/code/boot/src/test/resources/compose"
+  mkdir -p "${repo}/fake-bin"
+  printf '<project/>\n' > "${repo}/pom.xml"
+  printf 'services:\n  db:\n    image: postgres:16\n' > "${repo}/code/boot/src/test/resources/compose/docker-compose.yml"
+  java_home="$(detect_java_home)"
+
+  ${CLI} --repo "${repo}" init --mode make-bootstrap >/dev/null
+
+  cat > "${repo}/.makevn/config" <<EOF
+MAKEVN_JAVA_HOME="${java_home}"
+MAKEVN_CODE_JAVA_HOME=""
+MAKEVN_KARATE_JAVA_HOME=""
+MAKEVN_CODE_TOOL_VERSIONS=""
+MAKEVN_KARATE_TOOL_VERSIONS=""
+MAKEVN_RUN_CMD=""
+MAKEVN_LOCAL_CONTAINERS=""
+EOF
+
+  cat > "${repo}/mvnw" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+printf 'ARGS=%s\n' "$*" >> .mvnw.log
+printf 'LOCAL_CONTAINERS=%s\n' "${LOCAL_CONTAINERS:-}" >> .mvnw.log
+EOF
+  chmod +x "${repo}/mvnw"
+
+  cat > "${repo}/fake-bin/docker-compose" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+if [[ "$1" == "-f" ]]; then
+  printf 'fake-service-id\n'
+fi
+EOF
+  chmod +x "${repo}/fake-bin/docker-compose"
+  cat > "${repo}/fake-bin/docker" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+if [[ "$1" == "compose" && "${2:-}" == "version" ]]; then
+  exit 0
+fi
+if [[ "$1" == "inspect" && "${2:-}" == "-f" ]]; then
+  case "$3" in
+    '{{.State.Status}}')
+      printf 'running\n'
+      ;;
+    '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}')
+      printf 'healthy\n'
+      ;;
+    '{{.Name}}')
+      printf '/fake-db\n'
+      ;;
+    *)
+      exit 1
+      ;;
+  esac
+  exit 0
+fi
+exit 0
+EOF
+  chmod +x "${repo}/fake-bin/docker"
+
+  PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" verify >/dev/null
+  assert_contains "${repo}/.mvnw.log" "LOCAL_CONTAINERS="
+  assert_not_contains "${repo}/.mvnw.log" "LOCAL_CONTAINERS=TRUE"
+
+  rm -f "${repo}/.mvnw.log"
+  LOCAL_CONTAINERS=FALSE PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" verify >/dev/null
+  assert_contains "${repo}/.mvnw.log" "LOCAL_CONTAINERS=FALSE"
+
+  ${CLI} --repo "${repo}" uninstall >/dev/null
+}
+
+test_verify_leaves_local_containers_unset_without_repo_signal() {
+  local repo="${TMP_ROOT}/verify-local-containers-unset"
+  local java_home
+
+  mkdir -p "${repo}/code/boot/src/test/resources/compose"
+  mkdir -p "${repo}/fake-bin"
+  printf '<project/>\n' > "${repo}/pom.xml"
+  printf 'services:\n  db:\n    image: postgres:16\n' > "${repo}/code/boot/src/test/resources/compose/docker-compose.yml"
+  java_home="$(detect_java_home)"
+
+  ${CLI} --repo "${repo}" init --mode make-bootstrap >/dev/null
+
+  cat > "${repo}/.makevn/config" <<EOF
+MAKEVN_JAVA_HOME="${java_home}"
+MAKEVN_CODE_JAVA_HOME=""
+MAKEVN_KARATE_JAVA_HOME=""
+MAKEVN_CODE_TOOL_VERSIONS=""
+MAKEVN_KARATE_TOOL_VERSIONS=""
+MAKEVN_RUN_CMD=""
+EOF
+
+  cat > "${repo}/mvnw" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+printf 'LOCAL_CONTAINERS=%s\n' "${LOCAL_CONTAINERS:-}" >> .mvnw.log
+EOF
+  chmod +x "${repo}/mvnw"
+
+  cat > "${repo}/fake-bin/docker-compose" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+if [[ "$1" == "-f" ]]; then
+  printf 'fake-service-id\n'
+fi
+EOF
+  chmod +x "${repo}/fake-bin/docker-compose"
+  cat > "${repo}/fake-bin/docker" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+if [[ "$1" == "compose" && "${2:-}" == "version" ]]; then
+  exit 0
+fi
+if [[ "$1" == "inspect" && "${2:-}" == "-f" ]]; then
+  case "$3" in
+    '{{.State.Status}}')
+      printf 'running\n'
+      ;;
+    '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}')
+      printf 'healthy\n'
+      ;;
+    '{{.Name}}')
+      printf '/fake-db\n'
+      ;;
+    *)
+      exit 1
+      ;;
+  esac
+  exit 0
+fi
+exit 0
+EOF
+  chmod +x "${repo}/fake-bin/docker"
+
+  PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" verify >/dev/null
+  assert_contains "${repo}/.mvnw.log" "LOCAL_CONTAINERS="
+  assert_not_contains "${repo}/.mvnw.log" "LOCAL_CONTAINERS=TRUE"
+
+  ${CLI} --repo "${repo}" uninstall >/dev/null
+}
+
 test_verify_changes_command() {
   local repo="${TMP_ROOT}/verify-changes"
   local java_home
@@ -1410,6 +1557,8 @@ main() {
   test_verify_it_requires_running_services
   test_verify_it_uses_verify_lifecycle_when_verify_workflow_skips_it
   test_verify_it_prefers_integration_workflow_when_available
+  test_verify_respects_local_containers_config
+  test_verify_leaves_local_containers_unset_without_repo_signal
   test_verify_changes_command
   test_coverage_changes_command
   test_verify_rejects_skip_flags

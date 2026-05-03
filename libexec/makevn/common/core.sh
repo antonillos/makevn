@@ -62,6 +62,20 @@ makevn_load_profile() {
   fi
 }
 
+makevn_effective_local_containers() {
+  local repo_root="$1"
+  local fallback="${2:-}"
+
+  makevn_load_config "${repo_root}"
+  if [[ -n "${LOCAL_CONTAINERS+x}" ]]; then
+    printf '%s\n' "${LOCAL_CONTAINERS}"
+  elif [[ -n "${MAKEVN_LOCAL_CONTAINERS+x}" ]]; then
+    printf '%s\n' "${MAKEVN_LOCAL_CONTAINERS}"
+  else
+    printf '%s\n' "${fallback}"
+  fi
+}
+
 makevn_json_escape() {
   local value="$1"
 
@@ -125,4 +139,3 @@ makevn_merge_words() {
 makevn_trim() {
   printf '%s\n' "$(printf '%s' "$1" | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//')"
 }
-

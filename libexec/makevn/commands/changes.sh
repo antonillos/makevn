@@ -17,7 +17,7 @@ cmd_verify_changes() {
   local test_list=""
   local module_selection=""
   local jacoco_module=""
-  local local_containers="${LOCAL_CONTAINERS:-TRUE}"
+  local local_containers=""
   local cli_flags_value=""
   local log_name="verify-changes"
   local rc=0
@@ -26,6 +26,8 @@ cmd_verify_changes() {
   local -a verify_args=()
 
   shift
+  makevn_load_profile "${repo_root}"
+  local_containers="$(makevn_effective_local_containers "${repo_root}" "${MAKEVN_PROFILE_VERIFY_IT_LOCAL_CONTAINERS:-}")"
   extra_args=()
   if [[ "${1:-}" == "--" ]]; then
     shift
@@ -123,7 +125,11 @@ No modified Java files detected. Skipping verify-changes."
   fi
 
   test_list="$(printf '%s\n' "${changed_test}" | sed "s|^${strip_prefix}||" | sed 's|^.*/src/test/java/||' | sed 's|\.java$||' | tr '/' '.' | paste -sd, -)"
-  verify_args=(env "LOCAL_CONTAINERS=${local_containers}" "${maven_executable}")
+  if [[ -n "${local_containers}" ]]; then
+    verify_args=(env "LOCAL_CONTAINERS=${local_containers}" "${maven_executable}")
+  else
+    verify_args=("${maven_executable}")
+  fi
   if [[ ${#cli_flags[@]} -gt 0 ]]; then
     verify_args+=("${cli_flags[@]}")
   fi
