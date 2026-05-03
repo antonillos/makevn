@@ -490,15 +490,116 @@ makevn_detect_karate_base_path() {
   return 1
 }
 
-makevn_detect_project_key() {
+makevn_app_config_files() {
   local maven_base_path="$1"
-  local pom_path="${maven_base_path}/pom.xml"
 
-  [[ -f "${pom_path}" ]] || return 1
+  [[ -n "${maven_base_path}" ]] || return 1
 
-  tail -n +11 "${pom_path}" \
-    | sed -nE 's/.*<groupId>com\.inditex\.([^<]+)<\/groupId>.*/\1/p' \
-    | head -n 1
+  find "${maven_base_path}" \
+    -path '*/src/main/resources/application*.properties' -o \
+    -path '*/src/main/resources/application*.yml' -o \
+    -path '*/src/main/resources/application*.yaml' \
+    2>/dev/null \
+    | awk '
+      /application-standalone[.]/ { print "0 " $0; next }
+      /application-local[.]/ { print "1 " $0; next }
+      /application[.]/ { print "2 " $0; next }
+      { print "3 " $0 }
+    ' \
+    | LC_ALL=C sort \
+    | cut -d ' ' -f 2-
+}
+
+makevn_detect_app_port() {
+  local maven_base_path="$1"
+  local value=""
+
+  while IFS= read -r config_file; do
+    value="$(sed -nE 's/^[[:space:]]*server\.port[[:space:]]*[:=][[:space:]]*([0-9]+).*$/\1/p' "${config_file}" | head -n 1)"
+    [[ -n "${value}" ]] && printf '%s\n' "${value}" && return 0
+    value="$(awk '
+      /^[[:space:]]*server:[[:space:]]*$/ {
+        in_server = 1
+        server_indent = match($0, /[^ ]/) - 1
+        next
+      }
+      in_server {
+        current_indent = match($0, /[^ ]/) - 1
+        if ($0 !~ /^[[:space:]]*$/ && current_indent <= server_indent) {
+          in_server = 0
+        }
+        if ($0 ~ /^[[:space:]]*port:[[:space:]]*[0-9]+/) {
+          print
+          exit
+        }
+      }
+    ' "${config_file}" | sed -nE 's/^[[:space:]]*port:[[:space:]]*([0-9]+).*$/\1/p')"
+    [[ -n "${value}" ]] && printf '%s\n' "${value}" && return 0
+  done < <(makevn_app_config_files "${maven_base_path}")
+
+  printf '8080\n'
+}
+
+makevn_detect_app_context_path() {
+  local maven_base_path="$1"
+  local value=""
+
+  while IFS= read -r config_file; do
+    value="$(sed -nE 's/^[[:space:]]*(server\.servlet\.context-path|server\.context-path)[[:space:]]*[:=][[:space:]]*([^[:space:]#]+).*$/\2/p' "${config_file}" | head -n 1)"
+    [[ -n "${value}" ]] && printf '%s\n' "${value}" && return 0
+    value="$(awk '
+      /^[[:space:]]*server:[[:space:]]*$/ {
+        in_server = 1
+        server_indent = match($0, /[^ ]/) - 1
+        next
+      }
+      in_server {
+        current_indent = match($0, /[^ ]/) - 1
+        if ($0 !~ /^[[:space:]]*$/ && current_indent <= server_indent) {
+          in_server = 0
+        }
+        if ($0 ~ /^[[:space:]]*context-path:[[:space:]]*[^[:space:]#]+/) {
+          print
+          exit
+        }
+      }
+    ' "${config_file}" | sed -nE 's/^[[:space:]]*context-path:[[:space:]]*([^[:space:]#]+).*$/\1/p')"
+    [[ -n "${value}" ]] && printf '%s\n' "${value}" && return 0
+  done < <(makevn_app_config_files "${maven_base_path}")
+
+  printf '\n'
+}
+
+makevn_detect_app_health_path() {
+  local maven_base_path="$1"
+  local value=""
+
+  while IFS= read -r config_file; do
+    value="$(sed -nE 's/^[[:space:]]*management\.endpoints\.web\.base-path[[:space:]]*[:=][[:space:]]*([^[:space:]#]+).*$/\1/p' "${config_file}" | head -n 1)"
+    [[ -n "${value}" ]] && printf '%s/health\n' "${value%/}" && return 0
+    value="$(grep -Eo '/[[:alnum:]_.-]+/\*\*' "${config_file}" | head -n 1 | sed 's#/\*\*$##')"
+    [[ -n "${value}" ]] && printf '%s/health\n' "${value}" && return 0
+  done < <(makevn_app_config_files "${maven_base_path}")
+
+  printf '/actuator/health\n'
+}
+
+makevn_detect_app_health_url() {
+  local maven_base_path="$1"
+  local port=""
+  local context_path=""
+  local health_path=""
+
+  [[ -n "${maven_base_path}" ]] || return 1
+
+  port="$(makevn_detect_app_port "${maven_base_path}")"
+  context_path="$(makevn_detect_app_context_path "${maven_base_path}")"
+  health_path="$(makevn_detect_app_health_path "${maven_base_path}")"
+  context_path="/${context_path#/}"
+  health_path="/${health_path#/}"
+  [[ "${context_path}" == "/" ]] && context_path=""
+
+  printf 'http://localhost:%s%s%s\n' "${port}" "${context_path%/}" "${health_path}"
 }
 
 makevn_detect_jacoco_module_name() {
@@ -710,10 +811,12 @@ makevn_detect_repo_profile() {
   local code_tool_versions=""
   local karate_tool_versions=""
   local maven_prop_flags=""
+  local app_health_url=""
 
   maven_base_path="$(makevn_detect_maven_base_path_fresh "${repo_root}" || true)"
   code_tool_versions="$(makevn_detect_code_tool_versions_fresh "${repo_root}" "${maven_base_path}" || true)"
   karate_tool_versions="$(makevn_detect_karate_tool_versions_fresh "${repo_root}" || true)"
+  app_health_url="$(makevn_detect_app_health_url "${maven_base_path}" || true)"
 
   makevn_detect_workflow_maven_flags "${repo_root}"
   maven_prop_flags=""
@@ -756,6 +859,7 @@ makevn_detect_repo_profile() {
   MAKEVN_DETECTED_CODE_TOOL_VERSIONS="${code_tool_versions}"
   MAKEVN_DETECTED_KARATE_TOOL_VERSIONS="${karate_tool_versions}"
   MAKEVN_DETECTED_MAVEN_PROP_FLAGS="${maven_prop_flags}"
+  MAKEVN_DETECTED_APP_HEALTH_URL="${app_health_url}"
 }
 
 makevn_write_profile() {
@@ -776,6 +880,7 @@ makevn_write_profile() {
     printf 'MAKEVN_PROFILE_MAVEN_CLI_FLAGS=%q\n' "${MAKEVN_DETECTED_MAVEN_CLI_FLAGS}"
     printf 'MAKEVN_PROFILE_MAVEN_PROP_FLAGS=%q\n' "${MAKEVN_DETECTED_MAVEN_PROP_FLAGS}"
     printf 'MAKEVN_PROFILE_MAVEN_CACHE_SOURCE=%q\n' "${MAKEVN_DETECTED_MAVEN_CACHE_SOURCE}"
+    printf 'MAKEVN_PROFILE_APP_HEALTH_URL=%q\n' "${MAKEVN_DETECTED_APP_HEALTH_URL:-}"
     printf 'MAKEVN_PROFILE_COMPILE_WORKFLOW_FILE=%q\n' "${MAKEVN_DETECTED_COMPILE_WORKFLOW_FILE:-}"
     printf 'MAKEVN_PROFILE_COMPILE_CLI_FLAGS=%q\n' "${MAKEVN_DETECTED_COMPILE_CLI_FLAGS:-}"
     printf 'MAKEVN_PROFILE_COMPILE_PROP_FLAGS=%q\n' "${MAKEVN_DETECTED_COMPILE_PROP_FLAGS:-}"

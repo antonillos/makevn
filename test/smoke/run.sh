@@ -598,6 +598,7 @@ test_docker_commands() {
   local repo="${TMP_ROOT}/docker-commands"
   local output
 
+  mkdir -p "${repo}/code/boot/src/main/resources"
   mkdir -p "${repo}/code/boot/src/test/resources/compose"
   mkdir -p "${repo}/fake-bin"
   printf '<project/>\n' > "${repo}/pom.xml"
@@ -675,6 +676,7 @@ test_karate_commands() {
   local java_home
   local output
 
+  mkdir -p "${repo}/code/boot/src/main/resources"
   mkdir -p "${repo}/code/boot/src/test/resources/compose"
   mkdir -p "${repo}/code/boot/target"
   mkdir -p "${repo}/e2e/karate/src/test/resources/compose"
@@ -693,8 +695,15 @@ test_karate_commands() {
   <properties>
     <java.version>21</java.version>
   </properties>
-  <groupId>com.inditex.icdmfpbcqaproductsample</groupId>
+  <groupId>com.example.productsample</groupId>
 </project>
+EOF
+  cat > "${repo}/code/boot/src/main/resources/application-standalone.yml" <<'EOF'
+server:
+  context-path: /products
+  port: 18080
+security:
+  ignored-paths: /internal/**
 EOF
   printf '<project/>\n' > "${repo}/e2e/karate/pom.xml"
   printf 'services:\n  db:\n    image: postgres:16\n' > "${repo}/e2e/karate/src/test/resources/compose/docker-compose.yml"
@@ -812,9 +821,64 @@ EOF
   assert_matches "${repo}/.mvnw.log" '^ARGS=-f .*/code/pom\.xml package$'
   assert_contains "${repo}/.mvnw.log" "JAVA_HOME=${java_home}"
   assert_matches "${repo}/.java.log" '^JAVA_ARGS=-jar .*/code/boot/target/app\.jar$'
-  assert_contains "${repo}/.curl.log" "http://localhost:8080/icdmfpbcqaproductsample/amiga/health"
+  assert_contains "${repo}/.curl.log" "http://localhost:18080/products/internal/health"
   assert_not_exists "${repo}/.makevn/app/app.pid"
   [[ "${output}" == *"[ok] "* ]] || fail "expected vn-karate-all output to include success summary"
+
+  ${CLI} --repo "${repo}" uninstall >/dev/null
+}
+
+test_run_app_bg_reports_early_process_exit() {
+  local repo="${TMP_ROOT}/run-app-bg-exit"
+  local java_home="${repo}/fake-java-home"
+  local output=""
+
+  mkdir -p "${repo}/code/boot/target"
+  mkdir -p "${repo}/fake-java-home/bin"
+  mkdir -p "${repo}/fake-bin"
+  cat > "${repo}/code/pom.xml" <<'EOF'
+<project>
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>com.example</groupId>
+  <artifactId>sampleapp</artifactId>
+  <version>1.0.0</version>
+</project>
+EOF
+  printf 'fake jar\n' > "${repo}/code/boot/target/app.jar"
+
+  cat > "${repo}/fake-java-home/bin/java" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+printf 'startup failed\n' >&2
+exit 42
+EOF
+  chmod +x "${repo}/fake-java-home/bin/java"
+
+  cat > "${repo}/fake-bin/curl" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+exit 7
+EOF
+  chmod +x "${repo}/fake-bin/curl"
+
+  ${CLI} --repo "${repo}" init --mode standalone >/dev/null
+  cat > "${repo}/.makevn/config" <<EOF
+MAKEVN_JAVA_HOME="${java_home}"
+MAKEVN_CODE_JAVA_HOME="${java_home}"
+MAKEVN_KARATE_JAVA_HOME=""
+MAKEVN_CODE_TOOL_VERSIONS=""
+MAKEVN_KARATE_TOOL_VERSIONS=""
+MAKEVN_RUN_CMD=""
+EOF
+
+  output="$(PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" run-app-bg 2>&1 || true)"
+
+  [[ "${output}" == *"Application process exited before health check passed"* ]] \
+    || fail "expected run-app-bg to report early process exit"
+  [[ "${output}" == *"Check the log: "*".makevn/app/app.log"* ]] \
+    || fail "expected run-app-bg failure to point to app log"
+  assert_contains "${repo}/.makevn/app/app.log" "startup failed"
+  assert_not_exists "${repo}/.makevn/app/app.pid"
 
   ${CLI} --repo "${repo}" uninstall >/dev/null
 }
@@ -1555,6 +1619,7 @@ main() {
   test_command_routing
   test_docker_commands
   test_karate_commands
+  test_run_app_bg_reports_early_process_exit
   test_verify_split_commands
   test_verify_it_requires_running_services
   test_verify_it_uses_verify_lifecycle_when_verify_workflow_skips_it

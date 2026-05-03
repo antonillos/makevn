@@ -155,7 +155,7 @@ makevn stop-app
 
 `karate-docker-up` waits for required services from the detected E2E compose to become running and healthy before returning. `karate-docker-up` and `karate-docker-down` include a sibling `docker-compose.override.yml` when present. `karate-test --tag @tag` maps to Karate's tag filtering.
 
-`run-app-bg` starts the built application jar, records its PID under `.makevn/app/`, waits for `/amiga/health`, and returns so it can be chained before `karate-test`. `stop-app` validates the recorded jar before stopping the process. `karate-all` composes `karate-docker-up`, `package` unless `SKIP_PACKAGE=true`, `run-app-bg`, `karate-test`, and `stop-app`.
+`run-app-bg` starts the built application jar, records its PID under `.makevn/app/`, waits for the configured or detected application health URL, and returns so it can be chained before `karate-test`. `stop-app` validates the recorded jar before stopping the process. `karate-all` composes `karate-docker-up`, `package` unless `SKIP_PACKAGE=true`, `run-app-bg`, `karate-test`, and `stop-app`.
 
 ### Coverage Analysis Commands
 

@@ -30,28 +30,54 @@ makevn_detect_app_jar() {
 }
 
 makevn_app_health_url() {
-  local maven_base_path="$1"
-  local project_key=""
+  local repo_root="$1"
+  local maven_base_path="$2"
 
-  project_key="$(makevn_detect_project_key "${maven_base_path}" || true)"
-  [[ -n "${project_key}" ]] || makevn_die "Could not detect com.inditex project key from ${maven_base_path}/pom.xml"
-  printf 'http://localhost:8080/%s/amiga/health\n' "${project_key}"
+  makevn_load_config "${repo_root}"
+  if [[ -n "${MAKEVN_APP_HEALTH_URL:-}" ]]; then
+    printf '%s\n' "${MAKEVN_APP_HEALTH_URL}"
+    return 0
+  fi
+
+  makevn_load_profile "${repo_root}"
+  if [[ -n "${MAKEVN_PROFILE_APP_HEALTH_URL:-}" ]]; then
+    printf '%s\n' "${MAKEVN_PROFILE_APP_HEALTH_URL}"
+    return 0
+  fi
+
+  makevn_detect_app_health_url "${maven_base_path}" \
+    || makevn_die "Could not detect application health URL. Run 'makevn doctor' or set MAKEVN_APP_HEALTH_URL in .makevn/config."
 }
 
 makevn_wait_app_health() {
   local health_url="$1"
   local timeout_seconds="${2:-30}"
+  local app_pid="${3:-}"
+  local log_file="${4:-}"
   local elapsed=0
+  local app_state=""
 
   while (( elapsed < timeout_seconds )); do
     if curl -fsS "${health_url}" >/dev/null 2>&1; then
       return 0
     fi
+    if [[ -n "${app_pid}" ]]; then
+      app_state="$(ps -p "${app_pid}" -o stat= 2>/dev/null || true)"
+      if [[ -z "${app_state}" || "${app_state}" == Z* ]]; then
+        if [[ -n "${log_file}" ]]; then
+          printf '%s\n' "$(makevn_warn "Error: Application process exited before health check passed: ${health_url}. Check the log: ${log_file}")" >&2
+        else
+          printf '%s\n' "$(makevn_warn "Error: Application process exited before health check passed: ${health_url}")" >&2
+        fi
+        return 1
+      fi
+    fi
     sleep 1
     elapsed=$((elapsed + 1))
   done
 
-  makevn_die "App health check did not pass within ${timeout_seconds}s: ${health_url}"
+  printf '%s\n' "$(makevn_warn "Error: App health check did not pass within ${timeout_seconds}s: ${health_url}")" >&2
+  return 1
 }
 
 makevn_start_app_background() {
@@ -77,7 +103,7 @@ makevn_start_app_background() {
   [[ -n "${java_home}" ]] || makevn_die "Could not resolve code JDK. Run 'makevn doctor' or configure .makevn/config first."
   jar_file="$(makevn_detect_app_jar "${maven_base_path}" "${boot_module}")"
   [[ -n "${jar_file}" ]] || makevn_die "Application jar not found in ${maven_base_path}/${boot_module}/target. Run 'makevn package' first."
-  health_url="$(makevn_app_health_url "${maven_base_path}")"
+  health_url="$(makevn_app_health_url "${repo_root}" "${maven_base_path}")"
 
   log_dir="$(makevn_app_log_dir "${repo_root}")"
   mkdir -p "${log_dir}"
@@ -108,7 +134,7 @@ makevn_start_app_background() {
   printf '%s\n' "${jar_file}" > "${jar_record}"
 
   set +e
-  makevn_wait_app_health "${health_url}" "${MAKEVN_APP_HEALTH_TIMEOUT:-30}"
+  makevn_wait_app_health "${health_url}" "${MAKEVN_APP_HEALTH_TIMEOUT:-30}" "${app_pid}" "${log_file}"
   local health_rc=$?
   set -e
   if [[ ${health_rc} -ne 0 ]]; then
