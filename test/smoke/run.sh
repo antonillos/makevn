@@ -485,11 +485,12 @@ package com.example;
 
 class UserFlowIT {}
 EOF
-  cat > "${repo}/mvnw" <<'EOF'
+cat > "${repo}/mvnw" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
 printf 'ARGS=%s\n' "$*" >> .mvnw.log
 printf 'JAVA_HOME=%s\n' "${JAVA_HOME:-}" >> .mvnw.log
+printf 'LOCAL_CONTAINERS=%s\n' "${LOCAL_CONTAINERS:-}" >> .mvnw.log
 for arg in "$@"; do
   if [[ "${arg}" == "failsafe:integration-test" ]]; then
     mkdir -p module-a/target/failsafe-reports
@@ -586,6 +587,7 @@ EOF
   assert_matches "${repo}/.mvnw.log" '^ARGS=-B -nsu -f .*/pom\.xml -pl module-a -am test-compile failsafe:integration-test -Dsurefire\.failIfNoSpecifiedTests=false -Damiga-javaformat\.skip=true -Dit\.test=com\.example\.UserFlowIT -Dfailsafe\.failIfNoSpecifiedTests=false -Dmaven\.build\.cache\.enabled=true$'
   assert_matches "${repo}/.mvnw.log" '^ARGS=-B -nsu -f .*/pom\.xml verify -DfailIfNoTests=false$'
   assert_contains "${repo}/.mvnw.log" "JAVA_HOME=${java_home}"
+  assert_contains "${repo}/.mvnw.log" "LOCAL_CONTAINERS=TRUE"
   assert_contains "${repo}/exec-java-home.txt" "${java_home}"
   assert_contains "${repo}/run.out" "run-ok"
   ${CLI} --repo "${repo}" uninstall >/dev/null

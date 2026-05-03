@@ -208,7 +208,7 @@ cmd_verify() {
     esac
   done
   cmd_docker_ps_required "${repo_root}"
-  makevn_run_maven_goal "${repo_root}" verify verify verify "$@"
+  LOCAL_CONTAINERS="${LOCAL_CONTAINERS:-TRUE}" makevn_run_maven_goal "${repo_root}" verify verify verify "$@"
 }
 
 cmd_pr_verify() {
