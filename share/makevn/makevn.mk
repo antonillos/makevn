@@ -1,7 +1,7 @@
 MAKEVN_BIN ?= makevn
 MAKEVN_REPO_ROOT ?= $(CURDIR)
 
-.PHONY: vn-help vn-doctor vn-init vn-uninstall vn-profile-refresh vn-compile vn-test-compile vn-compile-tests vn-validate vn-package vn-build vn-clean vn-test vn-verify-ut vn-verify-ut-coverage vn-verify-it vn-verify-it-coverage vn-verify vn-verify-changes vn-coverage-changes vn-pr-verify vn-docker-up vn-docker-down vn-docker-ps vn-docker-ps-required vn-karate-up vn-karate-down vn-karate-test vn-karate-all vn-run-app vn-run-app-bg vn-stop-app vn-run vn-jdk-current vn-jdk-list vn-exec
+.PHONY: vn-help vn-doctor vn-init vn-uninstall vn-profile-refresh vn-compile vn-test-compile vn-compile-tests vn-validate vn-package vn-build vn-clean vn-test vn-verify-ut vn-verify-ut-coverage vn-verify-it vn-verify-it-coverage vn-verify vn-verify-changes vn-coverage-changes vn-pr-verify vn-docker-up vn-docker-down vn-docker-ps vn-docker-ps-required vn-karate-docker-up vn-karate-docker-down vn-karate-test vn-karate-all vn-run-app vn-run-app-bg vn-stop-app vn-run vn-jdk-current vn-jdk-list vn-exec
 
 define makevn_run
 	@set +e; \
@@ -43,8 +43,8 @@ vn-help:
 	@printf '%s\n' '  make vn-docker-down'
 	@printf '%s\n' '  make vn-docker-ps'
 	@printf '%s\n' '  make vn-docker-ps-required'
-	@printf '%s\n' '  make vn-karate-up'
-	@printf '%s\n' '  make vn-karate-down'
+	@printf '%s\n' '  make vn-karate-docker-up'
+	@printf '%s\n' '  make vn-karate-docker-down'
 	@printf '%s\n' '  make vn-karate-test'
 	@printf '%s\n' '  make vn-karate-test TAG=@smoke'
 	@printf '%s\n' '  make vn-karate-all'
@@ -144,11 +144,11 @@ vn-docker-ps:
 vn-docker-ps-required:
 	$(call makevn_run,docker-ps-required)
 
-vn-karate-up:
-	$(call makevn_run,karate-up)
+vn-karate-docker-up:
+	$(call makevn_run,karate-docker-up)
 
-vn-karate-down:
-	$(call makevn_run,karate-down)
+vn-karate-docker-down:
+	$(call makevn_run,karate-docker-down)
 
 vn-karate-test:
 	@set +e; \

@@ -795,8 +795,8 @@ MAKEVN_KARATE_TOOL_VERSIONS=""
 MAKEVN_RUN_CMD=""
 EOF
 
-  PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" karate-up >/dev/null
-  PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" karate-down >/dev/null
+  PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" karate-docker-up >/dev/null
+  PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" karate-docker-down >/dev/null
   printf 'not-a-real-jar\n' > "${repo}/code/boot/target/app.jar"
   PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" run-app-bg >/dev/null
   PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" stop-app >/dev/null

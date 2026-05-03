@@ -40,8 +40,8 @@ Usage:
   makevn [--repo PATH] docker-down [--tail]
   makevn [--repo PATH] docker-ps [--tail]
   makevn [--repo PATH] docker-ps-required [--tail]
-  makevn [--repo PATH] karate-up
-  makevn [--repo PATH] karate-down
+  makevn [--repo PATH] karate-docker-up [--tail]
+  makevn [--repo PATH] karate-docker-down [--tail]
   makevn [--repo PATH] karate-test [--tag TAG] [-- EXTRA_MAVEN_ARGS...]
   makevn [--repo PATH] karate-all [--tag TAG] [-- EXTRA_MAVEN_ARGS...]
   makevn [--repo PATH] run-app
@@ -241,11 +241,11 @@ case "${COMMAND}" in
   docker-ps-required)
     cmd_docker_ps_required "${REPO_ROOT}" "$@"
     ;;
-  karate-up)
-    cmd_karate_up "${REPO_ROOT}" "$@"
+  karate-docker-up)
+    cmd_karate_docker_up "${REPO_ROOT}" "$@"
     ;;
-  karate-down)
-    cmd_karate_down "${REPO_ROOT}" "$@"
+  karate-docker-down)
+    cmd_karate_docker_down "${REPO_ROOT}" "$@"
     ;;
   karate-test)
     cmd_karate_test "${REPO_ROOT}" "$@"

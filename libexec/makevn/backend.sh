@@ -67,7 +67,7 @@ done
 [[ -z "${METADATA_OUT}" || "${METADATA_OUT}" = /* ]] || makevn_die "Backend --metadata-out must be an absolute path: ${METADATA_OUT}"
 
 case "${COMMAND}" in
-  doctor|init|uninstall|profile|exec|compile|test-compile|compile-tests|validate|package|build|clean|test|verify-ut|verify-ut-coverage|verify-it|verify-it-coverage|verify|verify-changes|coverage-changes|pr-verify|docker-up|docker-down|docker-ps|docker-ps-required|karate-up|karate-down|karate-test|karate-all|run-app|run-app-bg|stop-app|run|jdk)
+  doctor|init|uninstall|profile|exec|compile|test-compile|compile-tests|validate|package|build|clean|test|verify-ut|verify-ut-coverage|verify-it|verify-it-coverage|verify|verify-changes|coverage-changes|pr-verify|docker-up|docker-down|docker-ps|docker-ps-required|karate-docker-up|karate-docker-down|karate-test|karate-all|run-app|run-app-bg|stop-app|run|jdk)
     ;;
   *)
     makevn_die "Unknown backend command: ${COMMAND}"
@@ -75,7 +75,7 @@ case "${COMMAND}" in
 esac
 
 case "${COMMAND}" in
-  doctor|init|uninstall|profile|karate-up|karate-down|run-app|run-app-bg|stop-app|jdk)
+  doctor|init|uninstall|profile|run-app|run-app-bg|stop-app|jdk)
     if [[ "${COMMAND}" == "doctor" ]]; then
       if [[ -n "${FORMAT}" && "${FORMAT}" != "text" && "${FORMAT}" != "json" ]]; then
         makevn_die "Backend format not implemented yet for ${COMMAND}: ${FORMAT}"

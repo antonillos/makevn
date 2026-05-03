@@ -144,8 +144,8 @@ makevn pr-verify [-- EXTRA_MAVEN_ARGS...]
 These commands are optional and require a detected Karate Maven project (`e2e/karate/pom.xml` or `karate/pom.xml`):
 
 ```bash
-makevn karate-up
-makevn karate-down
+makevn karate-docker-up [--tail]
+makevn karate-docker-down [--tail]
 makevn karate-test [--tag TAG] [-- EXTRA_MAVEN_ARGS...]
 makevn karate-all [--tag TAG] [-- EXTRA_MAVEN_ARGS...]
 makevn run-app
@@ -153,9 +153,9 @@ makevn run-app-bg
 makevn stop-app
 ```
 
-`karate-up` and `karate-down` use the detected E2E compose file and include a sibling `docker-compose.override.yml` when present. `karate-test --tag @tag` maps to Karate's tag filtering.
+`karate-docker-up` and `karate-docker-down` use the detected E2E compose file and include a sibling `docker-compose.override.yml` when present. `karate-test --tag @tag` maps to Karate's tag filtering.
 
-`run-app-bg` starts the built application jar, records its PID under `.makevn/app/`, waits for `/amiga/health`, and returns so it can be chained before `karate-test`. `stop-app` validates the recorded jar before stopping the process. `karate-all` composes `karate-up`, `package` unless `SKIP_PACKAGE=true`, `run-app-bg`, `karate-test`, and `stop-app`.
+`run-app-bg` starts the built application jar, records its PID under `.makevn/app/`, waits for `/amiga/health`, and returns so it can be chained before `karate-test`. `stop-app` validates the recorded jar before stopping the process. `karate-all` composes `karate-docker-up`, `package` unless `SKIP_PACKAGE=true`, `run-app-bg`, `karate-test`, and `stop-app`.
 
 ### Coverage Analysis Commands
 
@@ -431,9 +431,11 @@ Initially supported command family:
 - `docker-down`
 - `docker-ps`
 - `docker-ps-required`
+- `karate-docker-up`
+- `karate-docker-down`
 - `karate-test`
 
-Commands such as `doctor`, `init`, `uninstall`, `profile refresh`, `coverage-changes`, `jdk current`, `jdk list`, `karate-up`, `karate-down`, `karate-all`, `run-app`, `run-app-bg`, and `stop-app` should reject `--tail`.
+Commands such as `doctor`, `init`, `uninstall`, `profile refresh`, `coverage-changes`, `jdk current`, `jdk list`, `karate-all`, `run-app`, `run-app-bg`, and `stop-app` should reject `--tail`.
 
 `exec` and `run` may gain `--tail` support later if they are routed through the same managed log model, but that support is not assumed by this frozen contract.
 

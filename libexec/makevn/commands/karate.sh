@@ -43,7 +43,7 @@ makevn_karate_services_required() {
   output="$(cd "${repo_root}" && COMPOSE_ARGS="${compose_args}" SERVICES="${services}" DOCKER_COMPOSE="${docker_compose_cmd}" bash "${docker_ps_script}" || true)"
   if [[ -n "${output}" ]]; then
     printf '%s\n' "${output}"
-    makevn_die "Required Karate Docker services are not running or healthy. Run 'makevn karate-up' first."
+    makevn_die "Required Karate Docker services are not running or healthy. Run 'makevn karate-docker-up' first."
   fi
 }
 
@@ -63,13 +63,16 @@ makevn_wait_app_health() {
   makevn_die "App health check did not pass within ${timeout_seconds}s: ${health_url}"
 }
 
-cmd_karate_down() {
+cmd_karate_docker_down() {
   local repo_root="$1"
   local compose_file=""
   local compose_override_file=""
   local docker_compose_cmd=""
   local -a docker_compose=()
   local -a compose_args=()
+
+  shift
+  makevn_parse_docker_args "$@"
 
   compose_file="$(makevn_karate_compose_file_path "${repo_root}" || true)"
   compose_override_file="$(makevn_karate_compose_override_file_path "${repo_root}" || true)"
@@ -83,14 +86,13 @@ cmd_karate_down() {
     compose_args+=("${arg}")
   done < <(makevn_collect_karate_compose_args "${compose_file}" "${compose_override_file}")
 
-  print_command_intro "${repo_root}" karate-down
-  makevn_trace_command exec "${docker_compose[@]}" "${compose_args[@]}" down -v --remove-orphans
-  (cd "${repo_root}" && "${docker_compose[@]}" "${compose_args[@]}" down -v --remove-orphans)
-  makevn_trace_command exec docker volume prune -f
-  (cd "${repo_root}" && docker volume prune -f)
+  makevn_run_logged "${repo_root}" karate-docker-down karate-docker-down karate-docker-down bash -c '
+    "$@" down -v --remove-orphans
+    docker volume prune -f
+  ' bash "${docker_compose[@]}" "${compose_args[@]}"
 }
 
-cmd_karate_up() {
+cmd_karate_docker_up() {
   local repo_root="$1"
   local compose_file=""
   local compose_override_file=""
@@ -99,6 +101,9 @@ cmd_karate_up() {
   local -a docker_compose=()
   local -a compose_args=()
 
+  shift
+  makevn_parse_docker_args "$@"
+
   compose_file="$(makevn_karate_compose_file_path "${repo_root}" || true)"
   compose_override_file="$(makevn_karate_compose_override_file_path "${repo_root}" || true)"
   [[ -f "${compose_file}" ]] || makevn_die "Karate docker compose file not found. Configure MAKEVN_E2E_COMPOSE_FILE or add e2e/karate/src/test/resources/compose/docker-compose.yml."
@@ -111,17 +116,20 @@ cmd_karate_up() {
     compose_args+=("${arg}")
   done < <(makevn_collect_karate_compose_args "${compose_file}" "${compose_override_file}")
 
-  print_command_intro "${repo_root}" karate-up
-  makevn_trace_command exec "${docker_compose[@]}" "${compose_args[@]}" down -v --remove-orphans
-  (cd "${repo_root}" && "${docker_compose[@]}" "${compose_args[@]}" down -v --remove-orphans)
-  makevn_trace_command exec docker volume prune -f
-  (cd "${repo_root}" && docker volume prune -f)
   if [[ -n "${profile}" ]]; then
-    makevn_trace_command exec "${docker_compose[@]}" "${compose_args[@]}" --profile "${profile}" up --detach
-    (cd "${repo_root}" && "${docker_compose[@]}" "${compose_args[@]}" --profile "${profile}" up --detach)
+    makevn_run_logged "${repo_root}" karate-docker-up karate-docker-up karate-docker-up bash -c '
+      profile="$1"
+      shift
+      "$@" down -v --remove-orphans
+      docker volume prune -f
+      "$@" --profile "${profile}" up --detach
+    ' bash "${profile}" "${docker_compose[@]}" "${compose_args[@]}"
   else
-    makevn_trace_command exec "${docker_compose[@]}" "${compose_args[@]}" up --detach
-    (cd "${repo_root}" && "${docker_compose[@]}" "${compose_args[@]}" up --detach)
+    makevn_run_logged "${repo_root}" karate-docker-up karate-docker-up karate-docker-up bash -c '
+      "$@" down -v --remove-orphans
+      docker volume prune -f
+      "$@" up --detach
+    ' bash "${docker_compose[@]}" "${compose_args[@]}"
   fi
 }
 
@@ -183,7 +191,7 @@ cmd_karate_all() {
 
   shift
 
-  cmd_karate_up "${repo_root}"
+  cmd_karate_docker_up "${repo_root}"
   makevn_karate_services_required "${repo_root}"
 
   if [[ "${SKIP_PACKAGE:-false}" == "false" ]]; then

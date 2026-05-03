@@ -37,8 +37,8 @@ are present, use public commands such as:
 
 - `makevn karate-test`
 - `makevn karate-test --tag @smoke`
-- `makevn karate-up`
-- `makevn karate-down`
+- `makevn karate-docker-up`
+- `makevn karate-docker-down`
 - `makevn karate-all`
 - `makevn run-app-bg`
 - `makevn stop-app`

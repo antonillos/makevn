@@ -273,8 +273,9 @@ fn validate_command(
             Ok(CommandValidation::Valid)
         }
         "help" | "doctor" | "init" | "uninstall" | "exec" | "test" | "coverage-changes"
-        | "docker-up" | "docker-down" | "docker-ps" | "docker-ps-required" | "karate-up"
-        | "karate-down" | "run-app" | "run-app-bg" | "stop-app" | "run" => {
+        | "docker-up" | "docker-down" | "docker-ps" | "docker-ps-required"
+        | "karate-docker-up" | "karate-docker-down" | "run-app" | "run-app-bg"
+        | "stop-app" | "run" => {
             Ok(CommandValidation::Valid)
         }
         "profile" => match trailing_args.first().map(|arg| arg.to_string_lossy()) {
@@ -432,8 +433,8 @@ fn is_top_level_command(arg: &OsString) -> bool {
             | "docker-down"
             | "docker-ps"
             | "docker-ps-required"
-            | "karate-up"
-            | "karate-down"
+            | "karate-docker-up"
+            | "karate-docker-down"
             | "karate-test"
             | "karate-all"
             | "run-app"
@@ -544,6 +545,8 @@ fn command_supports_frontend_loader(command: &OsString) -> bool {
             | "docker-down"
             | "docker-ps"
             | "docker-ps-required"
+            | "karate-docker-up"
+            | "karate-docker-down"
             | "karate-test"
     )
 }
@@ -2061,8 +2064,8 @@ fn print_help(with_header: bool) {
     println!("  makevn [--repo PATH] docker-down [--tail]");
     println!("  makevn [--repo PATH] docker-ps [--tail]");
     println!("  makevn [--repo PATH] docker-ps-required [--tail]");
-    println!("  makevn [--repo PATH] karate-up");
-    println!("  makevn [--repo PATH] karate-down");
+    println!("  makevn [--repo PATH] karate-docker-up [--tail]");
+    println!("  makevn [--repo PATH] karate-docker-down [--tail]");
     println!("  makevn [--repo PATH] karate-test [--tail] [--tag TAG] [-- EXTRA_MAVEN_ARGS...]");
     println!("  makevn [--repo PATH] karate-all [--tag TAG] [-- EXTRA_MAVEN_ARGS...]");
     println!("  makevn [--repo PATH] run-app");
@@ -2418,6 +2421,12 @@ mod tests {
         assert!(command_supports_frontend_loader(&OsString::from("docker-up")));
         assert!(command_supports_frontend_loader(&OsString::from(
             "docker-ps-required"
+        )));
+        assert!(command_supports_frontend_loader(&OsString::from(
+            "karate-docker-up"
+        )));
+        assert!(command_supports_frontend_loader(&OsString::from(
+            "karate-docker-down"
         )));
         assert!(!command_supports_frontend_loader(&OsString::from("doctor")));
         assert!(!command_supports_frontend_loader(&OsString::from("run")));

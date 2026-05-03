@@ -98,8 +98,8 @@ makevn docker-up
 makevn docker-down
 makevn docker-ps
 makevn docker-ps-required
-makevn karate-up
-makevn karate-down
+makevn karate-docker-up
+makevn karate-docker-down
 makevn karate-test
 makevn karate-test --tag @smoke
 makevn run-app-bg
