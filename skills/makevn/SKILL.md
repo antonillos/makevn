@@ -256,69 +256,34 @@ make docker-ps
 make docker-ps-required
 ```
 
-The optional make integration only exposes namespaced `vn-*` targets. For Docker commands, the make target name is always prefixed with `vn-`. Use these only when the user explicitly wants to exercise the make integration or the generated makefile itself:
+The optional make integration only exposes namespaced `vn-*` targets. Use these only when the user explicitly wants to exercise the make integration. If the repo `Makefile` includes `.makevn/makevn.mk`, call them directly:
 
 ```bash
-make -f .makevn/makevn.mk vn-docker-up
-make -f .makevn/makevn.mk vn-docker-down
-make -f .makevn/makevn.mk vn-docker-ps
-make -f .makevn/makevn.mk vn-docker-ps-required
-make -f .makevn/makevn.mk vn-karate-test
-make -f .makevn/makevn.mk vn-run-app-bg
-make -f .makevn/makevn.mk vn-stop-app
+make vn-docker-up
+make vn-docker-down
+make vn-docker-ps
+make vn-docker-ps-required
+make vn-karate-test
+make vn-run-app-bg
+make vn-stop-app
+```
+
+Some targets accept Make variables instead of flags:
+
+```bash
+make vn-test NAME=MyTest
+make vn-test NAMES="MyTest,OtherTest"
+make vn-test NAME=MyTest FAST=true
+make vn-karate-test TAG=@smoke
+make vn-exec MAKEVN_ARGS="-- mvn -v"
+make vn-docker-ps-required MAKEVN_DOCKER_PS_REQUIRED_ARGS="--compose karate"
 ```
 
 ## Make Integration
 
-Shared targets are namespaced to avoid collisions:
+`makevn make install` generates `.makevn/makevn.mk` and a root `Makefile` that includes it. All `vn-*` targets delegate to the installed `makevn` binary — they are thin wrappers, not an alternative implementation.
 
-- `vn-doctor`
-- `vn-init`
-- `vn-uninstall`
-- `vn-profile-refresh`
-- `vn-compile`
-- `vn-test-compile`
-- `vn-compile-tests`
-- `vn-validate`
-- `vn-package`
-- `vn-build`
-- `vn-clean`
-- `vn-test`
-- `vn-verify-ut`
-- `vn-verify-ut-coverage`
-- `vn-verify-it`
-- `vn-verify-it-coverage`
-- `vn-verify`
-- `vn-verify-changes`
-- `vn-coverage-changes`
-- `vn-pr-verify`
-- `vn-docker-up`
-- `vn-docker-down`
-- `vn-docker-ps`
-- `vn-docker-ps-required`
-- `vn-karate-docker-up`
-- `vn-karate-docker-down`
-- `vn-karate-test`
-- `vn-karate-all`
-- `vn-run-app`
-- `vn-run-app-bg`
-- `vn-stop-app`
-- `vn-run`
-- `vn-jdk-current`
-- `vn-jdk-list`
-- `vn-exec`
-
-Use either:
-
-```bash
-make -f .makevn/makevn.mk vn-doctor
-```
-
-or an explicit include added by the user:
-
-```make
-include .makevn/makevn.mk
-```
+Available targets mirror the `makevn` command surface: `vn-doctor`, `vn-init`, `vn-make-install`, `vn-make-uninstall`, `vn-uninstall`, `vn-profile-refresh`, `vn-compile`, `vn-test-compile`, `vn-compile-tests`, `vn-validate`, `vn-package`, `vn-build`, `vn-clean`, `vn-test`, `vn-verify-ut`, `vn-verify-ut-coverage`, `vn-verify-it`, `vn-verify-it-coverage`, `vn-verify`, `vn-verify-changes`, `vn-coverage-changes`, `vn-pr-verify`, `vn-docker-up`, `vn-docker-down`, `vn-docker-ps`, `vn-docker-ps-required`, `vn-karate-docker-up`, `vn-karate-docker-down`, `vn-karate-test`, `vn-karate-all`, `vn-run-app`, `vn-run-app-bg`, `vn-stop-app`, `vn-run`, `vn-jdk-current`, `vn-jdk-list`, `vn-exec`.
 
 ## Success Criteria
 
