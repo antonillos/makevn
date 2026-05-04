@@ -100,6 +100,48 @@ struct BackendMetadataFile {
     path: PathBuf,
 }
 
+#[derive(Debug)]
+struct BackendDetailFile {
+    path: PathBuf,
+}
+
+impl BackendDetailFile {
+    fn new() -> Result<Self, String> {
+        let unique_suffix = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_err(|error| format!("failed to resolve detail timestamp: {error}"))?
+            .as_nanos();
+        let path =
+            env::temp_dir().join(format!("makevn-{}-{unique_suffix}.detail", process::id()));
+        Ok(Self { path })
+    }
+
+    fn path(&self) -> &Path {
+        &self.path
+    }
+
+    fn read_lines(&self) -> Vec<String> {
+        match fs::read_to_string(&self.path) {
+            Ok(content) => content
+                .lines()
+                .filter(|l| !l.is_empty())
+                .map(str::to_owned)
+                .collect(),
+            Err(_) => Vec::new(),
+        }
+    }
+
+    fn clear(&self) {
+        let _ = fs::write(&self.path, b"");
+    }
+}
+
+impl Drop for BackendDetailFile {
+    fn drop(&mut self) {
+        let _ = fs::remove_file(&self.path);
+    }
+}
+
 #[derive(Debug, Eq, PartialEq)]
 struct BackendMetadata {
     command: String,
@@ -119,6 +161,7 @@ struct CommandSummary {
     log_path: Option<String>,
     relative_log_path: Option<String>,
     exit_code: i32,
+    detail_lines: Vec<String>,
 }
 
 #[derive(Debug)]
@@ -571,10 +614,24 @@ fn dispatch_backend_invocations(
 ) -> Result<i32, String> {
     let mut last_exit_code = 0;
     let started_at = Instant::now();
-    let mut completed_summaries = Vec::new();
+    let mut completed_summaries: Vec<CommandSummary> = Vec::new();
     let use_dashboard = backend_invocations
         .iter()
         .any(|invocation| invocation.frontend_loader);
+
+    // Create the renderer and detail file once for the entire run so there is
+    // a single continuous spinner and a single "Working for" counter.
+    let loader_available = use_dashboard && frontend_loader_is_available();
+    let detail_file = if loader_available {
+        BackendDetailFile::new().ok()
+    } else {
+        None
+    };
+    let mut renderer = if loader_available {
+        SpinnerRenderer::new().ok()
+    } else {
+        None
+    };
 
     for mut backend_invocation in backend_invocations {
         let fallback_title = backend_invocation
@@ -607,6 +664,9 @@ fn dispatch_backend_invocations(
 
         let run_result = if use_frontend_loader {
             command.env("MAKEVN_FRONTEND_OWNS_LOADER", "1");
+            if let Some(df) = detail_file.as_ref() {
+                command.env("MAKEVN_BACKEND_DETAIL_OUT", df.path());
+            }
             run_backend_with_loader(
                 command,
                 metadata_file.as_ref(),
@@ -614,6 +674,8 @@ fn dispatch_backend_invocations(
                 &fallback_title,
                 started_at,
                 &completed_summaries,
+                renderer.as_mut(),
+                detail_file.as_ref(),
             )?
         } else {
             let elapsed_before = started_at.elapsed();
@@ -626,14 +688,27 @@ fn dispatch_backend_invocations(
                     log_path: None,
                     relative_log_path: None,
                     exit_code,
+                    detail_lines: Vec::new(),
                 },
             }
         };
 
+        // Snapshot detail lines into the summary then clear for the next command.
+        let detail_lines = detail_file.as_ref().map(|df| df.read_lines()).unwrap_or_default();
+        if let Some(df) = detail_file.as_ref() {
+            df.clear();
+        }
+
         last_exit_code = run_result.exit_code;
         let failure_hint = read_failure_hint(run_result.summary.log_path.as_deref());
-        completed_summaries.push(run_result.summary);
+        let mut summary = run_result.summary;
+        summary.detail_lines = detail_lines;
+        completed_summaries.push(summary);
+
         if last_exit_code != 0 {
+            if let Some(r) = renderer.as_mut() {
+                r.show_cursor();
+            }
             if use_dashboard {
                 print_final_dashboard(started_at.elapsed(), &completed_summaries, false)
                     .map_err(|error| format!("failed to print run summary: {error}"))?;
@@ -664,6 +739,9 @@ fn dispatch_backend_invocations(
         }
     }
 
+    if let Some(r) = renderer.as_mut() {
+        r.show_cursor();
+    }
     if use_dashboard {
         print_final_dashboard(started_at.elapsed(), &completed_summaries, true)
             .map_err(|error| format!("failed to print run summary: {error}"))?;
@@ -725,6 +803,8 @@ fn run_backend_with_loader(
     fallback_title: &str,
     global_started_at: Instant,
     completed_summaries: &[CommandSummary],
+    mut renderer: Option<&mut SpinnerRenderer>,
+    detail_file: Option<&BackendDetailFile>,
 ) -> Result<BackendRunResult, String> {
     let started_at = Instant::now();
     let mut child = command.spawn().map_err(|error| {
@@ -738,7 +818,6 @@ fn run_backend_with_loader(
     #[cfg(unix)]
     register_signal_flag(&signal_requested)?;
 
-    let mut renderer = SpinnerRenderer::new().ok();
     let mut cancel_requested = false;
     let mut header_printed = false;
     let mut tail_window = None;
@@ -748,6 +827,7 @@ fn run_backend_with_loader(
     } else {
         None
     };
+    let mut current_detail_lines: Vec<String> = Vec::new();
 
     if metadata.is_none() {
         for _ in 0..3 {
@@ -773,12 +853,16 @@ fn run_backend_with_loader(
                 .map_err(|error| format!("failed to print log location: {error}"))?;
             tail_window = Some(LogTailWindow::new(PathBuf::from(&metadata.log_path)));
         } else if let Some(renderer) = renderer.as_mut() {
+            if let Some(df) = detail_file {
+                current_detail_lines = df.read_lines();
+            }
             let hint = renderer.current_dashboard_hint();
             renderer
                 .render_dashboard(
                     child.id(),
                     global_started_at.elapsed(),
                     completed_summaries,
+                    &current_detail_lines,
                     metadata,
                     &hint,
                 )
@@ -800,6 +884,13 @@ fn run_backend_with_loader(
                         tail_window = Some(LogTailWindow::new(PathBuf::from(&metadata.log_path)));
                     }
                 }
+            }
+        }
+
+        if let Some(df) = detail_file {
+            let latest = df.read_lines();
+            if latest.len() != current_detail_lines.len() {
+                current_detail_lines = latest;
             }
         }
 
@@ -835,6 +926,7 @@ fn run_backend_with_loader(
                                 child.id(),
                                 global_started_at.elapsed(),
                                 completed_summaries,
+                                &current_detail_lines,
                                 metadata,
                                 &hint,
                             )
@@ -896,6 +988,7 @@ fn run_backend_with_loader(
                             child.id(),
                             global_started_at.elapsed(),
                             completed_summaries,
+                            &current_detail_lines,
                             metadata,
                             &hint,
                         )
@@ -965,6 +1058,7 @@ fn run_backend_with_loader(
                             child.id(),
                             global_started_at.elapsed(),
                             completed_summaries,
+                            &current_detail_lines,
                             m,
                             &hint,
                         )
@@ -1136,11 +1230,18 @@ fn print_final_dashboard(
     )?;
     for summary in completed_summaries {
         writeln!(io::stdout(), "{}", completed_summary_line(summary))?;
+        for dl in &summary.detail_lines {
+            writeln!(io::stdout(), "{}", detail_line(dl))?;
+        }
     }
     if success {
         writeln!(io::stdout(), "[{}]", style("32", "ok"))?;
     }
     Ok(())
+}
+
+fn detail_line(text: &str) -> String {
+    format!("{} {}", dim_text("│"), dim_text(text))
 }
 
 fn completed_summary_line(summary: &CommandSummary) -> String {
@@ -1167,7 +1268,7 @@ fn running_command_line(metadata: &BackendMetadata) -> String {
     } else {
         format!(
             "{} {} {} {}",
-            dim_text("->"),
+            dim_text("└"),
             accent_text(&format!("makevn {}", metadata.title)),
             dim_text("|"),
             dim_text(&metadata.relative_log_path)
@@ -1215,6 +1316,7 @@ fn summarize_backend_exit(
             log_path: metadata.map(|m| m.log_path.clone()),
             relative_log_path,
             exit_code,
+            detail_lines: Vec::new(), // populated by dispatch_backend_invocations
         },
     }
 }
@@ -1792,6 +1894,7 @@ impl SpinnerRenderer {
         pid: u32,
         global_elapsed: Duration,
         completed_summaries: &[CommandSummary],
+        current_detail_lines: &[String],
         metadata: &BackendMetadata,
         hint: &str,
     ) -> io::Result<()> {
@@ -1812,7 +1915,11 @@ impl SpinnerRenderer {
             format!("{} {} {}", dim_text(&resource_text), dim_text("|"), hint)
         };
 
-        let mut lines = Vec::with_capacity(completed_summaries.len() + 3);
+        let total_lines = 1
+            + completed_summaries.iter().map(|s| 1 + s.detail_lines.len()).sum::<usize>()
+            + current_detail_lines.len()
+            + 2; // running command + spinner
+        let mut lines = Vec::with_capacity(total_lines);
         lines.push(format!(
             "{}",
             dim_text(&format!(
@@ -1822,6 +1929,12 @@ impl SpinnerRenderer {
         ));
         for summary in completed_summaries {
             lines.push(completed_summary_line(summary));
+            for dl in &summary.detail_lines {
+                lines.push(detail_line(dl));
+            }
+        }
+        for dl in current_detail_lines {
+            lines.push(detail_line(dl));
         }
         lines.push(running_command_line(metadata));
         lines.push(format!(
@@ -1858,11 +1971,18 @@ impl SpinnerRenderer {
     }
 
     fn clear_line(&mut self) {
-        self.clear_frame_line();
+        // Erase the entire live dashboard block so the next command's render
+        // starts from the same position — giving a single continuous spinner
+        // and a single "Working for" counter throughout the whole run.
+        let _ = self.clear_dynamic_block();
+        let _ = io::stdout().flush();
+    }
+
+    fn show_cursor(&self) {
         if use_color() {
             let _ = write!(io::stdout(), "\u{1b}[?25h");
+            let _ = io::stdout().flush();
         }
-        let _ = io::stdout().flush();
     }
 
     fn clear_frame_line(&mut self) {

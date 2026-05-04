@@ -99,7 +99,7 @@ makevn_quote_command() {
 makevn_trace_command() {
   local label="$1"
   shift
-  printf '%s %s %s\n' "$(makevn_dim '->')" "$(makevn_dim "${label}")" "$(makevn_dim "$(makevn_quote_command "$@")")"
+  printf '%s %s %s\n' "$(makevn_dim '→')" "$(makevn_dim "${label}")" "$(makevn_dim "$(makevn_quote_command "$@")")"
 }
 
 makevn_format_duration() {

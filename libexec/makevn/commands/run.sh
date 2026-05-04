@@ -203,6 +203,30 @@ makevn_start_app_background() {
   pid_file="${log_dir}/app.pid"
   jar_record="${log_dir}/app.jar"
 
+  if [[ -f "${pid_file}" ]]; then
+    existing_pid="$(cat "${pid_file}" 2>/dev/null || true)"
+    existing_cmd="$(ps -p "${existing_pid}" -o args= 2>/dev/null || true)"
+    if [[ -n "${existing_cmd}" ]]; then
+      makevn_die "Application already running with PID ${existing_pid}. Stop it first with 'makevn stop-app'."
+    fi
+    rm -f "${pid_file}" "${jar_record}"
+  fi
+
+  if ! makevn_frontend_owns_loader; then
+    print_command_intro "${repo_root}" "${mode}"
+  fi
+  makevn_print_item "jar" "${jar_file}"
+  if [[ -n "${jar_main_class}" ]]; then
+    makevn_print_item "Main-Class" "${jar_main_class}"
+  fi
+  if [[ -n "${jar_start_class}" ]]; then
+    makevn_print_item "Start-Class" "${jar_start_class}"
+  fi
+  makevn_print_item "health" "${health_url}"
+  if [[ -n "${local_containers}" ]]; then
+    makevn_print_item "LOCAL_CONTAINERS" "${local_containers}"
+  fi
+
   makevn_write_backend_metadata \
     "${MAKEVN_BACKEND_METADATA_OUT:-}" \
     "${mode}" \
@@ -213,29 +237,6 @@ makevn_start_app_background() {
     "$(if [[ -n "${local_containers}" ]]; then makevn_quote_command env JAVA_HOME="${java_home}" LOCAL_CONTAINERS="${local_containers}" java -jar "${jar_file}"; else makevn_quote_command env JAVA_HOME="${java_home}" java -jar "${jar_file}"; fi)" \
     "code" \
     "${mode}"
-
-  if [[ -f "${pid_file}" ]]; then
-    existing_pid="$(cat "${pid_file}" 2>/dev/null || true)"
-    existing_cmd="$(ps -p "${existing_pid}" -o args= 2>/dev/null || true)"
-    if [[ -n "${existing_cmd}" ]]; then
-      makevn_die "Application already running with PID ${existing_pid}. Stop it first with 'makevn stop-app'."
-    fi
-    rm -f "${pid_file}" "${jar_record}"
-  fi
-
-  print_command_intro "${repo_root}" "${mode}"
-  makevn_print_item "jar" "${jar_file}"
-  if [[ -n "${jar_main_class}" ]]; then
-    makevn_print_item "Main-Class" "${jar_main_class}"
-  fi
-  if [[ -n "${jar_start_class}" ]]; then
-    makevn_print_item "Start-Class" "${jar_start_class}"
-  fi
-  makevn_print_item "log" "${log_file}"
-  makevn_print_item "health" "${health_url}"
-  if [[ -n "${local_containers}" ]]; then
-    makevn_print_item "LOCAL_CONTAINERS" "${local_containers}"
-  fi
 
   (
     cd "${repo_root}"
@@ -276,8 +277,10 @@ makevn_start_app_background() {
     return "${health_rc}"
   fi
 
-  makevn_print_item "pid" "${app_pid}"
-  printf '%s\n' "$(makevn_accent "ok application is ready")"
+  if ! makevn_frontend_owns_loader; then
+    makevn_print_item "pid" "${app_pid}"
+    printf '%s\n' "$(makevn_accent "ok application is ready")"
+  fi
 }
 
 cmd_run_app_bg() {

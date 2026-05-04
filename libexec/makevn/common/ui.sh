@@ -37,7 +37,11 @@ makevn_print_header() {
 makevn_print_item() {
   local label="$1"
   local value="$2"
-  printf '%s %s%s\n' "$(makevn_dim '-')" "$(makevn_dim "${label}:")" " ${value}"
+  if [[ -n "${MAKEVN_BACKEND_DETAIL_OUT:-}" ]]; then
+    printf '%s: %s\n' "${label}" "${value}" >> "${MAKEVN_BACKEND_DETAIL_OUT}"
+  else
+    printf '%s %s%s\n' "$(makevn_dim '│')" "$(makevn_dim "${label}:")" " ${value}"
+  fi
 }
 
 makevn_print_command_header() {
