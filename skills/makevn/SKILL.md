@@ -103,7 +103,9 @@ Optional when the user wants `make`:
 
 Some repositories keep the Maven project inside a subdirectory (e.g., `code/`) rather than at the repo root. `makevn doctor` reports this as `Maven base path`.
 
-**Always check `Maven base path` in the `makevn doctor` output before composing any `makevn exec -- mvn ...` command.**
+This only matters when falling back to `makevn exec -- mvn`. First-class commands (`makevn test`, `makevn verify`, `makevn package`, etc.) resolve the Maven base path internally — do not add `-f` to them and do not mention the base path in your reasoning when using these commands.
+
+**Only check `Maven base path` in the `makevn doctor` output when composing a `makevn exec -- mvn ...` command.**
 
 - If `Maven base path` equals the repo root → no `-f` flag needed.
 - If `Maven base path` is a subdirectory (e.g., `.../repo/code`) → you **must** add `-f <relative-path>/pom.xml` to every `mvn` invocation, where `<relative-path>` is the subdirectory relative to the repo root.
@@ -190,6 +192,7 @@ When the repository is Java + Maven, prefer these commands over describing IDE a
 
 Verification intent:
 
+- use `makevn package` (not `makevn build`) when the goal is to compile and package the artifact
 - use `makevn verify-ut` when the goal is unit-test-only verification
 - use `makevn verify-it` when the goal is integration-test-only verification
 - use `makevn verify` when the goal is the combined verification path
