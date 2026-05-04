@@ -30,8 +30,9 @@ It provides:
 
 ## Safety Rules
 
-1. Run `makevn doctor` before recommending `init`.
-2. Never overwrite an existing `Makefile` or `GNUmakefile`.
+1. Always determine the repository root before running any `makevn` command. `makevn` must be executed from the repo root, never from a subdirectory or module. Locate the root by finding the `.git` directory.
+2. Run `makevn doctor` before recommending `init`. If `.makevn/` already exists in the repo root, the repo is already initialized — skip `init` unless the user explicitly asks to reinitialize.
+3. Never overwrite an existing `Makefile` or `GNUmakefile`.
 3. Prefer `makevn init` as the default adoption path.
 4. Use `makevn make install` only when the user explicitly wants `make` support.
 5. Let `makevn make install` choose whether to update one existing makefile or create a minimal root `Makefile`.
@@ -69,19 +70,20 @@ If the command exits `0` but the requested outcome is still not verified, do not
 
 ## Agent Workflow
 
-1. Inspect the repo for:
+1. **Determine the repo root first.** Find the directory that contains `.git/`. All `makevn` commands must run from this directory — never from a module subdirectory.
+2. Inspect the repo root for:
    - `pom.xml`
    - `.tool-versions`
    - `Makefile`
    - `GNUmakefile`
-   - `.makevn/`
-2. Run `makevn doctor`.
-3. If the repo is not initialized and the user wants installation, run `makevn init`.
-4. If the user explicitly wants Make integration, run `makevn make install`.
-5. Validate the result with:
+   - `.makevn/` — if this directory exists, the repo is **already initialized**; do not run `makevn init` unless explicitly requested
+3. Run `makevn doctor`.
+4. If the repo is not initialized and the user wants installation, run `makevn init`.
+5. If the user explicitly wants Make integration, run `makevn make install`.
+6. Validate the result with:
     - `makevn doctor`
     - or `make -f .makevn/makevn.mk vn-doctor`
-6. If the user wants rollback, run `makevn uninstall`.
+7. If the user wants rollback, run `makevn uninstall`.
 
 In OpenCode and Codex specifically, the agent should treat `makevn` as the terminal contract for the repository. It does not need to invent IDE run configurations or rely on editor-specific behavior. When structured output exists, prefer `--json` over parsing prose.
 
