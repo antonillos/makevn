@@ -279,8 +279,6 @@ makevn_collect_doctor_snapshot() {
         MAKEVN_DOCTOR_SUGGESTED_OPTIONAL="makevn init"
         ;;
     esac
-  elif [[ "${make_integration_status}" == "not installed" ]]; then
-    MAKEVN_DOCTOR_SUGGESTED_OPTIONAL="makevn make install"
   else
     case "${make_integration_status}" in
       include:*|bootstrap:*)
