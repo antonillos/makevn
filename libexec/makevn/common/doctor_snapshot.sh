@@ -1,6 +1,31 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+makevn_read_editable_default() {
+  local prompt="$1"
+  local default_value="$2"
+  local value=""
+
+  if command -v zsh >/dev/null 2>&1 && [[ -r /dev/tty && -w /dev/tty ]]; then
+    if value="$(MAKEVN_READ_PROMPT="${prompt}" zsh -fc '
+      value=""
+      vared -p "${MAKEVN_READ_PROMPT}" value < /dev/tty > /dev/tty
+      print -r -- "${value}"
+    ')"; then
+      value="$(makevn_trim "${value}")"
+      [[ -n "${value}" ]] || value="${default_value}"
+      printf '%s\n' "${value}"
+      return 0
+    fi
+  fi
+
+  printf '%s' "${prompt}" >&2
+  read -r value </dev/tty
+  value="$(makevn_trim "${value}")"
+  [[ -n "${value}" ]] || value="${default_value}"
+  printf '%s\n' "${value}"
+}
+
 makevn_collect_doctor_snapshot() {
   local repo_root="$1"
   local maven_base_path=""
@@ -196,11 +221,8 @@ makevn_collect_doctor_snapshot() {
     printf '%s\n' "$(makevn_warn "Detected app health URL: ${detected_app_health_url}")" >&2
     printf '%s\n' "  Is this correct? If not, enter the correct URL (or press Enter to keep it)." >&2
     local _health_input=""
-    printf 'Health URL [%s]: ' "${detected_app_health_url}" >&2
-    read -r _health_input </dev/tty
-    if [[ -n "${_health_input}" ]]; then
-      detected_app_health_url="${_health_input}"
-    fi
+    _health_input="$(makevn_read_editable_default "Health URL [${detected_app_health_url}]: " "${detected_app_health_url}")"
+    detected_app_health_url="${_health_input}"
     makevn_update_config_app_health_url "${repo_root}" "${detected_app_health_url}"
     printf '%s\n' "$(makevn_dim "Saved to .makevn/config (MAKEVN_APP_HEALTH_URL).")" >&2
   fi

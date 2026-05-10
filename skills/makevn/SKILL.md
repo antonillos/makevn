@@ -135,6 +135,10 @@ Resolution order:
 
 If the detected URL is wrong, update `.makevn/config` with `MAKEVN_APP_HEALTH_URL=...` or improve the generic detector in `makevn`; do not add hardcoded paths for a specific organization or repository.
 
+When `makevn doctor` asks whether a detected health URL is correct, answer from
+the repository context or ask the human for the correct URL. Do not silently
+accept a guessed URL when it does not match the application under test.
+
 ## Command Reference
 
 ```bash

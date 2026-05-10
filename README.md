@@ -176,6 +176,7 @@ makevn coverage-changes
 Recommended agent behavior:
 
 - run `makevn doctor` before initialization
+- answer `makevn doctor` prompts with repository-specific values, or ask the human when the health URL cannot be confirmed
 - choose the least invasive initialization mode
 - preserve existing root makefiles
 - use `makevn uninstall` for rollback
