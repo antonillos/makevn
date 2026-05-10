@@ -52,6 +52,8 @@ makevn_collect_doctor_snapshot() {
   local detected_app_health_url=""
   local detected_coverage_threshold=""
   local detected_coverage_changes_threshold=""
+  local detected_jacoco_report_layout=""
+  local detected_jacoco_report_dir=""
   local compile_profile=""
   local build_profile=""
   local test_profile=""
@@ -193,6 +195,10 @@ makevn_collect_doctor_snapshot() {
   code_java_home="$(makevn_effective_java_home "${repo_root}" code "${maven_base_path}" || true)"
   karate_java_home="$(makevn_effective_java_home "${repo_root}" karate "${maven_base_path}" || true)"
   repo_support_status="$(makevn_repository_support_status "${repo_root}")"
+  if [[ -n "${maven_base_path}" ]]; then
+    detected_jacoco_report_layout="$(makevn_jacoco_report_layout "${maven_base_path}" || true)"
+    detected_jacoco_report_dir="$(makevn_jacoco_report_dir "${maven_base_path}" || true)"
+  fi
 
   [[ -f "${repo_root}/Makefile" ]] && existing_makefile="${repo_root}/Makefile"
   [[ -f "${repo_root}/GNUmakefile" ]] && existing_gnumakefile="${repo_root}/GNUmakefile"
@@ -303,6 +309,8 @@ makevn_collect_doctor_snapshot() {
   MAKEVN_DOCTOR_DETECTED_MAVEN_PROP_FLAGS="${detected_maven_prop_flags:-none}"
   MAKEVN_DOCTOR_DETECTED_MAVEN_CACHE_SOURCE="${detected_maven_cache_source}"
   MAKEVN_DOCTOR_DETECTED_APP_HEALTH_URL="${detected_app_health_url:-not detected}"
+  MAKEVN_DOCTOR_JACOCO_REPORT_LAYOUT="${detected_jacoco_report_layout:-not detected}"
+  MAKEVN_DOCTOR_JACOCO_REPORT_DIR="${detected_jacoco_report_dir:-not detected}"
   MAKEVN_DOCTOR_DETECTED_COVERAGE_THRESHOLD="${detected_coverage_threshold}"
   MAKEVN_DOCTOR_DETECTED_COVERAGE_CHANGES_THRESHOLD="${detected_coverage_changes_threshold}"
   MAKEVN_DOCTOR_COMPILE_PROFILE="${compile_profile}"
@@ -372,6 +380,8 @@ makevn_print_doctor_json() {
   printf '    "detected_maven_prop_flags": "%s",\n' "$(makevn_json_escape "${MAKEVN_DOCTOR_DETECTED_MAVEN_PROP_FLAGS}")"
   printf '    "detected_maven_cache": "%s",\n' "$(makevn_json_escape "${MAKEVN_DOCTOR_DETECTED_MAVEN_CACHE_SOURCE}")"
   printf '    "detected_app_health_url": "%s",\n' "$(makevn_json_escape "${MAKEVN_DOCTOR_DETECTED_APP_HEALTH_URL}")"
+  printf '    "jacoco_report_layout": "%s",\n' "$(makevn_json_escape "${MAKEVN_DOCTOR_JACOCO_REPORT_LAYOUT}")"
+  printf '    "jacoco_report_dir": "%s",\n' "$(makevn_json_escape "${MAKEVN_DOCTOR_JACOCO_REPORT_DIR}")"
   printf '    "detected_coverage_threshold": "%s",\n' "$(makevn_json_escape "${MAKEVN_DOCTOR_DETECTED_COVERAGE_THRESHOLD}")"
   printf '    "detected_coverage_changes_threshold": "%s",\n' "$(makevn_json_escape "${MAKEVN_DOCTOR_DETECTED_COVERAGE_CHANGES_THRESHOLD}")"
   printf '    "compile_profile": "%s",\n' "$(makevn_json_escape "${MAKEVN_DOCTOR_COMPILE_PROFILE}")"

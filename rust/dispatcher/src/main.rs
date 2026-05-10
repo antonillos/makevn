@@ -317,9 +317,10 @@ fn validate_command(
             validate_maven_passthrough_args(command, trailing_args)?;
             Ok(CommandValidation::Valid)
         }
-        "help" | "doctor" | "init" | "uninstall" | "exec" | "test" | "coverage-changes"
-        | "docker-up" | "docker-down" | "docker-ps" | "docker-ps-required" | "karate-docker-up"
-        | "karate-docker-down" | "run-app" | "run-app-bg" | "stop-app" | "run" => {
+        "help" | "doctor" | "init" | "uninstall" | "exec" | "test" | "coverage"
+        | "coverage-changes" | "docker-up" | "docker-down" | "docker-ps"
+        | "docker-ps-required" | "karate-docker-up" | "karate-docker-down" | "run-app"
+        | "run-app-bg" | "stop-app" | "run" => {
             Ok(CommandValidation::Valid)
         }
         "make" => match trailing_args.first().map(|arg| arg.to_string_lossy()) {
@@ -479,6 +480,7 @@ fn is_top_level_command(arg: &OsString) -> bool {
             | "verify-it-coverage"
             | "verify"
             | "verify-changes"
+            | "coverage"
             | "coverage-changes"
             | "pr-verify"
             | "format"
@@ -2504,6 +2506,7 @@ fn print_help(with_header: bool) {
     println!("  makevn [--repo PATH] verify-it-coverage [--tail] [-- EXTRA_MAVEN_ARGS...]");
     println!("  makevn [--repo PATH] verify [--tail] [-- EXTRA_MAVEN_ARGS...]");
     println!("  makevn [--repo PATH] verify-changes [--tail] [-- EXTRA_MAVEN_ARGS...]");
+    println!("  makevn [--repo PATH] coverage [--threshold PCT]");
     println!("  makevn [--repo PATH] coverage-changes [--threshold PCT]");
     println!("  makevn [--repo PATH] pr-verify [--tail] [-- EXTRA_MAVEN_ARGS...]");
     println!("  makevn [--repo PATH] format [--tail] [--apply] [-- EXTRA_MAVEN_ARGS...]");
@@ -2547,6 +2550,7 @@ fn print_help(with_header: bool) {
     println!("  makevn verify-ut-coverage");
     println!("  makevn verify-it");
     println!("  makevn verify-changes");
+    println!("  makevn coverage");
     println!("  makevn coverage-changes");
     println!("  makevn pr-verify");
     println!("  makevn format --apply");

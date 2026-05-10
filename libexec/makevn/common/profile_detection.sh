@@ -885,8 +885,35 @@ makevn_jacoco_report_dir() {
   local jacoco_module=""
 
   jacoco_module="$(makevn_detect_jacoco_module_name "${maven_base_path}" || true)"
-  [[ -n "${jacoco_module}" ]] || return 1
-  printf '%s/%s/target/site/jacoco-aggregate\n' "${maven_base_path}" "${jacoco_module}"
+  if [[ -n "${jacoco_module}" ]]; then
+    printf '%s/%s/target/site/jacoco-aggregate\n' "${maven_base_path}" "${jacoco_module}"
+    return 0
+  fi
+
+  if [[ -d "${maven_base_path}/target/site/jacoco" ]]; then
+    printf '%s/target/site/jacoco\n' "${maven_base_path}"
+    return 0
+  fi
+
+  return 1
+}
+
+makevn_jacoco_report_layout() {
+  local maven_base_path="$1"
+  local jacoco_module=""
+
+  jacoco_module="$(makevn_detect_jacoco_module_name "${maven_base_path}" || true)"
+  if [[ -n "${jacoco_module}" ]]; then
+    printf 'aggregate:%s\n' "${jacoco_module}"
+    return 0
+  fi
+
+  if [[ -d "${maven_base_path}/target/site/jacoco" ]]; then
+    printf '%s\n' "single-module"
+    return 0
+  fi
+
+  printf '%s\n' "not detected"
 }
 
 makevn_print_jacoco_report_hint() {
