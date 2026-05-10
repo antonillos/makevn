@@ -31,6 +31,8 @@ makevn_collect_doctor_snapshot() {
   local maven_base_path=""
   local code_tool_versions=""
   local karate_tool_versions=""
+  local code_java_version=""
+  local app_runnable="no"
   local code_java_home=""
   local karate_java_home=""
   local code_java_version_line=""
@@ -65,11 +67,12 @@ makevn_collect_doctor_snapshot() {
   detected_maven_cli_flags="${MAKEVN_DETECTED_MAVEN_CLI_FLAGS:-}"
   detected_maven_prop_flags="${MAKEVN_DETECTED_MAVEN_PROP_FLAGS:-}"
   detected_maven_cache_source="${MAKEVN_DETECTED_MAVEN_CACHE_SOURCE:-unresolved}"
-  detected_app_health_url="${MAKEVN_DETECTED_APP_HEALTH_URL:-unresolved}"
+  detected_app_health_url="${MAKEVN_DETECTED_APP_HEALTH_URL:-}"
   compile_profile="$(makevn_detected_command_profile_summary compile)"
   build_profile="$(makevn_detected_command_profile_summary build)"
   test_profile="$(makevn_detected_command_profile_summary test)"
   verify_profile="$(makevn_detected_command_profile_summary verify)"
+  app_runnable="${MAKEVN_DETECTED_APP_RUNNABLE:-no}"
 
   # Resolve compose file: config > profile > auto-detect > interactive prompt
   makevn_load_config "${repo_root}"
@@ -168,6 +171,21 @@ makevn_collect_doctor_snapshot() {
   maven_base_path="$(makevn_detect_maven_base_path "${repo_root}" || true)"
   code_tool_versions="$(makevn_detect_code_tool_versions "${repo_root}" "${maven_base_path}" || true)"
   karate_tool_versions="$(makevn_detect_karate_tool_versions "${repo_root}" || true)"
+  code_java_version="${MAKEVN_DETECTED_CODE_JAVA_VERSION:-}"
+  if [[ -z "${code_java_version}" ]]; then
+    makevn_load_profile "${repo_root}"
+    code_java_version="${MAKEVN_PROFILE_CODE_JAVA_VERSION:-}"
+  fi
+  if [[ -z "${code_java_version}" ]]; then
+    code_java_version="$(makevn_detect_java_version_from_pom "${maven_base_path}" || true)"
+  fi
+  if [[ "${app_runnable}" != "yes" ]]; then
+    makevn_load_profile "${repo_root}"
+    app_runnable="${MAKEVN_PROFILE_APP_RUNNABLE:-${app_runnable}}"
+  fi
+  if [[ "${app_runnable}" != "yes" ]] && makevn_detect_app_runnable "${repo_root}" "${maven_base_path}"; then
+    app_runnable="yes"
+  fi
   code_java_home="$(makevn_effective_java_home "${repo_root}" code "${maven_base_path}" || true)"
   karate_java_home="$(makevn_effective_java_home "${repo_root}" karate "${maven_base_path}" || true)"
   repo_support_status="$(makevn_repository_support_status "${repo_root}")"
@@ -243,12 +261,14 @@ makevn_collect_doctor_snapshot() {
   MAKEVN_DOCTOR_EXISTING_STATE_DIR="$(if [[ -d "$(makevn_state_dir "${repo_root}")" ]]; then printf yes; else printf no; fi)"
   MAKEVN_DOCTOR_CURRENT_STATUS="${current_status}"
   MAKEVN_DOCTOR_CODE_TOOL_VERSIONS="${code_tool_versions:-unresolved}"
+  MAKEVN_DOCTOR_CODE_JAVA_VERSION="${code_java_version:-unresolved}"
+  MAKEVN_DOCTOR_APP_RUNNABLE="${app_runnable:-no}"
   MAKEVN_DOCTOR_KARATE_TOOL_VERSIONS="${karate_tool_versions:-unresolved}"
   MAKEVN_DOCTOR_DETECTED_WORKFLOW_FILES="${detected_workflow_files:-none}"
   MAKEVN_DOCTOR_DETECTED_MAVEN_CLI_FLAGS="${detected_maven_cli_flags:-none}"
   MAKEVN_DOCTOR_DETECTED_MAVEN_PROP_FLAGS="${detected_maven_prop_flags:-none}"
   MAKEVN_DOCTOR_DETECTED_MAVEN_CACHE_SOURCE="${detected_maven_cache_source}"
-  MAKEVN_DOCTOR_DETECTED_APP_HEALTH_URL="${detected_app_health_url}"
+  MAKEVN_DOCTOR_DETECTED_APP_HEALTH_URL="${detected_app_health_url:-not detected}"
   MAKEVN_DOCTOR_COMPILE_PROFILE="${compile_profile}"
   MAKEVN_DOCTOR_BUILD_PROFILE="${build_profile}"
   MAKEVN_DOCTOR_TEST_PROFILE="${test_profile}"
@@ -308,6 +328,8 @@ makevn_print_doctor_json() {
   printf '    "existing_makevn": "%s",\n' "$(makevn_json_escape "${MAKEVN_DOCTOR_EXISTING_STATE_DIR}")"
   printf '    "current_makevn_status": "%s",\n' "$(makevn_json_escape "${MAKEVN_DOCTOR_CURRENT_STATUS}")"
   printf '    "code_tool_versions": "%s",\n' "$(makevn_json_escape "${MAKEVN_DOCTOR_CODE_TOOL_VERSIONS}")"
+  printf '    "code_java_version": "%s",\n' "$(makevn_json_escape "${MAKEVN_DOCTOR_CODE_JAVA_VERSION}")"
+  printf '    "application_runnable": "%s",\n' "$(makevn_json_escape "${MAKEVN_DOCTOR_APP_RUNNABLE}")"
   printf '    "karate_tool_versions": "%s",\n' "$(makevn_json_escape "${MAKEVN_DOCTOR_KARATE_TOOL_VERSIONS}")"
   printf '    "detected_workflow_files": "%s",\n' "$(makevn_json_escape "${MAKEVN_DOCTOR_DETECTED_WORKFLOW_FILES}")"
   printf '    "detected_maven_cli_flags": "%s",\n' "$(makevn_json_escape "${MAKEVN_DOCTOR_DETECTED_MAVEN_CLI_FLAGS}")"

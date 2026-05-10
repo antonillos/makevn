@@ -255,6 +255,129 @@ assert data['suggested_next_step']['note'] == 'no automatic recommendation: Mave
 PY
 }
 
+test_doctor_resolves_java_version_from_pom() {
+  local repo="${TMP_ROOT}/doctor-pom-java-version"
+  local fake_java_home="${repo}/fake-java-home"
+  local output
+
+  mkdir -p "${repo}" "${fake_java_home}/bin"
+  cat > "${repo}/pom.xml" <<'EOF'
+<project>
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>com.example</groupId>
+  <artifactId>sample</artifactId>
+  <version>1.0.0</version>
+  <properties>
+    <maven.compiler.source>21</maven.compiler.source>
+    <maven.compiler.target>21</maven.compiler.target>
+  </properties>
+</project>
+EOF
+  cat > "${fake_java_home}/bin/java" <<'EOF'
+#!/usr/bin/env bash
+printf 'openjdk version "21.0.1" 2024-01-01\n' >&2
+EOF
+  chmod +x "${fake_java_home}/bin/java"
+
+  output="$(JAVA_HOME="${fake_java_home}" ${CLI} --repo "${repo}" doctor)"
+
+  [[ "${output}" == *"Code .tool-versions: unresolved"* ]] || fail "doctor should report missing .tool-versions"
+  [[ "${output}" == *"Code Java version: 21"* ]] || fail "doctor should detect Java version from pom.xml"
+  [[ "${output}" == *"Application runnable: no"* ]] || fail "doctor should report non-runnable library project"
+  [[ "${output}" == *"Resolved code JAVA_HOME: ${fake_java_home}"* ]] || fail "doctor should resolve code JAVA_HOME from pom.xml Java version"
+
+  ${CLI} --repo "${repo}" init >/dev/null
+  assert_contains "${repo}/.makevn/profile.env" "MAKEVN_PROFILE_CODE_JAVA_VERSION=21"
+}
+
+test_doctor_does_not_invent_health_check() {
+  local repo="${TMP_ROOT}/doctor-no-health"
+  local output
+
+  mkdir -p "${repo}/src/main/resources"
+  cat > "${repo}/pom.xml" <<'EOF'
+<project>
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>com.example</groupId>
+  <artifactId>sample</artifactId>
+  <version>1.0.0</version>
+</project>
+EOF
+  cat > "${repo}/src/main/resources/application.yml" <<'EOF'
+server:
+  port: 18080
+EOF
+
+  output="$(${CLI} --repo "${repo}" doctor)"
+
+  [[ "${output}" == *"Detected app health URL: not detected"* ]] || fail "doctor should not invent an app health URL"
+}
+
+test_doctor_detects_actuator_health_check() {
+  local repo="${TMP_ROOT}/doctor-actuator-health"
+  local output
+
+  mkdir -p "${repo}/src/main/resources"
+  cat > "${repo}/pom.xml" <<'EOF'
+<project>
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>com.example</groupId>
+  <artifactId>sample</artifactId>
+  <version>1.0.0</version>
+  <dependencies>
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-actuator</artifactId>
+    </dependency>
+  </dependencies>
+</project>
+EOF
+  cat > "${repo}/src/main/resources/application.yml" <<'EOF'
+server:
+  port: 18080
+EOF
+
+  output="$(${CLI} --repo "${repo}" doctor)"
+
+  [[ "${output}" == *"Detected app health URL: http://localhost:18080/actuator/health"* ]] || fail "doctor should detect Actuator health URL"
+}
+
+test_run_app_bg_disabled_without_executable_app() {
+  local repo="${TMP_ROOT}/run-app-bg-disabled-library"
+  local java_home="${repo}/fake-java-home"
+  local output=""
+
+  mkdir -p "${repo}/code/boot/target" "${repo}/fake-java-home/bin"
+  cat > "${repo}/code/pom.xml" <<'EOF'
+<project>
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>com.example</groupId>
+  <artifactId>library</artifactId>
+  <version>1.0.0</version>
+</project>
+EOF
+  printf 'fake jar\n' > "${repo}/code/boot/target/library.jar"
+  cat > "${repo}/fake-java-home/bin/java" <<'EOF'
+#!/usr/bin/env bash
+printf 'openjdk version "21.0.1" 2024-01-01\n' >&2
+EOF
+  chmod +x "${repo}/fake-java-home/bin/java"
+
+  ${CLI} --repo "${repo}" init >/dev/null
+  cat > "${repo}/.makevn/config" <<EOF
+MAKEVN_JAVA_HOME="${java_home}"
+MAKEVN_CODE_JAVA_HOME="${java_home}"
+MAKEVN_KARATE_JAVA_HOME=""
+MAKEVN_CODE_TOOL_VERSIONS=""
+MAKEVN_KARATE_TOOL_VERSIONS=""
+MAKEVN_RUN_CMD=""
+EOF
+
+  output="$(${CLI} --repo "${repo}" run-app-bg 2>&1 || true)"
+
+  [[ "${output}" == *"run-app is disabled: no executable application was detected"* ]] || fail "run-app-bg should be disabled for library projects"
+}
+
 test_standalone_mode() {
   local repo="${TMP_ROOT}/standalone"
   mkdir -p "${repo}"
@@ -782,6 +905,7 @@ test_docker_commands() {
   local output
 
   mkdir -p "${repo}/code/boot/src/main/resources"
+  mkdir -p "${repo}/code/boot/src/main/java/com/example"
   mkdir -p "${repo}/code/boot/src/test/resources/compose"
   mkdir -p "${repo}/fake-bin"
   printf '<project/>\n' > "${repo}/pom.xml"
@@ -844,6 +968,7 @@ EOF
   PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" init >/dev/null
   PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" make install >/dev/null
   PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" docker-up >/dev/null
+  assert_not_contains "${repo}/.docker-compose.log" " ps -q "
   PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" docker-down >/dev/null
   output="$(rtk make -f .makevn/makevn.mk -C "${repo}" MAKEVN_BIN="${repo}/fake-bin/makevn-wrapper" vn-docker-ps)"
 
@@ -902,6 +1027,20 @@ test_karate_commands() {
   <properties>
     <java.version>21</java.version>
   </properties>
+  <dependencies>
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-actuator</artifactId>
+    </dependency>
+  </dependencies>
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-maven-plugin</artifactId>
+      </plugin>
+    </plugins>
+  </build>
   <groupId>com.example.productsample</groupId>
 </project>
 EOF
@@ -1014,6 +1153,7 @@ MAKEVN_RUN_CMD=""
 EOF
 
   PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" karate-docker-up >/dev/null
+  assert_not_contains "${repo}/.docker-compose.log" " ps -q "
   PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" karate-docker-down >/dev/null
   PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" docker-ps-required --compose karate >/dev/null
   PATH="${repo}/fake-bin:${PATH}" rtk make -f .makevn/makevn.mk -C "${repo}" MAKEVN_BIN="${repo}/fake-bin/makevn-wrapper" vn-docker-ps-required MAKEVN_DOCKER_PS_REQUIRED_ARGS="--compose karate" >/dev/null
@@ -1042,6 +1182,7 @@ test_run_app_bg_reports_early_process_exit() {
   local java_home="${repo}/fake-java-home"
   local output=""
 
+  mkdir -p "${repo}/code/boot/src/main/java/com/example"
   mkdir -p "${repo}/code/boot/target"
   mkdir -p "${repo}/fake-java-home/bin"
   mkdir -p "${repo}/fake-bin"
@@ -1052,6 +1193,14 @@ test_run_app_bg_reports_early_process_exit() {
   <artifactId>sampleapp</artifactId>
   <version>1.0.0</version>
 </project>
+EOF
+  cat > "${repo}/code/boot/src/main/java/com/example/Application.java" <<'EOF'
+package com.example;
+
+public class Application {
+  public static void main(String[] args) {
+  }
+}
 EOF
   printf 'fake jar\n' > "${repo}/code/boot/target/app.jar"
 
@@ -1158,12 +1307,21 @@ test_run_app_bg_uses_tool_versions_jdk_before_global_fallback() {
   local output=""
 
   mkdir -p "${repo}/code/boot/src/main/resources"
+  mkdir -p "${repo}/code/boot/src/main/java/com/example"
   mkdir -p "${repo}/code/boot/target"
   mkdir -p "${repo}/fake-code-java-home/bin"
   mkdir -p "${repo}/wrong-java-home/bin"
   mkdir -p "${repo}/fake-bin"
 
   printf '<project/>\n' > "${repo}/code/pom.xml"
+  cat > "${repo}/code/boot/src/main/java/com/example/Application.java" <<'EOF'
+package com.example;
+
+public class Application {
+  public static void main(String[] args) {
+  }
+}
+EOF
   printf 'ivm-java zulu-21.0.1\n' > "${repo}/code/.tool-versions"
   printf 'server:\n  port: 18082\n' > "${repo}/code/boot/src/main/resources/application.yml"
   printf 'fake jar\n' > "${repo}/code/boot/target/app.jar"
@@ -1219,7 +1377,7 @@ EOF
 
   assert_contains "${repo}/.java.log" "JAVA_HOME=${repo}/fake-code-java-home"
   assert_matches "${repo}/.java.log" '^JAVA_ARGS=-jar .*/code/boot/target/app\.jar$'
-  [[ "${output}" == *"ok application is ready"* ]] || fail "expected run-app-bg to start with the tool-versions JDK"
+  [[ "${output}" == *"ok application started without health check"* ]] || fail "expected run-app-bg to start with the tool-versions JDK"
 
   JAVA_HOME="${repo}/fake-code-java-home" ${CLI} --repo "${repo}" stop-app >/dev/null
   JAVA_HOME="${repo}/fake-code-java-home" ${CLI} --repo "${repo}" uninstall >/dev/null
@@ -1236,12 +1394,21 @@ test_karate_all_rust_frontend_reports_run_app_bg_failure() {
   PREFIX="${install_prefix}" "${ROOT_DIR}/install.sh" --rust >/dev/null
 
   mkdir -p "${repo}/code/boot/src/main/resources"
+  mkdir -p "${repo}/code/boot/src/main/java/com/example"
   mkdir -p "${repo}/code/boot/target"
   mkdir -p "${repo}/e2e/karate/src/test/resources/compose"
   mkdir -p "${repo}/fake-java-home/bin"
   mkdir -p "${repo}/fake-bin"
 
   printf '<project/>\n' > "${repo}/code/pom.xml"
+  cat > "${repo}/code/boot/src/main/java/com/example/Application.java" <<'EOF'
+package com.example;
+
+public class Application {
+  public static void main(String[] args) {
+  }
+}
+EOF
   printf '<project/>\n' > "${repo}/e2e/karate/pom.xml"
   printf 'server:\n  port: 18081\n' > "${repo}/code/boot/src/main/resources/application.yml"
   printf 'services:\n  db:\n    image: postgres:16\n' > "${repo}/e2e/karate/src/test/resources/compose/docker-compose.yml"
@@ -2074,6 +2241,10 @@ EOF
 main() {
   test_doctor_unsupported
   test_backend_doctor_json
+  test_doctor_resolves_java_version_from_pom
+  test_doctor_does_not_invent_health_check
+  test_doctor_detects_actuator_health_check
+  test_run_app_bg_disabled_without_executable_app
   test_standalone_mode
   test_format_requires_configured_formatter
   test_checkstyle_requires_configured_plugin

@@ -229,6 +229,11 @@ resolve_tool_versions_home() {
   printf '%s\n' "${resolved_home}"
 }
 
+resolve_version_home() {
+  [[ -n "${JDK_VERSION}" ]] || return 1
+  resolve_jdk_home
+}
+
 show_contexts() {
   local code_tool_versions="$1"
   local karate_tool_versions="$2"
@@ -269,8 +274,11 @@ case "${ACTION}" in
   resolve-tool-versions)
     resolve_tool_versions_home "${JDK_VERSION}"
     ;;
+  resolve-version)
+    resolve_version_home
+    ;;
   *)
-    echo "Usage: $0 current-contexts|list|resolve-tool-versions [arg1] [arg2]"
+    echo "Usage: $0 current-contexts|list|resolve-tool-versions|resolve-version [arg1] [arg2]"
     exit 1
     ;;
 esac

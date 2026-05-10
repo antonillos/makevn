@@ -97,7 +97,6 @@ cmd_karate_docker_up() {
       "$@" up --detach
     ' bash "${docker_compose[@]}" "${compose_args[@]}"
   fi
-  makevn_wait_for_required_docker_services "${repo_root}" "${compose_file}" "${compose_override_file}" "${docker_compose_cmd}"
 }
 
 cmd_karate_test() {
@@ -131,6 +130,7 @@ cmd_karate_test() {
 
   karate_base_path="$(makevn_detect_karate_base_path "${repo_root}" || true)"
   [[ -n "${karate_base_path}" ]] || makevn_die "No Karate Maven project detected. Expected e2e/karate/pom.xml or karate/pom.xml."
+  cmd_docker_ps_required "${repo_root}" --compose karate
 
   maven_executable="$(makevn_maven_executable "${repo_root}" "${karate_base_path}")"
   cli_flags_value="$(makevn_maven_cli_flags_for_command "${repo_root}" test)"
@@ -155,8 +155,14 @@ cmd_karate_test() {
 cmd_karate_all() {
   local repo_root="$1"
   local test_rc=0
+  local maven_base_path=""
 
   shift
+
+  maven_base_path="$(makevn_detect_maven_base_path "${repo_root}" || true)"
+  if ! makevn_detect_app_runnable "${repo_root}" "${maven_base_path}"; then
+    makevn_die "karate-all is disabled: no executable application was detected for run-app-bg. Use karate-test directly when tests do not need a local app."
+  fi
 
   cmd_karate_docker_up "${repo_root}"
 

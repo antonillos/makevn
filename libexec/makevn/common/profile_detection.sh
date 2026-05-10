@@ -364,6 +364,74 @@ makevn_detect_code_tool_versions_fresh() {
   return 1
 }
 
+makevn_xml_first_tag_value() {
+  local tag_name="$1"
+  local file_path="$2"
+
+  awk -v tag="${tag_name}" '
+    {
+      line = $0
+      open_tag = "<" tag ">"
+      close_tag = "</" tag ">"
+      if (index(line, open_tag) && index(line, close_tag)) {
+        sub(".*<" tag ">", "", line)
+        sub("</" tag ">.*", "", line)
+        gsub(/^[[:space:]]+|[[:space:]]+$/, "", line)
+        print line
+        exit
+      }
+    }
+  ' "${file_path}"
+}
+
+makevn_normalize_java_version() {
+  local value="$1"
+
+  value="$(makevn_trim "${value}")"
+  [[ -n "${value}" ]] || return 1
+  case "${value}" in
+    \$\{*\})
+      return 1
+      ;;
+  esac
+
+  value="$(printf '%s\n' "${value}" | sed -E 's/^1\.([0-9]+)$/\1/; s/^([0-9]+)(\..*)?$/\1/')"
+  [[ "${value}" =~ ^[0-9]+$ ]] || return 1
+  printf '%s\n' "${value}"
+}
+
+makevn_detect_java_version_from_pom() {
+  local maven_base_path="$1"
+  local pom_path=""
+  local candidate=""
+  local tag_name=""
+
+  [[ -n "${maven_base_path}" ]] || return 1
+  [[ -f "${maven_base_path}/pom.xml" ]] || return 1
+
+  pom_path="${maven_base_path}/pom.xml"
+  for tag_name in maven.compiler.release maven.compiler.target maven.compiler.source java.version; do
+    candidate="$(makevn_xml_first_tag_value "${tag_name}" "${pom_path}")"
+    if makevn_normalize_java_version "${candidate}"; then
+      return 0
+    fi
+  done
+
+  candidate="$(awk '
+    /<artifactId>maven-compiler-plugin<\/artifactId>/ { in_plugin = 1 }
+    in_plugin && /<release>/ {
+      line = $0
+      sub(/.*<release>/, "", line)
+      sub(/<\/release>.*/, "", line)
+      gsub(/^[[:space:]]+|[[:space:]]+$/, "", line)
+      print line
+      exit
+    }
+    in_plugin && /<\/plugin>/ { in_plugin = 0 }
+  ' "${pom_path}")"
+  makevn_normalize_java_version "${candidate}"
+}
+
 makevn_detect_karate_tool_versions_fresh() {
   local repo_root="$1"
 
@@ -394,6 +462,108 @@ makevn_detect_boot_module_name() {
   fi
 
   printf '%s\n' boot
+}
+
+makevn_detect_app_source_path() {
+  local repo_root="$1"
+  local maven_base_path="$2"
+  local boot_module="$3"
+
+  if [[ -n "${maven_base_path}" && -d "${maven_base_path}/${boot_module}/src/main/java" ]]; then
+    printf '%s\n' "${maven_base_path}/${boot_module}/src/main/java"
+    return 0
+  fi
+
+  if [[ -n "${maven_base_path}" && -d "${maven_base_path}/src/main/java" ]]; then
+    printf '%s\n' "${maven_base_path}/src/main/java"
+    return 0
+  fi
+
+  if [[ -d "${repo_root}/src/main/java" ]]; then
+    printf '%s\n' "${repo_root}/src/main/java"
+    return 0
+  fi
+
+  return 1
+}
+
+makevn_detect_app_packaging_signal() {
+  local maven_base_path="$1"
+  local pom_path=""
+
+  [[ -n "${maven_base_path}" ]] || return 1
+
+  while IFS= read -r pom_path; do
+    if grep -Eq '<artifactId>[[:space:]]*spring-boot-maven-plugin[[:space:]]*</artifactId>|<artifactId>[[:space:]]*quarkus-maven-plugin[[:space:]]*</artifactId>|<artifactId>[[:space:]]*micronaut-maven-plugin[[:space:]]*</artifactId>|<mainClass>|<mainClassName>|<mainClassname>' "${pom_path}"; then
+      return 0
+    fi
+  done < <(find "${maven_base_path}" -name pom.xml -not -path '*/target/*' -not -path '*/node_modules/*' 2>/dev/null | LC_ALL=C sort)
+
+  return 1
+}
+
+makevn_detect_app_main_source_signal() {
+  local repo_root="$1"
+  local maven_base_path="$2"
+  local boot_module="$3"
+  local source_path=""
+
+  source_path="$(makevn_detect_app_source_path "${repo_root}" "${maven_base_path}" "${boot_module}" || true)"
+  [[ -n "${source_path}" ]] || return 1
+
+  if find "${source_path}" -name '*.java' -type f 2>/dev/null \
+    | xargs grep -Eq '@SpringBootApplication|public[[:space:]]+static[[:space:]]+void[[:space:]]+main[[:space:]]*\(' 2>/dev/null; then
+    return 0
+  fi
+
+  return 1
+}
+
+makevn_detect_app_packaged_jar_signal() {
+  local maven_base_path="$1"
+  local boot_module="$2"
+  local candidate=""
+  local target_path=""
+
+  [[ -n "${maven_base_path}" ]] || return 1
+  if [[ -d "${maven_base_path}/${boot_module}/target" ]]; then
+    target_path="${maven_base_path}/${boot_module}/target"
+  elif [[ -d "${maven_base_path}/target" ]]; then
+    target_path="${maven_base_path}/target"
+  else
+    return 1
+  fi
+
+  while IFS= read -r candidate; do
+    [[ -n "${candidate}" ]] || continue
+    if unzip -p "${candidate}" META-INF/MANIFEST.MF 2>/dev/null | grep -q '^Main-Class: '; then
+      return 0
+    fi
+  done < <(find "${target_path}" \
+    -name "*.jar" \
+    -not -name "*-sources.jar" \
+    -not -name "*.original" \
+    -not -name "*-tests.jar" \
+    -type f \
+    2>/dev/null \
+    | LC_ALL=C sort)
+
+  return 1
+}
+
+makevn_detect_app_runnable() {
+  local repo_root="$1"
+  local maven_base_path="$2"
+  local boot_module=""
+
+  [[ -n "${maven_base_path}" ]] || return 1
+
+  boot_module="$(makevn_detect_boot_module_name "${repo_root}")"
+  makevn_detect_app_packaged_jar_signal "${maven_base_path}" "${boot_module}" && return 0
+  makevn_detect_app_packaging_signal "${maven_base_path}" && return 0
+  makevn_detect_app_main_source_signal "${repo_root}" "${maven_base_path}" "${boot_module}" && return 0
+
+  return 1
 }
 
 makevn_find_compose_files() {
@@ -637,13 +807,38 @@ makevn_detect_app_context_path() {
 makevn_detect_app_health_path() {
   local maven_base_path="$1"
   local value=""
+  local config_file=""
 
   while IFS= read -r config_file; do
     value="$(sed -nE 's/^[[:space:]]*management\.endpoints\.web\.base-path[[:space:]]*[:=][[:space:]]*([^[:space:]#]+).*$/\1/p' "${config_file}" | head -n 1)"
     [[ -n "${value}" ]] && printf '%s/health\n' "${value%/}" && return 0
+    if grep -Eq 'management\.endpoint\.health|management\.endpoints\.web\.exposure\.include[[:space:]]*[:=].*health' "${config_file}"; then
+      printf '/actuator/health\n'
+      return 0
+    fi
   done < <(makevn_app_config_files "${maven_base_path}")
 
-  printf '/actuator/health\n'
+  if makevn_detect_spring_boot_actuator_from_repo "${maven_base_path}"; then
+    printf '/actuator/health\n'
+    return 0
+  fi
+
+  return 1
+}
+
+makevn_detect_spring_boot_actuator_from_repo() {
+  local maven_base_path="$1"
+  local pom_path=""
+
+  [[ -n "${maven_base_path}" ]] || return 1
+
+  while IFS= read -r pom_path; do
+    if grep -Eq '<artifactId>[[:space:]]*spring-boot-starter-actuator[[:space:]]*</artifactId>' "${pom_path}"; then
+      return 0
+    fi
+  done < <(find "${maven_base_path}" -name pom.xml -not -path '*/target/*' -not -path '*/node_modules/*' 2>/dev/null | LC_ALL=C sort)
+
+  return 1
 }
 
 makevn_detect_app_health_url() {
@@ -656,7 +851,7 @@ makevn_detect_app_health_url() {
 
   port="$(makevn_detect_app_port "${maven_base_path}")"
   context_path="$(makevn_detect_app_context_path "${maven_base_path}")"
-  health_path="$(makevn_detect_app_health_path "${maven_base_path}")"
+  health_path="$(makevn_detect_app_health_path "${maven_base_path}")" || return 1
   context_path="/${context_path#/}"
   health_path="/${health_path#/}"
   [[ "${context_path}" == "/" ]] && context_path=""
@@ -872,12 +1067,18 @@ makevn_detect_repo_profile() {
   local maven_base_path=""
   local code_tool_versions=""
   local karate_tool_versions=""
+  local code_java_version=""
+  local app_runnable="no"
   local maven_prop_flags=""
   local app_health_url=""
 
   maven_base_path="$(makevn_detect_maven_base_path_fresh "${repo_root}" || true)"
   code_tool_versions="$(makevn_detect_code_tool_versions_fresh "${repo_root}" "${maven_base_path}" || true)"
   karate_tool_versions="$(makevn_detect_karate_tool_versions_fresh "${repo_root}" || true)"
+  code_java_version="$(makevn_detect_java_version_from_pom "${maven_base_path}" || true)"
+  if makevn_detect_app_runnable "${repo_root}" "${maven_base_path}"; then
+    app_runnable="yes"
+  fi
   app_health_url="$(makevn_detect_app_health_url "${maven_base_path}" || true)"
 
   makevn_detect_workflow_maven_flags "${repo_root}"
@@ -919,6 +1120,8 @@ makevn_detect_repo_profile() {
 
   MAKEVN_DETECTED_MAVEN_BASE_PATH="${maven_base_path}"
   MAKEVN_DETECTED_CODE_TOOL_VERSIONS="${code_tool_versions}"
+  MAKEVN_DETECTED_CODE_JAVA_VERSION="${code_java_version}"
+  MAKEVN_DETECTED_APP_RUNNABLE="${app_runnable}"
   MAKEVN_DETECTED_KARATE_TOOL_VERSIONS="${karate_tool_versions}"
   MAKEVN_DETECTED_MAVEN_PROP_FLAGS="${maven_prop_flags}"
   MAKEVN_DETECTED_APP_HEALTH_URL="${app_health_url}"
@@ -937,6 +1140,8 @@ makevn_write_profile() {
     printf 'MAKEVN_PROFILE_GENERATED_AT=%q\n' "$(makevn_now_utc)"
     printf 'MAKEVN_PROFILE_MAVEN_BASE_PATH=%q\n' "${MAKEVN_DETECTED_MAVEN_BASE_PATH}"
     printf 'MAKEVN_PROFILE_CODE_TOOL_VERSIONS=%q\n' "${MAKEVN_DETECTED_CODE_TOOL_VERSIONS}"
+    printf 'MAKEVN_PROFILE_CODE_JAVA_VERSION=%q\n' "${MAKEVN_DETECTED_CODE_JAVA_VERSION:-}"
+    printf 'MAKEVN_PROFILE_APP_RUNNABLE=%q\n' "${MAKEVN_DETECTED_APP_RUNNABLE:-no}"
     printf 'MAKEVN_PROFILE_KARATE_TOOL_VERSIONS=%q\n' "${MAKEVN_DETECTED_KARATE_TOOL_VERSIONS}"
     printf 'MAKEVN_PROFILE_WORKFLOW_FILES=%q\n' "${MAKEVN_DETECTED_WORKFLOW_FILES}"
     printf 'MAKEVN_PROFILE_MAVEN_CLI_FLAGS=%q\n' "${MAKEVN_DETECTED_MAVEN_CLI_FLAGS}"

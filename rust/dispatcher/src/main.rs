@@ -943,6 +943,7 @@ fn run_backend_with_loader(
                         metadata,
                     ));
                 }
+                tail_window.set_loader_line(None);
                 tail_window
                     .finish()
                     .map_err(|error| format!("failed to render tailed log: {error}"))?;
@@ -1036,15 +1037,17 @@ fn run_backend_with_loader(
             if line_delta != 0 {
                 tail_window.adjust_lines(line_delta);
             }
+            if let Some(renderer) = renderer.as_mut() {
+                let interrupt_hint = renderer.current_spinner_hint();
+                let frame_line = renderer
+                    .frame_line_with_hint(child.id(), &tail_hint(&interrupt_hint))
+                    .map_err(|error| format!("failed to render loader: {error}"))?;
+                tail_window.set_loader_line(Some(frame_line));
+            }
             tail_window
                 .refresh()
                 .map_err(|error| format!("failed to render tailed log: {error}"))?;
-            if let Some(renderer) = renderer.as_mut() {
-                let interrupt_hint = renderer.current_spinner_hint();
-                renderer
-                    .render_frame_with_hint(child.id(), &tail_hint(&interrupt_hint))
-                    .map_err(|error| format!("failed to render loader: {error}"))?;
-            } else {
+            if renderer.is_none() {
                 thread::sleep(Duration::from_millis(100));
             }
             continue;
@@ -1089,6 +1092,7 @@ fn run_backend_with_loader(
                 metadata,
             ));
         }
+        tail_window.set_loader_line(None);
         tail_window
             .finish()
             .map_err(|error| format!("failed to render tailed log: {error}"))?;
@@ -1197,7 +1201,7 @@ fn backend_header_line(metadata: &BackendMetadata) -> String {
 fn backend_tail_notice_line(metadata: &BackendMetadata) -> String {
     format!(
         "{} {} {} {}{}{}",
-        dim_text("->"),
+        dim_text(" └"),
         dim_text(&format!("tailing log: {}", metadata.relative_log_path)),
         dim_text("|"),
         dim_text("press "),
@@ -1388,11 +1392,50 @@ fn style(code: &str, text: &str) -> String {
 }
 
 fn terminal_width() -> usize {
-    env::var("COLUMNS")
-        .ok()
+    terminal_width_from_tty()
+        .or_else(|| terminal_width_from_columns(env::var("COLUMNS").ok().as_deref()))
+        .unwrap_or(120)
+}
+
+fn terminal_width_from_columns(columns: Option<&str>) -> Option<usize> {
+    columns
         .and_then(|value| value.parse::<usize>().ok())
         .filter(|value| *value > 0)
-        .unwrap_or(120)
+}
+
+fn terminal_width_from_tty() -> Option<usize> {
+    let stdout = io::stdout();
+    if stdout.is_terminal() {
+        if let Some(width) = terminal_width_from_fd(stdout.as_raw_fd()) {
+            return Some(width);
+        }
+    }
+
+    let stderr = io::stderr();
+    if stderr.is_terminal() {
+        if let Some(width) = terminal_width_from_fd(stderr.as_raw_fd()) {
+            return Some(width);
+        }
+    }
+
+    let stdin = io::stdin();
+    if stdin.is_terminal() {
+        return terminal_width_from_fd(stdin.as_raw_fd());
+    }
+
+    None
+}
+
+fn terminal_width_from_fd(fd: i32) -> Option<usize> {
+    let mut size = MaybeUninit::<libc::winsize>::zeroed();
+    let result = unsafe { libc::ioctl(fd, libc::TIOCGWINSZ, size.as_mut_ptr()) };
+    if result != 0 {
+        return None;
+    }
+
+    let size = unsafe { size.assume_init() };
+    let width = usize::from(size.ws_col);
+    (width > 0).then_some(width)
 }
 
 fn dim_text(text: &str) -> String {
@@ -1441,9 +1484,17 @@ fn tail_hint(interrupt_hint: &str) -> String {
     interrupt_hint.to_owned()
 }
 
-fn tail_line_text(line: &str) -> String {
-    let width = terminal_width().max(8);
+fn tail_line_text_for_width(line: &str, width: usize) -> String {
     let max_chars = width.saturating_sub(1);
+    faint_text(&truncate_plain_line(line, max_chars))
+}
+
+fn status_line_text_for_width(line: &str, width: usize) -> String {
+    let max_chars = width.saturating_sub(1);
+    truncate_ansi_line(line, max_chars)
+}
+
+fn truncate_plain_line(line: &str, max_chars: usize) -> String {
     let mut truncated = String::new();
     let mut count = 0usize;
 
@@ -1460,18 +1511,110 @@ fn tail_line_text(line: &str) -> String {
         truncated.push('~');
     }
 
-    faint_text(&truncated)
+    truncated
+}
+
+fn truncate_ansi_line(line: &str, max_chars: usize) -> String {
+    if visible_char_count(line) <= max_chars {
+        return line.to_owned();
+    }
+
+    if max_chars == 0 {
+        return String::new();
+    }
+
+    let mut truncated = String::new();
+    let mut chars = line.chars().peekable();
+    let mut visible_count = 0usize;
+    let visible_limit = max_chars.saturating_sub(1);
+
+    while let Some(ch) = chars.next() {
+        if ch == '\u{1b}' {
+            truncated.push(ch);
+            copy_ansi_sequence(&mut chars, &mut truncated);
+            continue;
+        }
+
+        if visible_count >= visible_limit {
+            break;
+        }
+
+        truncated.push(ch);
+        visible_count += 1;
+    }
+
+    truncated.push('~');
+    if use_color() {
+        truncated.push_str("\u{1b}[0m");
+    }
+    truncated
+}
+
+fn visible_char_count(line: &str) -> usize {
+    let mut chars = line.chars().peekable();
+    let mut count = 0usize;
+
+    while let Some(ch) = chars.next() {
+        if ch == '\u{1b}' {
+            skip_ansi_sequence(&mut chars);
+            continue;
+        }
+
+        count += 1;
+    }
+
+    count
+}
+
+fn copy_ansi_sequence<I>(chars: &mut std::iter::Peekable<I>, output: &mut String)
+where
+    I: Iterator<Item = char>,
+{
+    if matches!(chars.peek(), Some('[')) {
+        output.push(chars.next().expect("peeked CSI introducer"));
+        while let Some(next) = chars.next() {
+            output.push(next);
+            if ('@'..='~').contains(&next) {
+                break;
+            }
+        }
+        return;
+    }
+
+    if let Some(next) = chars.next() {
+        output.push(next);
+    }
+}
+
+fn skip_ansi_sequence<I>(chars: &mut std::iter::Peekable<I>)
+where
+    I: Iterator<Item = char>,
+{
+    if matches!(chars.peek(), Some('[')) {
+        chars.next();
+        while let Some(next) = chars.next() {
+            if ('@'..='~').contains(&next) {
+                break;
+            }
+        }
+        return;
+    }
+
+    chars.next();
 }
 
 struct LogTailWindow {
     path: PathBuf,
     prefix_lines: Vec<String>,
+    loader_line: Option<String>,
     file: Option<File>,
     offset: u64,
     pending: Vec<u8>,
     lines: Vec<String>,
     visible_lines: usize,
     rendered_lines: usize,
+    rendered_width: usize,
+    rendered_line_widths: Vec<usize>,
 }
 
 impl LogTailWindow {
@@ -1479,17 +1622,24 @@ impl LogTailWindow {
         Self {
             path,
             prefix_lines: Vec::new(),
+            loader_line: None,
             file: None,
             offset: 0,
             pending: Vec::new(),
             lines: Vec::new(),
             visible_lines: 4,
             rendered_lines: 0,
+            rendered_width: terminal_width().max(8),
+            rendered_line_widths: Vec::new(),
         }
     }
 
     fn set_prefix_lines(&mut self, prefix_lines: Vec<String>) {
         self.prefix_lines = prefix_lines;
+    }
+
+    fn set_loader_line(&mut self, loader_line: Option<String>) {
+        self.loader_line = loader_line;
     }
 
     fn adjust_lines(&mut self, delta: i32) {
@@ -1579,64 +1729,99 @@ impl LogTailWindow {
             self.lines.drain(..drop_count);
         }
 
-        let display_lines = self.prefix_lines.len() + visible_capacity;
-        let clear_lines = self.rendered_lines.max(display_lines)
-            + usize::from(self.rendered_lines > display_lines);
-        if self.rendered_lines > 0 {
-            write!(io::stdout(), "\u{1b}[{}A", self.rendered_lines)?;
+        let render_width = terminal_width().max(8);
+        let output_lines = self.rendered_output_lines(render_width, visible_capacity);
+        let previous_rows = physical_rows_for_width(&self.rendered_line_widths, render_width);
+        let clear_rows = previous_rows.max(output_lines.len()) + usize::from(previous_rows > 0);
+
+        if previous_rows > 0 {
+            write!(io::stdout(), "\u{1b}[{}A", previous_rows)?;
         }
 
-        for index in 0..clear_lines {
+        for index in 0..clear_rows {
             write!(io::stdout(), "\r\u{1b}[2K")?;
-            if index + 1 < clear_lines {
+            if index + 1 < clear_rows {
                 write!(io::stdout(), "\n")?;
             }
         }
 
-        if clear_lines > 1 {
-            write!(io::stdout(), "\u{1b}[{}A", clear_lines - 1)?;
+        if clear_rows > 1 {
+            write!(io::stdout(), "\u{1b}[{}A", clear_rows - 1)?;
         }
 
-        if clear_lines > 0 {
+        if clear_rows > 0 {
             write!(io::stdout(), "\r")?;
         }
 
-        for line in &self.prefix_lines {
+        for line in &output_lines {
             writeln!(io::stdout(), "{line}")?;
         }
 
-        for line in &self.lines {
-            writeln!(io::stdout(), "{}", tail_line_text(line))?;
-        }
-
-        for _ in self.lines.len()..visible_capacity {
-            writeln!(io::stdout())?;
-        }
-
         io::stdout().flush()?;
-        self.rendered_lines = display_lines;
+        self.rendered_lines = output_lines.len();
+        self.rendered_width = render_width;
+        self.rendered_line_widths = output_lines
+            .iter()
+            .map(|line| visible_char_count(line))
+            .collect();
         Ok(())
+    }
+
+    fn rendered_output_lines(&self, width: usize, visible_capacity: usize) -> Vec<String> {
+        let mut output_lines = Vec::with_capacity(
+            self.prefix_lines.len() + visible_capacity + usize::from(self.loader_line.is_some()),
+        );
+        let tail_notice_index = self.prefix_lines.len().saturating_sub(1);
+        output_lines.extend(
+            self.prefix_lines[..tail_notice_index]
+                .iter()
+                .map(|line| status_line_text_for_width(line, width)),
+        );
+        if let Some(loader_line) = self.loader_line.as_ref() {
+            output_lines.push(status_line_text_for_width(loader_line, width));
+        }
+        output_lines.extend(
+            self.prefix_lines[tail_notice_index..]
+                .iter()
+                .map(|line| status_line_text_for_width(line, width)),
+        );
+        output_lines.extend(
+            self.lines
+                .iter()
+                .map(|line| tail_line_text_for_width(line, width)),
+        );
+        output_lines.extend((self.lines.len()..visible_capacity).map(|_| String::new()));
+        output_lines
     }
 
     fn clear(&mut self) -> io::Result<()> {
-        if self.rendered_lines == 0 {
+        let rows = physical_rows_for_width(&self.rendered_line_widths, terminal_width().max(8));
+        if rows == 0 {
             return Ok(());
         }
 
-        let total_lines = self.rendered_lines + 1;
-
-        write!(io::stdout(), "\u{1b}[{}A", total_lines)?;
-        for index in 0..=total_lines {
+        write!(io::stdout(), "\u{1b}[{}A", rows)?;
+        for index in 0..=rows {
             write!(io::stdout(), "\r\u{1b}[2K")?;
-            if index < total_lines {
+            if index < rows {
                 write!(io::stdout(), "\n")?;
             }
         }
-        write!(io::stdout(), "\u{1b}[{}A\r", total_lines)?;
+        write!(io::stdout(), "\u{1b}[{}A\r", rows)?;
         io::stdout().flush()?;
         self.rendered_lines = 0;
+        self.rendered_width = terminal_width().max(8);
+        self.rendered_line_widths.clear();
         Ok(())
     }
+}
+
+fn physical_rows_for_width(line_widths: &[usize], terminal_width: usize) -> usize {
+    let terminal_width = terminal_width.max(1);
+    line_widths
+        .iter()
+        .map(|width| (*width).max(1).div_ceil(terminal_width))
+        .sum()
 }
 
 #[derive(Clone, Copy)]
@@ -1886,6 +2071,13 @@ impl SpinnerRenderer {
     }
 
     fn render_frame_with_hint(&mut self, pid: u32, hint: &str) -> io::Result<()> {
+        let line = self.frame_line_with_hint(pid, hint)?;
+        write!(io::stdout(), "\r\u{1b}[2K{}", line)?;
+        io::stdout().flush()?;
+        Ok(())
+    }
+
+    fn frame_line_with_hint(&mut self, pid: u32, hint: &str) -> io::Result<String> {
         let now = Instant::now();
         if self.next_frame_at > now {
             thread::sleep(self.next_frame_at - now);
@@ -1903,16 +2095,14 @@ impl SpinnerRenderer {
             format!("{} {} {}", dim_text(&resource_text), dim_text("|"), hint)
         };
 
-        write!(
-            io::stdout(),
-            "\r\u{1b}[2K{}  {}",
+        let line = format!(
+            "{}  {}",
             spinner_kitt_frame_with_load(self.frame, self.resource_visual_load),
             suffix
-        )?;
-        io::stdout().flush()?;
+        );
         self.frame += 1;
         self.next_frame_at = Instant::now() + self.frame_interval();
-        Ok(())
+        Ok(line)
     }
 
     fn render_dashboard(
@@ -2920,6 +3110,59 @@ mod tests {
             lines[3],
             "-> tailing log: .makevn/logs/checkstyle.log | press +/- to expand"
         );
+    }
+
+    #[test]
+    fn tail_window_places_loader_above_tailed_log() {
+        let log_path = env::temp_dir().join("makevn-tail-loader-order.log");
+        let mut tail_window = super::LogTailWindow::new(log_path);
+        tail_window.set_prefix_lines(vec![
+            String::from("Working for 1s >"),
+            String::from(":: makevn compile"),
+            String::from("-> tailing log: .makevn/logs/compile.log | press +/- to expand"),
+        ]);
+        tail_window.set_loader_line(Some(String::from("........  esc interrupt")));
+        tail_window.lines.push(String::from("[INFO] compiling"));
+
+        let lines = tail_window.rendered_output_lines(120, 1);
+
+        assert_eq!(lines[0], "Working for 1s >");
+        assert_eq!(lines[1], ":: makevn compile");
+        assert_eq!(lines[2], "........  esc interrupt");
+        assert_eq!(
+            lines[3],
+            "-> tailing log: .makevn/logs/compile.log | press +/- to expand"
+        );
+        assert_eq!(
+            super::visible_char_count(&lines[4]),
+            "[INFO] compiling".len()
+        );
+    }
+
+    #[test]
+    fn terminal_width_from_columns_ignores_invalid_values() {
+        assert_eq!(super::terminal_width_from_columns(Some("160")), Some(160));
+        assert_eq!(super::terminal_width_from_columns(Some("0")), None);
+        assert_eq!(super::terminal_width_from_columns(Some("wide")), None);
+        assert_eq!(super::terminal_width_from_columns(None), None);
+    }
+
+    #[test]
+    fn truncate_ansi_line_counts_visible_chars_only() {
+        assert_eq!(
+            super::visible_char_count("\u{1b}[90mWorking for 52s >\u{1b}[0m"),
+            17
+        );
+        let truncated = super::truncate_ansi_line("\u{1b}[90mWorking for 52s >\u{1b}[0m", 8);
+        assert!(truncated.starts_with("\u{1b}[90mWorking~"));
+        assert_eq!(super::visible_char_count(&truncated), 8);
+    }
+
+    #[test]
+    fn physical_rows_for_width_counts_each_rendered_line_after_resize() {
+        assert_eq!(super::physical_rows_for_width(&[79, 79, 0], 80), 3);
+        assert_eq!(super::physical_rows_for_width(&[79, 79, 0], 40), 5);
+        assert_eq!(super::physical_rows_for_width(&[79, 12, 0], 20), 6);
     }
 
     #[test]

@@ -69,43 +69,6 @@ makevn_docker_compose_override_file_for_kind() {
   esac
 }
 
-makevn_wait_for_required_docker_services() {
-  local repo_root="$1"
-  local compose_file="$2"
-  local compose_override_file="$3"
-  local docker_compose_cmd="$4"
-  local docker_ps_script="${MAKEVN_LIBEXEC_DIR}/docker/ps.sh"
-  local extract_services_script="${MAKEVN_LIBEXEC_DIR}/docker/extract_services.sh"
-  local services=""
-  local compose_args=""
-  local output=""
-  local deadline=0
-
-  [[ -f "${docker_ps_script}" && -f "${extract_services_script}" ]] || makevn_die "Docker helper scripts not found"
-
-  services="$(bash "${extract_services_script}" "${compose_file}" || true)"
-  [[ -n "${services}" ]] || makevn_die "No services defined in compose file: ${compose_file}"
-
-  compose_args="-f ${compose_file}"
-  if [[ -f "${compose_override_file}" ]]; then
-    compose_args+=" -f ${compose_override_file}"
-  fi
-
-  deadline=$((SECONDS + 180))
-  while (( SECONDS < deadline )); do
-    output="$(cd "${repo_root}" && COMPOSE_ARGS="${compose_args}" SERVICES="${services}" DOCKER_COMPOSE="${docker_compose_cmd}" bash "${docker_ps_script}" || true)"
-    if [[ -z "${output}" ]]; then
-      return 0
-    fi
-    sleep 2
-  done
-
-  if [[ -n "${output}" ]]; then
-    printf '%s\n' "${output}"
-  fi
-  makevn_die "Required Docker services did not become running and healthy after docker-up."
-}
-
 print_boot_docker_service_issues() {
   local repo_root="$1"
   local compose_file=""
@@ -190,6 +153,9 @@ cmd_docker_ps_required() {
       exit 1
     fi
   ' bash "${compose_args}" "${services}" "${docker_compose_cmd}" "${docker_ps_script}"; then
+    if [[ "${compose_kind}" == "karate" ]]; then
+      makevn_die "Required Docker services are not running or healthy. Run 'makevn karate-docker-up' first."
+    fi
     makevn_die "Required Docker services are not running or healthy. Run 'makevn docker-up' first."
   fi
 }
@@ -226,7 +192,6 @@ cmd_docker_up() {
     docker volume prune -f
     "$@" up --detach
   ' bash "${docker_compose[@]}" "${compose_args[@]}"
-  makevn_wait_for_required_docker_services "${repo_root}" "${compose_file}" "${compose_override_file}" "${docker_compose_cmd}"
 }
 
 cmd_docker_down() {

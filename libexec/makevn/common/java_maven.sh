@@ -17,6 +17,13 @@ makevn_resolve_tool_versions_home() {
   bash "${jdk_manager}" resolve-tool-versions "${tool_versions_file}" 2>/dev/null
 }
 
+makevn_resolve_java_version_home() {
+  local java_version="$1"
+  local jdk_manager
+  jdk_manager="$(makevn_jdk_manager_script)"
+  bash "${jdk_manager}" resolve-version "${java_version}" 2>/dev/null
+}
+
 makevn_effective_java_home() {
   local repo_root="$1"
   local context="$2"
@@ -55,6 +62,19 @@ makevn_effective_java_home() {
   if [[ -n "${MAKEVN_JAVA_HOME:-}" ]]; then
     printf '%s\n' "${MAKEVN_JAVA_HOME}"
     return 0
+  fi
+
+  if [[ "${context}" == "code" ]]; then
+    local java_version=""
+    makevn_load_profile "${repo_root}"
+    java_version="${MAKEVN_PROFILE_CODE_JAVA_VERSION:-}"
+    if [[ -z "${java_version}" ]]; then
+      java_version="$(makevn_detect_java_version_from_pom "${maven_base_path}" || true)"
+    fi
+    if [[ -n "${java_version}" ]]; then
+      makevn_resolve_java_version_home "${java_version}"
+      return 0
+    fi
   fi
 
   return 1

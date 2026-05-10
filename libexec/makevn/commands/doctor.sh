@@ -16,6 +16,8 @@ print_doctor() {
   makevn_print_item "Existing .makevn/" "${MAKEVN_DOCTOR_EXISTING_STATE_DIR}"
   makevn_print_item "Current makevn status" "${MAKEVN_DOCTOR_CURRENT_STATUS}"
   makevn_print_item "Code .tool-versions" "${MAKEVN_DOCTOR_CODE_TOOL_VERSIONS}"
+  makevn_print_item "Code Java version" "${MAKEVN_DOCTOR_CODE_JAVA_VERSION}"
+  makevn_print_item "Application runnable" "${MAKEVN_DOCTOR_APP_RUNNABLE}"
   makevn_print_item "Karate .tool-versions" "${MAKEVN_DOCTOR_KARATE_TOOL_VERSIONS}"
   makevn_print_item "Detected workflow files" "${MAKEVN_DOCTOR_DETECTED_WORKFLOW_FILES}"
   makevn_print_item "Detected Maven CLI flags" "${MAKEVN_DOCTOR_DETECTED_MAVEN_CLI_FLAGS}"
