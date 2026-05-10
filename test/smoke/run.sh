@@ -264,11 +264,42 @@ test_standalone_mode() {
   assert_file_exists "${repo}/.makevn/config"
   assert_contains "${repo}/.makevn/config" 'MAKEVN_FORMAT_CHECK_GOAL=""'
   assert_contains "${repo}/.makevn/config" 'MAKEVN_FORMAT_APPLY_GOAL=""'
+  assert_contains "${repo}/.makevn/config" 'MAKEVN_CHECKSTYLE_GOAL=""'
   assert_file_exists "${repo}/.makevn/profile.env"
   assert_dir_exists "${repo}/.makevn/logs"
   assert_not_exists "${repo}/Makefile"
   ${CLI} --repo "${repo}" uninstall >/dev/null
   assert_not_exists "${repo}/.makevn"
+}
+
+test_format_requires_configured_formatter() {
+  local repo="${TMP_ROOT}/format-unconfigured"
+  local output_file="${TMP_ROOT}/format-unconfigured.out"
+
+  mkdir -p "${repo}"
+  printf '<project/>\n' > "${repo}/pom.xml"
+  ${CLI} --repo "${repo}" init >/dev/null
+
+  if ${CLI} --repo "${repo}" format --apply >"${output_file}" 2>&1; then
+    fail "format should fail when no formatter plugin or explicit goal is configured"
+  fi
+
+  assert_contains "${output_file}" "No formatting plugin configured for this Maven project"
+}
+
+test_checkstyle_requires_configured_plugin() {
+  local repo="${TMP_ROOT}/checkstyle-unconfigured"
+  local output_file="${TMP_ROOT}/checkstyle-unconfigured.out"
+
+  mkdir -p "${repo}"
+  printf '<project/>\n' > "${repo}/pom.xml"
+  ${CLI} --repo "${repo}" init >/dev/null
+
+  if ${CLI} --repo "${repo}" checkstyle >"${output_file}" 2>&1; then
+    fail "checkstyle should fail when no Checkstyle plugin or explicit goal is configured"
+  fi
+
+  assert_contains "${output_file}" "No Checkstyle plugin configured for this Maven project"
 }
 
 test_make_install_existing_makefile() {
@@ -565,7 +596,30 @@ test_command_routing() {
   mkdir -p "${repo}"
   mkdir -p "${repo}/code/boot/src/test/resources/compose"
   mkdir -p "${repo}/fake-bin"
-  printf '<project/>\n' > "${repo}/pom.xml"
+  cat > "${repo}/pom.xml" <<'EOF'
+<project>
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>com.example.format</groupId>
+        <artifactId>custom-javaformat-maven-plugin</artifactId>
+        <executions>
+          <execution>
+            <goals>
+              <goal>validate</goal>
+              <goal>apply</goal>
+            </goals>
+          </execution>
+        </executions>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-checkstyle-plugin</artifactId>
+      </plugin>
+    </plugins>
+  </build>
+</project>
+EOF
   printf 'services:\n  db:\n    image: postgres:16\n  admin:\n    profiles: [local]\n    image: admin:latest\n  inspector:\n    profiles:\n      - debug\n    image: inspector:latest\n' > "${repo}/code/boot/src/test/resources/compose/docker-compose.yml"
   printf 'services:\n  db:\n    environment:\n      FOO: bar\n' > "${repo}/code/boot/src/test/resources/compose/docker-compose.override.yml"
   mkdir -p "${repo}/.github/workflows"
@@ -671,6 +725,7 @@ MAKEVN_KARATE_TOOL_VERSIONS=""
 MAKEVN_RUN_CMD="printf run-ok > run.out"
 MAKEVN_FORMAT_CHECK_GOAL=""
 MAKEVN_FORMAT_APPLY_GOAL=""
+MAKEVN_CHECKSTYLE_GOAL=""
 EOF
   local build_output
   local package_output
@@ -707,7 +762,7 @@ EOF
   assert_matches "${repo}/.mvnw.log" '^ARGS=-B -nsu -f .*/pom\.xml clean package -Dformat\.skip=true -DskipTests -Dmaven\.build\.cache\.enabled=false$'
   assert_matches "${repo}/.mvnw.log" '^ARGS=-B -nsu -f .*/pom\.xml clean$'
   assert_matches "${repo}/.mvnw.log" '^ARGS=-B -nsu -f .*/pom\.xml test -Dsurefire\.failIfNoSpecifiedTests=false$'
-  assert_matches "${repo}/.mvnw.log" '^ARGS=-B -nsu -f .*/pom\.xml spotless:apply$'
+  assert_matches "${repo}/.mvnw.log" '^ARGS=-B -nsu -f .*/pom\.xml com\.example\.format:custom-javaformat-maven-plugin:apply$'
   assert_matches "${repo}/.mvnw.log" '^ARGS=-B -nsu -f .*/pom\.xml -pl module-a org\.apache\.maven\.plugins:maven-checkstyle-plugin:check -Dcheckstyle\.consoleOutput=true$'
   assert_matches "${repo}/.mvnw.log" '^ARGS=-B -nsu -f .*/pom\.xml -pl module-a -am test -Dsurefire\.failIfNoSpecifiedTests=false -Dtest=com\.example\.UserRepositoryTest -Dfailsafe\.failIfNoSpecifiedTests=false -Dmaven\.build\.cache\.enabled=true -Dsurefire\.testFailureIgnore=false$'
   assert_matches "${repo}/.mvnw.log" '^ARGS=-B -nsu -f .*/pom\.xml -pl module-a -am test -Dsurefire\.failIfNoSpecifiedTests=false -Dtest=com\.example\.OrderRepositoryTest -Dfailsafe\.failIfNoSpecifiedTests=false -Dmaven\.build\.cache\.enabled=true -Dsurefire\.testFailureIgnore=false$'
@@ -975,7 +1030,7 @@ EOF
   assert_matches "${repo}/.mvnw.log" '^ARGS=-f .*/code/pom\.xml package -DskipTests -Dmaven\.build\.cache\.enabled=false$'
   assert_contains "${repo}/.mvnw.log" "JAVA_HOME=${java_home}"
   assert_matches "${repo}/.java.log" '^JAVA_ARGS=-jar .*/code/boot/target/app\.jar$'
-  assert_contains "${repo}/.curl.log" "http://localhost:18080/actuator/health"
+  assert_contains "${repo}/.curl.log" "http://localhost:18080/products/actuator/health"
   assert_not_exists "${repo}/.makevn/app/app.pid"
   [[ "${output}" == *"[ok] "* ]] || fail "expected vn-karate-all output to include success summary"
 
@@ -1359,9 +1414,9 @@ EOF
   pr_output="$(rtk make -f .makevn/makevn.mk -C "${repo}" MAKEVN_BIN="${repo}/fake-bin/makevn-wrapper" vn-pr-verify)"
   rtk make -f .makevn/makevn.mk -C "${repo}" MAKEVN_BIN="${repo}/fake-bin/makevn-wrapper" vn-docker-ps-required >/dev/null
 
-  assert_matches "${repo}/.mvnw.log" '^ARGS=-f .*/pom\.xml verify -Djacoco\.skip=false -Dcoverage\.profile=true -DskipITs -DfailIfNoTests=false -Dmaven\.test\.failure\.ignore=false$'
-  assert_matches "${repo}/.mvnw.log" '^ARGS=-f .*/pom\.xml verify -Djacoco\.skip=false -Dcoverage\.profile=true -DskipUTs -Dskip\.unit\.tests=true -DfailIfNoTests=false -Dmaven\.test\.failure\.ignore=false -Dmaven\.build\.cache\.enabled=false$'
-  assert_matches "${repo}/.mvnw.log" '^ARGS=-B -nsu -f .*/pom\.xml clean verify -Djacoco\.skip=false -Dcoverage\.profile=true -DskipITs -DfailIfNoTests=false -Dmaven\.test\.failure\.ignore=false -Dformat\.skip=true -Dmaven\.build\.cache\.enabled=false$'
+  assert_matches "${repo}/.mvnw.log" '^ARGS=-f .*/pom\.xml verify -Djacoco\.skip=false -DskipITs -DfailIfNoTests=false -Dmaven\.test\.failure\.ignore=false$'
+  assert_matches "${repo}/.mvnw.log" '^ARGS=-f .*/pom\.xml verify -Djacoco\.skip=false -DskipUTs -Dskip\.unit\.tests=true -DfailIfNoTests=false -Dmaven\.test\.failure\.ignore=false -Dmaven\.build\.cache\.enabled=false$'
+  assert_matches "${repo}/.mvnw.log" '^ARGS=-B -nsu -f .*/pom\.xml clean verify -Djacoco\.skip=false -DskipITs -DfailIfNoTests=false -Dmaven\.test\.failure\.ignore=false -Dformat\.skip=true -Dmaven\.build\.cache\.enabled=false$'
   assert_contains "${repo}/.mvnw.log" "JAVA_HOME=${java_home}"
   assert_matches "${repo}/.docker-compose.log" '^docker-compose -f .*/code/boot/src/test/resources/compose/docker-compose\.yml -f .*/code/boot/src/test/resources/compose/docker-compose\.override\.yml ps -q db$'
   [[ "${output}" == *"[ok] "* ]] || fail "expected vn-verify-ut output to include success summary"
@@ -2020,6 +2075,8 @@ main() {
   test_doctor_unsupported
   test_backend_doctor_json
   test_standalone_mode
+  test_format_requires_configured_formatter
+  test_checkstyle_requires_configured_plugin
   test_make_install_existing_makefile
   test_make_install_without_makefile
   test_installer

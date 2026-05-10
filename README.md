@@ -181,7 +181,15 @@ Recommended agent behavior:
 - use `makevn uninstall` for rollback
 - use `verify-changes` for changed modules/tests
 - use `coverage-changes` after a coverage-producing run
+- use `format`/`checkstyle` only when the repo declares a formatter/style plugin or `.makevn/config` sets explicit goals
 - avoid `--tail` unless a human asks for interactive logs
+
+`format` detects common Maven formatters such as Spotless, `fmt-maven-plugin`,
+Revelc `formatter-maven-plugin`, Google Java Format through those plugins, and
+custom formatter plugins declared in `pom.xml`. If a repo needs explicit goals,
+set `MAKEVN_FORMAT_CHECK_GOAL`, `MAKEVN_FORMAT_APPLY_GOAL`, or
+`MAKEVN_CHECKSTYLE_GOAL` in `.makevn/config`; `makevn` will not guess a default
+goal when nothing is configured.
 
 Agents should not call target-repository legacy helpers under `scripts/make/*`.
 Those scripts can guide parity work, but runtime behavior must come from the

@@ -331,7 +331,7 @@ makevn_format_goal_for_project() {
   local repo_root="$1"
   local maven_base_path="$2"
   local apply="$3"
-  local plugin="spotless"
+  local detected_goal=""
 
   makevn_load_config "${repo_root}"
   if [[ "${apply}" == true && -n "${MAKEVN_FORMAT_APPLY_GOAL:-}" ]]; then
@@ -343,36 +343,84 @@ makevn_format_goal_for_project() {
     return 0
   fi
 
-  if grep -R -l --include pom.xml --exclude-dir target --exclude-dir node_modules '<artifactId>[[:space:]]*spotless-maven-plugin[[:space:]]*</artifactId>' "${maven_base_path}" >/dev/null 2>&1; then
-    plugin="spotless"
-  elif grep -R -l --include pom.xml --exclude-dir target --exclude-dir node_modules '<artifactId>[[:space:]]*fmt-maven-plugin[[:space:]]*</artifactId>' "${maven_base_path}" >/dev/null 2>&1; then
-    plugin="fmt"
-  elif grep -R -l --include pom.xml --exclude-dir target --exclude-dir node_modules '<artifactId>[[:space:]]*formatter-maven-plugin[[:space:]]*</artifactId>' "${maven_base_path}" >/dev/null 2>&1; then
-    plugin="formatter"
-  elif grep -R -l --include pom.xml --exclude-dir target --exclude-dir node_modules '<googleJavaFormat[ />]' "${maven_base_path}" >/dev/null 2>&1; then
-    plugin="fmt"
+  detected_goal="$(makevn_detect_format_plugin_goal "${maven_base_path}" "${apply}" || true)"
+  if [[ -n "${detected_goal}" ]]; then
+    printf '%s\n' "${detected_goal}"
+    return 0
   fi
 
-  case "${plugin}:${apply}" in
-    spotless:true)
-      printf 'spotless:apply\n'
-      ;;
-    spotless:false)
-      printf 'spotless:check\n'
-      ;;
-    formatter:true)
-      printf 'formatter:format\n'
-      ;;
-    formatter:false)
-      printf 'formatter:validate\n'
-      ;;
-    fmt:true)
-      printf 'fmt:format\n'
-      ;;
-    fmt:false)
-      printf 'fmt:check\n'
-      ;;
-  esac
+  makevn_die "No formatting plugin configured for this Maven project. Add MAKEVN_FORMAT_CHECK_GOAL and MAKEVN_FORMAT_APPLY_GOAL to .makevn/config, or declare a supported formatter plugin in pom.xml."
+}
+
+makevn_detect_format_plugin_goal() {
+  local maven_base_path="$1"
+  local apply="$2"
+  local pom_path=""
+  local detected_goal=""
+
+  while IFS= read -r pom_path; do
+    [[ -f "${pom_path}" ]] || continue
+    detected_goal="$(MAKEVN_FORMAT_APPLY="${apply}" perl -0ne '
+      my $apply = $ENV{"MAKEVN_FORMAT_APPLY"} || "false";
+
+      sub tag_value {
+        my ($xml, $tag) = @_;
+        return $1 if $xml =~ m{<$tag(?:\s[^>]*)?>\s*([^<]+?)\s*</$tag>}s;
+        return "";
+      }
+
+      sub has_goal {
+        my ($xml, $goal) = @_;
+        return $xml =~ m{<goal(?:\s[^>]*)?>\s*\Q$goal\E\s*</goal>}s;
+      }
+
+      while (m{<plugin(?:\s[^>]*)?>.*?</plugin>}sg) {
+        my $plugin = $&;
+        my $group_id = tag_value($plugin, "groupId");
+        my $artifact_id = tag_value($plugin, "artifactId");
+        next unless $artifact_id;
+
+        if ($artifact_id eq "spotless-maven-plugin") {
+          print $apply eq "true" ? "spotless:apply\n" : "spotless:check\n";
+          exit 0;
+        }
+        if ($artifact_id eq "fmt-maven-plugin") {
+          print $apply eq "true" ? "fmt:format\n" : "fmt:check\n";
+          exit 0;
+        }
+        if ($artifact_id eq "formatter-maven-plugin") {
+          print $apply eq "true" ? "formatter:format\n" : "formatter:validate\n";
+          exit 0;
+        }
+
+        my $looks_like_formatter =
+          $artifact_id =~ /(?:^|[-_.])(?:java)?format(?:ter)?(?:[-_.]|$)/i ||
+          $plugin =~ m{<googleJavaFormat(?:\s|/|>)}s;
+        next unless $looks_like_formatter && $group_id;
+
+        my $goal = "";
+        if ($apply eq "true") {
+          $goal = has_goal($plugin, "apply") ? "apply" : has_goal($plugin, "format") ? "format" : "apply";
+        } else {
+          $goal = has_goal($plugin, "validate") ? "validate" : has_goal($plugin, "check") ? "check" : "validate";
+        }
+
+        print "$group_id:$artifact_id:$goal\n";
+        exit 0;
+      }
+    ' "${pom_path}")"
+    if [[ -n "${detected_goal}" ]]; then
+      printf '%s\n' "${detected_goal}"
+      return 0
+    fi
+  done < <(
+    if [[ -f "${maven_base_path}/pom.xml" ]]; then
+      printf '%s\n' "${maven_base_path}/pom.xml"
+    fi
+    find "${maven_base_path}" \
+      \( -path '*/target/*' -o -path '*/node_modules/*' -o -path "${maven_base_path}/pom.xml" \) -prune \
+      -o -name pom.xml -type f -print 2>/dev/null | LC_ALL=C sort
+  )
 }
 
 cmd_checkstyle() {
@@ -381,6 +429,7 @@ cmd_checkstyle() {
   local verbose=false
   local maven_base_path=""
   local maven_executable=""
+  local checkstyle_goal=""
   local maven_cli_flags_value=""
   local -a maven_cli_flags
   local -a maven_args
@@ -414,6 +463,7 @@ cmd_checkstyle() {
 
   maven_base_path="$(makevn_detect_maven_base_path "${repo_root}" || true)"
   [[ -n "${maven_base_path}" ]] || makevn_die "No Maven project detected in ${repo_root}"
+  checkstyle_goal="$(makevn_checkstyle_goal_for_project "${repo_root}" "${maven_base_path}")"
   maven_executable="$(makevn_maven_executable "${repo_root}" "${maven_base_path}")"
   maven_cli_flags_value="$(makevn_maven_cli_flags_for_command "${repo_root}" checkstyle)"
   if [[ -n "${maven_cli_flags_value}" ]]; then
@@ -431,7 +481,7 @@ cmd_checkstyle() {
   if [[ -n "${module}" ]]; then
     maven_args+=(-pl "${module}")
   fi
-  maven_args+=(org.apache.maven.plugins:maven-checkstyle-plugin:check)
+  maven_args+=("${checkstyle_goal}")
   if [[ "${verbose}" == true ]]; then
     maven_args+=(-Dcheckstyle.consoleOutput=true)
   fi
@@ -440,4 +490,71 @@ cmd_checkstyle() {
   fi
 
   makevn_run_logged_in_context "${repo_root}" code "${maven_base_path}" checkstyle checkstyle checkstyle "${maven_args[@]}"
+}
+
+makevn_checkstyle_goal_for_project() {
+  local repo_root="$1"
+  local maven_base_path="$2"
+  local detected_goal=""
+
+  makevn_load_config "${repo_root}"
+  if [[ -n "${MAKEVN_CHECKSTYLE_GOAL:-}" ]]; then
+    printf '%s\n' "${MAKEVN_CHECKSTYLE_GOAL}"
+    return 0
+  fi
+
+  detected_goal="$(makevn_detect_checkstyle_plugin_goal "${maven_base_path}" || true)"
+  if [[ -n "${detected_goal}" ]]; then
+    printf '%s\n' "${detected_goal}"
+    return 0
+  fi
+  detected_goal="$(makevn_detect_format_plugin_goal "${maven_base_path}" false || true)"
+  if [[ -n "${detected_goal}" ]]; then
+    printf '%s\n' "${detected_goal}"
+    return 0
+  fi
+
+  makevn_die "No Checkstyle plugin configured for this Maven project. Add MAKEVN_CHECKSTYLE_GOAL to .makevn/config, or declare maven-checkstyle-plugin or a formatter validation plugin in pom.xml."
+}
+
+makevn_detect_checkstyle_plugin_goal() {
+  local maven_base_path="$1"
+  local pom_path=""
+  local detected_goal=""
+
+  while IFS= read -r pom_path; do
+    [[ -f "${pom_path}" ]] || continue
+    detected_goal="$(perl -0ne '
+      sub tag_value {
+        my ($xml, $tag) = @_;
+        return $1 if $xml =~ m{<$tag(?:\s[^>]*)?>\s*([^<]+?)\s*</$tag>}s;
+        return "";
+      }
+
+      while (m{<plugin(?:\s[^>]*)?>.*?</plugin>}sg) {
+        my $plugin = $&;
+        my $group_id = tag_value($plugin, "groupId");
+        my $artifact_id = tag_value($plugin, "artifactId");
+        next unless $artifact_id eq "maven-checkstyle-plugin";
+
+        if ($group_id && $group_id ne "org.apache.maven.plugins") {
+          print "$group_id:$artifact_id:check\n";
+        } else {
+          print "org.apache.maven.plugins:maven-checkstyle-plugin:check\n";
+        }
+        exit 0;
+      }
+    ' "${pom_path}")"
+    if [[ -n "${detected_goal}" ]]; then
+      printf '%s\n' "${detected_goal}"
+      return 0
+    fi
+  done < <(
+    if [[ -f "${maven_base_path}/pom.xml" ]]; then
+      printf '%s\n' "${maven_base_path}/pom.xml"
+    fi
+    find "${maven_base_path}" \
+      \( -path '*/target/*' -o -path '*/node_modules/*' -o -path "${maven_base_path}/pom.xml" \) -prune \
+      -o -name pom.xml -type f -print 2>/dev/null | LC_ALL=C sort
+  )
 }

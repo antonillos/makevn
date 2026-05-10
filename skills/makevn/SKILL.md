@@ -45,6 +45,7 @@ It provides:
 12. Karate tests need the real app running. Use `makevn run-app-bg` before `makevn karate-test`, and always finish with `makevn stop-app`; `makevn karate-all` owns that lifecycle for the full flow.
 13. Do not assume every repository uses `LOCAL_CONTAINERS`. Let `makevn doctor`, `.makevn/config`, the repository profile, or the user's exported `LOCAL_CONTAINERS` decide that behavior.
 14. Do not hardcode company-specific application health URLs, path prefixes, package names, or repository paths. Let `makevn doctor` detect the health URL, or set `MAKEVN_APP_HEALTH_URL` in `.makevn/config` when the repository needs an explicit override.
+15. Do not invent formatter or Checkstyle goals. Use `makevn format` and `makevn checkstyle` only when the repo declares a supported plugin or `.makevn/config` sets `MAKEVN_FORMAT_CHECK_GOAL`, `MAKEVN_FORMAT_APPLY_GOAL`, or `MAKEVN_CHECKSTYLE_GOAL`.
 
 ## When A Command Counts As OK
 
