@@ -262,6 +262,8 @@ test_standalone_mode() {
   ${CLI} --repo "${repo}" init >/dev/null
   assert_dir_exists "${repo}/.makevn"
   assert_file_exists "${repo}/.makevn/config"
+  assert_contains "${repo}/.makevn/config" 'MAKEVN_FORMAT_CHECK_GOAL=""'
+  assert_contains "${repo}/.makevn/config" 'MAKEVN_FORMAT_APPLY_GOAL=""'
   assert_file_exists "${repo}/.makevn/profile.env"
   assert_dir_exists "${repo}/.makevn/logs"
   assert_not_exists "${repo}/Makefile"
@@ -386,12 +388,12 @@ test_profile_refresh_bans_ci_only_verify_flags() {
 jobs:
   verify:
     steps:
-      - run: mvn -B verify -Dmaven.build.cache.enabled=true -DskipITs -DskipUTs -Dsonar.token=fake -DoutputName=report -Dexec.args=foo -DskipEnforceSnapshots -Djacoco.skip=false -Damiga.jacoco -DfailIfNoTests=false -Dmaven.test.failure.ignore=false
+      - run: mvn -B verify -Dmaven.build.cache.enabled=true -DskipITs -DskipUTs -Dsonar.token=fake -DoutputName=report -Dexec.args=foo -DskipEnforceSnapshots -Djacoco.skip=false -Dcoverage.profile=true -DfailIfNoTests=false -Dmaven.test.failure.ignore=false
 EOF
 
   ${CLI} --repo "${repo}" profile refresh >/dev/null
   assert_contains "${repo}/.makevn/profile.env" 'MAKEVN_PROFILE_VERIFY_CLI_FLAGS=-B'
-  assert_contains "${repo}/.makevn/profile.env" 'MAKEVN_PROFILE_VERIFY_PROP_FLAGS=-DskipEnforceSnapshots -Djacoco.skip=false -Damiga.jacoco -DfailIfNoTests=false -Dmaven.test.failure.ignore=false'
+  assert_contains "${repo}/.makevn/profile.env" 'MAKEVN_PROFILE_VERIFY_PROP_FLAGS=-DskipEnforceSnapshots -Djacoco.skip=false -Dcoverage.profile=true -DfailIfNoTests=false -Dmaven.test.failure.ignore=false'
   assert_not_contains "${repo}/.makevn/profile.env" '-Dmaven.build.cache.enabled=true'
   assert_not_contains "${repo}/.makevn/profile.env" '-DskipITs'
   assert_not_contains "${repo}/.makevn/profile.env" '-DskipUTs'
@@ -574,7 +576,7 @@ test_command_routing() {
 jobs:
   build:
     steps:
-      - run: ./mvnw -B clean package -Dmaven.build.cache.enabled=false -Damiga-javaformat.skip=true -DskipTests
+      - run: ./mvnw -B clean package -Dmaven.build.cache.enabled=false -Dformat.skip=true -DskipTests
 EOF
   cat > "${repo}/.github/workflows/test.yml" <<'EOF'
 jobs:
@@ -667,6 +669,8 @@ MAKEVN_KARATE_JAVA_HOME=""
 MAKEVN_CODE_TOOL_VERSIONS=""
 MAKEVN_KARATE_TOOL_VERSIONS=""
 MAKEVN_RUN_CMD="printf run-ok > run.out"
+MAKEVN_FORMAT_CHECK_GOAL=""
+MAKEVN_FORMAT_APPLY_GOAL=""
 EOF
   local build_output
   local package_output
@@ -678,6 +682,8 @@ EOF
   package_output="$(PATH="${repo}/fake-bin:${PATH}" rtk make -f .makevn/makevn.mk -C "${repo}" vn-package)"
   PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" clean >/dev/null
   PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" test >/dev/null
+  PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" format --apply >/dev/null
+  PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" checkstyle --module module-a --verbose >/dev/null
   PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" test --name UserRepositoryTest >/dev/null
   PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" test --name UserRepositoryTest,OrderRepositoryTest >/dev/null
   mkdir -p "${repo}/module-a/target/test-classes"
@@ -691,20 +697,22 @@ EOF
   [[ "${make_output}" == *"[ok] "* ]] || fail "expected vn-test fast output to include success summary"
   assert_contains "${repo}/.makevn/profile.env" 'MAKEVN_PROFILE_MAVEN_CLI_FLAGS=-B\ -nsu'
   assert_contains "${repo}/.makevn/profile.env" 'MAKEVN_PROFILE_BUILD_PRE_GOALS=clean'
-  assert_contains "${repo}/.makevn/profile.env" 'MAKEVN_PROFILE_BUILD_PROP_FLAGS=-Damiga-javaformat.skip=true'
+  assert_contains "${repo}/.makevn/profile.env" 'MAKEVN_PROFILE_BUILD_PROP_FLAGS=-Dformat.skip=true'
   assert_contains "${repo}/.makevn/profile.env" 'MAKEVN_PROFILE_TEST_PROP_FLAGS=-Dsurefire.failIfNoSpecifiedTests=false'
   assert_not_contains "${repo}/.makevn/profile.env" 'MAKEVN_PROFILE_VERIFY_PRE_GOALS=clean'
   assert_contains "${repo}/.makevn/profile.env" 'MAKEVN_PROFILE_VERIFY_PROP_FLAGS=-DfailIfNoTests=false'
-  assert_matches "${repo}/.mvnw.log" '^ARGS=-B -nsu -f .*/pom\.xml clean package -Damiga-javaformat\.skip=true -DskipTests$'
+  assert_matches "${repo}/.mvnw.log" '^ARGS=-B -nsu -f .*/pom\.xml clean package -Dformat\.skip=true -DskipTests$'
   assert_matches "${repo}/.mvnw.log" '^ARGS=-B -nsu -f .*/pom\.xml test-compile$'
   assert_matches "${repo}/.mvnw.log" '^ARGS=-B -nsu -f .*/pom\.xml validate$'
-  assert_matches "${repo}/.mvnw.log" '^ARGS=-B -nsu -f .*/pom\.xml clean package -Damiga-javaformat\.skip=true$'
+  assert_matches "${repo}/.mvnw.log" '^ARGS=-B -nsu -f .*/pom\.xml clean package -Dformat\.skip=true -DskipTests -Dmaven\.build\.cache\.enabled=false$'
   assert_matches "${repo}/.mvnw.log" '^ARGS=-B -nsu -f .*/pom\.xml clean$'
   assert_matches "${repo}/.mvnw.log" '^ARGS=-B -nsu -f .*/pom\.xml test -Dsurefire\.failIfNoSpecifiedTests=false$'
-  assert_matches "${repo}/.mvnw.log" '^ARGS=-B -nsu -f .*/pom\.xml -pl module-a -am test -Dsurefire\.failIfNoSpecifiedTests=false -Damiga-javaformat\.skip=true -Dtest=com\.example\.UserRepositoryTest -Dfailsafe\.failIfNoSpecifiedTests=false -Dmaven\.build\.cache\.enabled=true -Dsurefire\.testFailureIgnore=false$'
-  assert_matches "${repo}/.mvnw.log" '^ARGS=-B -nsu -f .*/pom\.xml -pl module-a -am test -Dsurefire\.failIfNoSpecifiedTests=false -Damiga-javaformat\.skip=true -Dtest=com\.example\.OrderRepositoryTest -Dfailsafe\.failIfNoSpecifiedTests=false -Dmaven\.build\.cache\.enabled=true -Dsurefire\.testFailureIgnore=false$'
-  assert_matches "${repo}/.mvnw.log" '^ARGS=-B -nsu -f .*/pom\.xml -pl module-a -am surefire:test -Dsurefire\.failIfNoSpecifiedTests=false -Damiga-javaformat\.skip=true -Dtest=com\.example\.UserRepositoryTest -Dfailsafe\.failIfNoSpecifiedTests=false -Dmaven\.build\.cache\.enabled=true -Dsurefire\.testFailureIgnore=false$'
-  assert_matches "${repo}/.mvnw.log" '^ARGS=-B -nsu -f .*/pom\.xml -pl module-a -am test-compile failsafe:integration-test -Dsurefire\.failIfNoSpecifiedTests=false -Damiga-javaformat\.skip=true -Dit\.test=com\.example\.UserFlowIT -Dfailsafe\.failIfNoSpecifiedTests=false -Dmaven\.build\.cache\.enabled=true$'
+  assert_matches "${repo}/.mvnw.log" '^ARGS=-B -nsu -f .*/pom\.xml spotless:apply$'
+  assert_matches "${repo}/.mvnw.log" '^ARGS=-B -nsu -f .*/pom\.xml -pl module-a org\.apache\.maven\.plugins:maven-checkstyle-plugin:check -Dcheckstyle\.consoleOutput=true$'
+  assert_matches "${repo}/.mvnw.log" '^ARGS=-B -nsu -f .*/pom\.xml -pl module-a -am test -Dsurefire\.failIfNoSpecifiedTests=false -Dtest=com\.example\.UserRepositoryTest -Dfailsafe\.failIfNoSpecifiedTests=false -Dmaven\.build\.cache\.enabled=true -Dsurefire\.testFailureIgnore=false$'
+  assert_matches "${repo}/.mvnw.log" '^ARGS=-B -nsu -f .*/pom\.xml -pl module-a -am test -Dsurefire\.failIfNoSpecifiedTests=false -Dtest=com\.example\.OrderRepositoryTest -Dfailsafe\.failIfNoSpecifiedTests=false -Dmaven\.build\.cache\.enabled=true -Dsurefire\.testFailureIgnore=false$'
+  assert_matches "${repo}/.mvnw.log" '^ARGS=-B -nsu -f .*/pom\.xml -pl module-a -am surefire:test -Dsurefire\.failIfNoSpecifiedTests=false -Dtest=com\.example\.UserRepositoryTest -Dfailsafe\.failIfNoSpecifiedTests=false -Dmaven\.build\.cache\.enabled=true -Dsurefire\.testFailureIgnore=false$'
+  assert_matches "${repo}/.mvnw.log" '^ARGS=-B -nsu -f .*/pom\.xml -pl module-a -am test-compile failsafe:integration-test -Dsurefire\.failIfNoSpecifiedTests=false -Dit\.test=com\.example\.UserFlowIT -Dfailsafe\.failIfNoSpecifiedTests=false -Dmaven\.build\.cache\.enabled=true$'
   assert_matches "${repo}/.mvnw.log" '^ARGS=-B -nsu -f .*/pom\.xml verify -DfailIfNoTests=false -Dmaven\.build\.cache\.enabled=false$'
   assert_contains "${repo}/.mvnw.log" "JAVA_HOME=${java_home}"
   assert_contains "${repo}/.mvnw.log" "LOCAL_CONTAINERS="
@@ -964,10 +972,10 @@ EOF
   assert_matches "${repo}/.docker-compose.log" '^docker-compose -f .*/e2e/karate/src/test/resources/compose/docker-compose\.yml -f .*/e2e/karate/src/test/resources/compose/docker-compose\.override\.yml up --detach$'
   assert_matches "${repo}/.docker-compose.log" '^docker-compose -f .*/e2e/karate/src/test/resources/compose/docker-compose\.yml -f .*/e2e/karate/src/test/resources/compose/docker-compose\.override\.yml ps -q db$'
   assert_matches "${repo}/.mvnw.log" '^ARGS=-nsu -f .*/e2e/karate/pom\.xml test -Dkarate\.env=local -Dkarate\.report\.options=--showLog true -Dkarate\.options=-t@smoke$'
-  assert_matches "${repo}/.mvnw.log" '^ARGS=-f .*/code/pom\.xml package$'
+  assert_matches "${repo}/.mvnw.log" '^ARGS=-f .*/code/pom\.xml package -DskipTests -Dmaven\.build\.cache\.enabled=false$'
   assert_contains "${repo}/.mvnw.log" "JAVA_HOME=${java_home}"
   assert_matches "${repo}/.java.log" '^JAVA_ARGS=-jar .*/code/boot/target/app\.jar$'
-  assert_contains "${repo}/.curl.log" "http://localhost:18080/products/internal/health"
+  assert_contains "${repo}/.curl.log" "http://localhost:18080/actuator/health"
   assert_not_exists "${repo}/.makevn/app/app.pid"
   [[ "${output}" == *"[ok] "* ]] || fail "expected vn-karate-all output to include success summary"
 
@@ -1351,9 +1359,9 @@ EOF
   pr_output="$(rtk make -f .makevn/makevn.mk -C "${repo}" MAKEVN_BIN="${repo}/fake-bin/makevn-wrapper" vn-pr-verify)"
   rtk make -f .makevn/makevn.mk -C "${repo}" MAKEVN_BIN="${repo}/fake-bin/makevn-wrapper" vn-docker-ps-required >/dev/null
 
-  assert_matches "${repo}/.mvnw.log" '^ARGS=-f .*/pom\.xml verify -Djacoco\.skip=false -Damiga\.jacoco -DskipITs -DfailIfNoTests=false -Dmaven\.test\.failure\.ignore=false$'
-  assert_matches "${repo}/.mvnw.log" '^ARGS=-f .*/pom\.xml verify -Djacoco\.skip=false -Damiga\.jacoco -DskipUTs -Dskip\.unit\.tests=true -DfailIfNoTests=false -Dmaven\.test\.failure\.ignore=false -Dmaven\.build\.cache\.enabled=false$'
-  assert_matches "${repo}/.mvnw.log" '^ARGS=-B -nsu -f .*/pom\.xml clean verify -Djacoco\.skip=false -Damiga\.jacoco -DskipITs -DfailIfNoTests=false -Dmaven\.test\.failure\.ignore=false -Damiga-javaformat\.skip=true -Dmaven\.build\.cache\.enabled=false$'
+  assert_matches "${repo}/.mvnw.log" '^ARGS=-f .*/pom\.xml verify -Djacoco\.skip=false -Dcoverage\.profile=true -DskipITs -DfailIfNoTests=false -Dmaven\.test\.failure\.ignore=false$'
+  assert_matches "${repo}/.mvnw.log" '^ARGS=-f .*/pom\.xml verify -Djacoco\.skip=false -Dcoverage\.profile=true -DskipUTs -Dskip\.unit\.tests=true -DfailIfNoTests=false -Dmaven\.test\.failure\.ignore=false -Dmaven\.build\.cache\.enabled=false$'
+  assert_matches "${repo}/.mvnw.log" '^ARGS=-B -nsu -f .*/pom\.xml clean verify -Djacoco\.skip=false -Dcoverage\.profile=true -DskipITs -DfailIfNoTests=false -Dmaven\.test\.failure\.ignore=false -Dformat\.skip=true -Dmaven\.build\.cache\.enabled=false$'
   assert_contains "${repo}/.mvnw.log" "JAVA_HOME=${java_home}"
   assert_matches "${repo}/.docker-compose.log" '^docker-compose -f .*/code/boot/src/test/resources/compose/docker-compose\.yml -f .*/code/boot/src/test/resources/compose/docker-compose\.override\.yml ps -q db$'
   [[ "${output}" == *"[ok] "* ]] || fail "expected vn-verify-ut output to include success summary"
@@ -1436,7 +1444,7 @@ test_verify_it_uses_verify_lifecycle_when_verify_workflow_skips_it() {
 jobs:
   verify:
     steps:
-      - run: mvn -B -nsu clean verify -DskipITs -DfailIfNoTests=false -Damiga-javaformat.skip=true
+      - run: mvn -B -nsu clean verify -DskipITs -DfailIfNoTests=false -Dformat.skip=true
 EOF
 
   ${CLI} --repo "${repo}" init >/dev/null
@@ -1497,7 +1505,7 @@ EOF
 
   PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" verify-it >/dev/null
 
-  assert_matches "${repo}/.mvnw.log" '^ARGS=-B -nsu -f .*/pom\.xml verify -DfailIfNoTests=false -Damiga-javaformat\.skip=true -Djacoco\.skip=false -Damiga\.jacoco -DskipUTs -Dskip\.unit\.tests=true -Dmaven\.test\.failure\.ignore=false -Dmaven\.build\.cache\.enabled=false$'
+  assert_matches "${repo}/.mvnw.log" '^ARGS=-B -nsu -f .*/pom\.xml verify -DfailIfNoTests=false -Dformat\.skip=true -Djacoco\.skip=false -Dcoverage\.profile=true -DskipUTs -Dskip\.unit\.tests=true -Dmaven\.test\.failure\.ignore=false -Dmaven\.build\.cache\.enabled=false$'
   assert_contains "${repo}/.mvnw.log" "JAVA_HOME=${java_home}"
 
   ${CLI} --repo "${repo}" uninstall >/dev/null
@@ -1526,7 +1534,7 @@ EOF
 jobs:
   integration:
     steps:
-      - run: mvn -B -nsu install -Djacoco.skip=false -Damiga.jacoco -DskipUTs -Dskip.unit.tests=true -DfailIfNoTests=false -Dmaven.test.failure.ignore=false
+      - run: mvn -B -nsu install -Djacoco.skip=false -Dcoverage.profile=true -DskipUTs -Dskip.unit.tests=true -DfailIfNoTests=false -Dmaven.test.failure.ignore=false
 EOF
 
   ${CLI} --repo "${repo}" init >/dev/null
@@ -1588,7 +1596,7 @@ EOF
 
   PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" verify-it >/dev/null
 
-  assert_matches "${repo}/.mvnw.log" '^ARGS=-f .*/pom\.xml -B -nsu verify -Djacoco\.skip=false -Damiga\.jacoco -DskipUTs -Dskip\.unit\.tests=true -DfailIfNoTests=false -Dmaven\.test\.failure\.ignore=false -Dmaven\.build\.cache\.enabled=false$'
+  assert_matches "${repo}/.mvnw.log" '^ARGS=-f .*/pom\.xml -B -nsu verify -Djacoco\.skip=false -Dcoverage\.profile=true -DskipUTs -Dskip\.unit\.tests=true -DfailIfNoTests=false -Dmaven\.test\.failure\.ignore=false -Dmaven\.build\.cache\.enabled=false$'
   assert_contains "${repo}/.mvnw.log" "JAVA_HOME=${java_home}"
   assert_contains "${repo}/.mvnw.log" "LOCAL_CONTAINERS=TRUE"
 
@@ -1781,7 +1789,7 @@ EOF
   output="$(${CLI} --repo "${repo}" verify-changes)"
 
   [[ "${output}" == *"[ok] "* ]] || fail "expected verify-changes output to include success summary"
-  assert_matches "${repo}/.mvnw.log" '^ARGS=-nsu -f .*/pom\.xml verify -Damiga-javaformat\.skip=true -DskipUTs=false -Dtest=com\.example\.ChangedTest -Dit\.test=com\.example\.ChangedTest -Dfailsafe\.failIfNoSpecifiedTests=false -Dsurefire\.failIfNoSpecifiedTests=false -Dawaitility\.defaultPollInterval=200ms -Dawaitility\.defaultTimeout=2m -Djacoco\.skip=false -Damiga\.jacoco -Dmaven\.build\.cache\.enabled=false$'
+  assert_matches "${repo}/.mvnw.log" '^ARGS=-nsu -f .*/pom\.xml verify -Dformat\.skip=true -DskipUTs=false -Dtest=com\.example\.ChangedTest -Dit\.test=com\.example\.ChangedTest -Dfailsafe\.failIfNoSpecifiedTests=false -Dsurefire\.failIfNoSpecifiedTests=false -Dawaitility\.defaultPollInterval=200ms -Dawaitility\.defaultTimeout=2m -Djacoco\.skip=false -Dcoverage\.profile=true -Dmaven\.build\.cache\.enabled=false$'
   assert_contains "${repo}/.mvnw.log" "JAVA_HOME=${java_home}"
 
   ${CLI} --repo "${repo}" uninstall >/dev/null
@@ -1942,7 +1950,7 @@ EOF
   assert_file_exists "${repo}/.makevn/logs/clean.log"
   assert_file_exists "${repo}/.makevn/logs/verify-it.log"
   assert_matches "${repo}/.mvnw.log" '^ARGS=-f .*/pom\.xml clean$'
-  assert_matches "${repo}/.mvnw.log" '^ARGS=-f .*/pom\.xml verify -Djacoco\.skip=false -Damiga\.jacoco -DskipUTs -Dskip\.unit\.tests=true -DfailIfNoTests=false -Dmaven\.test\.failure\.ignore=false -Dmaven\.build\.cache\.enabled=false$'
+  assert_matches "${repo}/.mvnw.log" '^ARGS=-f .*/pom\.xml verify -Djacoco\.skip=false -Dcoverage\.profile=true -DskipUTs -Dskip\.unit\.tests=true -DfailIfNoTests=false -Dmaven\.test\.failure\.ignore=false -Dmaven\.build\.cache\.enabled=false$'
   assert_contains "${repo}/.mvnw.log" "JAVA_HOME=${java_home}"
 
   "${seq_cli}" --repo "${repo}" uninstall >/dev/null

@@ -19,9 +19,11 @@ cmd_verify_changes() {
   local jacoco_module=""
   local local_containers=""
   local cli_flags_value=""
+  local prop_flags_value=""
   local log_name="verify-changes"
   local rc=0
   local -a cli_flags=()
+  local -a prop_flags=()
   local -a extra_args
   local -a verify_args=()
 
@@ -96,6 +98,11 @@ No modified Java files detected. Skipping verify-changes."
   if [[ -n "${cli_flags_value}" ]]; then
     read -r -a cli_flags <<< "${cli_flags_value}"
   fi
+  prop_flags_value="$(makevn_maven_prop_flags_for_command "${repo_root}" verify)"
+  prop_flags_value="$(makevn_append_coverage_prop_flags "${repo_root}" "${prop_flags_value}")"
+  if [[ -n "${prop_flags_value}" ]]; then
+    read -r -a prop_flags <<< "${prop_flags_value}"
+  fi
 
   if [[ -n "${changed_src}" ]]; then
     modules="$(printf '%s\n' "${changed_src}" | sed "s|^${strip_prefix}||" | sed 's|/src/.*||' | LC_ALL=C sort -u | paste -sd, -)"
@@ -114,7 +121,11 @@ No modified Java files detected. Skipping verify-changes."
     if [[ ${#cli_flags[@]} -gt 0 ]]; then
       verify_args+=("${cli_flags[@]}")
     fi
-    verify_args+=(-f "${maven_base_path}/pom.xml" -pl "${module_selection}" verify -Djacoco.skip=false -Damiga.jacoco -DskipTests=false -Dmaven.test.failure.ignore=false -Damiga-javaformat.skip=true -Dmaven.build.cache.enabled=false)
+    verify_args+=(-f "${maven_base_path}/pom.xml" -pl "${module_selection}" verify)
+    if [[ ${#prop_flags[@]} -gt 0 ]]; then
+      verify_args+=("${prop_flags[@]}")
+    fi
+    verify_args+=(-DskipTests=false -Dmaven.test.failure.ignore=false -Dmaven.build.cache.enabled=false)
     if [[ ${#extra_args[@]} -gt 0 ]]; then
       verify_args+=("${extra_args[@]}")
     fi
@@ -133,7 +144,11 @@ No modified Java files detected. Skipping verify-changes."
   if [[ ${#cli_flags[@]} -gt 0 ]]; then
     verify_args+=("${cli_flags[@]}")
   fi
-  verify_args+=(-f "${maven_base_path}/pom.xml" verify -Damiga-javaformat.skip=true -DskipUTs=false -Dtest="${test_list}" -Dit.test="${test_list}" -Dfailsafe.failIfNoSpecifiedTests=false -Dsurefire.failIfNoSpecifiedTests=false -Dawaitility.defaultPollInterval=200ms -Dawaitility.defaultTimeout=2m -Djacoco.skip=false -Damiga.jacoco -Dmaven.build.cache.enabled=false)
+  verify_args+=(-f "${maven_base_path}/pom.xml" verify)
+  if [[ ${#prop_flags[@]} -gt 0 ]]; then
+    verify_args+=("${prop_flags[@]}")
+  fi
+  verify_args+=(-DskipUTs=false -Dtest="${test_list}" -Dit.test="${test_list}" -Dfailsafe.failIfNoSpecifiedTests=false -Dsurefire.failIfNoSpecifiedTests=false -Dawaitility.defaultPollInterval=200ms -Dawaitility.defaultTimeout=2m -Dmaven.build.cache.enabled=false)
   if [[ ${#extra_args[@]} -gt 0 ]]; then
     verify_args+=("${extra_args[@]}")
   fi

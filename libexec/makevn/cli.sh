@@ -38,6 +38,8 @@ Usage:
   makevn [--repo PATH] verify-changes [-- EXTRA_MAVEN_ARGS...]
   makevn [--repo PATH] coverage-changes [--threshold PCT]
   makevn [--repo PATH] pr-verify [-- EXTRA_MAVEN_ARGS...]
+  makevn [--repo PATH] format [--apply] [-- EXTRA_MAVEN_ARGS...]
+  makevn [--repo PATH] checkstyle [--module MODULE] [--verbose] [-- EXTRA_MAVEN_ARGS...]
   makevn [--repo PATH] docker-up [--tail]
   makevn [--repo PATH] docker-down [--tail]
   makevn [--repo PATH] docker-ps [--tail]
@@ -77,6 +79,8 @@ Examples:
   makevn verify-changes
   makevn coverage-changes
   makevn pr-verify
+  makevn format --apply
+  makevn checkstyle --module domain --verbose
   makevn docker-up
   makevn docker-ps-required
   makevn docker-ps-required --compose karate
@@ -243,6 +247,12 @@ case "${COMMAND}" in
     ;;
   pr-verify)
     cmd_pr_verify "${REPO_ROOT}" "$@"
+    ;;
+  format)
+    cmd_format "${REPO_ROOT}" "$@"
+    ;;
+  checkstyle)
+    cmd_checkstyle "${REPO_ROOT}" "$@"
     ;;
   docker-up)
     cmd_docker_up "${REPO_ROOT}" "$@"

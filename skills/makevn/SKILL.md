@@ -163,6 +163,8 @@ makevn verify
 makevn verify-changes
 makevn coverage-changes
 makevn pr-verify
+makevn format --apply
+makevn checkstyle --module domain --verbose
 makevn docker-up
 makevn docker-down
 makevn docker-ps

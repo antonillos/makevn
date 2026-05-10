@@ -90,6 +90,8 @@ makevn test
 makevn test --name UserRepositoryTest
 makevn test --name UserRepositoryTest,OrderRepositoryTest
 makevn test --fast --name UserRepositoryTest
+makevn format --apply
+makevn checkstyle --module domain --verbose
 makevn docker-up
 makevn docker-down
 makevn docker-ps

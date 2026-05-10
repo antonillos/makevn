@@ -93,6 +93,7 @@ const COMMAND_SEQUENCE_BREAKERS: &[&str] = &[
     "--threshold",
     "--tag",
     "--compose",
+    "--module",
 ];
 
 #[derive(Debug)]
@@ -111,8 +112,7 @@ impl BackendDetailFile {
             .duration_since(UNIX_EPOCH)
             .map_err(|error| format!("failed to resolve detail timestamp: {error}"))?
             .as_nanos();
-        let path =
-            env::temp_dir().join(format!("makevn-{}-{unique_suffix}.detail", process::id()));
+        let path = env::temp_dir().join(format!("makevn-{}-{unique_suffix}.detail", process::id()));
         Ok(Self { path })
     }
 
@@ -312,7 +312,8 @@ fn validate_command(
     match command.to_string_lossy().as_ref() {
         "compile" | "test-compile" | "compile-tests" | "validate" | "package" | "clean"
         | "build" | "verify-ut" | "verify-ut-coverage" | "verify-it" | "verify-it-coverage"
-        | "verify" | "verify-changes" | "pr-verify" | "karate-test" | "karate-all" => {
+        | "verify" | "verify-changes" | "pr-verify" | "format" | "checkstyle" | "karate-test"
+        | "karate-all" => {
             validate_maven_passthrough_args(command, trailing_args)?;
             Ok(CommandValidation::Valid)
         }
@@ -402,6 +403,7 @@ fn maven_option_takes_value(arg: &OsString) -> bool {
             | "--toolchains"
             | "-rf"
             | "--resume-from"
+            | "--module"
     )
 }
 
@@ -479,6 +481,8 @@ fn is_top_level_command(arg: &OsString) -> bool {
             | "verify-changes"
             | "coverage-changes"
             | "pr-verify"
+            | "format"
+            | "checkstyle"
             | "docker-up"
             | "docker-down"
             | "docker-ps"
@@ -498,7 +502,7 @@ fn is_top_level_command(arg: &OsString) -> bool {
 fn command_option_takes_value(arg: &OsString) -> bool {
     matches!(
         arg.to_string_lossy().as_ref(),
-        "--name" | "--context" | "--threshold" | "--tag" | "--compose"
+        "--name" | "--context" | "--threshold" | "--tag" | "--compose" | "--module"
     )
 }
 
@@ -591,6 +595,8 @@ fn command_supports_frontend_loader(command: &OsString) -> bool {
             | "verify"
             | "verify-changes"
             | "pr-verify"
+            | "format"
+            | "checkstyle"
             | "docker-up"
             | "docker-down"
             | "docker-ps"
@@ -694,7 +700,10 @@ fn dispatch_backend_invocations(
         };
 
         // Snapshot detail lines into the summary then clear for the next command.
-        let detail_lines = detail_file.as_ref().map(|df| df.read_lines()).unwrap_or_default();
+        let detail_lines = detail_file
+            .as_ref()
+            .map(|df| df.read_lines())
+            .unwrap_or_default();
         if let Some(df) = detail_file.as_ref() {
             df.clear();
         }
@@ -1916,7 +1925,10 @@ impl SpinnerRenderer {
         };
 
         let total_lines = 1
-            + completed_summaries.iter().map(|s| 1 + s.detail_lines.len()).sum::<usize>()
+            + completed_summaries
+                .iter()
+                .map(|s| 1 + s.detail_lines.len())
+                .sum::<usize>()
             + current_detail_lines.len()
             + 2; // running command + spinner
         let mut lines = Vec::with_capacity(total_lines);
@@ -2287,6 +2299,10 @@ fn print_help(with_header: bool) {
     println!("  makevn [--repo PATH] verify-changes [--tail] [-- EXTRA_MAVEN_ARGS...]");
     println!("  makevn [--repo PATH] coverage-changes [--threshold PCT]");
     println!("  makevn [--repo PATH] pr-verify [--tail] [-- EXTRA_MAVEN_ARGS...]");
+    println!("  makevn [--repo PATH] format [--tail] [--apply] [-- EXTRA_MAVEN_ARGS...]");
+    println!(
+        "  makevn [--repo PATH] checkstyle [--tail] [--module MODULE] [--verbose] [-- EXTRA_MAVEN_ARGS...]"
+    );
     println!("  makevn [--repo PATH] docker-up [--tail]");
     println!("  makevn [--repo PATH] docker-down [--tail]");
     println!("  makevn [--repo PATH] docker-ps [--tail]");
@@ -2326,6 +2342,8 @@ fn print_help(with_header: bool) {
     println!("  makevn verify-changes");
     println!("  makevn coverage-changes");
     println!("  makevn pr-verify");
+    println!("  makevn format --apply");
+    println!("  makevn checkstyle --module domain --verbose");
     println!("  makevn docker-up");
     println!("  makevn karate-test");
     println!("  makevn karate-test --tag @smoke");
@@ -2705,6 +2723,60 @@ mod tests {
                 ],
                 frontend_loader: true,
                 tail: false,
+            }])
+        );
+    }
+
+    #[test]
+    fn parses_format_apply_as_loader_command() {
+        let current_dir = env::current_dir().unwrap();
+        let action = parse_invocation(vec![
+            OsString::from("format"),
+            OsString::from("--apply"),
+            OsString::from("--tail"),
+        ])
+        .unwrap();
+
+        assert_eq!(
+            action,
+            Action::DispatchToBackend(vec![BackendInvocation {
+                args: vec![
+                    OsString::from("format"),
+                    OsString::from("--repo"),
+                    current_dir.into_os_string(),
+                    OsString::from("--apply"),
+                ],
+                frontend_loader: true,
+                tail: true,
+            }])
+        );
+    }
+
+    #[test]
+    fn parses_checkstyle_module_verbose_as_loader_command() {
+        let current_dir = env::current_dir().unwrap();
+        let action = parse_invocation(vec![
+            OsString::from("checkstyle"),
+            OsString::from("--module"),
+            OsString::from("domain"),
+            OsString::from("--verbose"),
+            OsString::from("--tail"),
+        ])
+        .unwrap();
+
+        assert_eq!(
+            action,
+            Action::DispatchToBackend(vec![BackendInvocation {
+                args: vec![
+                    OsString::from("checkstyle"),
+                    OsString::from("--repo"),
+                    current_dir.into_os_string(),
+                    OsString::from("--module"),
+                    OsString::from("domain"),
+                    OsString::from("--verbose"),
+                ],
+                frontend_loader: true,
+                tail: true,
             }])
         );
     }

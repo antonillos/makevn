@@ -91,12 +91,10 @@ if [ -n "$CHANGED_JAVA_SRC" ]; then
         # Run tests (set +e temporarily to capture exit code)
         set +e
         mvn -f "${BASE_PATH}" \
-            -Damiga-javaformat.skip=true \
             -DskipTests=false \
             -Dmaven.build.cache.enabled=false \
             -pl "$MODULES,$JACOCO_MODULE" \
             -Djacoco.skip=false \
-            -Damiga.jacoco \
             verify -nsu
         TEST_EXIT_CODE=$?
         set -e
@@ -124,13 +122,13 @@ elif [ -n "$CHANGED_JAVA_TEST" ]; then
     echo "🧪 Running $TEST_COUNT test(s): $TEST_LIST"
     echo ""
     set +e  # Temporarily disable exit-on-error to capture exit code
-    LOCAL_CONTAINERS=${LOCAL_TEST} mvn -f "${BASE_PATH}" -Damiga-javaformat.skip=true \
+    LOCAL_CONTAINERS=${LOCAL_TEST} mvn -f "${BASE_PATH}" \
         -DskipUTs=false \
         -Dtest="$TEST_LIST" \
         -Dit.test="$TEST_LIST" \
         -Dfailsafe.failIfNoSpecifiedTests=false -Dsurefire.failIfNoSpecifiedTests=false \
         -Dawaitility.defaultPollInterval=200ms -Dawaitility.defaultTimeout=2m \
-        -Djacoco.skip=false -Damiga.jacoco \
+        -Djacoco.skip=false \
         -Dmaven.build.cache.enabled=false \
         verify -nsu
     TEST_EXIT_CODE=$?

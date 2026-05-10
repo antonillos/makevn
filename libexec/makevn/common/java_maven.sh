@@ -146,6 +146,26 @@ makevn_maven_pre_goals_for_command() {
   printf '\n'
 }
 
+makevn_coverage_prop_flags() {
+  local repo_root="$1"
+
+  makevn_load_config "${repo_root}"
+  printf '%s\n' "${MAKEVN_COVERAGE_PROP_FLAGS:--Djacoco.skip=false}"
+}
+
+makevn_append_coverage_prop_flags() {
+  local repo_root="$1"
+  local prop_flags_value="$2"
+  local coverage_prop_flags=""
+  local token=""
+
+  coverage_prop_flags="$(makevn_coverage_prop_flags "${repo_root}")"
+  for token in ${coverage_prop_flags}; do
+    prop_flags_value="$(makevn_append_word "${prop_flags_value}" "${token}")"
+  done
+  printf '%s\n' "${prop_flags_value}"
+}
+
 makevn_test_log_token() {
   local token=""
 
@@ -268,7 +288,6 @@ makevn_run_selected_test() {
   cli_flags_value="$(makevn_maven_cli_flags_for_command "${repo_root}" test)"
   cli_flags_value="$(makevn_append_word "${cli_flags_value}" "-nsu")"
   prop_flags_value="$(makevn_maven_prop_flags_for_command "${repo_root}" test)"
-  prop_flags_value="$(makevn_append_word "${prop_flags_value}" "-Damiga-javaformat.skip=true")"
   prop_flags_value="$(makevn_append_word "${prop_flags_value}" "${test_param}")"
   prop_flags_value="$(makevn_append_word "${prop_flags_value}" "-Dfailsafe.failIfNoSpecifiedTests=false")"
   prop_flags_value="$(makevn_append_word "${prop_flags_value}" "-Dsurefire.failIfNoSpecifiedTests=false")"
@@ -481,8 +500,7 @@ makevn_run_verify_it_goal() {
     fi
   done
 
-  filtered_prop_flags_value="$(makevn_append_word "${filtered_prop_flags_value}" "-Djacoco.skip=false")"
-  filtered_prop_flags_value="$(makevn_append_word "${filtered_prop_flags_value}" "-Damiga.jacoco")"
+  filtered_prop_flags_value="$(makevn_append_coverage_prop_flags "${repo_root}" "${filtered_prop_flags_value}")"
   filtered_prop_flags_value="$(makevn_append_word "${filtered_prop_flags_value}" "-DskipUTs")"
   filtered_prop_flags_value="$(makevn_append_word "${filtered_prop_flags_value}" "-Dskip.unit.tests=true")"
   filtered_prop_flags_value="$(makevn_append_word "${filtered_prop_flags_value}" "-DfailIfNoTests=false")"

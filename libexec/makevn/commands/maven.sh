@@ -168,12 +168,18 @@ cmd_test() {
 
 cmd_verify_ut() {
   local repo_root="$1"
+  local coverage_prop_flags_value=""
+  local -a coverage_prop_flags=()
+
   shift
   [[ "${1:-}" == "--" ]] && shift
   makevn_reject_verify_skip_flags verify-ut "$@"
+  coverage_prop_flags_value="$(makevn_coverage_prop_flags "${repo_root}")"
+  if [[ -n "${coverage_prop_flags_value}" ]]; then
+    read -r -a coverage_prop_flags <<< "${coverage_prop_flags_value}"
+  fi
   makevn_run_maven_goal "${repo_root}" verify verify-ut "" \
-    -Djacoco.skip=false \
-    -Damiga.jacoco \
+    "${coverage_prop_flags[@]}" \
     -DskipITs \
     -DfailIfNoTests=false \
     -Dmaven.test.failure.ignore=false \
@@ -241,6 +247,7 @@ cmd_pr_verify() {
   local cli_flags_value=""
   local rc=0
   local -a cli_flags=()
+  local -a coverage_prop_flags=()
   local -a extra_args
   local -a maven_args=()
 
@@ -267,7 +274,12 @@ cmd_pr_verify() {
   if [[ ${#cli_flags[@]} -gt 0 ]]; then
     maven_args+=("${cli_flags[@]}")
   fi
-  maven_args+=(-f "${maven_base_path}/pom.xml" clean verify -Djacoco.skip=false -Damiga.jacoco -DskipITs -DfailIfNoTests=false -Dmaven.test.failure.ignore=false -Damiga-javaformat.skip=true -Dmaven.build.cache.enabled=false)
+  maven_args+=(-f "${maven_base_path}/pom.xml" clean verify)
+  read -r -a coverage_prop_flags <<< "$(makevn_coverage_prop_flags "${repo_root}")"
+  if [[ ${#coverage_prop_flags[@]} -gt 0 ]]; then
+    maven_args+=("${coverage_prop_flags[@]}")
+  fi
+  maven_args+=(-DskipITs -DfailIfNoTests=false -Dmaven.test.failure.ignore=false -Dmaven.build.cache.enabled=false)
   if [[ ${#extra_args[@]} -gt 0 ]]; then
     maven_args+=("${extra_args[@]}")
   fi
@@ -276,4 +288,156 @@ cmd_pr_verify() {
   rc=$?
   [[ ${rc} -eq 0 ]] && makevn_print_jacoco_report_hint "${maven_base_path}"
   return ${rc}
+}
+
+cmd_format() {
+  local repo_root="$1"
+  local apply=false
+  local maven_base_path=""
+  local goal=""
+  local -a extra_args
+
+  shift
+  extra_args=()
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --apply)
+        apply=true
+        shift
+        ;;
+      --)
+        shift
+        extra_args=("$@")
+        break
+        ;;
+      *)
+        makevn_die "Unknown format option: $1"
+        ;;
+    esac
+  done
+
+  maven_base_path="$(makevn_detect_maven_base_path "${repo_root}" || true)"
+  [[ -n "${maven_base_path}" ]] || makevn_die "No Maven project detected in ${repo_root}"
+  goal="$(makevn_format_goal_for_project "${repo_root}" "${maven_base_path}" "${apply}")"
+
+  if [[ ${#extra_args[@]} -gt 0 ]]; then
+    makevn_run_maven_goal "${repo_root}" "${goal}" format format "${extra_args[@]}"
+  else
+    makevn_run_maven_goal "${repo_root}" "${goal}" format format
+  fi
+}
+
+makevn_format_goal_for_project() {
+  local repo_root="$1"
+  local maven_base_path="$2"
+  local apply="$3"
+  local plugin="spotless"
+
+  makevn_load_config "${repo_root}"
+  if [[ "${apply}" == true && -n "${MAKEVN_FORMAT_APPLY_GOAL:-}" ]]; then
+    printf '%s\n' "${MAKEVN_FORMAT_APPLY_GOAL}"
+    return 0
+  fi
+  if [[ "${apply}" != true && -n "${MAKEVN_FORMAT_CHECK_GOAL:-}" ]]; then
+    printf '%s\n' "${MAKEVN_FORMAT_CHECK_GOAL}"
+    return 0
+  fi
+
+  if grep -R -l --include pom.xml --exclude-dir target --exclude-dir node_modules '<artifactId>[[:space:]]*spotless-maven-plugin[[:space:]]*</artifactId>' "${maven_base_path}" >/dev/null 2>&1; then
+    plugin="spotless"
+  elif grep -R -l --include pom.xml --exclude-dir target --exclude-dir node_modules '<artifactId>[[:space:]]*fmt-maven-plugin[[:space:]]*</artifactId>' "${maven_base_path}" >/dev/null 2>&1; then
+    plugin="fmt"
+  elif grep -R -l --include pom.xml --exclude-dir target --exclude-dir node_modules '<artifactId>[[:space:]]*formatter-maven-plugin[[:space:]]*</artifactId>' "${maven_base_path}" >/dev/null 2>&1; then
+    plugin="formatter"
+  elif grep -R -l --include pom.xml --exclude-dir target --exclude-dir node_modules '<googleJavaFormat[ />]' "${maven_base_path}" >/dev/null 2>&1; then
+    plugin="fmt"
+  fi
+
+  case "${plugin}:${apply}" in
+    spotless:true)
+      printf 'spotless:apply\n'
+      ;;
+    spotless:false)
+      printf 'spotless:check\n'
+      ;;
+    formatter:true)
+      printf 'formatter:format\n'
+      ;;
+    formatter:false)
+      printf 'formatter:validate\n'
+      ;;
+    fmt:true)
+      printf 'fmt:format\n'
+      ;;
+    fmt:false)
+      printf 'fmt:check\n'
+      ;;
+  esac
+}
+
+cmd_checkstyle() {
+  local repo_root="$1"
+  local module=""
+  local verbose=false
+  local maven_base_path=""
+  local maven_executable=""
+  local maven_cli_flags_value=""
+  local -a maven_cli_flags
+  local -a maven_args
+  local -a extra_args
+
+  shift
+  maven_cli_flags=()
+  maven_args=()
+  extra_args=()
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --module)
+        [[ $# -ge 2 ]] || makevn_die "Missing value for --module"
+        module="$2"
+        shift 2
+        ;;
+      --verbose)
+        verbose=true
+        shift
+        ;;
+      --)
+        shift
+        extra_args=("$@")
+        break
+        ;;
+      *)
+        makevn_die "Unknown checkstyle option: $1"
+        ;;
+    esac
+  done
+
+  maven_base_path="$(makevn_detect_maven_base_path "${repo_root}" || true)"
+  [[ -n "${maven_base_path}" ]] || makevn_die "No Maven project detected in ${repo_root}"
+  maven_executable="$(makevn_maven_executable "${repo_root}" "${maven_base_path}")"
+  maven_cli_flags_value="$(makevn_maven_cli_flags_for_command "${repo_root}" checkstyle)"
+  if [[ -n "${maven_cli_flags_value}" ]]; then
+    read -r -a maven_cli_flags <<< "${maven_cli_flags_value}"
+  fi
+
+  maven_args=("${maven_executable}")
+  if [[ ${#maven_cli_flags[@]} -gt 0 ]]; then
+    maven_args+=("${maven_cli_flags[@]}")
+  fi
+  if [[ "${verbose}" != true ]]; then
+    maven_args+=("-q")
+  fi
+  maven_args+=(-f "${maven_base_path}/pom.xml")
+  if [[ -n "${module}" ]]; then
+    maven_args+=(-pl "${module}")
+  fi
+  maven_args+=(org.apache.maven.plugins:maven-checkstyle-plugin:check)
+  if [[ "${verbose}" == true ]]; then
+    maven_args+=(-Dcheckstyle.consoleOutput=true)
+  fi
+  if [[ ${#extra_args[@]} -gt 0 ]]; then
+    maven_args+=("${extra_args[@]}")
+  fi
+
+  makevn_run_logged_in_context "${repo_root}" code "${maven_base_path}" checkstyle checkstyle checkstyle "${maven_args[@]}"
 }
