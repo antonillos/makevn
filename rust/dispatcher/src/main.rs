@@ -856,10 +856,6 @@ fn run_backend_with_loader(
             renderer.clear_frame_line();
         }
         if tail_active {
-            print_backend_header(metadata)
-                .map_err(|error| format!("failed to print command header: {error}"))?;
-            print_backend_log_notice(metadata, tail_active)
-                .map_err(|error| format!("failed to print log location: {error}"))?;
             tail_window = Some(LogTailWindow::new(PathBuf::from(&metadata.log_path)));
         } else if let Some(renderer) = renderer.as_mut() {
             if let Some(df) = detail_file {
@@ -923,10 +919,6 @@ fn run_backend_with_loader(
                         renderer.clear_frame_line();
                     }
                     if tail_active {
-                        print_backend_header(metadata)
-                            .map_err(|error| format!("failed to print command header: {error}"))?;
-                        print_backend_log_notice(metadata, tail_active)
-                            .map_err(|error| format!("failed to print log location: {error}"))?;
                         tail_window = Some(LogTailWindow::new(PathBuf::from(&metadata.log_path)));
                     } else if let Some(renderer) = renderer.as_mut() {
                         let hint = renderer.current_dashboard_hint();
@@ -944,6 +936,13 @@ fn run_backend_with_loader(
                 }
             }
             if let Some(tail_window) = tail_window.as_mut() {
+                if let Some(metadata) = metadata.as_ref() {
+                    tail_window.set_prefix_lines(tail_status_lines(
+                        global_started_at.elapsed(),
+                        completed_summaries,
+                        metadata,
+                    ));
+                }
                 tail_window
                     .finish()
                     .map_err(|error| format!("failed to render tailed log: {error}"))?;
@@ -955,10 +954,6 @@ fn run_backend_with_loader(
             }
             if let Some(renderer) = renderer.as_mut() {
                 renderer.clear_line();
-            }
-            if tail_active && header_printed && renderer.is_some() {
-                let _ = write!(io::stdout(), "\u{1b}[1A\r\u{1b}[2K");
-                let _ = io::stdout().flush();
             }
             return Ok(summarize_backend_exit(
                 status,
@@ -985,10 +980,6 @@ fn run_backend_with_loader(
                     renderer.clear_frame_line();
                 }
                 if tail_active {
-                    print_backend_header(metadata)
-                        .map_err(|error| format!("failed to print command header: {error}"))?;
-                    print_backend_log_notice(metadata, tail_active)
-                        .map_err(|error| format!("failed to print log location: {error}"))?;
                     tail_window = Some(LogTailWindow::new(PathBuf::from(&metadata.log_path)));
                 } else if let Some(renderer) = renderer.as_mut() {
                     let hint = renderer.current_dashboard_hint();
@@ -1022,12 +1013,6 @@ fn run_backend_with_loader(
                     if !tail_active {
                         if let Some(metadata) = metadata.as_ref() {
                             renderer.clear_frame_line();
-                            print_backend_header(metadata).map_err(|error| {
-                                format!("failed to print command header: {error}")
-                            })?;
-                            print_backend_log_notice(metadata, true).map_err(|error| {
-                                format!("failed to print log location: {error}")
-                            })?;
                             tail_window =
                                 Some(LogTailWindow::new(PathBuf::from(&metadata.log_path)));
                             tail_active = true;
@@ -1041,6 +1026,13 @@ fn run_backend_with_loader(
         }
 
         if let Some(tail_window) = tail_window.as_mut() {
+            if let Some(metadata) = metadata.as_ref() {
+                tail_window.set_prefix_lines(tail_status_lines(
+                    global_started_at.elapsed(),
+                    completed_summaries,
+                    metadata,
+                ));
+            }
             if line_delta != 0 {
                 tail_window.adjust_lines(line_delta);
             }
@@ -1090,6 +1082,13 @@ fn run_backend_with_loader(
     }
 
     if let Some(tail_window) = tail_window.as_mut() {
+        if let Some(metadata) = metadata.as_ref() {
+            tail_window.set_prefix_lines(tail_status_lines(
+                global_started_at.elapsed(),
+                completed_summaries,
+                metadata,
+            ));
+        }
         tail_window
             .finish()
             .map_err(|error| format!("failed to render tailed log: {error}"))?;
@@ -1102,11 +1101,6 @@ fn run_backend_with_loader(
 
     if let Some(renderer) = renderer.as_mut() {
         renderer.clear_line();
-    }
-
-    if tail_active && header_printed && renderer.is_some() {
-        let _ = write!(io::stdout(), "\u{1b}[1A\r\u{1b}[2K");
-        let _ = io::stdout().flush();
     }
 
     let status = child
@@ -1192,38 +1186,23 @@ fn read_backend_metadata(metadata_path: &Path) -> Result<Option<BackendMetadata>
     }))
 }
 
-fn print_backend_header(metadata: &BackendMetadata) -> io::Result<()> {
-    writeln!(
-        io::stdout(),
+fn backend_header_line(metadata: &BackendMetadata) -> String {
+    format!(
         "{} {}",
         dim_text("::"),
         accent_text(&format!("makevn {}", metadata.title))
     )
 }
 
-fn print_backend_log_notice(metadata: &BackendMetadata, tail_enabled: bool) -> io::Result<()> {
-    if tail_enabled {
-        return writeln!(
-            io::stdout(),
-            "{} {} {} {}{}{}",
-            dim_text("->"),
-            dim_text(&format!("tailing log: {}", metadata.relative_log_path)),
-            dim_text("|"),
-            dim_text("press "),
-            style("97", "+/-"),
-            dim_text(" to expand")
-        );
-    }
-
-    print_backend_log_summary(metadata)
-}
-
-fn print_backend_log_summary(metadata: &BackendMetadata) -> io::Result<()> {
-    writeln!(
-        io::stdout(),
-        "{} {}",
-        dim_text("::"),
-        dim_text(&format!("log: {}", metadata.relative_log_path))
+fn backend_tail_notice_line(metadata: &BackendMetadata) -> String {
+    format!(
+        "{} {} {} {}{}{}",
+        dim_text("->"),
+        dim_text(&format!("tailing log: {}", metadata.relative_log_path)),
+        dim_text("|"),
+        dim_text("press "),
+        style("97", "+/-"),
+        dim_text(" to expand")
     )
 }
 
@@ -1265,6 +1244,33 @@ fn completed_summary_line(summary: &CommandSummary) -> String {
     };
 
     format!("[{}]{}", mark, dim_text(&rest))
+}
+
+fn completed_summary_lines(completed_summaries: &[CommandSummary]) -> Vec<String> {
+    let mut lines = Vec::new();
+    for summary in completed_summaries {
+        lines.push(completed_summary_line(summary));
+        for dl in &summary.detail_lines {
+            lines.push(detail_line(dl));
+        }
+    }
+    lines
+}
+
+fn tail_status_lines(
+    global_elapsed: Duration,
+    completed_summaries: &[CommandSummary],
+    metadata: &BackendMetadata,
+) -> Vec<String> {
+    let mut lines = Vec::new();
+    lines.push(dim_text(&format!(
+        "Working for {} >",
+        format_duration(global_elapsed)
+    )));
+    lines.extend(completed_summary_lines(completed_summaries));
+    lines.push(backend_header_line(metadata));
+    lines.push(backend_tail_notice_line(metadata));
+    lines
 }
 
 fn running_command_line(metadata: &BackendMetadata) -> String {
@@ -1459,6 +1465,7 @@ fn tail_line_text(line: &str) -> String {
 
 struct LogTailWindow {
     path: PathBuf,
+    prefix_lines: Vec<String>,
     file: Option<File>,
     offset: u64,
     pending: Vec<u8>,
@@ -1471,6 +1478,7 @@ impl LogTailWindow {
     fn new(path: PathBuf) -> Self {
         Self {
             path,
+            prefix_lines: Vec::new(),
             file: None,
             offset: 0,
             pending: Vec::new(),
@@ -1478,6 +1486,10 @@ impl LogTailWindow {
             visible_lines: 4,
             rendered_lines: 0,
         }
+    }
+
+    fn set_prefix_lines(&mut self, prefix_lines: Vec<String>) {
+        self.prefix_lines = prefix_lines;
     }
 
     fn adjust_lines(&mut self, delta: i32) {
@@ -1567,8 +1579,9 @@ impl LogTailWindow {
             self.lines.drain(..drop_count);
         }
 
-        let clear_lines = self.rendered_lines.max(visible_capacity)
-            + usize::from(self.rendered_lines > visible_capacity);
+        let display_lines = self.prefix_lines.len() + visible_capacity;
+        let clear_lines = self.rendered_lines.max(display_lines)
+            + usize::from(self.rendered_lines > display_lines);
         if self.rendered_lines > 0 {
             write!(io::stdout(), "\u{1b}[{}A", self.rendered_lines)?;
         }
@@ -1588,6 +1601,10 @@ impl LogTailWindow {
             write!(io::stdout(), "\r")?;
         }
 
+        for line in &self.prefix_lines {
+            writeln!(io::stdout(), "{line}")?;
+        }
+
         for line in &self.lines {
             writeln!(io::stdout(), "{}", tail_line_text(line))?;
         }
@@ -1597,7 +1614,7 @@ impl LogTailWindow {
         }
 
         io::stdout().flush()?;
-        self.rendered_lines = visible_capacity;
+        self.rendered_lines = display_lines;
         Ok(())
     }
 
@@ -2373,8 +2390,8 @@ mod tests {
     use super::{
         command_supports_frontend_loader, dashboard_hint, dim_text, insert_backend_option,
         install_root_with_override, parse_invocation, read_backend_metadata, spinner_hint,
-        spinner_kitt_frame, split_command_segments, strip_frontend_tail_flag, Action,
-        BackendInvocation,
+        spinner_kitt_frame, split_command_segments, strip_frontend_tail_flag, tail_status_lines,
+        Action, BackendInvocation, BackendMetadata, CommandSummary,
     };
     use std::env;
     use std::ffi::OsString;
@@ -2382,7 +2399,7 @@ mod tests {
     use std::io::Write;
     use std::path::Path;
     use std::process;
-    use std::time::{SystemTime, UNIX_EPOCH};
+    use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
     #[test]
     fn derives_install_root_from_binary_location() {
@@ -2871,6 +2888,38 @@ mod tests {
         assert_eq!(tail_window.lines, vec![String::from("third")]);
 
         fs::remove_file(log_path).unwrap();
+    }
+
+    #[test]
+    fn tail_status_lines_put_completed_commands_above_running_tail() {
+        let summary = CommandSummary {
+            title: String::from("format"),
+            duration: String::from("6s"),
+            log_path: Some(String::from("/repo/.makevn/logs/format.log")),
+            relative_log_path: Some(String::from(".makevn/logs/format.log")),
+            exit_code: 0,
+            detail_lines: Vec::new(),
+        };
+        let metadata = BackendMetadata {
+            command: String::from("checkstyle"),
+            repo: String::from("/repo"),
+            cwd: String::from("/repo"),
+            log_path: String::from("/repo/.makevn/logs/checkstyle.log"),
+            relative_log_path: String::from(".makevn/logs/checkstyle.log"),
+            command_display: String::from("mvn checkstyle:check"),
+            title: String::from("checkstyle"),
+            context: Some(String::from("code")),
+        };
+
+        let lines = tail_status_lines(Duration::from_secs(13), &[summary], &metadata);
+
+        assert_eq!(lines[0], "Working for 13s >");
+        assert_eq!(lines[1], "[✓] format | 6s | .makevn/logs/format.log");
+        assert_eq!(lines[2], ":: makevn checkstyle");
+        assert_eq!(
+            lines[3],
+            "-> tailing log: .makevn/logs/checkstyle.log | press +/- to expand"
+        );
     }
 
     #[test]
