@@ -342,6 +342,59 @@ EOF
   [[ "${output}" == *"Detected app health URL: http://localhost:18080/actuator/health"* ]] || fail "doctor should detect Actuator health URL"
 }
 
+test_doctor_shows_progress_in_tty() {
+  local repo="${TMP_ROOT}/doctor-progress"
+  local output_file="${TMP_ROOT}/doctor-progress.out"
+
+  mkdir -p "${repo}"
+  printf '<project/>\n' > "${repo}/pom.xml"
+
+  script -q /dev/null bash -lc "\"${CLI}\" --repo \"${repo}\" doctor" > "${output_file}" 2>&1
+
+  assert_contains "${output_file}" "Inspecting repository layout"
+  assert_contains "${output_file}" "Scanning workflow and Maven signals"
+  assert_contains "${output_file}" "Resolving Java homes"
+}
+
+test_doctor_reports_compatible_newer_java_homes() {
+  local repo="${TMP_ROOT}/doctor-compatible-java"
+  local fake_home_root="${TMP_ROOT}/fake-home"
+  local java17_home="${fake_home_root}/.sdkman/candidates/java/17.0.9-tem"
+  local java21_home="${fake_home_root}/.sdkman/candidates/java/21.0.3-tem"
+  local output
+
+  mkdir -p "${repo}" "${java17_home}/bin" "${java21_home}/bin"
+  cat > "${repo}/pom.xml" <<'EOF'
+<project>
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>com.example</groupId>
+  <artifactId>sample</artifactId>
+  <version>1.0.0</version>
+  <properties>
+    <maven.compiler.source>6</maven.compiler.source>
+    <maven.compiler.target>6</maven.compiler.target>
+  </properties>
+</project>
+EOF
+  cat > "${java17_home}/bin/java" <<'EOF'
+#!/usr/bin/env bash
+printf 'openjdk version "17.0.9" 2024-01-01\n' >&2
+EOF
+  cat > "${java21_home}/bin/java" <<'EOF'
+#!/usr/bin/env bash
+printf 'openjdk version "21.0.3" 2024-01-01\n' >&2
+EOF
+  chmod +x "${java17_home}/bin/java" "${java21_home}/bin/java"
+
+  output="$(HOME="${fake_home_root}" ${CLI} --repo "${repo}" doctor)"
+
+  [[ "${output}" == *"Code Java version: 6"* ]] || fail "doctor should detect the requested Java version from pom.xml"
+  [[ "${output}" == *"Resolved code JAVA_HOME: unresolved"* ]] || fail "doctor should keep code JAVA_HOME unresolved without an exact match"
+  [[ "${output}" == *"Compatible code JAVA_HOMEs:"* ]] || fail "doctor should report compatible newer JDK homes"
+  [[ "${output}" == *"${java17_home}"* ]] || fail "doctor should include the injected Java 17 home in compatible candidates"
+  [[ "${output}" == *"${java21_home}"* ]] || fail "doctor should include the injected Java 21 home in compatible candidates"
+}
+
 test_run_app_bg_disabled_without_executable_app() {
   local repo="${TMP_ROOT}/run-app-bg-disabled-library"
   local java_home="${repo}/fake-java-home"
@@ -2244,6 +2297,8 @@ main() {
   test_doctor_resolves_java_version_from_pom
   test_doctor_does_not_invent_health_check
   test_doctor_detects_actuator_health_check
+  test_doctor_shows_progress_in_tty
+  test_doctor_reports_compatible_newer_java_homes
   test_run_app_bg_disabled_without_executable_app
   test_standalone_mode
   test_format_requires_configured_formatter

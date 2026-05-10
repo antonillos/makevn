@@ -26,6 +26,13 @@ makevn_read_editable_default() {
   printf '%s\n' "${value}"
 }
 
+makevn_doctor_progress() {
+  local message="$1"
+  [[ -t 2 ]] || return 0
+  [[ -z "${MAKEVN_BACKEND_DETAIL_OUT:-}" ]] || return 0
+  printf '%s %s\n' "$(makevn_dim '…')" "${message}" >&2
+}
+
 makevn_collect_doctor_snapshot() {
   local repo_root="$1"
   local maven_base_path=""
@@ -34,6 +41,7 @@ makevn_collect_doctor_snapshot() {
   local code_java_version=""
   local app_runnable="no"
   local code_java_home=""
+  local compatible_code_java_homes=""
   local karate_java_home=""
   local code_java_version_line=""
   local karate_java_version_line=""
@@ -62,10 +70,13 @@ makevn_collect_doctor_snapshot() {
   local e2e_compose_file=""
   local local_containers_preference=""
 
+  makevn_doctor_progress "Inspecting repository layout"
   if [[ -d "$(makevn_state_dir "${repo_root}")" ]]; then
+    makevn_doctor_progress "Refreshing persisted profile"
     makevn_refresh_profile "${repo_root}"
   fi
 
+  makevn_doctor_progress "Scanning workflow and Maven signals"
   makevn_detect_repo_profile "${repo_root}"
   detected_workflow_files="${MAKEVN_DETECTED_WORKFLOW_FILES:-}"
   detected_maven_cli_flags="${MAKEVN_DETECTED_MAVEN_CLI_FLAGS:-}"
@@ -81,6 +92,7 @@ makevn_collect_doctor_snapshot() {
   app_runnable="${MAKEVN_DETECTED_APP_RUNNABLE:-no}"
 
   # Resolve compose file: config > profile > auto-detect > interactive prompt
+  makevn_doctor_progress "Resolving Docker compose files"
   makevn_load_config "${repo_root}"
   if [[ -n "${MAKEVN_COMPOSE_FILE:-}" && -f "${MAKEVN_COMPOSE_FILE}" ]]; then
     compose_file="${MAKEVN_COMPOSE_FILE}"
@@ -192,7 +204,11 @@ makevn_collect_doctor_snapshot() {
   if [[ "${app_runnable}" != "yes" ]] && makevn_detect_app_runnable "${repo_root}" "${maven_base_path}"; then
     app_runnable="yes"
   fi
+  makevn_doctor_progress "Resolving Java homes"
   code_java_home="$(makevn_effective_java_home "${repo_root}" code "${maven_base_path}" || true)"
+  if [[ -z "${code_java_home}" && -n "${code_java_version}" ]]; then
+    compatible_code_java_homes="$(makevn_compatible_java_homes_csv "${code_java_version}" || true)"
+  fi
   karate_java_home="$(makevn_effective_java_home "${repo_root}" karate "${maven_base_path}" || true)"
   repo_support_status="$(makevn_repository_support_status "${repo_root}")"
   if [[ -n "${maven_base_path}" ]]; then
@@ -318,6 +334,7 @@ makevn_collect_doctor_snapshot() {
   MAKEVN_DOCTOR_TEST_PROFILE="${test_profile}"
   MAKEVN_DOCTOR_VERIFY_PROFILE="${verify_profile}"
   MAKEVN_DOCTOR_CODE_JAVA_HOME="${code_java_home:-unresolved}"
+  MAKEVN_DOCTOR_COMPATIBLE_CODE_JAVA_HOMES="${compatible_code_java_homes:-none}"
   MAKEVN_DOCTOR_CODE_JAVA_VERSION_LINE="${code_java_version_line}"
   MAKEVN_DOCTOR_KARATE_JAVA_HOME="${karate_java_home:-unresolved}"
   MAKEVN_DOCTOR_KARATE_JAVA_VERSION_LINE="${karate_java_version_line}"
@@ -389,6 +406,7 @@ makevn_print_doctor_json() {
   printf '    "test_profile": "%s",\n' "$(makevn_json_escape "${MAKEVN_DOCTOR_TEST_PROFILE}")"
   printf '    "verify_profile": "%s",\n' "$(makevn_json_escape "${MAKEVN_DOCTOR_VERIFY_PROFILE}")"
   printf '    "resolved_code_java_home": "%s",\n' "$(makevn_json_escape "${MAKEVN_DOCTOR_CODE_JAVA_HOME}")"
+  printf '    "compatible_code_java_homes": "%s",\n' "$(makevn_json_escape "${MAKEVN_DOCTOR_COMPATIBLE_CODE_JAVA_HOMES}")"
   printf '    "resolved_code_java_version": "%s",\n' "$(makevn_json_escape "${MAKEVN_DOCTOR_CODE_JAVA_VERSION_LINE}")"
   printf '    "resolved_karate_java_home": "%s",\n' "$(makevn_json_escape "${MAKEVN_DOCTOR_KARATE_JAVA_HOME}")"
   printf '    "resolved_karate_java_version": "%s",\n' "$(makevn_json_escape "${MAKEVN_DOCTOR_KARATE_JAVA_VERSION_LINE}")"

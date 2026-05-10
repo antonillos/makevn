@@ -66,6 +66,12 @@ java_version_line() {
   "${cmd}" -version 2>&1 | head -1
 }
 
+major_for_home() {
+  local version_line
+  version_line="$(java_version_line "$1")"
+  printf '%s\n' "${version_line}" | sed -nE 's/.*version "([0-9]+)(\..*)?".*/\1/p'
+}
+
 matches_version() {
   local home="$1"
   local version_line
@@ -138,6 +144,52 @@ list_jdks() {
   if [[ ! -s "${SEEN_FILE}" ]]; then
     echo "  No JDKs detected. You can still use: makevn jdk list after installing one."
   fi
+}
+
+list_compatible_homes() {
+  local required_major="$1"
+  SEEN_FILE="$(mktemp)"
+  export SEEN_FILE
+  trap 'rm -f "${SEEN_FILE}"' EXIT
+
+  if [[ -n "${JAVA_HOME:-}" ]]; then
+    try_list_compatible_home "${JAVA_HOME}" "${required_major}"
+  fi
+  list_compatible_from_common_dirs "${required_major}"
+}
+
+try_list_compatible_home() {
+  local home
+  local required_major="$2"
+  local actual_major=""
+
+  home="$(normalize_home "$1")"
+  if ! has_java "${home}"; then
+    return 0
+  fi
+  if grep -Fxq "${home}" "${SEEN_FILE}"; then
+    return 0
+  fi
+  actual_major="$(major_for_home "${home}")"
+  [[ "${actual_major}" =~ ^[0-9]+$ ]] || return 0
+  if (( actual_major < required_major )); then
+    return 0
+  fi
+  printf '%s\n' "${home}" >> "${SEEN_FILE}"
+  printf '%s\n' "${home}"
+}
+
+list_compatible_from_common_dirs() {
+  local required_major="$1"
+  local base
+  local candidate
+  for base in "${candidate_bases[@]}"; do
+    [[ -d "${base}" ]] || continue
+    for candidate in "${base}"/* "${base}"/*/Contents/Home; do
+      [[ -e "${candidate}" ]] || continue
+      try_list_compatible_home "${candidate}" "${required_major}"
+    done
+  done
 }
 
 try_resolve_home() {
@@ -277,8 +329,11 @@ case "${ACTION}" in
   resolve-version)
     resolve_version_home
     ;;
+  list-compatible-homes)
+    list_compatible_homes "${JDK_VERSION}"
+    ;;
   *)
-    echo "Usage: $0 current-contexts|list|resolve-tool-versions|resolve-version [arg1] [arg2]"
+    echo "Usage: $0 current-contexts|list|resolve-tool-versions|resolve-version|list-compatible-homes [arg1] [arg2]"
     exit 1
     ;;
 esac

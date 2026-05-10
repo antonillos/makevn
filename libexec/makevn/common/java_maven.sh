@@ -24,6 +24,37 @@ makevn_resolve_java_version_home() {
   bash "${jdk_manager}" resolve-version "${java_version}" 2>/dev/null
 }
 
+makevn_list_compatible_java_homes() {
+  local java_version="$1"
+  local jdk_manager
+  jdk_manager="$(makevn_jdk_manager_script)"
+  bash "${jdk_manager}" list-compatible-homes "${java_version}" 2>/dev/null
+}
+
+makevn_compatible_java_homes_csv() {
+  local java_version="$1"
+  local homes=""
+  local candidate_home=""
+
+  while IFS= read -r candidate_home; do
+    [[ -n "${candidate_home}" ]] || continue
+    if [[ -n "${homes}" ]]; then
+      homes+=", "
+    fi
+    homes+="${candidate_home}"
+  done < <(makevn_list_compatible_java_homes "${java_version}")
+
+  printf '%s\n' "${homes}"
+}
+
+makevn_compatible_java_resolution_hint() {
+  local java_version="$1"
+  local homes=""
+  homes="$(makevn_compatible_java_homes_csv "${java_version}")"
+  [[ -n "${homes}" ]] || return 1
+  printf 'No exact JDK %s detected. Compatible newer local JDKs: %s. Configure MAKEVN_CODE_JAVA_HOME in .makevn/config after confirming with the user.\n' "${java_version}" "${homes}"
+}
+
 makevn_effective_java_home() {
   local repo_root="$1"
   local context="$2"
@@ -72,8 +103,12 @@ makevn_effective_java_home() {
       java_version="$(makevn_detect_java_version_from_pom "${maven_base_path}" || true)"
     fi
     if [[ -n "${java_version}" ]]; then
-      makevn_resolve_java_version_home "${java_version}"
-      return 0
+      local resolved_java_home=""
+      resolved_java_home="$(makevn_resolve_java_version_home "${java_version}" || true)"
+      if [[ -n "${resolved_java_home}" ]]; then
+        printf '%s\n' "${resolved_java_home}"
+        return 0
+      fi
     fi
   fi
 
@@ -112,6 +147,21 @@ makevn_run_in_context() {
 
   java_home="$(makevn_effective_java_home "${repo_root}" "${context}" "${maven_base_path}" || true)"
   if [[ -z "${java_home}" ]]; then
+    if [[ "${context}" == "code" ]]; then
+      local java_version=""
+      makevn_load_profile "${repo_root}"
+      java_version="${MAKEVN_PROFILE_CODE_JAVA_VERSION:-}"
+      if [[ -z "${java_version}" ]]; then
+        java_version="$(makevn_detect_java_version_from_pom "${maven_base_path}" || true)"
+      fi
+      if [[ -n "${java_version}" ]]; then
+        local resolution_hint=""
+        resolution_hint="$(makevn_compatible_java_resolution_hint "${java_version}" || true)"
+        if [[ -n "${resolution_hint}" ]]; then
+          makevn_die "${resolution_hint}"
+        fi
+      fi
+    fi
     makevn_die "Could not resolve ${context} JDK. Run 'makevn doctor' or configure .makevn/config first."
   fi
 
