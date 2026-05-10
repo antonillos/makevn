@@ -1583,7 +1583,7 @@ EOF
 
   assert_matches "${repo}/.mvnw.log" '^ARGS=-f .*/pom\.xml verify -Djacoco\.skip=false -DskipITs -DfailIfNoTests=false -Dmaven\.test\.failure\.ignore=false$'
   assert_matches "${repo}/.mvnw.log" '^ARGS=-f .*/pom\.xml verify -Djacoco\.skip=false -DskipUTs -Dskip\.unit\.tests=true -DfailIfNoTests=false -Dmaven\.test\.failure\.ignore=false -Dmaven\.build\.cache\.enabled=false$'
-  assert_matches "${repo}/.mvnw.log" '^ARGS=-B -nsu -f .*/pom\.xml clean verify -Djacoco\.skip=false -DskipITs -DfailIfNoTests=false -Dmaven\.test\.failure\.ignore=false -Dformat\.skip=true -Dmaven\.build\.cache\.enabled=false$'
+  assert_matches "${repo}/.mvnw.log" '^ARGS=-B -nsu -f .*/pom\.xml clean verify -Djacoco\.skip=false -DskipITs -DfailIfNoTests=false -Dmaven\.test\.failure\.ignore=false -Dmaven\.build\.cache\.enabled=false$'
   assert_contains "${repo}/.mvnw.log" "JAVA_HOME=${java_home}"
   assert_matches "${repo}/.docker-compose.log" '^docker-compose -f .*/code/boot/src/test/resources/compose/docker-compose\.yml -f .*/code/boot/src/test/resources/compose/docker-compose\.override\.yml ps -q db$'
   [[ "${output}" == *"[ok] "* ]] || fail "expected vn-verify-ut output to include success summary"
@@ -1727,7 +1727,7 @@ EOF
 
   PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" verify-it >/dev/null
 
-  assert_matches "${repo}/.mvnw.log" '^ARGS=-B -nsu -f .*/pom\.xml verify -DfailIfNoTests=false -Dformat\.skip=true -Djacoco\.skip=false -Dcoverage\.profile=true -DskipUTs -Dskip\.unit\.tests=true -Dmaven\.test\.failure\.ignore=false -Dmaven\.build\.cache\.enabled=false$'
+  assert_matches "${repo}/.mvnw.log" '^ARGS=-B -nsu -f .*/pom\.xml verify -DfailIfNoTests=false -Dformat\.skip=true -Djacoco\.skip=false -DskipUTs -Dskip\.unit\.tests=true -Dmaven\.test\.failure\.ignore=false -Dmaven\.build\.cache\.enabled=false$'
   assert_contains "${repo}/.mvnw.log" "JAVA_HOME=${java_home}"
 
   ${CLI} --repo "${repo}" uninstall >/dev/null
@@ -2011,7 +2011,7 @@ EOF
   output="$(${CLI} --repo "${repo}" verify-changes)"
 
   [[ "${output}" == *"[ok] "* ]] || fail "expected verify-changes output to include success summary"
-  assert_matches "${repo}/.mvnw.log" '^ARGS=-nsu -f .*/pom\.xml verify -Dformat\.skip=true -DskipUTs=false -Dtest=com\.example\.ChangedTest -Dit\.test=com\.example\.ChangedTest -Dfailsafe\.failIfNoSpecifiedTests=false -Dsurefire\.failIfNoSpecifiedTests=false -Dawaitility\.defaultPollInterval=200ms -Dawaitility\.defaultTimeout=2m -Djacoco\.skip=false -Dcoverage\.profile=true -Dmaven\.build\.cache\.enabled=false$'
+  assert_matches "${repo}/.mvnw.log" '^ARGS=-nsu -f .*/pom\.xml verify -Djacoco\.skip=false -DskipUTs=false -Dtest=com\.example\.ChangedTest -Dit\.test=com\.example\.ChangedTest -Dfailsafe\.failIfNoSpecifiedTests=false -Dsurefire\.failIfNoSpecifiedTests=false -Dawaitility\.defaultPollInterval=200ms -Dawaitility\.defaultTimeout=2m -Dmaven\.build\.cache\.enabled=false$'
   assert_contains "${repo}/.mvnw.log" "JAVA_HOME=${java_home}"
 
   ${CLI} --repo "${repo}" uninstall >/dev/null
@@ -2172,7 +2172,7 @@ EOF
   assert_file_exists "${repo}/.makevn/logs/clean.log"
   assert_file_exists "${repo}/.makevn/logs/verify-it.log"
   assert_matches "${repo}/.mvnw.log" '^ARGS=-f .*/pom\.xml clean$'
-  assert_matches "${repo}/.mvnw.log" '^ARGS=-f .*/pom\.xml verify -Djacoco\.skip=false -Dcoverage\.profile=true -DskipUTs -Dskip\.unit\.tests=true -DfailIfNoTests=false -Dmaven\.test\.failure\.ignore=false -Dmaven\.build\.cache\.enabled=false$'
+  assert_matches "${repo}/.mvnw.log" '^ARGS=-f .*/pom\.xml verify -Djacoco\.skip=false -DskipUTs -Dskip\.unit\.tests=true -DfailIfNoTests=false -Dmaven\.test\.failure\.ignore=false -Dmaven\.build\.cache\.enabled=false$'
   assert_contains "${repo}/.mvnw.log" "JAVA_HOME=${java_home}"
 
   "${seq_cli}" --repo "${repo}" uninstall >/dev/null
