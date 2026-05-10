@@ -12,4 +12,4 @@ rust/dispatcher/target/
 *.swo
 *~
 *.iml
-/scripts/
+/scripts/make/

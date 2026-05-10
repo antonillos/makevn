@@ -290,6 +290,72 @@ EOF
   assert_contains "${repo}/.makevn/profile.env" "MAKEVN_PROFILE_CODE_JAVA_VERSION=21"
 }
 
+test_doctor_resolves_java_version_from_pom_property_reference() {
+  local repo="${TMP_ROOT}/doctor-pom-java-property-reference"
+  local fake_java_home="${repo}/fake-java-home"
+  local output
+
+  mkdir -p "${repo}" "${fake_java_home}/bin"
+  cat > "${repo}/pom.xml" <<'EOF'
+<project>
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>com.example</groupId>
+  <artifactId>sample</artifactId>
+  <version>1.0.0</version>
+  <properties>
+    <project.java.version>1.8</project.java.version>
+    <maven.compiler.release>${project.java.version}</maven.compiler.release>
+  </properties>
+</project>
+EOF
+  cat > "${fake_java_home}/bin/java" <<'EOF'
+#!/usr/bin/env bash
+printf 'openjdk version "1.8.0_402" 2024-01-01\n' >&2
+EOF
+  chmod +x "${fake_java_home}/bin/java"
+
+  output="$(JAVA_HOME="${fake_java_home}" ${CLI} --repo "${repo}" doctor)"
+
+  [[ "${output}" == *"Code Java version: 8"* ]] || fail "doctor should resolve Java version property references from pom.xml"
+  [[ "${output}" == *"Resolved code JAVA_HOME: ${fake_java_home}"* ]] || fail "doctor should resolve code JAVA_HOME from referenced pom.xml Java version"
+}
+
+test_doctor_resolves_java_version_from_compiler_plugin_source() {
+  local repo="${TMP_ROOT}/doctor-pom-compiler-plugin-source"
+  local fake_java_home="${repo}/fake-java-home"
+  local output
+
+  mkdir -p "${repo}" "${fake_java_home}/bin"
+  cat > "${repo}/pom.xml" <<'EOF'
+<project>
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>com.example</groupId>
+  <artifactId>sample</artifactId>
+  <version>1.0.0</version>
+  <build>
+    <plugins>
+      <plugin>
+        <artifactId>maven-compiler-plugin</artifactId>
+        <configuration>
+          <source>1.8</source>
+          <target>1.8</target>
+        </configuration>
+      </plugin>
+    </plugins>
+  </build>
+</project>
+EOF
+  cat > "${fake_java_home}/bin/java" <<'EOF'
+#!/usr/bin/env bash
+printf 'openjdk version "1.8.0_402" 2024-01-01\n' >&2
+EOF
+  chmod +x "${fake_java_home}/bin/java"
+
+  output="$(JAVA_HOME="${fake_java_home}" ${CLI} --repo "${repo}" doctor)"
+
+  [[ "${output}" == *"Code Java version: 8"* ]] || fail "doctor should resolve Java version from maven-compiler-plugin source/target"
+}
+
 test_doctor_does_not_invent_health_check() {
   local repo="${TMP_ROOT}/doctor-no-health"
   local output
@@ -348,6 +414,11 @@ test_doctor_shows_progress_in_tty() {
 
   mkdir -p "${repo}"
   printf '<project/>\n' > "${repo}/pom.xml"
+  mkdir -p "${repo}/.makevn"
+  cat > "${repo}/.makevn/config" <<'EOF'
+MAKEVN_MIN_COVERAGE_THRESHOLD="70"
+MAKEVN_MIN_COVERAGE_CHANGES_THRESHOLD="70"
+EOF
 
   script -q /dev/null bash -lc "\"${CLI}\" --repo \"${repo}\" doctor" > "${output_file}" 2>&1
 
@@ -389,10 +460,36 @@ EOF
   output="$(HOME="${fake_home_root}" ${CLI} --repo "${repo}" doctor)"
 
   [[ "${output}" == *"Code Java version: 6"* ]] || fail "doctor should detect the requested Java version from pom.xml"
-  [[ "${output}" == *"Resolved code JAVA_HOME: unresolved"* ]] || fail "doctor should keep code JAVA_HOME unresolved without an exact match"
-  [[ "${output}" == *"Compatible code JAVA_HOMEs:"* ]] || fail "doctor should report compatible newer JDK homes"
-  [[ "${output}" == *"${java17_home}"* ]] || fail "doctor should include the injected Java 17 home in compatible candidates"
-  [[ "${output}" == *"${java21_home}"* ]] || fail "doctor should include the injected Java 21 home in compatible candidates"
+  [[ "${output}" == *"Resolved code JAVA_HOME: ${java17_home}"* ]] || fail "doctor should resolve to the lowest compatible newer JDK when no exact match is installed"
+}
+
+test_exec_uses_compatible_newer_java_home() {
+  local repo="${TMP_ROOT}/exec-compatible-java"
+  local fake_home_root="${TMP_ROOT}/fake-exec-home"
+  local java17_home="${fake_home_root}/.sdkman/candidates/java/17.0.9-tem"
+
+  mkdir -p "${repo}" "${java17_home}/bin"
+  cat > "${repo}/pom.xml" <<'EOF'
+<project>
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>com.example</groupId>
+  <artifactId>sample</artifactId>
+  <version>1.0.0</version>
+  <properties>
+    <maven.compiler.source>6</maven.compiler.source>
+    <maven.compiler.target>6</maven.compiler.target>
+  </properties>
+</project>
+EOF
+  cat > "${java17_home}/bin/java" <<'EOF'
+#!/usr/bin/env bash
+printf 'openjdk version "17.0.9" 2024-01-01\n' >&2
+EOF
+  chmod +x "${java17_home}/bin/java"
+
+  HOME="${fake_home_root}" ${CLI} --repo "${repo}" exec -- bash -lc 'printf "%s\n" "${JAVA_HOME}"' > "${repo}/exec.out"
+
+  assert_contains "${repo}/exec.out" "${java17_home}"
 }
 
 test_run_app_bg_disabled_without_executable_app() {
@@ -446,6 +543,38 @@ test_standalone_mode() {
   assert_not_exists "${repo}/Makefile"
   ${CLI} --repo "${repo}" uninstall >/dev/null
   assert_not_exists "${repo}/.makevn"
+}
+
+test_init_force_preserves_config() {
+  local repo="${TMP_ROOT}/init-force-preserves-config"
+
+  mkdir -p "${repo}"
+  printf '<project/>\n' > "${repo}/pom.xml"
+
+  ${CLI} --repo "${repo}" init >/dev/null
+  cat > "${repo}/.makevn/config" <<'EOF'
+# makevn local configuration
+MAKEVN_JAVA_HOME=""
+MAKEVN_CODE_JAVA_HOME="/custom/java"
+MAKEVN_KARATE_JAVA_HOME=""
+MAKEVN_CODE_TOOL_VERSIONS=""
+MAKEVN_KARATE_TOOL_VERSIONS=""
+MAKEVN_RUN_CMD=""
+MAKEVN_FORMAT_CHECK_GOAL=""
+MAKEVN_FORMAT_APPLY_GOAL=""
+MAKEVN_CHECKSTYLE_GOAL=""
+MAKEVN_COVERAGE_PROP_FLAGS="-Djacoco.skip=false"
+MAKEVN_MIN_COVERAGE_THRESHOLD="70"
+MAKEVN_MIN_COVERAGE_CHANGES_THRESHOLD="70"
+MAKEVN_COMPOSE_FILE=""
+MAKEVN_E2E_COMPOSE_FILE=""
+EOF
+
+  ${CLI} --repo "${repo}" init --force >/dev/null
+
+  assert_contains "${repo}/.makevn/config" 'MAKEVN_CODE_JAVA_HOME="/custom/java"'
+  assert_contains "${repo}/.makevn/config" 'MAKEVN_MIN_COVERAGE_THRESHOLD="70"'
+  assert_contains "${repo}/.makevn/config" 'MAKEVN_MIN_COVERAGE_CHANGES_THRESHOLD="70"'
 }
 
 test_format_requires_configured_formatter() {
@@ -2113,6 +2242,88 @@ EOF
     || fail "expected coverage-changes output to include overall quality gate"
 }
 
+test_coverage_accepts_decimal_above_threshold() {
+  local repo="${TMP_ROOT}/coverage-decimal-threshold"
+  local output
+
+  mkdir -p "${repo}/target/site/jacoco"
+  printf '<project/>\n' > "${repo}/pom.xml"
+  printf '<html></html>\n' > "${repo}/target/site/jacoco/index.html"
+  cat > "${repo}/target/site/jacoco/jacoco.csv" <<'EOF'
+GROUP,PACKAGE,CLASS,INSTRUCTION_MISSED,INSTRUCTION_COVERED,BRANCH_MISSED,BRANCH_COVERED,LINE_MISSED,LINE_COVERED,COMPLEXITY_MISSED,COMPLEXITY_COVERED,METHOD_MISSED,METHOD_COVERED
+makevn,com.example,Changed,2239,7820,0,0,0,1,0,1,0,1
+EOF
+  mkdir -p "${repo}/.makevn"
+  cat > "${repo}/.makevn/config" <<'EOF'
+MAKEVN_MIN_COVERAGE_THRESHOLD="70 (from config)"
+EOF
+
+  output="$(${CLI} --repo "${repo}" coverage)"
+
+  [[ "${output}" == *"Coverage: 77.74 %"* ]] || fail "expected coverage output to report decimal coverage"
+  [[ "${output}" == *"Quality gate conditions met"* ]] || fail "expected coverage to pass when decimal coverage is above threshold"
+}
+
+test_coverage_combines_module_reports() {
+  local repo="${TMP_ROOT}/coverage-module-reports"
+  local output
+
+  mkdir -p "${repo}/module-a/target/site/jacoco" "${repo}/module-b/target/site/jacoco"
+  printf '<project/>\n' > "${repo}/pom.xml"
+  printf '<html></html>\n' > "${repo}/module-a/target/site/jacoco/index.html"
+  printf '<html></html>\n' > "${repo}/module-b/target/site/jacoco/index.html"
+  cat > "${repo}/module-a/target/site/jacoco/jacoco.csv" <<'EOF'
+GROUP,PACKAGE,CLASS,INSTRUCTION_MISSED,INSTRUCTION_COVERED,BRANCH_MISSED,BRANCH_COVERED,LINE_MISSED,LINE_COVERED,COMPLEXITY_MISSED,COMPLEXITY_COVERED,METHOD_MISSED,METHOD_COVERED
+makevn,com.example,A,20,80,0,0,0,1,0,1,0,1
+EOF
+  cat > "${repo}/module-b/target/site/jacoco/jacoco.csv" <<'EOF'
+GROUP,PACKAGE,CLASS,INSTRUCTION_MISSED,INSTRUCTION_COVERED,BRANCH_MISSED,BRANCH_COVERED,LINE_MISSED,LINE_COVERED,COMPLEXITY_MISSED,COMPLEXITY_COVERED,METHOD_MISSED,METHOD_COVERED
+makevn,com.example,B,30,70,0,0,0,1,0,1,0,1
+EOF
+
+  output="$(${CLI} --repo "${repo}" coverage --threshold 74)"
+
+  [[ "${output}" == *"Coverage: 75.00 %"* ]] || fail "expected coverage output to combine module CSV reports"
+  [[ "${output}" == *"Quality gate conditions met"* ]] || fail "expected combined module coverage to pass"
+}
+
+test_coverage_generates_module_reports_when_missing() {
+  local repo="${TMP_ROOT}/coverage-generate-module-reports"
+  local java_home
+  local output
+
+  mkdir -p "${repo}"
+  printf '<project/>\n' > "${repo}/pom.xml"
+  java_home="$(detect_java_home)"
+  mkdir -p "${repo}/.makevn"
+  cat > "${repo}/.makevn/config" <<EOF
+MAKEVN_JAVA_HOME="${java_home}"
+MAKEVN_CODE_JAVA_HOME=""
+MAKEVN_KARATE_JAVA_HOME=""
+MAKEVN_CODE_TOOL_VERSIONS=""
+MAKEVN_KARATE_TOOL_VERSIONS=""
+MAKEVN_RUN_CMD=""
+EOF
+  cat > "${repo}/mvnw" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+printf 'ARGS=%s\n' "$*" >> .mvnw.log
+mkdir -p module-a/target/site/jacoco
+printf '<html></html>\n' > module-a/target/site/jacoco/index.html
+cat > module-a/target/site/jacoco/jacoco.csv <<'CSV'
+GROUP,PACKAGE,CLASS,INSTRUCTION_MISSED,INSTRUCTION_COVERED,BRANCH_MISSED,BRANCH_COVERED,LINE_MISSED,LINE_COVERED,COMPLEXITY_MISSED,COMPLEXITY_COVERED,METHOD_MISSED,METHOD_COVERED
+makevn,com.example,A,20,80,0,0,0,1,0,1,0,1
+CSV
+EOF
+  chmod +x "${repo}/mvnw"
+
+  output="$(${CLI} --repo "${repo}" coverage --threshold 80)"
+
+  assert_matches "${repo}/.mvnw.log" '^ARGS=-nsu -f .*/pom\.xml jacoco:report -Dmaven\.build\.cache\.enabled=false$'
+  [[ "${output}" == *"Coverage report not found; attempting jacoco:report"* ]] || fail "expected coverage to generate missing Jacoco report"
+  [[ "${output}" == *"Quality gate conditions met"* ]] || fail "expected generated module coverage to pass"
+}
+
 test_verify_rejects_skip_flags() {
   local repo="${TMP_ROOT}/verify-rejects-skip-flags"
   local output=""
@@ -2231,6 +2442,81 @@ EOF
   "${seq_cli}" --repo "${repo}" uninstall >/dev/null
 }
 
+test_shell_entrypoint_sequential_commands() {
+  local repo="${TMP_ROOT}/shell-sequential-commands"
+  local install_prefix="${TMP_ROOT}/shell-sequential-install"
+  local seq_cli="${install_prefix}/bin/makevn"
+  local java_home
+
+  PREFIX="${install_prefix}" "${ROOT_DIR}/install.sh" --shell >/dev/null
+
+  mkdir -p "${repo}"
+  mkdir -p "${repo}/code/boot/src/test/resources/compose"
+  mkdir -p "${repo}/fake-bin"
+  printf '<project/>\n' > "${repo}/pom.xml"
+  printf 'services:\n  db:\n    image: postgres:16\n' > "${repo}/code/boot/src/test/resources/compose/docker-compose.yml"
+  printf 'services:\n  db:\n    environment:\n      FOO: bar\n' > "${repo}/code/boot/src/test/resources/compose/docker-compose.override.yml"
+  java_home="$(detect_java_home)"
+
+  "${seq_cli}" --repo "${repo}" init >/dev/null
+
+  cat > "${repo}/mvnw" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+printf 'ARGS=%s\n' "$*" >> .mvnw.log
+printf 'JAVA_HOME=%s\n' "${JAVA_HOME:-}" >> .mvnw.log
+EOF
+  chmod +x "${repo}/mvnw"
+  cat > "${repo}/fake-bin/docker-compose" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+printf 'fake-service-id\n'
+EOF
+  chmod +x "${repo}/fake-bin/docker-compose"
+  cat > "${repo}/fake-bin/docker" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+if [[ "$1" == "compose" && "${2:-}" == "version" ]]; then
+  exit 0
+fi
+if [[ "$1" == "inspect" && "${2:-}" == "-f" ]]; then
+  case "$3" in
+    '{{.State.Status}}')
+      printf 'running\n'
+      ;;
+    '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}')
+      printf 'healthy\n'
+      ;;
+    '{{.Name}}')
+      printf '/fake-db\n'
+      ;;
+    *)
+      exit 1
+      ;;
+  esac
+  exit 0
+fi
+exit 0
+EOF
+  chmod +x "${repo}/fake-bin/docker"
+
+  cat > "${repo}/.makevn/config" <<EOF
+MAKEVN_JAVA_HOME="${java_home}"
+MAKEVN_CODE_JAVA_HOME=""
+MAKEVN_KARATE_JAVA_HOME=""
+MAKEVN_CODE_TOOL_VERSIONS=""
+MAKEVN_KARATE_TOOL_VERSIONS=""
+MAKEVN_RUN_CMD=""
+EOF
+
+  PATH="${repo}/fake-bin:${PATH}" "${seq_cli}" --repo "${repo}" clean verify-it >/dev/null
+
+  assert_file_exists "${repo}/.makevn/logs/clean.log"
+  assert_file_exists "${repo}/.makevn/logs/verify-it.log"
+  assert_matches "${repo}/.mvnw.log" '^ARGS=-f .*/pom\.xml clean$'
+  assert_matches "${repo}/.mvnw.log" '^ARGS=-f .*/pom\.xml verify -Djacoco\.skip=false -DskipUTs -Dskip\.unit\.tests=true -DfailIfNoTests=false -Dmaven\.test\.failure\.ignore=false -Dmaven\.build\.cache\.enabled=false$'
+}
+
 test_command_typo_rejected_before_backend() {
   local repo="${TMP_ROOT}/command-typo"
   local install_prefix="${TMP_ROOT}/command-typo-install"
@@ -2295,12 +2581,16 @@ main() {
   test_doctor_unsupported
   test_backend_doctor_json
   test_doctor_resolves_java_version_from_pom
+  test_doctor_resolves_java_version_from_pom_property_reference
+  test_doctor_resolves_java_version_from_compiler_plugin_source
   test_doctor_does_not_invent_health_check
   test_doctor_detects_actuator_health_check
   test_doctor_shows_progress_in_tty
   test_doctor_reports_compatible_newer_java_homes
+  test_exec_uses_compatible_newer_java_home
   test_run_app_bg_disabled_without_executable_app
   test_standalone_mode
+  test_init_force_preserves_config
   test_format_requires_configured_formatter
   test_checkstyle_requires_configured_plugin
   test_make_install_existing_makefile
@@ -2328,9 +2618,13 @@ main() {
   test_verify_leaves_local_containers_unset_without_repo_signal
   test_verify_changes_command
   test_coverage_changes_command
+  test_coverage_accepts_decimal_above_threshold
+  test_coverage_combines_module_reports
+  test_coverage_generates_module_reports_when_missing
   test_verify_rejects_skip_flags
   test_verify_split_commands_reject_wrong_skip_flags
   test_sequential_commands
+  test_shell_entrypoint_sequential_commands
   test_command_typo_rejected_before_backend
   test_command_failure_summary_omits_duplicate_elapsed
   printf 'Smoke tests passed\n'

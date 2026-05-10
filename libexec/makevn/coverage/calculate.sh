@@ -6,6 +6,11 @@
 set -e
 JACOCO_CSV="${1:?Error: JaCoCo CSV path is required}"
 MIN_THRESHOLD="${2:-90}"
+MIN_THRESHOLD="$(printf '%s' "${MIN_THRESHOLD}" | sed -E 's/[[:space:]]*\([^)]*\)[[:space:]]*$//; s/%$//; s/^[[:space:]]+|[[:space:]]+$//g')"
+if ! printf '%s\n' "${MIN_THRESHOLD}" | grep -Eq '^[0-9]+([.][0-9]+)?$'; then
+    echo "✗ Error: Invalid coverage threshold: ${MIN_THRESHOLD}"
+    exit 1
+fi
 if [ ! -f "$JACOCO_CSV" ]; then
     echo "✗ Error: JaCoCo CSV file not found at $JACOCO_CSV"
     exit 1
@@ -33,7 +38,7 @@ awk -F',' -v min_threshold="$MIN_THRESHOLD" -v green="${GREEN:-\033[0;32m}" -v n
         printf "Notice: | Missed Instructions: %d of %d | Coverage: %.2f %% | Missed Branches: %d of %d | Coverage Branches: %.2f %% |\n",
                inst_missed, total_inst, inst_pct, branch_missed, total_branch, branch_pct;
 
-        if (coverage_primary >= min_threshold) {
+        if ((coverage_primary + 0.0000001) >= (min_threshold + 0)) {
             printf "%s✓ Quality gate conditions met: current coverage=%.2f, minimum %.2f%s\n", green, coverage_primary, min_threshold, nc;
             exit 0;
         } else {

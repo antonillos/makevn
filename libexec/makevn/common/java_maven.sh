@@ -24,6 +24,13 @@ makevn_resolve_java_version_home() {
   bash "${jdk_manager}" resolve-version "${java_version}" 2>/dev/null
 }
 
+makevn_resolve_compatible_java_version_home() {
+  local java_version="$1"
+  local jdk_manager
+  jdk_manager="$(makevn_jdk_manager_script)"
+  bash "${jdk_manager}" resolve-compatible-version "${java_version}" 2>/dev/null
+}
+
 makevn_list_compatible_java_homes() {
   local java_version="$1"
   local jdk_manager
@@ -105,6 +112,11 @@ makevn_effective_java_home() {
     if [[ -n "${java_version}" ]]; then
       local resolved_java_home=""
       resolved_java_home="$(makevn_resolve_java_version_home "${java_version}" || true)"
+      if [[ -n "${resolved_java_home}" ]]; then
+        printf '%s\n' "${resolved_java_home}"
+        return 0
+      fi
+      resolved_java_home="$(makevn_resolve_compatible_java_version_home "${java_version}" || true)"
       if [[ -n "${resolved_java_home}" ]]; then
         printf '%s\n' "${resolved_java_home}"
         return 0

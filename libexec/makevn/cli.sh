@@ -108,6 +108,91 @@ print_command_intro() {
   makevn_print_header "makevn ${title}"
 }
 
+makevn_cli_is_top_level_command() {
+  case "$1" in
+    help|doctor|init|make|uninstall|profile|exec|compile|test-compile|compile-tests|validate|package|clean|build|test|verify-ut|verify-ut-coverage|verify-it|verify-it-coverage|verify|verify-changes|coverage|coverage-changes|pr-verify|format|checkstyle|docker-up|docker-down|docker-ps|docker-ps-required|karate-docker-up|karate-docker-down|karate-test|karate-all|run-app|run-app-bg|stop-app|run|jdk)
+      return 0
+      ;;
+  esac
+  return 1
+}
+
+makevn_cli_option_takes_value() {
+  case "$1" in
+    --name|--context|--threshold|--tag|--compose|--module)
+      return 0
+      ;;
+  esac
+  return 1
+}
+
+makevn_cli_dispatch_sequence_if_needed() {
+  local repo_root="$1"
+  shift
+
+  local -a args=("$@")
+  local -a current=()
+  local -a segments=()
+  local arg=""
+  local forwarding_passthrough=false
+  local option_expects_value=false
+  local segment=""
+
+  [[ ${#args[@]} -gt 0 ]] || return 1
+
+  for arg in "${args[@]}"; do
+    if [[ ${#current[@]} -eq 0 ]]; then
+      current=("${arg}")
+      continue
+    fi
+
+    if [[ "${forwarding_passthrough}" == true ]]; then
+      current+=("${arg}")
+      continue
+    fi
+
+    if [[ "${option_expects_value}" == true ]]; then
+      current+=("${arg}")
+      option_expects_value=false
+      continue
+    fi
+
+    if [[ "${arg}" == "--" ]]; then
+      forwarding_passthrough=true
+      current+=("${arg}")
+      continue
+    fi
+
+    if makevn_cli_option_takes_value "${arg}"; then
+      current+=("${arg}")
+      option_expects_value=true
+      continue
+    fi
+
+    if [[ "${current[0]}" == "make" && ${#current[@]} -eq 1 && ( "${arg}" == "install" || "${arg}" == "uninstall" ) ]]; then
+      current+=("${arg}")
+      continue
+    fi
+
+    if makevn_cli_is_top_level_command "${arg}"; then
+      segments+=("$(printf '%q ' "${current[@]}")")
+      current=("${arg}")
+      continue
+    fi
+
+    current+=("${arg}")
+  done
+
+  segments+=("$(printf '%q ' "${current[@]}")")
+  [[ ${#segments[@]} -gt 1 ]] || return 1
+
+  for segment in "${segments[@]}"; do
+    eval "set -- ${segment}"
+    "${BASH_SOURCE[0]}" --repo "${repo_root}" "$@"
+  done
+  exit 0
+}
+
 # shellcheck source=/dev/null
 source "${SCRIPT_DIR}/commands/doctor.sh"
 # shellcheck source=/dev/null
@@ -156,6 +241,9 @@ COMMAND="${1:-help}"
 [[ $# -gt 0 ]] && shift
 
 REPO_ROOT="$(makevn_resolve_repo_root "${REPO_OVERRIDE:-$PWD}")"
+if makevn_cli_dispatch_sequence_if_needed "${REPO_ROOT}" "${COMMAND}" "$@"; then
+  exit 0
+fi
 
 case "${COMMAND}" in
   help)
@@ -163,7 +251,7 @@ case "${COMMAND}" in
     show_help
     ;;
   doctor)
-    print_doctor "${REPO_ROOT}"
+    print_doctor "${REPO_ROOT}" "$@"
     ;;
   init)
     cmd_init "${REPO_ROOT}" "$@"

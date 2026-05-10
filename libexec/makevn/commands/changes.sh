@@ -37,13 +37,39 @@ makevn_effective_coverage_changes_threshold() {
   printf '%s\n' "90"
 }
 
+makevn_write_coverage_frontend_metadata() {
+  local repo_root="$1"
+  local maven_base_path="$2"
+
+  makevn_write_backend_metadata \
+    "${MAKEVN_BACKEND_METADATA_OUT:-}" \
+    "coverage" \
+    "${repo_root}" \
+    "${maven_base_path}" \
+    "" \
+    "" \
+    "makevn coverage" \
+    "" \
+    "coverage"
+}
+
 cmd_coverage() {
   local repo_root="$1"
   local maven_base_path=""
+  local maven_executable=""
+  local cli_flags_value=""
+  local report_dirs=""
   local report_dir=""
   local threshold=""
   local calculate_script=""
+  local csv_path=""
+  local combined_csv=""
+  local coverage_output=""
+  local line=""
   local report_path=""
+  local rc=0
+  local -a cli_flags=()
+  local -a report_args=()
 
   shift
   threshold="$(makevn_effective_coverage_threshold "${repo_root}")"
@@ -67,17 +93,65 @@ cmd_coverage() {
 
   maven_base_path="$(makevn_detect_maven_base_path "${repo_root}" || true)"
   [[ -n "${maven_base_path}" ]] || makevn_die "No Maven project detected in ${repo_root}"
-  report_dir="$(makevn_jacoco_report_dir "${maven_base_path}" || true)"
-  [[ -n "${report_dir}" ]] || makevn_die "No JaCoCo aggregate module detected under ${maven_base_path}"
-  [[ -f "${report_dir}/index.html" ]] || makevn_die "Coverage report not found. Run 'makevn verify', 'makevn verify-ut-coverage', or 'makevn verify-it-coverage' first."
-  [[ -f "${report_dir}/jacoco.csv" ]] || makevn_die "JaCoCo CSV report not found at ${report_dir}/jacoco.csv"
+  makevn_write_coverage_frontend_metadata "${repo_root}" "${maven_base_path}"
+  report_dirs="$(makevn_jacoco_report_dirs "${maven_base_path}" | sed '/^$/d' || true)"
+  if [[ -z "${report_dirs}" ]]; then
+    makevn_print_detail_line "Coverage report not found; attempting jacoco:report from existing test data."
+    maven_executable="$(makevn_maven_executable "${repo_root}" "${maven_base_path}")"
+    cli_flags_value="$(makevn_maven_cli_flags_for_command "${repo_root}" verify)"
+    cli_flags_value="$(makevn_append_word "${cli_flags_value}" "-nsu")"
+    if [[ -n "${cli_flags_value}" ]]; then
+      read -r -a cli_flags <<< "${cli_flags_value}"
+    fi
+    report_args=("${maven_executable}")
+    if [[ ${#cli_flags[@]} -gt 0 ]]; then
+      report_args+=("${cli_flags[@]}")
+    fi
+    report_args+=(-f "${maven_base_path}/pom.xml" jacoco:report -Dmaven.build.cache.enabled=false)
+    makevn_run_logged_in_context "${repo_root}" code "${maven_base_path}" coverage-report coverage "coverage report" "${report_args[@]}"
+    rc=$?
+    [[ ${rc} -eq 0 ]] || return ${rc}
+    makevn_write_coverage_frontend_metadata "${repo_root}" "${maven_base_path}"
+    report_dirs="$(makevn_jacoco_report_dirs "${maven_base_path}" | sed '/^$/d' || true)"
+  fi
+  [[ -n "${report_dirs}" ]] || makevn_die "No JaCoCo report detected under ${maven_base_path}. Run 'makevn verify-ut-coverage' first."
 
   calculate_script="$(makevn_internal_make_script_path coverage/calculate.sh || true)"
   [[ -n "${calculate_script}" ]] || makevn_die "Internal coverage calculate runtime script not found"
 
-  bash "${calculate_script}" "${report_dir}/jacoco.csv" "${threshold}"
-  report_path="${report_dir}/index.html"
-  printf '%s\n' "$(makevn_dim "Full report: ${report_path}")"
+  if [[ "$(printf '%s\n' "${report_dirs}" | sed '/^$/d' | wc -l | tr -d '[:space:]')" -eq 1 ]]; then
+    report_dir="${report_dirs}"
+    csv_path="${report_dir}/jacoco.csv"
+  else
+    combined_csv="$(mktemp "${TMPDIR:-/tmp}/makevn-jacoco-combined.XXXXXX.csv")"
+    while IFS= read -r report_dir; do
+      [[ -n "${report_dir}" ]] || continue
+      [[ -f "${report_dir}/jacoco.csv" ]] || continue
+      if [[ ! -s "${combined_csv}" ]]; then
+        cat "${report_dir}/jacoco.csv" > "${combined_csv}"
+      else
+        tail -n +2 "${report_dir}/jacoco.csv" >> "${combined_csv}"
+      fi
+    done <<< "${report_dirs}"
+    csv_path="${combined_csv}"
+  fi
+  [[ -f "${csv_path}" ]] || makevn_die "JaCoCo CSV report not found"
+
+  set +e
+  coverage_output="$(NO_COLOR=1 bash "${calculate_script}" "${csv_path}" "${threshold}" 2>&1)"
+  rc=$?
+  set -e
+  [[ -z "${combined_csv}" ]] || rm -f "${combined_csv}"
+  while IFS= read -r line; do
+    [[ -n "${line}" ]] || continue
+    makevn_print_detail_line "${line}"
+  done <<< "${coverage_output}"
+  [[ ${rc} -eq 0 ]] || return ${rc}
+  while IFS= read -r report_dir; do
+    [[ -n "${report_dir}" ]] || continue
+    report_path="${report_dir}/index.html"
+    [[ -f "${report_path}" ]] && makevn_print_detail_line "Full report: ${report_path}"
+  done <<< "${report_dirs}"
 }
 
 cmd_verify_changes() {

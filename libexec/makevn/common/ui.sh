@@ -44,6 +44,15 @@ makevn_print_item() {
   fi
 }
 
+makevn_print_detail_line() {
+  local line="$1"
+  if [[ -n "${MAKEVN_BACKEND_DETAIL_OUT:-}" ]]; then
+    printf '%s\n' "${line}" >> "${MAKEVN_BACKEND_DETAIL_OUT}"
+  else
+    printf '%s\n' "${line}"
+  fi
+}
+
 makevn_print_command_header() {
   local title="$1"
   local pid="${2:-}"
@@ -60,4 +69,3 @@ makevn_print_command_header() {
 
   printf '%s %s\n' "$(makevn_dim '::')" "${line}"
 }
-

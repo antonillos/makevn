@@ -384,6 +384,33 @@ makevn_xml_first_tag_value() {
   ' "${file_path}"
 }
 
+makevn_xml_property_value() {
+  local property_name="$1"
+  local file_path="$2"
+
+  makevn_xml_first_tag_value "${property_name}" "${file_path}"
+}
+
+makevn_resolve_pom_property_reference() {
+  local value="$1"
+  local pom_path="$2"
+  local property_name=""
+  local resolved_value=""
+  local guard=0
+
+  value="$(makevn_trim "${value}")"
+  while [[ "${value}" =~ ^\$\{([^}]+)\}$ ]]; do
+    property_name="${BASH_REMATCH[1]}"
+    resolved_value="$(makevn_xml_property_value "${property_name}" "${pom_path}")"
+    [[ -n "${resolved_value}" ]] || return 1
+    value="$(makevn_trim "${resolved_value}")"
+    guard=$((guard + 1))
+    (( guard < 10 )) || return 1
+  done
+
+  printf '%s\n' "${value}"
+}
+
 makevn_normalize_java_version() {
   local value="$1"
 
@@ -400,6 +427,16 @@ makevn_normalize_java_version() {
   printf '%s\n' "${value}"
 }
 
+makevn_normalize_pom_java_version() {
+  local candidate="$1"
+  local pom_path="$2"
+  local resolved=""
+
+  resolved="$(makevn_resolve_pom_property_reference "${candidate}" "${pom_path}" || true)"
+  [[ -n "${resolved}" ]] || resolved="${candidate}"
+  makevn_normalize_java_version "${resolved}"
+}
+
 makevn_detect_java_version_from_pom() {
   local maven_base_path="$1"
   local pom_path=""
@@ -412,7 +449,7 @@ makevn_detect_java_version_from_pom() {
   pom_path="${maven_base_path}/pom.xml"
   for tag_name in maven.compiler.release maven.compiler.target maven.compiler.source java.version; do
     candidate="$(makevn_xml_first_tag_value "${tag_name}" "${pom_path}")"
-    if makevn_normalize_java_version "${candidate}"; then
+    if makevn_normalize_pom_java_version "${candidate}" "${pom_path}"; then
       return 0
     fi
   done
@@ -427,9 +464,25 @@ makevn_detect_java_version_from_pom() {
       print line
       exit
     }
+    in_plugin && /<target>/ {
+      line = $0
+      sub(/.*<target>/, "", line)
+      sub(/<\/target>.*/, "", line)
+      gsub(/^[[:space:]]+|[[:space:]]+$/, "", line)
+      print line
+      exit
+    }
+    in_plugin && /<source>/ {
+      line = $0
+      sub(/.*<source>/, "", line)
+      sub(/<\/source>.*/, "", line)
+      gsub(/^[[:space:]]+|[[:space:]]+$/, "", line)
+      print line
+      exit
+    }
     in_plugin && /<\/plugin>/ { in_plugin = 0 }
   ' "${pom_path}")"
-  makevn_normalize_java_version "${candidate}"
+  makevn_normalize_pom_java_version "${candidate}" "${pom_path}"
 }
 
 makevn_detect_karate_tool_versions_fresh() {
@@ -883,6 +936,7 @@ makevn_detect_jacoco_module_name() {
 makevn_jacoco_report_dir() {
   local maven_base_path="$1"
   local jacoco_module=""
+  local report_dir=""
 
   jacoco_module="$(makevn_detect_jacoco_module_name "${maven_base_path}" || true)"
   if [[ -n "${jacoco_module}" ]]; then
@@ -890,17 +944,56 @@ makevn_jacoco_report_dir() {
     return 0
   fi
 
-  if [[ -d "${maven_base_path}/target/site/jacoco" ]]; then
+  if [[ -f "${maven_base_path}/target/site/jacoco/jacoco.csv" ]]; then
     printf '%s/target/site/jacoco\n' "${maven_base_path}"
+    return 0
+  fi
+
+  report_dir="$(makevn_jacoco_first_module_report_dir "${maven_base_path}" || true)"
+  if [[ -n "${report_dir}" ]]; then
+    printf '%s\n' "${report_dir}"
     return 0
   fi
 
   return 1
 }
 
+makevn_jacoco_first_module_report_dir() {
+  local maven_base_path="$1"
+  local csv_path=""
+
+  [[ -n "${maven_base_path}" ]] || return 1
+  csv_path="$(find "${maven_base_path}" -path '*/target/site/jacoco/jacoco.csv' -type f -print 2>/dev/null | LC_ALL=C sort | head -n 1 || true)"
+  [[ -n "${csv_path}" ]] || return 1
+  printf '%s\n' "${csv_path%/jacoco.csv}"
+}
+
+makevn_jacoco_report_dirs() {
+  local maven_base_path="$1"
+  local jacoco_module=""
+
+  [[ -n "${maven_base_path}" ]] || return 1
+
+  jacoco_module="$(makevn_detect_jacoco_module_name "${maven_base_path}" || true)"
+  if [[ -n "${jacoco_module}" && -f "${maven_base_path}/${jacoco_module}/target/site/jacoco-aggregate/jacoco.csv" ]]; then
+    printf '%s/%s/target/site/jacoco-aggregate\n' "${maven_base_path}" "${jacoco_module}"
+    return 0
+  fi
+
+  if [[ -f "${maven_base_path}/target/site/jacoco/jacoco.csv" ]]; then
+    printf '%s/target/site/jacoco\n' "${maven_base_path}"
+    return 0
+  fi
+
+  find "${maven_base_path}" -path '*/target/site/jacoco/jacoco.csv' -type f -print 2>/dev/null \
+    | LC_ALL=C sort \
+    | sed 's|/jacoco\.csv$||'
+}
+
 makevn_jacoco_report_layout() {
   local maven_base_path="$1"
   local jacoco_module=""
+  local report_count=""
 
   jacoco_module="$(makevn_detect_jacoco_module_name "${maven_base_path}" || true)"
   if [[ -n "${jacoco_module}" ]]; then
@@ -908,8 +1001,14 @@ makevn_jacoco_report_layout() {
     return 0
   fi
 
-  if [[ -d "${maven_base_path}/target/site/jacoco" ]]; then
+  if [[ -f "${maven_base_path}/target/site/jacoco/jacoco.csv" ]]; then
     printf '%s\n' "single-module"
+    return 0
+  fi
+
+  report_count="$(makevn_jacoco_report_dirs "${maven_base_path}" | sed '/^$/d' | wc -l | tr -d '[:space:]' || true)"
+  if [[ "${report_count}" =~ ^[0-9]+$ && "${report_count}" -gt 0 ]]; then
+    printf 'multi-module:%s reports\n' "${report_count}"
     return 0
   fi
 

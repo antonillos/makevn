@@ -4,6 +4,15 @@ set -euo pipefail
 print_doctor() {
   local repo_root="$1"
 
+  shift
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      *)
+        makevn_die "Unknown doctor option: $1"
+        ;;
+    esac
+  done
+
   print_command_intro "${repo_root}" doctor
   makevn_collect_doctor_snapshot "${repo_root}"
 

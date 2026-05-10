@@ -67,14 +67,25 @@ java_version_line() {
 }
 
 major_for_home() {
+  local legacy_major=""
   local version_line
   version_line="$(java_version_line "$1")"
-  printf '%s\n' "${version_line}" | sed -nE 's/.*version "([0-9]+)(\..*)?".*/\1/p'
+  legacy_major="$(printf '%s\n' "${version_line}" | sed -nE 's/.*version "1\.([0-9]+).*/\1/p')"
+  if [[ -n "${legacy_major}" ]]; then
+    printf '%s\n' "${legacy_major}"
+    return 0
+  fi
+  printf '%s\n' "${version_line}" | sed -nE 's/.*version "([0-9]+).*/\1/p'
 }
 
 matches_version() {
   local home="$1"
+  local actual_major=""
   local version_line
+  if [[ "${JDK_VERSION}" =~ ^[0-9]+$ ]]; then
+    actual_major="$(major_for_home "${home}")"
+    [[ "${actual_major}" == "${JDK_VERSION}" ]] && return 0
+  fi
   version_line="$(java_version_line "${home}")"
   [[ "${version_line}" =~ \"${JDK_VERSION}(\.|\+|-|\"|[[:space:]]) ]]
 }
@@ -156,6 +167,27 @@ list_compatible_homes() {
     try_list_compatible_home "${JAVA_HOME}" "${required_major}"
   fi
   list_compatible_from_common_dirs "${required_major}"
+}
+
+resolve_compatible_version_home() {
+  local required_major="$1"
+  local actual_major=""
+  local best_home=""
+  local best_major=""
+  local compatible_home=""
+
+  [[ "${required_major}" =~ ^[0-9]+$ ]] || return 1
+  while IFS= read -r compatible_home; do
+    [[ -n "${compatible_home}" ]] || continue
+    actual_major="$(major_for_home "${compatible_home}")"
+    [[ "${actual_major}" =~ ^[0-9]+$ ]] || continue
+    if [[ -z "${best_major}" ]] || (( actual_major < best_major )); then
+      best_major="${actual_major}"
+      best_home="${compatible_home}"
+    fi
+  done < <(list_compatible_homes "${required_major}")
+  [[ -n "${best_home}" ]] || return 1
+  printf '%s\n' "${best_home}"
 }
 
 try_list_compatible_home() {
@@ -329,11 +361,14 @@ case "${ACTION}" in
   resolve-version)
     resolve_version_home
     ;;
+  resolve-compatible-version)
+    resolve_compatible_version_home "${JDK_VERSION}"
+    ;;
   list-compatible-homes)
     list_compatible_homes "${JDK_VERSION}"
     ;;
   *)
-    echo "Usage: $0 current-contexts|list|resolve-tool-versions|resolve-version|list-compatible-homes [arg1] [arg2]"
+    echo "Usage: $0 current-contexts|list|resolve-tool-versions|resolve-version|resolve-compatible-version|list-compatible-homes [arg1] [arg2]"
     exit 1
     ;;
 esac

@@ -26,7 +26,7 @@ fn main() {
     };
 
     if let Action::PrintVersion = action {
-        println!(env!("CARGO_PKG_VERSION"));
+        println!("{}", makevn_version());
         return;
     }
 
@@ -69,6 +69,10 @@ fn main() {
         Err(message) => exit_with_error(message),
     };
     process::exit(exit_code);
+}
+
+fn makevn_version() -> &'static str {
+    option_env!("MAKEVN_BUILD_VERSION").unwrap_or(env!("CARGO_PKG_VERSION"))
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -317,11 +321,18 @@ fn validate_command(
             validate_maven_passthrough_args(command, trailing_args)?;
             Ok(CommandValidation::Valid)
         }
-        "help" | "doctor" | "init" | "uninstall" | "exec" | "test" | "coverage"
+        "help" | "init" | "uninstall" | "exec" | "test" | "coverage"
         | "coverage-changes" | "docker-up" | "docker-down" | "docker-ps"
         | "docker-ps-required" | "karate-docker-up" | "karate-docker-down" | "run-app"
         | "run-app-bg" | "stop-app" | "run" => {
             Ok(CommandValidation::Valid)
+        }
+        "doctor" => {
+            if let Some(extra_arg) = trailing_args.first() {
+                Err(format!("Unknown doctor option: {}", Lossy(extra_arg)))
+            } else {
+                Ok(CommandValidation::Valid)
+            }
         }
         "make" => match trailing_args.first().map(|arg| arg.to_string_lossy()) {
             Some(subcommand) if subcommand == "install" || subcommand == "uninstall" => {
@@ -596,6 +607,7 @@ fn command_supports_frontend_loader(command: &OsString) -> bool {
             | "verify-it-coverage"
             | "verify"
             | "verify-changes"
+            | "coverage"
             | "pr-verify"
             | "format"
             | "checkstyle"
@@ -667,8 +679,8 @@ fn dispatch_backend_invocations(
         command.env("MAKEVN_BIN_PATH", current_exe);
         command.env("MAKEVN_INSTALL_ROOT", install_root);
         command.env("MAKEVN_FRONTEND", "rust");
-        command.env("MAKEVN_FRONTEND_VERSION", env!("CARGO_PKG_VERSION"));
-        command.env("MAKEVN_VERSION", env!("CARGO_PKG_VERSION"));
+        command.env("MAKEVN_FRONTEND_VERSION", makevn_version());
+        command.env("MAKEVN_VERSION", makevn_version());
 
         let run_result = if use_frontend_loader {
             command.env("MAKEVN_FRONTEND_OWNS_LOADER", "1");
@@ -2475,7 +2487,7 @@ fn print_help(with_header: bool) {
         println!(":: makevn help");
     }
 
-    println!("makevn {}", env!("CARGO_PKG_VERSION"));
+    println!("makevn {}", makevn_version());
     println!();
     println!("Terminal-first workflows for Java Maven repositories.");
     println!();

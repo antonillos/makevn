@@ -9,6 +9,7 @@ SHARE_DIR="${SHARE_DIR:-${PREFIX}/share/makevn}"
 SKILL_DIR="${SKILL_DIR:-${SHARE_DIR}/skills/makevn}"
 RUST_TARGET_DIR="${SCRIPT_DIR}/target"
 RUST_BIN="${RUST_TARGET_DIR}/release/makevn"
+VERSION_ENV="${RUST_TARGET_DIR}/makevn-version.env"
 BUILD_SCRIPT="${SCRIPT_DIR}/build-rust-dispatcher.sh"
 FRONTEND_MODE="auto"
 
@@ -52,6 +53,10 @@ fi
 cp "${SCRIPT_DIR}/libexec/makevn/cli.sh" "${LIBEXEC_DIR}/cli.sh"
 cp "${SCRIPT_DIR}/libexec/makevn/backend.sh" "${LIBEXEC_DIR}/backend.sh"
 cp "${SCRIPT_DIR}/libexec/makevn/common.sh" "${LIBEXEC_DIR}/common.sh"
+rm -f "${LIBEXEC_DIR}/version.env"
+if [[ -f "${VERSION_ENV}" ]]; then
+  cp "${VERSION_ENV}" "${LIBEXEC_DIR}/version.env"
+fi
 rm -rf "${LIBEXEC_DIR}/commands" "${LIBEXEC_DIR}/common"
 rm -rf "${LIBEXEC_DIR}/compat" "${LIBEXEC_DIR}/coverage" "${LIBEXEC_DIR}/docker" "${LIBEXEC_DIR}/jdk"
 cp -R "${SCRIPT_DIR}/libexec/makevn/commands" "${LIBEXEC_DIR}/commands"
