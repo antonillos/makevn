@@ -1125,10 +1125,10 @@ exit 0
 EOF
   chmod +x "${repo}/fake-bin/docker"
 
-  cat > "${repo}/fake-bin/curl" <<'EOF'
+  cat > "${repo}/fake-bin/curl" <<EOF
 #!/usr/bin/env bash
 set -euo pipefail
-printf 'curl %s\n' "$*" >> .curl.log
+printf 'curl %s\n' "\$*" >> "${repo}/.curl.log"
 exit 0
 EOF
   chmod +x "${repo}/fake-bin/curl"

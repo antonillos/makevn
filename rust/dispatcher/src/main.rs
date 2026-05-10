@@ -3108,7 +3108,7 @@ mod tests {
         assert_eq!(lines[2], ":: makevn checkstyle");
         assert_eq!(
             lines[3],
-            "-> tailing log: .makevn/logs/checkstyle.log | press +/- to expand"
+            " └ tailing log: .makevn/logs/checkstyle.log | press +/- to expand"
         );
     }
 
