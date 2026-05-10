@@ -129,6 +129,7 @@ makevn verify-it
 makevn verify-it-coverage
 makevn verify
 makevn verify-changes
+makevn coverage
 makevn coverage-changes
 makevn pr-verify
 ```
@@ -139,12 +140,15 @@ makevn pr-verify
 | `verify-it` | Runs integration-test-only verification |
 | `verify` | Runs combined verification and rejects UT/IT skip flags |
 | `verify-changes` | Verifies changed production modules or modified tests |
+| `coverage` | Checks the latest JaCoCo aggregate report against the repo threshold |
 | `coverage-changes` | Checks JaCoCo coverage for changed production code |
 | `pr-verify` | Runs a local PR-style verification flow |
 
 Changed-code coverage expects a coverage-producing command to run first:
 
 ```bash
+makevn verify
+makevn coverage
 makevn verify-changes
 makevn coverage-changes --threshold 90
 ```
@@ -158,6 +162,7 @@ with repo-owned targets such as `build`, `test`, or `run`.
 make -f .makevn/makevn.mk vn-test NAME=UserRepositoryTest
 make -f .makevn/makevn.mk vn-test NAMES="UserRepositoryTest,OrderRepositoryTest"
 make -f .makevn/makevn.mk vn-verify-changes
+make -f .makevn/makevn.mk vn-coverage
 make -f .makevn/makevn.mk vn-coverage-changes
 make -f .makevn/makevn.mk vn-pr-verify
 ```
@@ -169,6 +174,7 @@ Agents should treat `makevn` as the primary interface for Java/Maven work:
 ```bash
 makevn doctor
 makevn test --name SomeTest
+makevn coverage
 makevn verify-changes
 makevn coverage-changes
 ```
@@ -181,6 +187,7 @@ Recommended agent behavior:
 - preserve existing root makefiles
 - use `makevn uninstall` for rollback
 - use `verify-changes` for changed modules/tests
+- use `coverage` for the latest aggregate report gate
 - use `coverage-changes` after a coverage-producing run
 - use `format`/`checkstyle` only when the repo declares a formatter/style plugin or `.makevn/config` sets explicit goals
 - avoid `--tail` unless a human asks for interactive logs

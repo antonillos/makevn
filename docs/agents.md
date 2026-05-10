@@ -24,6 +24,7 @@ repository-owned helper scripts. For changed-code workflows, agents should call 
 public commands directly:
 
 - `makevn verify-changes`
+- `makevn coverage`
 - `makevn coverage-changes`
 
 Those commands are intentionally backed by `makevn`'s installed `libexec/makevn/`
@@ -91,6 +92,7 @@ command that proves the touched surface:
 
 - changed modules/tests: `makevn verify-changes`
 - changed-code coverage after a coverage-producing run: `makevn coverage-changes`
+- latest aggregate coverage gate: `makevn coverage`
 - full confidence pass: `makevn verify`
 
 Because agent frameworks differ, this repository ships the skill contents and examples rather than hardcoding a single agent-specific installation path.
@@ -103,7 +105,7 @@ Inside Codex, the intended flow is the same terminal contract:
 2. inspect the repository shape before changing files
 3. run `makevn doctor`
 4. use `makevn init`, `makevn uninstall`, and verification commands instead of editing `.makevn/` by hand
-5. prefer the smallest proving command: `makevn test --name ...`, `makevn verify-changes`, `makevn coverage-changes`, or `makevn verify`
+5. prefer the smallest proving command: `makevn test --name ...`, `makevn coverage`, `makevn verify-changes`, `makevn coverage-changes`, or `makevn verify`
 6. avoid IDE-specific instructions unless the user explicitly asks for them
 
 Codex-specific repo work should still use normal engineering hygiene: keep edits scoped, verify with concrete commands, and leave the installed `libexec/makevn/` runtime as the source of behavior instead of calling target-repository helper scripts.

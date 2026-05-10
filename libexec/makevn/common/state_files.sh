@@ -115,6 +115,8 @@ MAKEVN_FORMAT_CHECK_GOAL=""
 MAKEVN_FORMAT_APPLY_GOAL=""
 MAKEVN_CHECKSTYLE_GOAL=""
 MAKEVN_COVERAGE_PROP_FLAGS="-Djacoco.skip=false"
+MAKEVN_MIN_COVERAGE_THRESHOLD=""
+MAKEVN_MIN_COVERAGE_CHANGES_THRESHOLD=""
 MAKEVN_COMPOSE_FILE=""
 MAKEVN_E2E_COMPOSE_FILE=""
 EOF
@@ -197,6 +199,46 @@ makevn_update_config_local_containers() {
     mv "${tmp_file}" "${config_path}"
   else
     printf 'MAKEVN_LOCAL_CONTAINERS=%q\n' "${local_containers}" >> "${config_path}"
+  fi
+}
+
+makevn_update_config_min_coverage_threshold() {
+  local repo_root="$1"
+  local min_coverage_threshold="$2"
+  local config_path
+  config_path="$(makevn_config_path "${repo_root}")"
+
+  if [[ ! -f "${config_path}" ]]; then
+    return 1
+  fi
+
+  if grep -q '^MAKEVN_MIN_COVERAGE_THRESHOLD=' "${config_path}"; then
+    local tmp_file
+    tmp_file="$(mktemp)"
+    awk -v val="${min_coverage_threshold}" 'BEGIN{q="\""} /^MAKEVN_MIN_COVERAGE_THRESHOLD=/ { print "MAKEVN_MIN_COVERAGE_THRESHOLD=" q val q; next } { print }' "${config_path}" > "${tmp_file}"
+    mv "${tmp_file}" "${config_path}"
+  else
+    printf 'MAKEVN_MIN_COVERAGE_THRESHOLD=%q\n' "${min_coverage_threshold}" >> "${config_path}"
+  fi
+}
+
+makevn_update_config_min_coverage_changes_threshold() {
+  local repo_root="$1"
+  local min_coverage_threshold="$2"
+  local config_path
+  config_path="$(makevn_config_path "${repo_root}")"
+
+  if [[ ! -f "${config_path}" ]]; then
+    return 1
+  fi
+
+  if grep -q '^MAKEVN_MIN_COVERAGE_CHANGES_THRESHOLD=' "${config_path}"; then
+    local tmp_file
+    tmp_file="$(mktemp)"
+    awk -v val="${min_coverage_threshold}" 'BEGIN{q="\""} /^MAKEVN_MIN_COVERAGE_CHANGES_THRESHOLD=/ { print "MAKEVN_MIN_COVERAGE_CHANGES_THRESHOLD=" q val q; next } { print }' "${config_path}" > "${tmp_file}"
+    mv "${tmp_file}" "${config_path}"
+  else
+    printf 'MAKEVN_MIN_COVERAGE_CHANGES_THRESHOLD=%q\n' "${min_coverage_threshold}" >> "${config_path}"
   fi
 }
 

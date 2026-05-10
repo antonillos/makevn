@@ -24,6 +24,8 @@ print_doctor() {
   makevn_print_item "Detected Maven prop flags" "${MAKEVN_DOCTOR_DETECTED_MAVEN_PROP_FLAGS}"
   makevn_print_item "Detected Maven cache" "${MAKEVN_DOCTOR_DETECTED_MAVEN_CACHE_SOURCE}"
   makevn_print_item "Detected app health URL" "${MAKEVN_DOCTOR_DETECTED_APP_HEALTH_URL}"
+  makevn_print_item "Detected coverage threshold" "${MAKEVN_DOCTOR_DETECTED_COVERAGE_THRESHOLD}"
+  makevn_print_item "Detected coverage-changes threshold" "${MAKEVN_DOCTOR_DETECTED_COVERAGE_CHANGES_THRESHOLD}"
   makevn_print_item "Compile profile" "${MAKEVN_DOCTOR_COMPILE_PROFILE}"
   makevn_print_item "Build profile" "${MAKEVN_DOCTOR_BUILD_PROFILE}"
   makevn_print_item "Test profile" "${MAKEVN_DOCTOR_TEST_PROFILE}"

@@ -1024,6 +1024,62 @@ makevn_detect_workflow_maven_flags() {
   done < <(find "${workflow_root}" -type f \( -name '*.yml' -o -name '*.yaml' \) | LC_ALL=C sort)
 }
 
+makevn_detect_workflow_coverage_threshold() {
+  local repo_root="$1"
+  local workflow_root="${repo_root}/.github/workflows"
+  local workflow_path=""
+  local line=""
+  local threshold=""
+
+  [[ -d "${workflow_root}" ]] || return 1
+
+  while IFS= read -r workflow_path; do
+    while IFS= read -r line; do
+      if [[ "${line}" =~ (^|[[:space:]])coverage([[:space:]]|$).*--threshold[[:space:]]+([0-9]+([.][0-9]+)?) ]]; then
+        printf '%s\n' "${BASH_REMATCH[3]}"
+        return 0
+      fi
+      if [[ "${line}" =~ MIN_COVERAGE_THRESHOLD[[:space:]]*[:=][[:space:]]*\"?([0-9]+([.][0-9]+)?)\"? ]]; then
+        threshold="${BASH_REMATCH[1]}"
+      fi
+    done < "${workflow_path}"
+    if [[ -n "${threshold}" ]]; then
+      printf '%s\n' "${threshold}"
+      return 0
+    fi
+  done < <(find "${workflow_root}" -type f \( -name '*.yml' -o -name '*.yaml' \) | LC_ALL=C sort)
+
+  return 1
+}
+
+makevn_detect_workflow_coverage_changes_threshold() {
+  local repo_root="$1"
+  local workflow_root="${repo_root}/.github/workflows"
+  local workflow_path=""
+  local line=""
+  local threshold=""
+
+  [[ -d "${workflow_root}" ]] || return 1
+
+  while IFS= read -r workflow_path; do
+    while IFS= read -r line; do
+      if [[ "${line}" =~ coverage-changes[[:space:]].*--threshold[[:space:]]+([0-9]+([.][0-9]+)?) ]]; then
+        printf '%s\n' "${BASH_REMATCH[1]}"
+        return 0
+      fi
+      if [[ "${line}" =~ MIN_COVERAGE_CHANGES_THRESHOLD[[:space:]]*[:=][[:space:]]*\"?([0-9]+([.][0-9]+)?)\"? ]]; then
+        threshold="${BASH_REMATCH[1]}"
+      fi
+    done < "${workflow_path}"
+    if [[ -n "${threshold}" ]]; then
+      printf '%s\n' "${threshold}"
+      return 0
+    fi
+  done < <(find "${workflow_root}" -type f \( -name '*.yml' -o -name '*.yaml' \) | LC_ALL=C sort)
+
+  return 1
+}
+
 makevn_detect_maven_cache_from_repo() {
   local maven_base_path="$1"
   local pom_path=""
@@ -1071,6 +1127,8 @@ makevn_detect_repo_profile() {
   local app_runnable="no"
   local maven_prop_flags=""
   local app_health_url=""
+  local coverage_threshold=""
+  local coverage_changes_threshold=""
 
   maven_base_path="$(makevn_detect_maven_base_path_fresh "${repo_root}" || true)"
   code_tool_versions="$(makevn_detect_code_tool_versions_fresh "${repo_root}" "${maven_base_path}" || true)"
@@ -1082,6 +1140,8 @@ makevn_detect_repo_profile() {
   app_health_url="$(makevn_detect_app_health_url "${maven_base_path}" || true)"
 
   makevn_detect_workflow_maven_flags "${repo_root}"
+  coverage_threshold="$(makevn_detect_workflow_coverage_threshold "${repo_root}" || true)"
+  coverage_changes_threshold="$(makevn_detect_workflow_coverage_changes_threshold "${repo_root}" || true)"
   maven_prop_flags=""
 
   if makevn_detect_maven_cache_from_repo "${maven_base_path}"; then
@@ -1125,6 +1185,8 @@ makevn_detect_repo_profile() {
   MAKEVN_DETECTED_KARATE_TOOL_VERSIONS="${karate_tool_versions}"
   MAKEVN_DETECTED_MAVEN_PROP_FLAGS="${maven_prop_flags}"
   MAKEVN_DETECTED_APP_HEALTH_URL="${app_health_url}"
+  MAKEVN_DETECTED_COVERAGE_THRESHOLD="${coverage_threshold}"
+  MAKEVN_DETECTED_COVERAGE_CHANGES_THRESHOLD="${coverage_changes_threshold}"
 }
 
 makevn_write_profile() {
@@ -1148,6 +1210,8 @@ makevn_write_profile() {
     printf 'MAKEVN_PROFILE_MAVEN_PROP_FLAGS=%q\n' "${MAKEVN_DETECTED_MAVEN_PROP_FLAGS}"
     printf 'MAKEVN_PROFILE_MAVEN_CACHE_SOURCE=%q\n' "${MAKEVN_DETECTED_MAVEN_CACHE_SOURCE}"
     printf 'MAKEVN_PROFILE_APP_HEALTH_URL=%q\n' "${MAKEVN_DETECTED_APP_HEALTH_URL:-}"
+    printf 'MAKEVN_PROFILE_COVERAGE_THRESHOLD=%q\n' "${MAKEVN_DETECTED_COVERAGE_THRESHOLD:-}"
+    printf 'MAKEVN_PROFILE_COVERAGE_CHANGES_THRESHOLD=%q\n' "${MAKEVN_DETECTED_COVERAGE_CHANGES_THRESHOLD:-}"
     printf 'MAKEVN_PROFILE_COMPILE_WORKFLOW_FILE=%q\n' "${MAKEVN_DETECTED_COMPILE_WORKFLOW_FILE:-}"
     printf 'MAKEVN_PROFILE_COMPILE_CLI_FLAGS=%q\n' "${MAKEVN_DETECTED_COMPILE_CLI_FLAGS:-}"
     printf 'MAKEVN_PROFILE_COMPILE_PROP_FLAGS=%q\n' "${MAKEVN_DETECTED_COMPILE_PROP_FLAGS:-}"

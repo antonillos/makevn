@@ -36,6 +36,7 @@ Usage:
   makevn [--repo PATH] verify-it-coverage [-- EXTRA_MAVEN_ARGS...]
   makevn [--repo PATH] verify [-- EXTRA_MAVEN_ARGS...]
   makevn [--repo PATH] verify-changes [-- EXTRA_MAVEN_ARGS...]
+  makevn [--repo PATH] coverage [--threshold PCT]
   makevn [--repo PATH] coverage-changes [--threshold PCT]
   makevn [--repo PATH] pr-verify [-- EXTRA_MAVEN_ARGS...]
   makevn [--repo PATH] format [--apply] [-- EXTRA_MAVEN_ARGS...]
@@ -76,6 +77,7 @@ Examples:
   makevn verify-ut
   makevn verify-ut-coverage
   makevn verify-it
+  makevn coverage
   makevn verify-changes
   makevn coverage-changes
   makevn pr-verify
@@ -241,6 +243,9 @@ case "${COMMAND}" in
     ;;
   verify-changes)
     cmd_verify_changes "${REPO_ROOT}" "$@"
+    ;;
+  coverage)
+    cmd_coverage "${REPO_ROOT}" "$@"
     ;;
   coverage-changes)
     cmd_coverage_changes "${REPO_ROOT}" "$@"

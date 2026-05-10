@@ -1,6 +1,85 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+makevn_effective_coverage_threshold() {
+  local repo_root="$1"
+
+  makevn_load_config "${repo_root}"
+  if [[ -n "${MAKEVN_MIN_COVERAGE_THRESHOLD:-}" ]]; then
+    printf '%s\n' "${MAKEVN_MIN_COVERAGE_THRESHOLD}"
+    return 0
+  fi
+
+  makevn_load_profile "${repo_root}"
+  if [[ -n "${MAKEVN_PROFILE_COVERAGE_THRESHOLD:-}" ]]; then
+    printf '%s\n' "${MAKEVN_PROFILE_COVERAGE_THRESHOLD}"
+    return 0
+  fi
+
+  printf '%s\n' "90"
+}
+
+makevn_effective_coverage_changes_threshold() {
+  local repo_root="$1"
+
+  makevn_load_config "${repo_root}"
+  if [[ -n "${MAKEVN_MIN_COVERAGE_CHANGES_THRESHOLD:-}" ]]; then
+    printf '%s\n' "${MAKEVN_MIN_COVERAGE_CHANGES_THRESHOLD}"
+    return 0
+  fi
+
+  makevn_load_profile "${repo_root}"
+  if [[ -n "${MAKEVN_PROFILE_COVERAGE_CHANGES_THRESHOLD:-}" ]]; then
+    printf '%s\n' "${MAKEVN_PROFILE_COVERAGE_CHANGES_THRESHOLD}"
+    return 0
+  fi
+
+  printf '%s\n' "90"
+}
+
+cmd_coverage() {
+  local repo_root="$1"
+  local maven_base_path=""
+  local report_dir=""
+  local threshold=""
+  local calculate_script=""
+  local report_path=""
+
+  shift
+  threshold="$(makevn_effective_coverage_threshold "${repo_root}")"
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --threshold)
+        [[ $# -ge 2 ]] || makevn_die "Missing value for --threshold"
+        threshold="$2"
+        shift 2
+        ;;
+      --)
+        makevn_die "coverage does not accept Maven passthrough args"
+        ;;
+      *)
+        makevn_die "Unknown coverage option: $1"
+        ;;
+    esac
+  done
+
+  print_command_intro "${repo_root}" coverage
+
+  maven_base_path="$(makevn_detect_maven_base_path "${repo_root}" || true)"
+  [[ -n "${maven_base_path}" ]] || makevn_die "No Maven project detected in ${repo_root}"
+  report_dir="$(makevn_jacoco_report_dir "${maven_base_path}" || true)"
+  [[ -n "${report_dir}" ]] || makevn_die "No JaCoCo aggregate module detected under ${maven_base_path}"
+  [[ -f "${report_dir}/index.html" ]] || makevn_die "Coverage report not found. Run 'makevn verify', 'makevn verify-ut-coverage', or 'makevn verify-it-coverage' first."
+  [[ -f "${report_dir}/jacoco.csv" ]] || makevn_die "JaCoCo CSV report not found at ${report_dir}/jacoco.csv"
+
+  calculate_script="$(makevn_internal_make_script_path coverage/calculate.sh || true)"
+  [[ -n "${calculate_script}" ]] || makevn_die "Internal coverage calculate runtime script not found"
+
+  bash "${calculate_script}" "${report_dir}/jacoco.csv" "${threshold}"
+  report_path="${report_dir}/index.html"
+  printf '%s\n' "$(makevn_dim "Full report: ${report_path}")"
+}
+
 cmd_verify_changes() {
   local repo_root="$1"
   local maven_base_path=""
@@ -166,7 +245,7 @@ cmd_coverage_changes() {
   local report_dir=""
   local jacoco_module=""
   local parent_spec=""
-  local threshold="${MIN_COVERAGE_THRESHOLD:-90}"
+  local threshold=""
   local coverage_script=""
   local cli_flags_value=""
   local rc=0
@@ -174,6 +253,7 @@ cmd_coverage_changes() {
   local -a report_args=()
 
   shift
+  threshold="$(makevn_effective_coverage_changes_threshold "${repo_root}")"
   while [[ $# -gt 0 ]]; do
     case "$1" in
       --threshold)

@@ -50,6 +50,8 @@ makevn_collect_doctor_snapshot() {
   local detected_maven_prop_flags=""
   local detected_maven_cache_source="unresolved"
   local detected_app_health_url=""
+  local detected_coverage_threshold=""
+  local detected_coverage_changes_threshold=""
   local compile_profile=""
   local build_profile=""
   local test_profile=""
@@ -68,6 +70,8 @@ makevn_collect_doctor_snapshot() {
   detected_maven_prop_flags="${MAKEVN_DETECTED_MAVEN_PROP_FLAGS:-}"
   detected_maven_cache_source="${MAKEVN_DETECTED_MAVEN_CACHE_SOURCE:-unresolved}"
   detected_app_health_url="${MAKEVN_DETECTED_APP_HEALTH_URL:-}"
+  detected_coverage_threshold="${MAKEVN_DETECTED_COVERAGE_THRESHOLD:-}"
+  detected_coverage_changes_threshold="${MAKEVN_DETECTED_COVERAGE_CHANGES_THRESHOLD:-}"
   compile_profile="$(makevn_detected_command_profile_summary compile)"
   build_profile="$(makevn_detected_command_profile_summary build)"
   test_profile="$(makevn_detected_command_profile_summary test)"
@@ -245,6 +249,36 @@ makevn_collect_doctor_snapshot() {
     printf '%s\n' "$(makevn_dim "Saved to .makevn/config (MAKEVN_APP_HEALTH_URL).")" >&2
   fi
 
+  if [[ -n "${MAKEVN_MIN_COVERAGE_THRESHOLD:-}" ]]; then
+    detected_coverage_threshold="${MAKEVN_MIN_COVERAGE_THRESHOLD} (from config)"
+  elif [[ -n "${detected_coverage_threshold}" ]]; then
+    detected_coverage_threshold="${detected_coverage_threshold} (from workflow)"
+  elif [[ -f "$(makevn_config_path "${repo_root}")" && -t 0 && -t 2 ]]; then
+    printf '\n' >&2
+    printf '%s\n' "$(makevn_warn "No minimum coverage threshold detected in workflows.")" >&2
+    printf '%s\n' "  Enter the repository coverage gate to use for 'makevn coverage' and 'makevn coverage-changes'." >&2
+    detected_coverage_threshold="$(makevn_read_editable_default "Minimum coverage threshold [90]: " "90")"
+    makevn_update_config_min_coverage_threshold "${repo_root}" "${detected_coverage_threshold}"
+    printf '%s\n' "$(makevn_dim "Saved to .makevn/config (MAKEVN_MIN_COVERAGE_THRESHOLD).")" >&2
+  else
+    detected_coverage_threshold="unresolved"
+  fi
+
+  if [[ -n "${MAKEVN_MIN_COVERAGE_CHANGES_THRESHOLD:-}" ]]; then
+    detected_coverage_changes_threshold="${MAKEVN_MIN_COVERAGE_CHANGES_THRESHOLD} (from config)"
+  elif [[ -n "${detected_coverage_changes_threshold}" ]]; then
+    detected_coverage_changes_threshold="${detected_coverage_changes_threshold} (from workflow)"
+  elif [[ -f "$(makevn_config_path "${repo_root}")" && -t 0 && -t 2 ]]; then
+    printf '\n' >&2
+    printf '%s\n' "$(makevn_warn "No minimum changed-code coverage threshold detected in workflows.")" >&2
+    printf '%s\n' "  Enter the repository coverage gate to use for 'makevn coverage-changes'." >&2
+    detected_coverage_changes_threshold="$(makevn_read_editable_default "Changed-code coverage threshold [90]: " "90")"
+    makevn_update_config_min_coverage_changes_threshold "${repo_root}" "${detected_coverage_changes_threshold}"
+    printf '%s\n' "$(makevn_dim "Saved to .makevn/config (MAKEVN_MIN_COVERAGE_CHANGES_THRESHOLD).")" >&2
+  else
+    detected_coverage_changes_threshold="unresolved"
+  fi
+
   if [[ -n "${code_java_home}" ]]; then
     code_java_version_line="$(makevn_java_version_line "${code_java_home}")"
   fi
@@ -269,6 +303,8 @@ makevn_collect_doctor_snapshot() {
   MAKEVN_DOCTOR_DETECTED_MAVEN_PROP_FLAGS="${detected_maven_prop_flags:-none}"
   MAKEVN_DOCTOR_DETECTED_MAVEN_CACHE_SOURCE="${detected_maven_cache_source}"
   MAKEVN_DOCTOR_DETECTED_APP_HEALTH_URL="${detected_app_health_url:-not detected}"
+  MAKEVN_DOCTOR_DETECTED_COVERAGE_THRESHOLD="${detected_coverage_threshold}"
+  MAKEVN_DOCTOR_DETECTED_COVERAGE_CHANGES_THRESHOLD="${detected_coverage_changes_threshold}"
   MAKEVN_DOCTOR_COMPILE_PROFILE="${compile_profile}"
   MAKEVN_DOCTOR_BUILD_PROFILE="${build_profile}"
   MAKEVN_DOCTOR_TEST_PROFILE="${test_profile}"
@@ -336,6 +372,8 @@ makevn_print_doctor_json() {
   printf '    "detected_maven_prop_flags": "%s",\n' "$(makevn_json_escape "${MAKEVN_DOCTOR_DETECTED_MAVEN_PROP_FLAGS}")"
   printf '    "detected_maven_cache": "%s",\n' "$(makevn_json_escape "${MAKEVN_DOCTOR_DETECTED_MAVEN_CACHE_SOURCE}")"
   printf '    "detected_app_health_url": "%s",\n' "$(makevn_json_escape "${MAKEVN_DOCTOR_DETECTED_APP_HEALTH_URL}")"
+  printf '    "detected_coverage_threshold": "%s",\n' "$(makevn_json_escape "${MAKEVN_DOCTOR_DETECTED_COVERAGE_THRESHOLD}")"
+  printf '    "detected_coverage_changes_threshold": "%s",\n' "$(makevn_json_escape "${MAKEVN_DOCTOR_DETECTED_COVERAGE_CHANGES_THRESHOLD}")"
   printf '    "compile_profile": "%s",\n' "$(makevn_json_escape "${MAKEVN_DOCTOR_COMPILE_PROFILE}")"
   printf '    "build_profile": "%s",\n' "$(makevn_json_escape "${MAKEVN_DOCTOR_BUILD_PROFILE}")"
   printf '    "test_profile": "%s",\n' "$(makevn_json_escape "${MAKEVN_DOCTOR_TEST_PROFILE}")"

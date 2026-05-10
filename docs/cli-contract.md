@@ -155,8 +155,11 @@ makevn stop-app
 ### Coverage Analysis Commands
 
 ```bash
+makevn coverage [--threshold PCT]
 makevn coverage-changes [--threshold PCT]
 ```
+
+`coverage` checks the latest aggregate JaCoCo CSV report against the configured repository threshold. It requires a prior coverage-producing command such as `verify`, `verify-ut-coverage`, or `verify-it-coverage`.
 
 `coverage-changes` requires an existing JaCoCo aggregate report. If the aggregate module has already been built but the HTML report is missing, the backend may run `jacoco:report-aggregate` for the detected aggregate module before analysis. The command compares changed Java production code against the detected parent branch and uses the internal coverage runtime packaged under `libexec/makevn/`.
 

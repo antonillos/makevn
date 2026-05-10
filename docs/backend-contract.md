@@ -134,6 +134,7 @@ Run command family:
 - `verify-it-coverage`
 - `verify`
 - `verify-changes`
+- `coverage`
 - `coverage-changes`
 - `pr-verify`
 - `karate-test`
