@@ -367,7 +367,9 @@ cmd_coverage_changes() {
     esac
   done
 
-  print_command_intro "${repo_root}" coverage-changes
+  if ! makevn_frontend_owns_loader; then
+    print_command_intro "${repo_root}" coverage-changes
+  fi
 
   git -C "${repo_root}" rev-parse HEAD >/dev/null 2>&1 || makevn_die "Not a git repository"
 
@@ -389,7 +391,7 @@ cmd_coverage_changes() {
       makevn_die "${jacoco_module} is not built. Run 'makevn verify' or 'makevn verify-changes' first."
     fi
 
-    printf '%s\n' "$(makevn_dim "Coverage report not found; attempting jacoco:report-aggregate for ${jacoco_module}.")"
+    makevn_print_detail_line "Coverage report not found; attempting jacoco:report-aggregate for ${jacoco_module}."
     maven_executable="$(makevn_maven_executable "${repo_root}" "${maven_base_path}")"
     cli_flags_value="$(makevn_maven_cli_flags_for_command "${repo_root}" verify)"
     cli_flags_value="$(makevn_append_word "${cli_flags_value}" "-nsu")"

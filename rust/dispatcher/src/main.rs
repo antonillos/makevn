@@ -608,6 +608,7 @@ fn command_supports_frontend_loader(command: &OsString) -> bool {
             | "verify"
             | "verify-changes"
             | "coverage"
+            | "coverage-changes"
             | "pr-verify"
             | "format"
             | "checkstyle"
@@ -3138,6 +3139,9 @@ mod tests {
             "test-compile"
         )));
         assert!(command_supports_frontend_loader(&OsString::from("verify")));
+        assert!(command_supports_frontend_loader(&OsString::from(
+            "coverage-changes"
+        )));
         assert!(command_supports_frontend_loader(&OsString::from(
             "docker-up"
         )));
