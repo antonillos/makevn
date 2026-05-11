@@ -66,6 +66,7 @@ cmd_coverage() {
   local combined_csv=""
   local coverage_output=""
   local coverage_cli_flags_value=""
+  local jacoco_plugin_declared=false
   local line=""
   local report_path=""
   local rc=0
@@ -104,6 +105,10 @@ cmd_coverage() {
       rc=$?
       [[ ${rc} -eq 0 ]] || return ${rc}
     else
+      if makevn_repo_declares_jacoco_plugin "${maven_base_path}"; then
+        jacoco_plugin_declared=true
+      fi
+      [[ "${jacoco_plugin_declared}" == true ]] || makevn_die "No JaCoCo activation or jacoco-maven-plugin declaration detected under ${maven_base_path}. Configure coverage in the repository before running 'makevn coverage'."
       makevn_print_detail_line "Coverage report not found; attempting jacoco:report from existing test data."
       maven_executable="$(makevn_maven_executable "${repo_root}" "${maven_base_path}")"
       cli_flags_value="$(makevn_maven_cli_flags_for_command "${repo_root}" verify)"

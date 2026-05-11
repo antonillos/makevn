@@ -2457,6 +2457,36 @@ EOF
   [[ "${output}" == *"Quality gate conditions met"* ]] || fail "expected coverage to pass with detected activation profile"
 }
 
+test_coverage_fails_early_without_jacoco_strategy() {
+  local repo="${TMP_ROOT}/coverage-no-jacoco-strategy"
+  local java_home
+  local output
+
+  mkdir -p "${repo}/.makevn"
+  printf '<project/>\n' > "${repo}/pom.xml"
+  java_home="$(detect_java_home)"
+  cat > "${repo}/.makevn/config" <<EOF
+MAKEVN_JAVA_HOME="${java_home}"
+MAKEVN_CODE_JAVA_HOME=""
+MAKEVN_KARATE_JAVA_HOME=""
+MAKEVN_CODE_TOOL_VERSIONS=""
+MAKEVN_KARATE_TOOL_VERSIONS=""
+MAKEVN_RUN_CMD=""
+EOF
+  cat > "${repo}/mvnw" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+printf 'ARGS=%s\n' "$*" >> .mvnw.log
+EOF
+  chmod +x "${repo}/mvnw"
+
+  output="$(${CLI} --repo "${repo}" coverage 2>&1 || true)"
+
+  [[ ! -f "${repo}/.mvnw.log" ]] || fail "expected coverage not to invoke Maven without a detectable JaCoCo strategy"
+  [[ "${output}" == *"No JaCoCo activation or jacoco-maven-plugin declaration detected"* ]] \
+    || fail "expected coverage to fail early with a clear JaCoCo strategy message"
+}
+
 test_verify_rejects_skip_flags() {
   local repo="${TMP_ROOT}/verify-rejects-skip-flags"
   local output=""
@@ -2756,6 +2786,7 @@ main() {
   test_coverage_combines_module_reports
   test_coverage_generates_module_reports_when_missing
   test_coverage_uses_detected_activation_profile
+  test_coverage_fails_early_without_jacoco_strategy
   test_verify_rejects_skip_flags
   test_verify_split_commands_reject_wrong_skip_flags
   test_sequential_commands

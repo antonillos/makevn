@@ -519,6 +519,21 @@ makevn_detect_jacoco_profile_from_repo() {
   return 1
 }
 
+makevn_repo_declares_jacoco_plugin() {
+  local maven_base_path="$1"
+  local pom_path=""
+
+  [[ -n "${maven_base_path}" ]] || return 1
+
+  while IFS= read -r pom_path; do
+    if grep -Eq '<artifactId>[[:space:]]*jacoco-maven-plugin[[:space:]]*</artifactId>' "${pom_path}"; then
+      return 0
+    fi
+  done < <(find "${maven_base_path}" -name pom.xml -not -path '*/target/*' -not -path '*/node_modules/*' 2>/dev/null | LC_ALL=C sort)
+
+  return 1
+}
+
 makevn_detect_maven_base_path_fresh() {
   local repo_root="$1"
   local first_pom=""
