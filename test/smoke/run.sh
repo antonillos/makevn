@@ -2411,6 +2411,49 @@ EOF
     || fail "expected coverage-changes output to include overall quality gate"
 }
 
+test_coverage_changes_ignores_diff_context_lines() {
+  local repo="${TMP_ROOT}/coverage-changes-context-lines"
+  local output
+
+  mkdir -p "${repo}/module-a/src/main/java/com/example"
+  mkdir -p "${repo}/jacoco-report-aggregate/target/site/jacoco-aggregate/com.example"
+  printf '<project/>\n' > "${repo}/pom.xml"
+
+  cat > "${repo}/module-a/src/main/java/com/example/Changed.java" <<'EOF'
+package com.example;
+
+class Changed {
+  int value() {
+    int missedContext = 0;
+    return 0;
+  }
+}
+EOF
+
+  cat > "${repo}/jacoco-report-aggregate/target/site/jacoco-aggregate/com.example/Changed.java.html" <<'EOF'
+<html><body>
+<span class="nc" id="L5">    int missedContext = 0;</span>
+<span class="fc" id="L6">    return 1;</span>
+</body></html>
+EOF
+
+  cat > "${repo}/jacoco-report-aggregate/target/site/jacoco-aggregate/jacoco.csv" <<'EOF'
+GROUP,PACKAGE,CLASS,INSTRUCTION_MISSED,INSTRUCTION_COVERED,BRANCH_MISSED,BRANCH_COVERED,LINE_MISSED,LINE_COVERED,COMPLEXITY_MISSED,COMPLEXITY_COVERED,METHOD_MISSED,METHOD_COVERED
+makevn,com.example,Changed,1,10,0,0,1,1,0,1,0,1
+EOF
+  printf '<html></html>\n' > "${repo}/jacoco-report-aggregate/target/site/jacoco-aggregate/index.html"
+
+  rtk git init "${repo}" >/dev/null
+  rtk git -C "${repo}" add .
+  rtk git -C "${repo}" -c user.name='Smoke Test' -c user.email='smoke@example.com' commit -m 'init' >/dev/null
+  perl -0pi -e 's/return 0;/return 1;/' "${repo}/module-a/src/main/java/com/example/Changed.java"
+
+  output="$(${CLI} --repo "${repo}" coverage-changes --threshold 50)"
+
+  [[ "${output}" == *"Changed: 100% (1/1 lines)"* ]] \
+    || fail "expected coverage-changes to ignore uncovered diff context lines"
+}
+
 test_coverage_accepts_decimal_above_threshold() {
   local repo="${TMP_ROOT}/coverage-decimal-threshold"
   local output
@@ -2866,6 +2909,7 @@ main() {
   test_verify_leaves_local_containers_unset_without_repo_signal
   test_verify_changes_command
   test_coverage_changes_command
+  test_coverage_changes_ignores_diff_context_lines
   test_coverage_accepts_decimal_above_threshold
   test_coverage_combines_module_reports
   test_coverage_generates_module_reports_when_missing

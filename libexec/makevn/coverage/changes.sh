@@ -46,6 +46,44 @@ if [ -z "$BASE_REF" ]; then
   exit 1
 fi
 
+extract_added_line_numbers() {
+  local file="$1"
+  local diff_ref="$2"
+  local line=""
+  local new_line=0
+  local hunk_range=""
+
+  git diff "$diff_ref" -- "$file" -U0 | while IFS= read -r line; do
+    case "$line" in
+      @@\ *)
+        hunk_range=$(printf '%s\n' "$line" | sed -E -n 's/^@@ .* \+([0-9]+)(,[0-9]+)? @@.*/\1/p')
+        if [ -n "$hunk_range" ]; then
+          new_line="$hunk_range"
+        else
+          new_line=0
+        fi
+        ;;
+      +++\ *)
+        ;;
+      +*)
+        if [ "$new_line" -gt 0 ]; then
+          printf '%s\n' "$new_line"
+          new_line=$((new_line + 1))
+        fi
+        ;;
+      ---\ *)
+        ;;
+      -*)
+        ;;
+      *)
+        if [ "$new_line" -gt 0 ]; then
+          new_line=$((new_line + 1))
+        fi
+        ;;
+    esac
+  done
+}
+
 # Detect changed production Java files and deduplicate
 # Use the same logic as verify-changes: combine base diff + local modifications
 CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "HEAD")
@@ -231,24 +269,20 @@ while IFS= read -r FILE; do
 
   if [ -n "$HAS_LOCAL_CHANGES" ]; then
     DIFF_OUTPUT=$(git diff HEAD -- "$FILE" | grep "^+" | grep -v "^+++" | wc -l | xargs)
-    DIFF_HUNKS=$(git diff HEAD -- "$FILE" -U0 | grep "^@@" || true)
+    CHANGED_LINES=$(extract_added_line_numbers "$FILE" HEAD || true)
   elif [ "$BASE_REF" != "HEAD" ]; then
     DIFF_OUTPUT=$(git diff "$BASE_REF" -- "$FILE" | grep "^+" | grep -v "^+++" | wc -l | xargs)
-    DIFF_HUNKS=$(git diff "$BASE_REF" -- "$FILE" -U0 | grep "^@@" || true)
+    CHANGED_LINES=$(extract_added_line_numbers "$FILE" "$BASE_REF" || true)
   else
     continue
   fi
 
   if [ "$DIFF_OUTPUT" = "0" ]; then continue; fi
 
-  if [ -z "$DIFF_HUNKS" ]; then
-    echo "⊘  $CLASS_NAME: No diff hunks found (file might be new or index issue)" >> "$RESULTS_FILE"
-    TOTAL_NEW_LINES=$((TOTAL_NEW_LINES + DIFF_OUTPUT))
+  if [ -z "$CHANGED_LINES" ]; then
+    echo "⊘  $CLASS_NAME: No added executable lines found in diff" >> "$RESULTS_FILE"
     continue
   fi
-
-  CHANGED_LINES=$(echo "$DIFF_HUNKS" | sed 's/^@@.*+\([0-9,]*\).*/\1/' | sed 's/,/ /' | awk '{for(i=$1;i<$1+$2;i++) print i}' || true)
-  if [ -z "$CHANGED_LINES" ]; then continue; fi
 
   COVERED=0
   MISSED=0
@@ -277,6 +311,8 @@ while IFS= read -r FILE; do
     TOTAL_NEW_LINES=$((TOTAL_NEW_LINES + TOTAL))
     TOTAL_COVERED_LINES=$((TOTAL_COVERED_LINES + COVERED))
     TOTAL_MISSED_LINES=$((TOTAL_MISSED_LINES + MISSED))
+  else
+    echo "⊘  $CLASS_NAME: No executable JaCoCo lines found in added diff lines" >> "$RESULTS_FILE"
   fi
 done < <(printf '%s\n' "$CHANGED_FILES")
 
