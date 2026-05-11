@@ -1301,7 +1301,7 @@ fn running_command_line(metadata: &BackendMetadata) -> String {
     } else {
         format!(
             "{} {} {} {}",
-            dim_text("└"),
+            dim_text("::"),
             accent_text(&format!("makevn {}", metadata.title)),
             dim_text("|"),
             dim_text(&metadata.relative_log_path)
@@ -3161,6 +3161,25 @@ mod tests {
         assert_eq!(
             super::visible_char_count(&lines[4]),
             "[INFO] compiling".len()
+        );
+    }
+
+    #[test]
+    fn running_command_line_uses_flat_prefix_for_logged_commands() {
+        let metadata = BackendMetadata {
+            command: String::from("verify"),
+            repo: String::from("/repo"),
+            cwd: String::from("/repo"),
+            log_path: String::from("/repo/.makevn/logs/verify.log"),
+            relative_log_path: String::from(".makevn/logs/verify.log"),
+            command_display: String::from("mvn verify"),
+            title: String::from("verify"),
+            context: Some(String::from("code")),
+        };
+
+        assert_eq!(
+            super::running_command_line(&metadata),
+            ":: makevn verify | .makevn/logs/verify.log"
         );
     }
 
