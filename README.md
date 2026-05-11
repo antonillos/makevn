@@ -142,7 +142,7 @@ makevn pr-verify
 | `verify` | Runs combined verification and rejects UT/IT skip flags |
 | `verify-changes` | Verifies changed production modules or modified tests |
 | `coverage` | Checks the latest JaCoCo aggregate report against the repo threshold |
-| `coverage-changes` | Checks JaCoCo coverage for changed production code |
+| `coverage-changes` | Checks incremental, per-changed-module, and overall JaCoCo coverage |
 | `pr-verify` | Runs a local PR-style verification flow |
 
 Changed-code coverage expects a coverage-producing command to run first:

@@ -336,6 +336,7 @@ cmd_coverage_changes() {
   local parent_spec=""
   local threshold=""
   local overall_threshold=""
+  local verbose=false
   local coverage_script=""
   local line=""
   local cli_flags_value=""
@@ -357,6 +358,10 @@ cmd_coverage_changes() {
         [[ $# -ge 2 ]] || makevn_die "Missing value for --overall-threshold"
         overall_threshold="$2"
         shift 2
+        ;;
+      --verbose)
+        verbose=true
+        shift
         ;;
       --)
         makevn_die "coverage-changes does not accept Maven passthrough args; run verify-changes first if the report is missing"
@@ -410,7 +415,6 @@ cmd_coverage_changes() {
   fi
 
   parent_spec="$(makevn_detect_parent_branch_spec "${repo_root}")"
-  makevn_print_item "compare against" "${parent_spec}"
 
   coverage_script="$(makevn_internal_make_script_path coverage/changes.sh || true)"
   [[ -n "${coverage_script}" ]] || makevn_die "Internal coverage changes runtime script not found"
@@ -418,7 +422,7 @@ cmd_coverage_changes() {
   set +e
   (
     cd "${repo_root}"
-    BASE_PATH="${maven_base_rel}" bash "${coverage_script}" "${report_dir}" "${parent_spec}" "${threshold}" "${overall_threshold}" 2>&1
+    BASE_PATH="${maven_base_rel}" COVERAGE_VERBOSE="${verbose}" bash "${coverage_script}" "${report_dir}" "${parent_spec}" "${threshold}" "${overall_threshold}" 2>&1
   ) | while IFS= read -r line; do
     makevn_print_detail_line "${line}"
   done

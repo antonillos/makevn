@@ -37,7 +37,7 @@ Usage:
   makevn [--repo PATH] verify [-- EXTRA_MAVEN_ARGS...]
   makevn [--repo PATH] verify-changes [-- EXTRA_MAVEN_ARGS...]
   makevn [--repo PATH] coverage [--threshold PCT]
-  makevn [--repo PATH] coverage-changes [--threshold PCT] [--overall-threshold PCT]
+  makevn [--repo PATH] coverage-changes [--threshold PCT] [--overall-threshold PCT] [--verbose]
   makevn [--repo PATH] pr-verify [-- EXTRA_MAVEN_ARGS...]
   makevn [--repo PATH] format [--apply] [-- EXTRA_MAVEN_ARGS...]
   makevn [--repo PATH] checkstyle [--module MODULE] [--verbose] [-- EXTRA_MAVEN_ARGS...]

@@ -2405,10 +2405,59 @@ EOF
 
   output="$(${CLI} --repo "${repo}" coverage-changes --threshold 90)"
 
-  [[ "${output}" == *"Incremental Coverage: ✓ 100%"* ]] \
+  [[ "${output}" == *"✓  changed lines    100.00%  1/1"* ]] \
     || fail "expected coverage-changes output to pass incremental coverage"
   [[ "${output}" == *"Quality gate conditions met"* ]] \
     || fail "expected coverage-changes output to include overall quality gate"
+}
+
+test_coverage_changes_fails_changed_module_gate() {
+  local repo="${TMP_ROOT}/coverage-changes-module-gate"
+  local output
+
+  mkdir -p "${repo}/module-a/src/main/java/com/example"
+  mkdir -p "${repo}/jacoco-report-aggregate/target/site/jacoco-aggregate/com.example"
+  printf '<project/>\n' > "${repo}/pom.xml"
+
+  cat > "${repo}/module-a/src/main/java/com/example/Changed.java" <<'EOF'
+package com.example;
+
+class Changed {
+  int value() {
+    int oldUntouchedLine = 0;
+    return 0;
+  }
+}
+EOF
+
+  cat > "${repo}/jacoco-report-aggregate/target/site/jacoco-aggregate/com.example/Changed.java.html" <<'EOF'
+<html><body>
+<span class="nc" id="L5">    int oldUntouchedLine = 0;</span>
+<span class="fc" id="L6">    return 1;</span>
+</body></html>
+EOF
+
+  cat > "${repo}/jacoco-report-aggregate/target/site/jacoco-aggregate/jacoco.csv" <<'EOF'
+GROUP,PACKAGE,CLASS,INSTRUCTION_MISSED,INSTRUCTION_COVERED,BRANCH_MISSED,BRANCH_COVERED,LINE_MISSED,LINE_COVERED,COMPLEXITY_MISSED,COMPLEXITY_COVERED,METHOD_MISSED,METHOD_COVERED
+root/module-a,com.example,Changed,50,50,0,0,1,1,0,1,0,1
+EOF
+  printf '<html></html>\n' > "${repo}/jacoco-report-aggregate/target/site/jacoco-aggregate/index.html"
+
+  rtk git init "${repo}" >/dev/null
+  rtk git -C "${repo}" add .
+  rtk git -C "${repo}" -c user.name='Smoke Test' -c user.email='smoke@example.com' commit -m 'init' >/dev/null
+  perl -0pi -e 's/return 0;/return 1;/' "${repo}/module-a/src/main/java/com/example/Changed.java"
+
+  output="$(${CLI} --repo "${repo}" coverage-changes --threshold 90 2>&1 || true)"
+
+  [[ "${output}" == *"✓  changed lines    100.00%  1/1"* ]] \
+    || fail "expected line-level incremental coverage to pass"
+  [[ "${output}" == *"✗  module-a"* && "${output}" == *"50.00%"* ]] \
+    || fail "expected changed module coverage to report failing module"
+  [[ "${output}" == *"├  Top offenders"* ]] \
+    || fail "expected changed module coverage to include top offenders"
+  [[ "${output}" == *"changed module coverage gate not met"* ]] \
+    || fail "expected coverage-changes to fail the changed module gate"
 }
 
 test_coverage_changes_ignores_diff_context_lines() {
@@ -2450,7 +2499,7 @@ EOF
 
   output="$(${CLI} --repo "${repo}" coverage-changes --threshold 50)"
 
-  [[ "${output}" == *"Changed: 100% (1/1 lines)"* ]] \
+  [[ "${output}" == *"✓  changed lines    100.00%  1/1"* ]] \
     || fail "expected coverage-changes to ignore uncovered diff context lines"
 }
 
@@ -2909,6 +2958,7 @@ main() {
   test_verify_leaves_local_containers_unset_without_repo_signal
   test_verify_changes_command
   test_coverage_changes_command
+  test_coverage_changes_fails_changed_module_gate
   test_coverage_changes_ignores_diff_context_lines
   test_coverage_accepts_decimal_above_threshold
   test_coverage_combines_module_reports

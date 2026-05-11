@@ -731,6 +731,7 @@ fn dispatch_backend_invocations(
 
         if last_exit_code != 0 {
             if let Some(r) = renderer.as_mut() {
+                r.clear_line();
                 r.show_cursor();
             }
             if use_dashboard {
@@ -764,6 +765,7 @@ fn dispatch_backend_invocations(
     }
 
     if let Some(r) = renderer.as_mut() {
+        r.clear_line();
         r.show_cursor();
     }
     if use_dashboard {
@@ -1262,6 +1264,14 @@ fn final_dashboard_lines(
 }
 
 fn detail_line(text: &str) -> String {
+    if text.is_empty()
+        || text.starts_with('┌')
+        || text.starts_with('├')
+        || text.starts_with('└')
+        || text.starts_with('│')
+    {
+        return dim_text(text);
+    }
     format!("{} {}", dim_text("│"), dim_text(text))
 }
 
@@ -2263,10 +2273,15 @@ impl SpinnerRenderer {
     }
 
     fn clear_line(&mut self) {
-        // Erase the entire live dashboard block so the next command's render
-        // starts from the same position — giving a single continuous spinner
-        // and a single "Working for" counter throughout the whole run.
-        let _ = self.clear_dynamic_block();
+        // Erase either the live dashboard block or the single-line spinner.
+        // The single-line path matters for commands that do not emit metadata
+        // until completion; otherwise the final summary can be written after
+        // the spinner text on the same terminal row.
+        if self.rendered_block_line_widths.is_empty() {
+            let _ = write!(io::stdout(), "\r\u{1b}[2K");
+        } else {
+            let _ = self.clear_dynamic_block();
+        }
         let _ = io::stdout().flush();
     }
 
@@ -2722,7 +2737,7 @@ fn print_help(with_header: bool) {
     println!("  makevn [--repo PATH] verify [--tail] [-- EXTRA_MAVEN_ARGS...]");
     println!("  makevn [--repo PATH] verify-changes [--tail] [-- EXTRA_MAVEN_ARGS...]");
     println!("  makevn [--repo PATH] coverage [--threshold PCT]");
-    println!("  makevn [--repo PATH] coverage-changes [--threshold PCT] [--overall-threshold PCT]");
+    println!("  makevn [--repo PATH] coverage-changes [--threshold PCT] [--overall-threshold PCT] [--verbose]");
     println!("  makevn [--repo PATH] pr-verify [--tail] [-- EXTRA_MAVEN_ARGS...]");
     println!("  makevn [--repo PATH] format [--tail] [--apply] [-- EXTRA_MAVEN_ARGS...]");
     println!(
@@ -3465,6 +3480,32 @@ mod tests {
         assert_eq!(lines[1], "[✓] coverage-changes | 9s | .makevn/logs/coverage-changes.log");
         assert_eq!(lines[2], "│ coverage detail");
         assert_eq!(lines[3], "[ok]");
+    }
+
+    #[test]
+    fn final_dashboard_does_not_prefix_box_detail_lines() {
+        let summary = CommandSummary {
+            title: String::from("coverage-changes"),
+            duration: String::from("9s"),
+            log_path: None,
+            relative_log_path: None,
+            exit_code: 0,
+            detail_lines: vec![
+                String::from("┌  Coverage summary"),
+                String::from("│  threshold        95.00%"),
+                String::from("├  Incremental lines"),
+                String::from("✓  changed lines    96.00%  453/469"),
+                String::from("└  passed"),
+            ],
+        };
+
+        let lines = super::final_dashboard_lines(Duration::from_secs(9), &[summary], true);
+
+        assert_eq!(lines[2], "┌  Coverage summary");
+        assert_eq!(lines[3], "│  threshold        95.00%");
+        assert_eq!(lines[4], "├  Incremental lines");
+        assert_eq!(lines[5], "│ ✓  changed lines    96.00%  453/469");
+        assert_eq!(lines[6], "└  passed");
     }
 
     #[test]
