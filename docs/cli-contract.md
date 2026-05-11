@@ -220,10 +220,10 @@ Rules:
 makevn docker-up [--tail]
 makevn docker-down [--tail]
 makevn docker-ps [--tail]
-makevn docker-ps-required [--tail] [--compose boot|karate]
+makevn docker-ps-required [--tail] [--compose boot|karate] [--wait-seconds N]
 ```
 
-`docker-ps-required` validates the boot compose by default. Use `--compose karate` to validate the detected E2E Karate compose.
+`docker-ps-required` validates the boot compose by default. Use `--compose karate` to validate the detected E2E Karate compose. Use `--wait-seconds N` to keep polling for required services before failing, instead of scripting a separate `sleep` between `docker-up` and the validation step.
 
 ### JDK Commands
 

@@ -97,6 +97,7 @@ makevn docker-down
 makevn docker-ps
 makevn docker-ps-required
 makevn docker-ps-required --compose karate
+makevn docker-ps-required --wait-seconds 15
 makevn karate-docker-up
 makevn karate-docker-down
 makevn karate-test

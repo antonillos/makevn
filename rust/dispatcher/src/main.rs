@@ -98,6 +98,7 @@ const COMMAND_SEQUENCE_BREAKERS: &[&str] = &[
     "--tag",
     "--compose",
     "--module",
+    "--wait-seconds",
 ];
 
 #[derive(Debug)]
@@ -2536,7 +2537,7 @@ fn print_help(with_header: bool) {
     println!("  makevn [--repo PATH] docker-up [--tail]");
     println!("  makevn [--repo PATH] docker-down [--tail]");
     println!("  makevn [--repo PATH] docker-ps [--tail]");
-    println!("  makevn [--repo PATH] docker-ps-required [--tail] [--compose boot|karate]");
+    println!("  makevn [--repo PATH] docker-ps-required [--tail] [--compose boot|karate] [--wait-seconds N]");
     println!("  makevn [--repo PATH] karate-docker-up [--tail]");
     println!("  makevn [--repo PATH] karate-docker-down [--tail]");
     println!("  makevn [--repo PATH] karate-test [--tail] [--tag TAG] [-- EXTRA_MAVEN_ARGS...]");

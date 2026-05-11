@@ -44,7 +44,7 @@ Usage:
   makevn [--repo PATH] docker-up [--tail]
   makevn [--repo PATH] docker-down [--tail]
   makevn [--repo PATH] docker-ps [--tail]
-  makevn [--repo PATH] docker-ps-required [--tail] [--compose boot|karate]
+  makevn [--repo PATH] docker-ps-required [--tail] [--compose boot|karate] [--wait-seconds N]
   makevn [--repo PATH] karate-docker-up [--tail]
   makevn [--repo PATH] karate-docker-down [--tail]
   makevn [--repo PATH] karate-test [--tag TAG] [-- EXTRA_MAVEN_ARGS...]
@@ -86,6 +86,7 @@ Examples:
   makevn docker-up
   makevn docker-ps-required
   makevn docker-ps-required --compose karate
+  makevn docker-ps-required --wait-seconds 15
   makevn karate-test
   makevn karate-test --tag @smoke
   makevn run-app-bg

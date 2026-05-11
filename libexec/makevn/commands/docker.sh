@@ -35,6 +35,13 @@ makevn_parse_docker_args() {
   done
 }
 
+makevn_require_non_negative_integer() {
+  local value="$1"
+  local option_name="$2"
+
+  [[ "${value}" =~ ^[0-9]+$ ]] || makevn_die "Invalid value for ${option_name}: ${value}. Expected a non-negative integer."
+}
+
 makevn_docker_compose_file_for_kind() {
   local repo_root="$1"
   local compose_kind="$2"
@@ -105,6 +112,7 @@ print_boot_docker_service_issues() {
 cmd_docker_ps_required() {
   local repo_root="$1"
   local compose_kind="boot"
+  local wait_seconds=0
   local compose_file=""
   local compose_override_file=""
   local docker_ps_script="${MAKEVN_LIBEXEC_DIR}/docker/ps.sh"
@@ -112,6 +120,8 @@ cmd_docker_ps_required() {
   local services=""
   local docker_compose_cmd=""
   local compose_args=""
+  local output=""
+  local elapsed=0
 
   shift
   while [[ $# -gt 0 ]]; do
@@ -122,6 +132,12 @@ cmd_docker_ps_required() {
       --compose)
         [[ $# -ge 2 ]] || makevn_die "Missing value for --compose"
         compose_kind="$2"
+        shift 2
+        ;;
+      --wait-seconds)
+        [[ $# -ge 2 ]] || makevn_die "Missing value for --wait-seconds"
+        wait_seconds="$2"
+        makevn_require_non_negative_integer "${wait_seconds}" "--wait-seconds"
         shift 2
         ;;
       *)
@@ -146,13 +162,30 @@ cmd_docker_ps_required() {
     compose_args+=" -f ${compose_override_file}"
   fi
 
+  while true; do
+    output="$(cd "${repo_root}" && COMPOSE_ARGS="${compose_args}" SERVICES="${services}" DOCKER_COMPOSE="${docker_compose_cmd}" bash "${docker_ps_script}" || true)"
+    if [[ -z "${output}" ]]; then
+      break
+    fi
+    if (( elapsed >= wait_seconds )); then
+      break
+    fi
+    sleep 1
+    elapsed=$((elapsed + 1))
+  done
+
   if ! makevn_run_logged "${repo_root}" docker-ps-required docker-ps-required docker-ps-required bash -c '
-    output="$(COMPOSE_ARGS="$1" SERVICES="$2" DOCKER_COMPOSE="$3" bash "$4" || true)"
+    output="$1"
+    wait_seconds="$2"
+    elapsed="$3"
     if [[ -n "${output}" ]]; then
       printf "%s\n" "${output}"
+      if (( wait_seconds > 0 )); then
+        printf "Waited %ss for required Docker services.\n" "${elapsed}"
+      fi
       exit 1
     fi
-  ' bash "${compose_args}" "${services}" "${docker_compose_cmd}" "${docker_ps_script}"; then
+  ' bash "${output}" "${wait_seconds}" "${elapsed}"; then
     if [[ "${compose_kind}" == "karate" ]]; then
       makevn_die "Required Docker services are not running or healthy. Run 'makevn karate-docker-up' first."
     fi

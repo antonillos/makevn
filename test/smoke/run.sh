@@ -1185,6 +1185,92 @@ test_docker_up_missing_compose_writes_log() {
   assert_contains "${repo}/.makevn/logs/docker-up.log" "command: makevn docker-up"
 }
 
+test_docker_ps_required_wait_seconds() {
+  local repo="${TMP_ROOT}/docker-ps-required-wait-seconds"
+  local java_home
+  local invalid_output_file="${repo}/docker-ps-required-invalid.out"
+
+  mkdir -p "${repo}/code/boot/src/test/resources/compose"
+  mkdir -p "${repo}/fake-bin"
+  printf '<project/>\n' > "${repo}/pom.xml"
+  printf 'services:\n  db:\n    image: postgres:16\n' > "${repo}/code/boot/src/test/resources/compose/docker-compose.yml"
+  java_home="$(detect_java_home)"
+
+  ${CLI} --repo "${repo}" init >/dev/null
+  ${CLI} --repo "${repo}" profile refresh >/dev/null
+
+  cat > "${repo}/fake-bin/docker-compose" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+printf 'docker-compose %s\n' "$*" >> .docker-compose.log
+if [[ "$1" == "-f" ]]; then
+  printf 'fake-service-id\n'
+fi
+EOF
+  chmod +x "${repo}/fake-bin/docker-compose"
+
+  cat > "${repo}/fake-bin/docker" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+printf 'docker %s\n' "$*" >> .docker.log
+if [[ "$1" == "compose" && "${2:-}" == "version" ]]; then
+  exit 0
+fi
+if [[ "$1" == "inspect" && "${2:-}" == "-f" ]]; then
+  case "$3" in
+    '{{.State.Status}}')
+      printf 'running\n'
+      ;;
+    '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}')
+      count_file=".docker-health-count"
+      count=0
+      if [[ -f "${count_file}" ]]; then
+        count="$(cat "${count_file}")"
+      fi
+      count=$((count + 1))
+      printf '%s\n' "${count}" > "${count_file}"
+      if (( count < 3 )); then
+        printf 'starting\n'
+      else
+        printf 'healthy\n'
+      fi
+      ;;
+    '{{.Name}}')
+      printf '/fake-db\n'
+      ;;
+    *)
+      exit 1
+      ;;
+  esac
+  exit 0
+fi
+exit 0
+EOF
+  chmod +x "${repo}/fake-bin/docker"
+
+  cat > "${repo}/.makevn/config" <<EOF
+MAKEVN_JAVA_HOME="${java_home}"
+MAKEVN_CODE_JAVA_HOME=""
+MAKEVN_KARATE_JAVA_HOME=""
+MAKEVN_CODE_TOOL_VERSIONS=""
+MAKEVN_KARATE_TOOL_VERSIONS=""
+MAKEVN_RUN_CMD=""
+EOF
+
+  PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" docker-ps-required --wait-seconds 5 >/dev/null
+  assert_contains "${repo}/.docker.log" "docker inspect -f {{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}} fake-service-id"
+
+  set +e
+  PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" docker-ps-required --wait-seconds nope >"${invalid_output_file}" 2>&1
+  local status=$?
+  set -e
+
+  [[ ${status} -ne 0 ]] || fail "expected docker-ps-required --wait-seconds nope to fail"
+  assert_contains "${invalid_output_file}" "Invalid value for --wait-seconds: nope. Expected a non-negative integer."
+
+  ${CLI} --repo "${repo}" uninstall >/dev/null
+}
+
 test_karate_commands() {
   local repo="${TMP_ROOT}/karate-commands"
   local java_home
@@ -2605,6 +2691,7 @@ main() {
   test_command_routing
   test_docker_commands
   test_docker_up_missing_compose_writes_log
+  test_docker_ps_required_wait_seconds
   test_karate_commands
   test_run_app_bg_reports_early_process_exit
   test_run_app_bg_prefers_executable_jar_candidate

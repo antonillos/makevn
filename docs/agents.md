@@ -50,7 +50,9 @@ some repositories, but they are not the portable `makevn` contract.
 `makevn karate-docker-up` waits for the required services in the detected Karate
 E2E compose to be running and healthy before returning. For a standalone service
 validation, use `makevn docker-ps-required --compose karate`; plain
-`makevn docker-ps-required` validates the boot compose.
+`makevn docker-ps-required` validates the boot compose. When services may still
+be starting, agents should prefer `makevn docker-ps-required --wait-seconds N`
+over inserting shell-level `sleep` calls between commands.
 
 Karate tests need the real application running. For a manual chain, agents should
 use `makevn run-app-bg` before `makevn karate-test` and always finish with
