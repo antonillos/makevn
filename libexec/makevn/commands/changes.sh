@@ -337,6 +337,7 @@ cmd_coverage_changes() {
   local threshold=""
   local overall_threshold=""
   local coverage_script=""
+  local line=""
   local cli_flags_value=""
   local rc=0
   local -a cli_flags=()
@@ -412,8 +413,14 @@ cmd_coverage_changes() {
   coverage_script="$(makevn_internal_make_script_path coverage/changes.sh || true)"
   [[ -n "${coverage_script}" ]] || makevn_die "Internal coverage changes runtime script not found"
 
+  set +e
   (
     cd "${repo_root}"
-    BASE_PATH="${maven_base_rel}" bash "${coverage_script}" "${report_dir}" "${parent_spec}" "${threshold}" "${overall_threshold}"
-  )
+    BASE_PATH="${maven_base_rel}" bash "${coverage_script}" "${report_dir}" "${parent_spec}" "${threshold}" "${overall_threshold}" 2>&1
+  ) | while IFS= read -r line; do
+    makevn_print_detail_line "${line}"
+  done
+  rc=${PIPESTATUS[0]}
+  set -e
+  return ${rc}
 }

@@ -120,7 +120,7 @@ makevn_cli_is_top_level_command() {
 
 makevn_cli_option_takes_value() {
   case "$1" in
-    --name|--context|--threshold|--tag|--compose|--module)
+    --name|--context|--threshold|--overall-threshold|--tag|--compose|--module)
       return 0
       ;;
   esac

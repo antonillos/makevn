@@ -1240,10 +1240,19 @@ fn final_dashboard_lines(
     completed_summaries: &[CommandSummary],
     success: bool,
 ) -> Vec<String> {
-    let mut lines = Vec::with_capacity(completed_summaries.len() + 2);
+    let mut lines = Vec::with_capacity(
+        1 + completed_summaries
+            .iter()
+            .map(|summary| 1 + summary.detail_lines.len())
+            .sum::<usize>()
+            + usize::from(success),
+    );
     lines.push(dim_text(&format!("Worked for {}", format_duration(elapsed))));
     for summary in completed_summaries {
         lines.push(completed_summary_line(summary));
+        for dl in &summary.detail_lines {
+            lines.push(detail_line(dl));
+        }
     }
     if success {
         lines.push(format!("[{}]", style("32", "ok")));
@@ -3436,21 +3445,22 @@ mod tests {
     }
 
     #[test]
-    fn final_dashboard_omits_repeated_detail_lines() {
+    fn final_dashboard_places_details_under_completed_command() {
         let summary = CommandSummary {
             title: String::from("coverage-changes"),
             duration: String::from("9s"),
             log_path: Some(String::from("/repo/.makevn/logs/coverage-changes.log")),
             relative_log_path: Some(String::from(".makevn/logs/coverage-changes.log")),
             exit_code: 0,
-            detail_lines: vec![String::from("detail that should not repeat")],
+            detail_lines: vec![String::from("coverage detail")],
         };
 
         let lines = super::final_dashboard_lines(Duration::from_secs(5), &[summary], true);
 
         assert_eq!(lines[0], "Worked for 5s");
         assert_eq!(lines[1], "[✓] coverage-changes | 9s | .makevn/logs/coverage-changes.log");
-        assert_eq!(lines[2], "[ok]");
+        assert_eq!(lines[2], "│ coverage detail");
+        assert_eq!(lines[3], "[ok]");
     }
 
     #[test]
