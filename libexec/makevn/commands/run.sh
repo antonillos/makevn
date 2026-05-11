@@ -147,10 +147,9 @@ makevn_wait_app_health() {
       app_state="$(ps -p "${app_pid}" -o stat= 2>/dev/null || true)"
       if [[ -z "${app_state}" || "${app_state}" == Z* ]]; then
         if [[ -n "${log_file}" ]]; then
-          printf '%s\n' "$(makevn_warn "Error: Application process exited during startup. Check the log: ${log_file}")" >&2
-          makevn_print_app_log_excerpt "${log_file}" >&2
+          makevn_report_app_startup_failure "Application process exited during startup. Check the log: ${log_file}" "${log_file}"
         else
-          printf '%s\n' "$(makevn_warn "Error: Application process exited during startup.")" >&2
+          makevn_report_app_startup_failure "Application process exited during startup."
         fi
         return 1
       fi
@@ -159,8 +158,7 @@ makevn_wait_app_health() {
     elapsed=$((elapsed + 1))
   done
 
-  printf '%s\n' "$(makevn_warn "Error: App health check did not pass within ${timeout_seconds}s: ${health_url}")" >&2
-  makevn_print_app_log_excerpt "${log_file}" >&2
+  makevn_report_app_startup_failure "App health check did not pass within ${timeout_seconds}s: ${health_url}" "${log_file}"
   return 1
 }
 
@@ -176,10 +174,9 @@ makevn_wait_app_started_without_health() {
       app_state="$(ps -p "${app_pid}" -o stat= 2>/dev/null || true)"
       if [[ -z "${app_state}" || "${app_state}" == Z* ]]; then
         if [[ -n "${log_file}" ]]; then
-          printf '%s\n' "$(makevn_warn "Error: Application process exited during startup. Check the log: ${log_file}")" >&2
-          makevn_print_app_log_excerpt "${log_file}" >&2
+          makevn_report_app_startup_failure "Application process exited during startup. Check the log: ${log_file}" "${log_file}"
         else
-          printf '%s\n' "$(makevn_warn "Error: Application process exited during startup.")" >&2
+          makevn_report_app_startup_failure "Application process exited during startup."
         fi
         return 1
       fi
@@ -191,6 +188,16 @@ makevn_wait_app_started_without_health() {
   return 0
 }
 
+makevn_report_run_detail() {
+  local line="$1"
+
+  if [[ -n "${MAKEVN_BACKEND_DETAIL_OUT:-}" ]]; then
+    makevn_print_detail_line "${line}"
+  else
+    printf '%s\n' "${line}"
+  fi
+}
+
 makevn_print_app_log_excerpt() {
   local log_file="$1"
   local lines="${MAKEVN_APP_LOG_TAIL_LINES:-80}"
@@ -199,6 +206,45 @@ makevn_print_app_log_excerpt() {
 
   printf '%s\n' "$(makevn_dim "last ${lines} log lines:")"
   tail -n "${lines}" "${log_file}" 2>/dev/null || true
+}
+
+makevn_report_app_startup_failure() {
+  local message="$1"
+  local log_file="${2:-}"
+  local lines="${MAKEVN_APP_LOG_TAIL_LINES:-80}"
+
+  if [[ -n "${MAKEVN_BACKEND_DETAIL_OUT:-}" ]]; then
+    makevn_print_detail_line "Error: ${message}"
+    if [[ -n "${log_file}" && -f "${log_file}" ]]; then
+      makevn_print_detail_line "last ${lines} log lines:"
+      tail -n "${lines}" "${log_file}" 2>/dev/null >> "${MAKEVN_BACKEND_DETAIL_OUT}" || true
+    fi
+    return 0
+  fi
+
+  printf '%s\n' "$(makevn_warn "Error: ${message}")" >&2
+  [[ -n "${log_file}" ]] && makevn_print_app_log_excerpt "${log_file}" >&2
+}
+
+makevn_ensure_app_jar() {
+  local repo_root="$1"
+  local maven_base_path="$2"
+  local boot_module="$3"
+  local jar_file=""
+
+  MAKEVN_ENSURED_APP_JAR=""
+  jar_file="$(makevn_detect_app_jar "${maven_base_path}" "${boot_module}" || true)"
+  if [[ -n "${jar_file}" ]]; then
+    MAKEVN_ENSURED_APP_JAR="${jar_file}"
+    return 0
+  fi
+
+  makevn_report_run_detail "$(makevn_dim "No packaged application jar found; running 'makevn package' first.")"
+  cmd_package "${repo_root}"
+
+  jar_file="$(makevn_detect_app_jar "${maven_base_path}" "${boot_module}" || true)"
+  [[ -n "${jar_file}" ]] || makevn_die "Application jar not found after packaging. Check the package log and build configuration."
+  MAKEVN_ENSURED_APP_JAR="${jar_file}"
 }
 
 makevn_start_app_background() {
@@ -219,6 +265,7 @@ makevn_start_app_background() {
   local existing_pid=""
   local existing_cmd=""
   local app_pid=""
+  local command_display=""
 
   maven_base_path="$(makevn_detect_maven_base_path "${repo_root}" || true)"
   [[ -n "${maven_base_path}" ]] || makevn_die "No Maven project detected in ${repo_root}"
@@ -229,17 +276,24 @@ makevn_start_app_background() {
   java_home="$(makevn_effective_java_home "${repo_root}" code "${maven_base_path}" || true)"
   [[ -n "${java_home}" ]] || makevn_die "Could not resolve code JDK. Run 'makevn doctor' or configure .makevn/config first."
   local_containers="$(makevn_effective_app_local_containers "${repo_root}" || true)"
-  jar_file="$(makevn_detect_app_jar "${maven_base_path}" "${boot_module}")"
-  [[ -n "${jar_file}" ]] || makevn_die "Application jar not found. Run 'makevn package' first."
-  jar_main_class="$(makevn_app_jar_manifest_value "${jar_file}" "Main-Class" || true)"
-  jar_start_class="$(makevn_app_jar_manifest_value "${jar_file}" "Start-Class" || true)"
-  health_url="$(makevn_app_health_url "${repo_root}" "${maven_base_path}" || true)"
 
   log_dir="$(makevn_app_log_dir "${repo_root}")"
   mkdir -p "${log_dir}"
   log_file="${log_dir}/app.log"
   pid_file="${log_dir}/app.pid"
   jar_record="${log_dir}/app.jar"
+  command_display="$(makevn_quote_command makevn "${mode}")"
+
+  makevn_write_backend_metadata \
+    "${MAKEVN_BACKEND_METADATA_OUT:-}" \
+    "${mode}" \
+    "${repo_root}" \
+    "${repo_root}" \
+    "${log_file}" \
+    ".makevn/app/app.log" \
+    "${command_display}" \
+    "code" \
+    "${mode}"
 
   if [[ -f "${pid_file}" ]]; then
     existing_pid="$(cat "${pid_file}" 2>/dev/null || true)"
@@ -253,6 +307,11 @@ makevn_start_app_background() {
   if ! makevn_frontend_owns_loader; then
     print_command_intro "${repo_root}" "${mode}"
   fi
+  makevn_ensure_app_jar "${repo_root}" "${maven_base_path}" "${boot_module}"
+  jar_file="${MAKEVN_ENSURED_APP_JAR:-}"
+  jar_main_class="$(makevn_app_jar_manifest_value "${jar_file}" "Main-Class" || true)"
+  jar_start_class="$(makevn_app_jar_manifest_value "${jar_file}" "Start-Class" || true)"
+  health_url="$(makevn_app_health_url "${repo_root}" "${maven_base_path}" || true)"
   makevn_print_item "jar" "${jar_file}"
   if [[ -n "${jar_main_class}" ]]; then
     makevn_print_item "Main-Class" "${jar_main_class}"
@@ -264,7 +323,7 @@ makevn_start_app_background() {
     makevn_print_item "health" "${health_url}"
   else
     makevn_print_item "health" "not configured"
-    printf '%s\n' "$(makevn_warn "No application health check configured or detected; startup readiness will only verify that the process stays alive briefly.")"
+    makevn_report_run_detail "$(makevn_warn "No application health check configured or detected; startup readiness will only verify that the process stays alive briefly.")"
   fi
   if [[ -n "${local_containers}" ]]; then
     makevn_print_item "LOCAL_CONTAINERS" "${local_containers}"

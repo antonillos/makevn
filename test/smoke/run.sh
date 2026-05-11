@@ -1513,6 +1513,89 @@ EOF
   ${CLI} --repo "${repo}" uninstall >/dev/null
 }
 
+test_run_app_bg_packages_when_jar_missing() {
+  local repo="${TMP_ROOT}/run-app-bg-packages-missing-jar"
+  local java_home="${repo}/fake-java-home"
+  local output=""
+
+  mkdir -p "${repo}/code/boot/src/main/java/com/example"
+  mkdir -p "${repo}/fake-java-home/bin"
+  mkdir -p "${repo}/fake-bin"
+  cat > "${repo}/code/pom.xml" <<'EOF'
+<project>
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>com.example</groupId>
+  <artifactId>sampleapp</artifactId>
+  <version>1.0.0</version>
+</project>
+EOF
+  cat > "${repo}/code/boot/src/main/java/com/example/Application.java" <<'EOF'
+package com.example;
+
+public class Application {
+  public static void main(String[] args) {
+  }
+}
+EOF
+
+  cat > "${repo}/mvnw" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+printf 'ARGS=%s\n' "$*" >> .mvnw.log
+mkdir -p code/boot/target
+repo_root="$(pwd)"
+tmp_dir="$(mktemp -d "${TMPDIR:-/tmp}/makevn-jar.XXXXXX")"
+mkdir -p "${tmp_dir}/META-INF"
+cat > "${tmp_dir}/META-INF/MANIFEST.MF" <<'MANIFEST'
+Manifest-Version: 1.0
+Main-Class: org.springframework.boot.loader.launch.JarLauncher
+Start-Class: com.example.Application
+
+MANIFEST
+(cd "${tmp_dir}" && zip -qr "${repo_root}/code/boot/target/app.jar" META-INF)
+rm -rf "${tmp_dir}"
+EOF
+  chmod +x "${repo}/mvnw"
+
+  cat > "${repo}/fake-java-home/bin/java" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+printf 'JAVA_ARGS=%s\n' "$*" >> .java.log
+sleep 30
+EOF
+  chmod +x "${repo}/fake-java-home/bin/java"
+
+  cat > "${repo}/fake-bin/curl" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+exit 7
+EOF
+  chmod +x "${repo}/fake-bin/curl"
+
+  ${CLI} --repo "${repo}" init >/dev/null
+  cat > "${repo}/.makevn/config" <<EOF
+MAKEVN_JAVA_HOME="${java_home}"
+MAKEVN_CODE_JAVA_HOME="${java_home}"
+MAKEVN_KARATE_JAVA_HOME=""
+MAKEVN_CODE_TOOL_VERSIONS=""
+MAKEVN_KARATE_TOOL_VERSIONS=""
+MAKEVN_RUN_CMD=""
+EOF
+
+  output="$(PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" run-app-bg 2>&1)"
+
+  [[ "${output}" == *"No packaged application jar found; running 'makevn package' first."* ]] \
+    || fail "expected run-app-bg to announce packaging when jar is missing"
+  [[ "${output}" == *"ok application started without health check"* ]] \
+    || fail "expected run-app-bg to start after packaging"
+  assert_matches "${repo}/.mvnw.log" '^ARGS=-f .*/code/pom\.xml package -DskipTests -Dmaven\.build\.cache\.enabled=false$'
+  assert_matches "${repo}/.java.log" '^JAVA_ARGS=-jar .*/code/boot/target/app\.jar$'
+  assert_contains "${repo}/.makevn/app/app.log" "start_class: com.example.Application"
+
+  PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" stop-app >/dev/null
+  ${CLI} --repo "${repo}" uninstall >/dev/null
+}
+
 test_run_app_bg_prefers_executable_jar_candidate() {
   local repo="${TMP_ROOT}/run-app-bg-executable-jar"
   local java_home="${repo}/fake-java-home"
@@ -2771,6 +2854,7 @@ main() {
   test_docker_ps_required_wait_seconds
   test_karate_commands
   test_run_app_bg_reports_early_process_exit
+  test_run_app_bg_packages_when_jar_missing
   test_run_app_bg_prefers_executable_jar_candidate
   test_run_app_bg_uses_tool_versions_jdk_before_global_fallback
   test_karate_all_rust_frontend_reports_run_app_bg_failure
