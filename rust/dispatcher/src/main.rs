@@ -1468,6 +1468,25 @@ fn warn_text(text: &str) -> String {
     style("33", text)
 }
 
+fn adaptive_metric_text(text: &str, load: f32) -> String {
+    if !use_color() {
+        return text.to_owned();
+    }
+
+    let cool = Rgb::new(96, 165, 250);
+    let warm = Rgb::new(214, 93, 63);
+    style(&rgb_code(interpolate_color(cool, warm, load)), text)
+}
+
+fn cpu_metric_load(sample: &ResourceSample) -> f32 {
+    (sample.cpu_percent / 250.0).clamp(0.0, 1.0)
+}
+
+fn ram_metric_load(sample: &ResourceSample) -> f32 {
+    const KIB_PER_GIB: f32 = 1024.0 * 1024.0;
+    (sample.rss_kb as f32 / (2.5 * KIB_PER_GIB)).clamp(0.0, 1.0)
+}
+
 fn spinner_hint(message: &str) -> String {
     if use_color() {
         let suffix = if message == "again to interrupt" {
@@ -2009,6 +2028,10 @@ struct SpinnerRenderer {
     next_frame_at: Instant,
     second_escape_deadline: Option<Instant>,
     resource_sampler: ResourceSampler,
+    resource_history: ResourceHistory,
+    resource_history_revision: u64,
+    cpu_visual_load: f32,
+    ram_visual_load: f32,
     resource_visual_load: f32,
     rendered_block_line_widths: Vec<usize>,
 }
@@ -2039,6 +2062,10 @@ impl SpinnerRenderer {
             next_frame_at: Instant::now(),
             second_escape_deadline: None,
             resource_sampler: ResourceSampler::new(),
+            resource_history: ResourceHistory::new(),
+            resource_history_revision: 0,
+            cpu_visual_load: 0.0,
+            ram_visual_load: 0.0,
             resource_visual_load: 0.0,
             rendered_block_line_widths: Vec::new(),
         })
@@ -2098,15 +2125,23 @@ impl SpinnerRenderer {
         }
 
         let resource_sample = self.resource_sampler.sample(pid).unwrap_or(None);
+        self.sync_resource_history(resource_sample.as_ref());
         self.update_resource_visuals(resource_sample.as_ref());
         let resource_text = resource_sample
             .as_ref()
-            .map(format_resource_sample)
+            .map(|sample| {
+                format_resource_metrics(
+                    sample,
+                    &self.resource_history,
+                    self.cpu_visual_load,
+                    self.ram_visual_load,
+                )
+            })
             .unwrap_or_default();
         let suffix = if resource_text.is_empty() {
             hint.to_owned()
         } else {
-            format!("{} {} {}", dim_text(&resource_text), dim_text("|"), hint)
+            format!("{} {} {}", resource_text, dim_text("|"), hint)
         };
 
         let line = format!(
@@ -2134,15 +2169,23 @@ impl SpinnerRenderer {
         }
 
         let resource_sample = self.resource_sampler.sample(pid).unwrap_or(None);
+        self.sync_resource_history(resource_sample.as_ref());
         self.update_resource_visuals(resource_sample.as_ref());
         let resource_text = resource_sample
             .as_ref()
-            .map(format_resource_sample)
+            .map(|sample| {
+                format_resource_metrics(
+                    sample,
+                    &self.resource_history,
+                    self.cpu_visual_load,
+                    self.ram_visual_load,
+                )
+            })
             .unwrap_or_default();
         let spinner_suffix = if resource_text.is_empty() {
             hint.to_owned()
         } else {
-            format!("{} {} {}", dim_text(&resource_text), dim_text("|"), hint)
+            format!("{} {} {}", resource_text, dim_text("|"), hint)
         };
 
         let total_lines = 1
@@ -2200,8 +2243,23 @@ impl SpinnerRenderer {
     }
 
     fn update_resource_visuals(&mut self, sample: Option<&ResourceSample>) {
+        let target_cpu_load = sample.map(cpu_metric_load).unwrap_or(0.0);
+        let target_ram_load = sample.map(ram_metric_load).unwrap_or(0.0);
+        self.cpu_visual_load += (target_cpu_load - self.cpu_visual_load) * 0.06;
+        self.ram_visual_load += (target_ram_load - self.ram_visual_load) * 0.06;
         let target_load = sample.map(resource_visual_load).unwrap_or(0.0);
         self.resource_visual_load += (target_load - self.resource_visual_load) * 0.06;
+    }
+
+    fn sync_resource_history(&mut self, sample: Option<&ResourceSample>) {
+        let revision = self.resource_sampler.revision();
+        if revision == self.resource_history_revision {
+            return;
+        }
+        self.resource_history_revision = revision;
+        if let Some(sample) = sample {
+            self.resource_history.push(*sample);
+        }
     }
 
     fn frame_interval(&self) -> Duration {
@@ -2260,13 +2318,17 @@ struct ResourceSample {
 struct ResourceSampler {
     last_sample_at: Option<Instant>,
     last_sample: Option<ResourceSample>,
+    sample_revision: u64,
 }
 
 impl ResourceSampler {
+    const SAMPLE_INTERVAL: Duration = Duration::from_secs(2);
+
     fn new() -> Self {
         Self {
             last_sample_at: None,
             last_sample: None,
+            sample_revision: 0,
         }
     }
 
@@ -2279,7 +2341,7 @@ impl ResourceSampler {
         if let (Some(last_sample_at), Some(last_sample)) =
             (self.last_sample_at, self.last_sample.as_ref())
         {
-            if now.duration_since(last_sample_at) < Duration::from_secs(1) {
+            if now.duration_since(last_sample_at) < Self::SAMPLE_INTERVAL {
                 return Ok(Some(*last_sample));
             }
         }
@@ -2287,7 +2349,33 @@ impl ResourceSampler {
         let sample = read_resource_sample(pid)?;
         self.last_sample_at = Some(now);
         self.last_sample = Some(sample);
+        self.sample_revision += 1;
         Ok(self.last_sample)
+    }
+
+    fn revision(&self) -> u64 {
+        self.sample_revision
+    }
+}
+
+struct ResourceHistory {
+    cpu_percent: Vec<f32>,
+    rss_kb: Vec<u64>,
+}
+
+impl ResourceHistory {
+    const WIDTH: usize = 6;
+
+    fn new() -> Self {
+        Self {
+            cpu_percent: Vec::with_capacity(Self::WIDTH),
+            rss_kb: Vec::with_capacity(Self::WIDTH),
+        }
+    }
+
+    fn push(&mut self, sample: ResourceSample) {
+        push_ring_value(&mut self.cpu_percent, sample.cpu_percent, Self::WIDTH);
+        push_ring_value(&mut self.rss_kb, sample.rss_kb, Self::WIDTH);
     }
 }
 
@@ -2355,22 +2443,91 @@ fn read_resource_sample(root_pid: u32) -> io::Result<ResourceSample> {
     })
 }
 
-fn format_resource_sample(sample: &ResourceSample) -> String {
-    let ram = format_kib(sample.rss_kb);
+fn format_resource_metrics(
+    sample: &ResourceSample,
+    history: &ResourceHistory,
+    cpu_load: f32,
+    ram_load: f32,
+) -> String {
+    let cpu_text = format_resource_sample_cpu(sample, history);
+    let ram_text = format_resource_sample_ram(sample, history);
     format!(
-        "cpu {:>6.1}% | ram {:>10}",
-        sample.cpu_percent,
-        ram
+        "{} {} {}",
+        adaptive_metric_text(&cpu_text, cpu_load),
+        dim_text("|"),
+        adaptive_metric_text(&ram_text, ram_load)
     )
 }
 
+#[cfg(test)]
+fn format_resource_sample(sample: &ResourceSample, history: &ResourceHistory) -> String {
+    format!(
+        "{} | {}",
+        format_resource_sample_cpu(sample, history),
+        format_resource_sample_ram(sample, history)
+    )
+}
+
+fn format_resource_sample_cpu(sample: &ResourceSample, history: &ResourceHistory) -> String {
+    let cpu_sparkline = sparkline_f32(&history.cpu_percent, ResourceHistory::WIDTH, 250.0);
+    format!("cpu {} {:>4}%", cpu_sparkline, sample.cpu_percent.round() as u32)
+}
+
+fn format_resource_sample_ram(sample: &ResourceSample, history: &ResourceHistory) -> String {
+    let ram = format_kib(sample.rss_kb);
+    let ram_sparkline = sparkline_u64(&history.rss_kb, ResourceHistory::WIDTH);
+    format!("ram {}  {}", ram_sparkline, ram)
+}
+
+fn push_ring_value<T>(values: &mut Vec<T>, value: T, max_len: usize) {
+    if values.len() == max_len {
+        values.remove(0);
+    }
+    values.push(value);
+}
+
+fn sparkline_f32(values: &[f32], width: usize, max_value: f32) -> String {
+    if values.is_empty() {
+        return " ".repeat(width);
+    }
+    let normalized = values
+        .iter()
+        .map(|value| (value / max_value).clamp(0.0, 1.0))
+        .collect::<Vec<_>>();
+    sparkline_from_normalized(&normalized, width)
+}
+
+fn sparkline_u64(values: &[u64], width: usize) -> String {
+    if values.is_empty() {
+        return " ".repeat(width);
+    }
+    let peak = values.iter().copied().max().unwrap_or(0);
+    if peak == 0 {
+        return " ".repeat(width);
+    }
+    let normalized = values
+        .iter()
+        .map(|value| (*value as f32 / peak as f32).clamp(0.0, 1.0))
+        .collect::<Vec<_>>();
+    sparkline_from_normalized(&normalized, width)
+}
+
+fn sparkline_from_normalized(values: &[f32], width: usize) -> String {
+    const SPARKS: [char; 8] = [' ', '▁', '▂', '▃', '▄', '▅', '▆', '▇'];
+
+    let mut sparkline = String::with_capacity(width);
+    for _ in 0..width.saturating_sub(values.len()) {
+        sparkline.push(' ');
+    }
+    for value in values {
+        let index = ((*value * (SPARKS.len() - 1) as f32).round() as usize).min(SPARKS.len() - 1);
+        sparkline.push(SPARKS[index]);
+    }
+    sparkline
+}
+
 fn resource_visual_load(sample: &ResourceSample) -> f32 {
-    const KIB_PER_GIB: f32 = 1024.0 * 1024.0;
-
-    let cpu_load = (sample.cpu_percent / 250.0).clamp(0.0, 1.0);
-    let memory_load = (sample.rss_kb as f32 / (2.5 * KIB_PER_GIB)).clamp(0.0, 1.0);
-
-    cpu_load.max(memory_load)
+    cpu_metric_load(sample).max(ram_metric_load(sample))
 }
 
 fn format_kib(kib: u64) -> String {
@@ -2378,11 +2535,11 @@ fn format_kib(kib: u64) -> String {
     const GIB: u64 = 1024 * 1024;
 
     if kib >= GIB {
-        return format!("{:.1} GiB", kib as f64 / GIB as f64);
+        return format!("{:.2} GiB", kib as f64 / GIB as f64);
     }
 
     if kib >= MIB {
-        return format!("{:.1} MiB", kib as f64 / MIB as f64);
+        return format!("{} MiB", (kib as f64 / MIB as f64).round() as u64);
     }
 
     format!("{} KiB", kib)
@@ -2608,7 +2765,7 @@ mod tests {
         format_resource_sample, install_root_with_override, parse_invocation,
         read_backend_metadata, spinner_hint, spinner_kitt_frame, split_command_segments,
         strip_frontend_tail_flag, tail_status_lines, Action, BackendInvocation, BackendMetadata,
-        CommandSummary, ResourceSample,
+        CommandSummary, ResourceHistory, ResourceSample,
     };
     use std::env;
     use std::ffi::OsString;
@@ -2677,18 +2834,39 @@ mod tests {
             cpu_percent: 142.1,
             rss_kb: 411443,
         };
+        let mut history = ResourceHistory::new();
+        history.push(ResourceSample {
+            cpu_percent: 38.0,
+            rss_kb: 128 * 1024,
+        });
+        history.push(ResourceSample {
+            cpu_percent: 64.0,
+            rss_kb: 220 * 1024,
+        });
+        history.push(ResourceSample {
+            cpu_percent: 120.0,
+            rss_kb: 320 * 1024,
+        });
+        history.push(ResourceSample {
+            cpu_percent: 88.0,
+            rss_kb: 256 * 1024,
+        });
+        history.push(ResourceSample {
+            cpu_percent: 52.0,
+            rss_kb: 180 * 1024,
+        });
+        history.push(ResourceSample {
+            cpu_percent: 17.4,
+            rss_kb: 2202009,
+        });
 
         assert_eq!(
-            format_resource_sample(&low),
-            "cpu   17.4% | ram    2.1 GiB"
+            format_resource_sample(&low, &history),
+            "cpu ▁▂▃▂▁    17% | ram  ▁▁▁▁▇  2.10 GiB"
         );
         assert_eq!(
-            format_resource_sample(&high),
-            "cpu  142.1% | ram  401.8 MiB"
-        );
-        assert_eq!(
-            format_resource_sample(&low).len(),
-            format_resource_sample(&high).len()
+            format_resource_sample(&high, &history),
+            "cpu ▁▂▃▂▁   142% | ram  ▁▁▁▁▇  402 MiB"
         );
     }
 
