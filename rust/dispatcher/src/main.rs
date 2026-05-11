@@ -1229,21 +1229,26 @@ fn print_final_dashboard(
     completed_summaries: &[CommandSummary],
     success: bool,
 ) -> io::Result<()> {
-    writeln!(
-        io::stdout(),
-        "{}",
-        dim_text(&format!("Worked for {}", format_duration(elapsed)))
-    )?;
-    for summary in completed_summaries {
-        writeln!(io::stdout(), "{}", completed_summary_line(summary))?;
-        for dl in &summary.detail_lines {
-            writeln!(io::stdout(), "{}", detail_line(dl))?;
-        }
-    }
-    if success {
-        writeln!(io::stdout(), "[{}]", style("32", "ok"))?;
+    for line in final_dashboard_lines(elapsed, completed_summaries, success) {
+        writeln!(io::stdout(), "{line}")?;
     }
     Ok(())
+}
+
+fn final_dashboard_lines(
+    elapsed: Duration,
+    completed_summaries: &[CommandSummary],
+    success: bool,
+) -> Vec<String> {
+    let mut lines = Vec::with_capacity(completed_summaries.len() + 2);
+    lines.push(dim_text(&format!("Worked for {}", format_duration(elapsed))));
+    for summary in completed_summaries {
+        lines.push(completed_summary_line(summary));
+    }
+    if success {
+        lines.push(format!("[{}]", style("32", "ok")));
+    }
+    lines
 }
 
 fn detail_line(text: &str) -> String {
@@ -2188,36 +2193,15 @@ impl SpinnerRenderer {
             format!("{} {} {}", resource_text, dim_text("|"), hint)
         };
 
-        let total_lines = 1
-            + completed_summaries
-                .iter()
-                .map(|s| 1 + s.detail_lines.len())
-                .sum::<usize>()
-            + current_detail_lines.len()
-            + 2; // running command + spinner
-        let mut lines = Vec::with_capacity(total_lines);
-        lines.push(format!(
-            "{}",
-            dim_text(&format!(
-                "Working for {} >",
-                format_duration(global_elapsed)
-            ))
-        ));
-        for summary in completed_summaries {
-            lines.push(completed_summary_line(summary));
-            for dl in &summary.detail_lines {
-                lines.push(detail_line(dl));
-            }
-        }
-        for dl in current_detail_lines {
-            lines.push(detail_line(dl));
-        }
-        lines.push(running_command_line(metadata));
-        lines.push(format!(
-            "{}  {}",
-            spinner_kitt_frame_with_load(self.frame, self.resource_visual_load),
-            spinner_suffix
-        ));
+        let lines = dashboard_output_lines(
+            global_elapsed,
+            completed_summaries,
+            current_detail_lines,
+            metadata,
+            self.frame,
+            self.resource_visual_load,
+            &spinner_suffix,
+        );
 
         let render_width = terminal_width().max(8);
         let lines = lines
@@ -2307,6 +2291,48 @@ impl SpinnerRenderer {
         self.rendered_block_line_widths.clear();
         Ok(())
     }
+}
+
+fn dashboard_output_lines(
+    global_elapsed: Duration,
+    completed_summaries: &[CommandSummary],
+    current_detail_lines: &[String],
+    metadata: &BackendMetadata,
+    frame: usize,
+    resource_visual_load: f32,
+    spinner_suffix: &str,
+) -> Vec<String> {
+    let total_lines = 1
+        + completed_summaries
+            .iter()
+            .map(|s| 1 + s.detail_lines.len())
+            .sum::<usize>()
+        + 2
+        + current_detail_lines.len();
+    let mut lines = Vec::with_capacity(total_lines);
+    lines.push(format!(
+        "{}",
+        dim_text(&format!(
+            "Working for {} >",
+            format_duration(global_elapsed)
+        ))
+    ));
+    for summary in completed_summaries {
+        lines.push(completed_summary_line(summary));
+        for dl in &summary.detail_lines {
+            lines.push(detail_line(dl));
+        }
+    }
+    lines.push(running_command_line(metadata));
+    lines.push(format!(
+        "{}  {}",
+        spinner_kitt_frame_with_load(frame, resource_visual_load),
+        spinner_suffix
+    ));
+    for dl in current_detail_lines {
+        lines.push(detail_line(dl));
+    }
+    lines
 }
 
 #[derive(Clone, Copy)]
@@ -2686,7 +2712,7 @@ fn print_help(with_header: bool) {
     println!("  makevn [--repo PATH] verify [--tail] [-- EXTRA_MAVEN_ARGS...]");
     println!("  makevn [--repo PATH] verify-changes [--tail] [-- EXTRA_MAVEN_ARGS...]");
     println!("  makevn [--repo PATH] coverage [--threshold PCT]");
-    println!("  makevn [--repo PATH] coverage-changes [--threshold PCT]");
+    println!("  makevn [--repo PATH] coverage-changes [--threshold PCT] [--overall-threshold PCT]");
     println!("  makevn [--repo PATH] pr-verify [--tail] [-- EXTRA_MAVEN_ARGS...]");
     println!("  makevn [--repo PATH] format [--tail] [--apply] [-- EXTRA_MAVEN_ARGS...]");
     println!(
@@ -3367,6 +3393,64 @@ mod tests {
             super::visible_char_count(&lines[4]),
             "[INFO] compiling".len()
         );
+    }
+
+    #[test]
+    fn dashboard_places_current_details_after_live_status() {
+        let metadata = BackendMetadata {
+            command: String::from("coverage-changes"),
+            repo: String::from("/repo"),
+            cwd: String::from("/repo"),
+            log_path: String::from("/repo/.makevn/logs/coverage-changes.log"),
+            relative_log_path: String::from(".makevn/logs/coverage-changes.log"),
+            command_display: String::from("coverage-changes"),
+            title: String::from("coverage-changes"),
+            context: Some(String::from("code")),
+        };
+        let completed = vec![CommandSummary {
+            title: String::from("verify-it"),
+            duration: String::from("4m 51s"),
+            log_path: Some(String::from("/repo/.makevn/logs/verify-it.log")),
+            relative_log_path: Some(String::from(".makevn/logs/verify-it.log")),
+            exit_code: 0,
+            detail_lines: vec![String::from("worked")],
+        }];
+        let current_details = vec![String::from("coverage-changes detail")];
+
+        let lines = super::dashboard_output_lines(
+            Duration::from_secs(5),
+            &completed,
+            &current_details,
+            &metadata,
+            0,
+            0.0,
+            "interrupt",
+        );
+
+        assert_eq!(lines[0], "Working for 5s >");
+        assert_eq!(lines[1], "[✓] verify-it | 4m 51s | .makevn/logs/verify-it.log");
+        assert_eq!(lines[2], "│ worked");
+        assert_eq!(lines[3], ":: makevn coverage-changes | .makevn/logs/coverage-changes.log");
+        assert!(lines[4].contains("interrupt"));
+        assert_eq!(lines[5], "│ coverage-changes detail");
+    }
+
+    #[test]
+    fn final_dashboard_omits_repeated_detail_lines() {
+        let summary = CommandSummary {
+            title: String::from("coverage-changes"),
+            duration: String::from("9s"),
+            log_path: Some(String::from("/repo/.makevn/logs/coverage-changes.log")),
+            relative_log_path: Some(String::from(".makevn/logs/coverage-changes.log")),
+            exit_code: 0,
+            detail_lines: vec![String::from("detail that should not repeat")],
+        };
+
+        let lines = super::final_dashboard_lines(Duration::from_secs(5), &[summary], true);
+
+        assert_eq!(lines[0], "Worked for 5s");
+        assert_eq!(lines[1], "[✓] coverage-changes | 9s | .makevn/logs/coverage-changes.log");
+        assert_eq!(lines[2], "[ok]");
     }
 
     #[test]

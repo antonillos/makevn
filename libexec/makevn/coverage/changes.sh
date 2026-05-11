@@ -30,6 +30,7 @@ fi
 JACOCO_BASE="${1:-}"
 BASE_REF="${2:-}"
 MIN_COVERAGE_PCT="${3:-90}"
+MIN_OVERALL_COVERAGE_PCT="${4:-90}"
 
 if [ -z "$JACOCO_BASE" ] || [ ! -d "$JACOCO_BASE" ]; then
   echo "✗ Error: JaCoCo base directory not found or invalid: $JACOCO_BASE" 1>&2
@@ -357,7 +358,7 @@ echo "▓ Overall Project Coverage:"
 echo "================================"
 if [ -f "$JACOCO_BASE/jacoco.csv" ]; then
   SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-  bash "$SCRIPT_DIR/calculate.sh" "$JACOCO_BASE/jacoco.csv" "$MIN_COVERAGE_PCT"
+  bash "$SCRIPT_DIR/calculate.sh" "$JACOCO_BASE/jacoco.csv" "$MIN_OVERALL_COVERAGE_PCT"
   OVERALL_EXIT_CODE=$?
   if [ $OVERALL_EXIT_CODE -ne 0 ] && [ $EXIT_CODE -eq 0 ]; then
     EXIT_CODE=$OVERALL_EXIT_CODE

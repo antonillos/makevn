@@ -335,6 +335,7 @@ cmd_coverage_changes() {
   local jacoco_module=""
   local parent_spec=""
   local threshold=""
+  local overall_threshold=""
   local coverage_script=""
   local cli_flags_value=""
   local rc=0
@@ -343,11 +344,17 @@ cmd_coverage_changes() {
 
   shift
   threshold="$(makevn_effective_coverage_changes_threshold "${repo_root}")"
+  overall_threshold="$(makevn_effective_coverage_threshold "${repo_root}")"
   while [[ $# -gt 0 ]]; do
     case "$1" in
       --threshold)
         [[ $# -ge 2 ]] || makevn_die "Missing value for --threshold"
         threshold="$2"
+        shift 2
+        ;;
+      --overall-threshold)
+        [[ $# -ge 2 ]] || makevn_die "Missing value for --overall-threshold"
+        overall_threshold="$2"
         shift 2
         ;;
       --)
@@ -407,6 +414,6 @@ cmd_coverage_changes() {
 
   (
     cd "${repo_root}"
-    BASE_PATH="${maven_base_rel}" bash "${coverage_script}" "${report_dir}" "${parent_spec}" "${threshold}"
+    BASE_PATH="${maven_base_rel}" bash "${coverage_script}" "${report_dir}" "${parent_spec}" "${threshold}" "${overall_threshold}"
   )
 }

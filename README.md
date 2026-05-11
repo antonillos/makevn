@@ -151,7 +151,7 @@ Changed-code coverage expects a coverage-producing command to run first:
 makevn verify
 makevn coverage
 makevn verify-changes
-makevn coverage-changes --threshold 90
+makevn coverage-changes --threshold 90 --overall-threshold 95
 ```
 
 ## Make integration
