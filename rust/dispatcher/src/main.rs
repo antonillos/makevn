@@ -2356,10 +2356,11 @@ fn read_resource_sample(root_pid: u32) -> io::Result<ResourceSample> {
 }
 
 fn format_resource_sample(sample: &ResourceSample) -> String {
+    let ram = format_kib(sample.rss_kb);
     format!(
-        "cpu {:.1}% | ram {}",
+        "cpu {:>6.1}% | ram {:>10}",
         sample.cpu_percent,
-        format_kib(sample.rss_kb)
+        ram
     )
 }
 
@@ -2604,9 +2605,10 @@ impl fmt::Display for Lossy<'_> {
 mod tests {
     use super::{
         command_supports_frontend_loader, dashboard_hint, dim_text, insert_backend_option,
-        install_root_with_override, parse_invocation, read_backend_metadata, spinner_hint,
-        spinner_kitt_frame, split_command_segments, strip_frontend_tail_flag, tail_status_lines,
-        Action, BackendInvocation, BackendMetadata, CommandSummary,
+        format_resource_sample, install_root_with_override, parse_invocation,
+        read_backend_metadata, spinner_hint, spinner_kitt_frame, split_command_segments,
+        strip_frontend_tail_flag, tail_status_lines, Action, BackendInvocation, BackendMetadata,
+        CommandSummary, ResourceSample,
     };
     use std::env;
     use std::ffi::OsString;
@@ -2662,6 +2664,31 @@ mod tests {
         assert_eq!(
             dashboard_hint(&spinner_hint("interrupt")),
             "t tail | esc interrupt"
+        );
+    }
+
+    #[test]
+    fn resource_sample_uses_fixed_width_columns() {
+        let low = ResourceSample {
+            cpu_percent: 17.4,
+            rss_kb: 2202009,
+        };
+        let high = ResourceSample {
+            cpu_percent: 142.1,
+            rss_kb: 411443,
+        };
+
+        assert_eq!(
+            format_resource_sample(&low),
+            "cpu   17.4% | ram    2.1 GiB"
+        );
+        assert_eq!(
+            format_resource_sample(&high),
+            "cpu  142.1% | ram  401.8 MiB"
+        );
+        assert_eq!(
+            format_resource_sample(&low).len(),
+            format_resource_sample(&high).len()
         );
     }
 
