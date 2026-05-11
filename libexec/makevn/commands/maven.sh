@@ -300,7 +300,7 @@ cmd_pr_verify() {
     maven_args+=("${extra_args[@]}")
   fi
 
-  makevn_run_logged_in_context "${repo_root}" code "${maven_base_path}" pr-verify pr-verify pr-verify "${maven_args[@]}"
+  MAKEVN_COMPACT_OUTPUT=1 makevn_run_logged_in_context "${repo_root}" code "${maven_base_path}" pr-verify pr-verify pr-verify "${maven_args[@]}"
   rc=$?
   [[ ${rc} -eq 0 ]] && makevn_print_jacoco_report_hint "${maven_base_path}"
   return ${rc}
@@ -505,7 +505,7 @@ cmd_checkstyle() {
     maven_args+=("${extra_args[@]}")
   fi
 
-  makevn_run_logged_in_context "${repo_root}" code "${maven_base_path}" checkstyle checkstyle checkstyle "${maven_args[@]}"
+  MAKEVN_COMPACT_OUTPUT=1 makevn_run_logged_in_context "${repo_root}" code "${maven_base_path}" checkstyle checkstyle checkstyle "${maven_args[@]}"
 }
 
 makevn_checkstyle_goal_for_project() {

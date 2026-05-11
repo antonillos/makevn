@@ -58,6 +58,11 @@ makevn_print_command_header() {
   local pid="${2:-}"
   local log_path="${3:-}"
   local line=""
+  local prefix="::"
+
+  if [[ "${MAKEVN_COMPACT_OUTPUT:-}" == "1" ]]; then
+    prefix="[..]"
+  fi
 
   line="$(makevn_accent "makevn ${title}")"
   if [[ -n "${pid}" ]]; then
@@ -67,5 +72,5 @@ makevn_print_command_header() {
     line+=" $(makevn_dim '|') $(makevn_dim "log: ${log_path}")"
   fi
 
-  printf '%s %s\n' "$(makevn_dim '::')" "${line}"
+  printf '%s %s\n' "$(makevn_dim "${prefix}")" "${line}"
 }

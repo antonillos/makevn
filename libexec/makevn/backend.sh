@@ -28,6 +28,7 @@ shift
 REPO_ROOT=""
 FORMAT=""
 METADATA_OUT=""
+COMPACT_OUTPUT=false
 FORWARD_ARGS=()
 CLI_ARGS=("--repo")
 
@@ -47,6 +48,10 @@ while [[ $# -gt 0 ]]; do
       backend_require_value "--metadata-out" "${2:-}"
       METADATA_OUT="$2"
       shift 2
+      ;;
+    --compact)
+      COMPACT_OUTPUT=true
+      shift
       ;;
     --)
       FORWARD_ARGS+=("--")
@@ -100,6 +105,10 @@ else
   unset MAKEVN_BACKEND_REPO_ROOT || true
   unset MAKEVN_BACKEND_COMMAND || true
   unset MAKEVN_BACKEND_COMMAND_DISPLAY || true
+fi
+
+if [[ "${COMPACT_OUTPUT}" == "true" ]]; then
+  export MAKEVN_COMPACT_OUTPUT=1
 fi
 
 if [[ "${COMMAND}" == "doctor" && "${FORMAT:-text}" == "json" ]]; then

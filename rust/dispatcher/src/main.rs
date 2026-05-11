@@ -87,11 +87,13 @@ struct BackendInvocation {
     args: Vec<OsString>,
     frontend_loader: bool,
     tail: bool,
+    compact: bool,
 }
 
 const COMMAND_SEQUENCE_BREAKERS: &[&str] = &[
     "--",
     "--tail",
+    "--compact",
     "--name",
     "--context",
     "--threshold",
@@ -186,6 +188,7 @@ fn parse_invocation(args: Vec<OsString>) -> Result<Action, String> {
     let mut index = 0;
     let mut repo_override: Option<OsString> = None;
     let mut global_tail = false;
+    let mut global_compact = false;
 
     while let Some(arg) = args.get(index) {
         match arg.to_string_lossy().as_ref() {
@@ -199,6 +202,10 @@ fn parse_invocation(args: Vec<OsString>) -> Result<Action, String> {
             }
             "--tail" => {
                 global_tail = true;
+                index += 1;
+            }
+            "--compact" => {
+                global_compact = true;
                 index += 1;
             }
             "--help" | "-h" => {
@@ -231,6 +238,7 @@ fn parse_invocation(args: Vec<OsString>) -> Result<Action, String> {
         command_segments,
         command_validation,
         global_tail,
+        global_compact,
     )?;
     Ok(Action::DispatchToBackend(backend_invocations))
 }
@@ -432,6 +440,7 @@ fn build_backend_invocations(
     command_segments: Vec<(OsString, Vec<OsString>)>,
     _command_validation: CommandValidation,
     global_tail_prefix: bool,
+    global_compact_prefix: bool,
 ) -> Result<Vec<BackendInvocation>, String> {
     let repo_root = resolve_repo_root(repo_override)?;
     let (command_segments, global_options) = split_trailing_global_options(command_segments);
@@ -439,6 +448,10 @@ fn build_backend_invocations(
         || global_options
             .iter()
             .any(|arg| arg == &OsString::from("--tail"));
+    let global_compact = global_compact_prefix
+        || global_options
+            .iter()
+            .any(|arg| arg == &OsString::from("--compact"));
     let mut backend_invocations = Vec::with_capacity(command_segments.len());
 
     for (command, trailing_args) in command_segments {
@@ -456,11 +469,15 @@ fn build_backend_invocations(
         backend_args.push(command);
         backend_args.push(OsString::from("--repo"));
         backend_args.push(repo_root.clone().into_os_string());
+        if global_compact {
+            backend_args.push(OsString::from("--compact"));
+        }
         backend_args.extend(trailing_args);
         backend_invocations.push(BackendInvocation {
             args: backend_args,
             frontend_loader,
             tail,
+            compact: global_compact,
         });
     }
 
@@ -520,7 +537,7 @@ fn command_option_takes_value(arg: &OsString) -> bool {
 }
 
 fn is_global_option(arg: &OsString) -> bool {
-    matches!(arg.to_string_lossy().as_ref(), "--tail")
+    matches!(arg.to_string_lossy().as_ref(), "--tail" | "--compact")
 }
 
 fn strip_frontend_tail_flag(
@@ -638,7 +655,7 @@ fn dispatch_backend_invocations(
     let mut completed_summaries: Vec<CommandSummary> = Vec::new();
     let use_dashboard = backend_invocations
         .iter()
-        .any(|invocation| invocation.frontend_loader);
+        .any(|invocation| invocation.frontend_loader && !invocation.compact);
 
     // Create the renderer and detail file once for the entire run so there is
     // a single continuous spinner and a single "Working for" counter.
@@ -660,8 +677,9 @@ fn dispatch_backend_invocations(
             .first()
             .map(|arg| arg.to_string_lossy().into_owned())
             .unwrap_or_else(|| String::from("command"));
-        let use_frontend_loader =
-            backend_invocation.frontend_loader && frontend_loader_is_available();
+        let use_frontend_loader = backend_invocation.frontend_loader
+            && !backend_invocation.compact
+            && frontend_loader_is_available();
         let metadata_file = if use_frontend_loader {
             let metadata_file = BackendMetadataFile::new()?;
             insert_backend_option(
@@ -2720,28 +2738,28 @@ fn print_help(with_header: bool) {
     println!("  makevn [--repo PATH] make uninstall [--dry-run]");
     println!("  makevn [--repo PATH] uninstall [--dry-run]");
     println!("  makevn [--repo PATH] profile refresh");
-    println!("  makevn [--repo PATH] compile [--tail] [-- EXTRA_MAVEN_ARGS...]");
-    println!("  makevn [--repo PATH] test-compile [--tail] [-- EXTRA_MAVEN_ARGS...]");
-    println!("  makevn [--repo PATH] compile-tests [--tail] [-- EXTRA_MAVEN_ARGS...]");
-    println!("  makevn [--repo PATH] validate [--tail] [-- EXTRA_MAVEN_ARGS...]");
-    println!("  makevn [--repo PATH] package [--tail] [-- EXTRA_MAVEN_ARGS...]");
-    println!("  makevn [--repo PATH] build [--tail] [-- EXTRA_MAVEN_ARGS...]");
-    println!("  makevn [--repo PATH] clean [--tail] [-- EXTRA_MAVEN_ARGS...]");
+    println!("  makevn [--repo PATH] [--compact] compile [--tail] [-- EXTRA_MAVEN_ARGS...]");
+    println!("  makevn [--repo PATH] [--compact] test-compile [--tail] [-- EXTRA_MAVEN_ARGS...]");
+    println!("  makevn [--repo PATH] [--compact] compile-tests [--tail] [-- EXTRA_MAVEN_ARGS...]");
+    println!("  makevn [--repo PATH] [--compact] validate [--tail] [-- EXTRA_MAVEN_ARGS...]");
+    println!("  makevn [--repo PATH] [--compact] package [--tail] [-- EXTRA_MAVEN_ARGS...]");
+    println!("  makevn [--repo PATH] [--compact] build [--tail] [-- EXTRA_MAVEN_ARGS...]");
+    println!("  makevn [--repo PATH] [--compact] clean [--tail] [-- EXTRA_MAVEN_ARGS...]");
     println!(
-        "  makevn [--repo PATH] test [--tail] [--name TEST]... [--fast] [-- EXTRA_MAVEN_ARGS...]"
+        "  makevn [--repo PATH] [--compact] test [--tail] [--name TEST]... [--fast] [-- EXTRA_MAVEN_ARGS...]"
     );
-    println!("  makevn [--repo PATH] verify-ut [--tail] [-- EXTRA_MAVEN_ARGS...]");
-    println!("  makevn [--repo PATH] verify-ut-coverage [--tail] [-- EXTRA_MAVEN_ARGS...]");
-    println!("  makevn [--repo PATH] verify-it [--tail] [-- EXTRA_MAVEN_ARGS...]");
-    println!("  makevn [--repo PATH] verify-it-coverage [--tail] [-- EXTRA_MAVEN_ARGS...]");
-    println!("  makevn [--repo PATH] verify [--tail] [-- EXTRA_MAVEN_ARGS...]");
-    println!("  makevn [--repo PATH] verify-changes [--tail] [-- EXTRA_MAVEN_ARGS...]");
+    println!("  makevn [--repo PATH] [--compact] verify-ut [--tail] [-- EXTRA_MAVEN_ARGS...]");
+    println!("  makevn [--repo PATH] [--compact] verify-ut-coverage [--tail] [-- EXTRA_MAVEN_ARGS...]");
+    println!("  makevn [--repo PATH] [--compact] verify-it [--tail] [-- EXTRA_MAVEN_ARGS...]");
+    println!("  makevn [--repo PATH] [--compact] verify-it-coverage [--tail] [-- EXTRA_MAVEN_ARGS...]");
+    println!("  makevn [--repo PATH] [--compact] verify [--tail] [-- EXTRA_MAVEN_ARGS...]");
+    println!("  makevn [--repo PATH] [--compact] verify-changes [--tail] [-- EXTRA_MAVEN_ARGS...]");
     println!("  makevn [--repo PATH] coverage [--threshold PCT]");
     println!("  makevn [--repo PATH] coverage-changes [--threshold PCT] [--overall-threshold PCT] [--verbose]");
-    println!("  makevn [--repo PATH] pr-verify [--tail] [-- EXTRA_MAVEN_ARGS...]");
-    println!("  makevn [--repo PATH] format [--tail] [--apply] [-- EXTRA_MAVEN_ARGS...]");
+    println!("  makevn [--repo PATH] [--compact] pr-verify [--tail] [-- EXTRA_MAVEN_ARGS...]");
+    println!("  makevn [--repo PATH] [--compact] format [--tail] [--apply] [-- EXTRA_MAVEN_ARGS...]");
     println!(
-        "  makevn [--repo PATH] checkstyle [--tail] [--module MODULE] [--verbose] [-- EXTRA_MAVEN_ARGS...]"
+        "  makevn [--repo PATH] [--compact] checkstyle [--tail] [--module MODULE] [--verbose] [-- EXTRA_MAVEN_ARGS...]"
     );
     println!("  makevn [--repo PATH] docker-up [--tail]");
     println!("  makevn [--repo PATH] docker-down [--tail]");
@@ -2798,6 +2816,7 @@ fn print_help(with_header: bool) {
     println!("  - 'init' always creates '.makevn/' without touching root makefiles.");
     println!("  - 'make install' adds optional 'vn-*' targets by updating one existing makefile or creating a minimal root Makefile.");
     println!("  - 'make uninstall' removes only the Make integration and keeps '.makevn/' intact.");
+    println!("  - '--compact' forces compact agent-style summaries; non-interactive runs are compact by default.");
     println!("  - '--tail' starts managed-log commands in tail mode; without it, press 't' while a command is running to tail the current log.");
 }
 
@@ -2936,6 +2955,7 @@ mod tests {
                 ],
                 frontend_loader: false,
                 tail: false,
+                compact: false,
             }])
         );
     }
@@ -2997,6 +3017,7 @@ mod tests {
                     ],
                     frontend_loader: true,
                     tail: true,
+                    compact: false,
                 },
                 BackendInvocation {
                     args: vec![
@@ -3006,6 +3027,7 @@ mod tests {
                     ],
                     frontend_loader: true,
                     tail: true,
+                    compact: false,
                 },
             ])
         );
@@ -3032,6 +3054,7 @@ mod tests {
                     ],
                     frontend_loader: true,
                     tail: true,
+                    compact: false,
                 },
                 BackendInvocation {
                     args: vec![
@@ -3041,9 +3064,63 @@ mod tests {
                     ],
                     frontend_loader: true,
                     tail: true,
+                    compact: false,
                 },
             ])
         );
+    }
+
+    #[test]
+    fn parses_global_compact_prefix_for_command_sequence() {
+        let current_dir = env::current_dir().unwrap();
+        let action = parse_invocation(vec![
+            OsString::from("--compact"),
+            OsString::from("clean"),
+            OsString::from("verify-it"),
+        ])
+        .unwrap();
+
+        assert_eq!(
+            action,
+            Action::DispatchToBackend(vec![
+                BackendInvocation {
+                    args: vec![
+                        OsString::from("clean"),
+                        OsString::from("--repo"),
+                        current_dir.clone().into_os_string(),
+                        OsString::from("--compact"),
+                    ],
+                    frontend_loader: true,
+                    tail: false,
+                    compact: true,
+                },
+                BackendInvocation {
+                    args: vec![
+                        OsString::from("verify-it"),
+                        OsString::from("--repo"),
+                        current_dir.into_os_string(),
+                        OsString::from("--compact"),
+                    ],
+                    frontend_loader: true,
+                    tail: false,
+                    compact: true,
+                },
+            ])
+        );
+    }
+
+    #[test]
+    fn compact_disables_dashboard_loader_usage() {
+        let invocations = vec![BackendInvocation {
+            args: vec![OsString::from("compile")],
+            frontend_loader: true,
+            tail: false,
+            compact: true,
+        }];
+
+        assert!(!invocations
+            .iter()
+            .any(|invocation| invocation.frontend_loader && !invocation.compact));
     }
 
     #[test]
@@ -3068,6 +3145,7 @@ mod tests {
                     ],
                     frontend_loader: true,
                     tail: true,
+                    compact: false,
                 },
                 BackendInvocation {
                     args: vec![
@@ -3077,6 +3155,7 @@ mod tests {
                     ],
                     frontend_loader: true,
                     tail: true,
+                    compact: false,
                 },
             ])
         );
@@ -3103,6 +3182,7 @@ mod tests {
                     ],
                     frontend_loader: true,
                     tail: true,
+                    compact: false,
                 },
                 BackendInvocation {
                     args: vec![
@@ -3112,6 +3192,7 @@ mod tests {
                     ],
                     frontend_loader: true,
                     tail: false,
+                    compact: false,
                 },
             ])
         );
@@ -3195,6 +3276,7 @@ mod tests {
                 ],
                 frontend_loader: true,
                 tail: true,
+                compact: false,
             }])
         );
     }
@@ -3214,6 +3296,7 @@ mod tests {
                 ],
                 frontend_loader: true,
                 tail: false,
+                compact: false,
             }])
         );
     }
@@ -3239,6 +3322,7 @@ mod tests {
                 ],
                 frontend_loader: true,
                 tail: true,
+                compact: false,
             }])
         );
     }
@@ -3268,6 +3352,7 @@ mod tests {
                 ],
                 frontend_loader: true,
                 tail: true,
+                compact: false,
             }])
         );
     }

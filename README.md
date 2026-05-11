@@ -121,6 +121,10 @@ Use `--tail` only for a human interactive log view. During a normal interactive
 run, press `t` to tail the current managed log. Agents should prefer
 non-interactive runs and generated logs.
 
+Use `--compact` when you want agent-style output even in a TTY. In non-interactive
+runs, `makevn` now keeps the full log under `.makevn/logs/` and prints only a
+compact summary plus a short failure excerpt when needed.
+
 ## Verification
 
 ```bash

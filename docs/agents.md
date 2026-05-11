@@ -16,6 +16,7 @@ The skill is meant to teach agents to:
 - treat `makevn` as the primary interface instead of relying on IDE actions
 - prefer `--json` when it is available for the command being used
 - avoid `--tail` unless a human explicitly requests an interactive local log view
+- prefer compact non-interactive runs so the agent sees summaries and short failure excerpts instead of full Maven logs
 - use direct `makevn ...` subcommands by default instead of inventing bare
   root `make` targets
 

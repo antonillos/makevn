@@ -191,6 +191,7 @@ Rules:
 - backend `stdout` should remain empty during normal execution
 - backend `stderr` should be reserved for early backend failures before the delegated process starts
 - public NDJSON events should be emitted by Rust, not by the shell backend
+- compact non-interactive summaries may print the log path, final status, duration, and a short failure excerpt, but not the full managed log stream
 
 This keeps one source of truth for:
 

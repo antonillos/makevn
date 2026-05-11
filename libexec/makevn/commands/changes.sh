@@ -122,7 +122,7 @@ cmd_coverage() {
         report_args+=("${cli_flags[@]}")
       fi
       report_args+=(-f "${maven_base_path}/pom.xml" jacoco:report -Dmaven.build.cache.enabled=false)
-      makevn_run_logged_in_context "${repo_root}" code "${maven_base_path}" coverage-report coverage "coverage report" "${report_args[@]}"
+      MAKEVN_COMPACT_OUTPUT=1 makevn_run_logged_in_context "${repo_root}" code "${maven_base_path}" coverage-report coverage "coverage report" "${report_args[@]}"
       rc=$?
       [[ ${rc} -eq 0 ]] || return ${rc}
     fi
@@ -297,7 +297,7 @@ No modified Java files detected. Skipping verify-changes."
     if [[ ${#extra_args[@]} -gt 0 ]]; then
       verify_args+=("${extra_args[@]}")
     fi
-    makevn_run_logged_in_context "${repo_root}" code "${maven_base_path}" "${log_name}" verify-changes "verify-changes" "${verify_args[@]}"
+    MAKEVN_COMPACT_OUTPUT=1 makevn_run_logged_in_context "${repo_root}" code "${maven_base_path}" "${log_name}" verify-changes "verify-changes" "${verify_args[@]}"
     rc=$?
     [[ ${rc} -eq 0 ]] && makevn_print_jacoco_report_hint "${maven_base_path}"
     return ${rc}
@@ -320,7 +320,7 @@ No modified Java files detected. Skipping verify-changes."
   if [[ ${#extra_args[@]} -gt 0 ]]; then
     verify_args+=("${extra_args[@]}")
   fi
-  makevn_run_logged_in_context "${repo_root}" code "${maven_base_path}" "${log_name}" verify-changes "verify-changes" "${verify_args[@]}"
+  MAKEVN_COMPACT_OUTPUT=1 makevn_run_logged_in_context "${repo_root}" code "${maven_base_path}" "${log_name}" verify-changes "verify-changes" "${verify_args[@]}"
   rc=$?
   [[ ${rc} -eq 0 ]] && makevn_print_jacoco_report_hint "${maven_base_path}"
   return ${rc}
@@ -408,7 +408,7 @@ cmd_coverage_changes() {
       report_args+=("${cli_flags[@]}")
     fi
     report_args+=(-f "${maven_base_path}/pom.xml" jacoco:report-aggregate -pl "${jacoco_module}" -Dmaven.build.cache.enabled=false)
-    makevn_run_logged_in_context "${repo_root}" code "${maven_base_path}" coverage-changes-report coverage-changes "coverage report" "${report_args[@]}"
+    MAKEVN_COMPACT_OUTPUT=1 makevn_run_logged_in_context "${repo_root}" code "${maven_base_path}" coverage-changes-report coverage-changes "coverage report" "${report_args[@]}"
     rc=$?
     [[ ${rc} -eq 0 ]] || return ${rc}
     [[ -f "${report_dir}/index.html" ]] || makevn_die "Could not generate JaCoCo report. Run 'makevn verify' first."

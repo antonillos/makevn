@@ -149,7 +149,7 @@ cmd_karate_test() {
     maven_args+=("${extra_args[@]}")
   fi
 
-  makevn_run_logged_in_context "${repo_root}" karate "${karate_base_path}" karate-test karate-test karate-test "${maven_args[@]}"
+  MAKEVN_COMPACT_OUTPUT=1 makevn_run_logged_in_context "${repo_root}" karate "${karate_base_path}" karate-test karate-test karate-test "${maven_args[@]}"
 }
 
 cmd_karate_all() {

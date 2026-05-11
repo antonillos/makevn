@@ -16,13 +16,13 @@ from the terminal without IDE-specific setup. Agents in OpenCode should prefer
 'makevn' commands over editor-specific instructions.
 
 Usage:
-  makevn [--repo PATH] doctor
-  makevn [--repo PATH] init [--dry-run] [--force]
-  makevn [--repo PATH] make install [--dry-run]
-  makevn [--repo PATH] make uninstall [--dry-run]
-  makevn [--repo PATH] uninstall [--dry-run]
-  makevn [--repo PATH] profile refresh
-  makevn [--repo PATH] compile [-- EXTRA_MAVEN_ARGS...]
+  makevn [--repo PATH] [--compact] doctor
+  makevn [--repo PATH] [--compact] init [--dry-run] [--force]
+  makevn [--repo PATH] [--compact] make install [--dry-run]
+  makevn [--repo PATH] [--compact] make uninstall [--dry-run]
+  makevn [--repo PATH] [--compact] uninstall [--dry-run]
+  makevn [--repo PATH] [--compact] profile refresh
+  makevn [--repo PATH] [--compact] compile [-- EXTRA_MAVEN_ARGS...]
   makevn [--repo PATH] test-compile [-- EXTRA_MAVEN_ARGS...]
   makevn [--repo PATH] compile-tests [-- EXTRA_MAVEN_ARGS...]
   makevn [--repo PATH] validate [-- EXTRA_MAVEN_ARGS...]
@@ -95,6 +95,8 @@ Examples:
   make -f .makevn/makevn.mk vn-doctor
 
 Notes:
+  - '--compact' forces agent-style compact output even in a TTY.
+  - Non-interactive runs are compact by default: full logs stay under '.makevn/logs/'.
   - 'doctor' inspects the repository before and after initialization.
   - 'init' always creates '.makevn/' without touching root makefiles.
   - 'make install' adds optional 'vn-*' targets by updating one existing makefile or creating a minimal root Makefile.
@@ -223,6 +225,10 @@ while [[ $# -gt 0 ]]; do
       [[ $# -ge 2 ]] || makevn_die "Missing value for --repo"
       REPO_OVERRIDE="$2"
       shift 2
+      ;;
+    --compact)
+      export MAKEVN_COMPACT_OUTPUT=1
+      shift
       ;;
     --help|-h)
       show_help

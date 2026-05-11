@@ -475,7 +475,7 @@ makevn_run_selected_test() {
   fi
 
   set +e
-  makevn_run_logged_in_context "${repo_root}" code "${maven_base_path}" "${log_name}" test "${title}" "${maven_args[@]}"
+  MAKEVN_COMPACT_OUTPUT=1 makevn_run_logged_in_context "${repo_root}" code "${maven_base_path}" "${log_name}" test "${title}" "${maven_args[@]}"
   rc=$?
   set -e
   [[ ${rc} -eq 0 ]] || return ${rc}
@@ -586,7 +586,7 @@ makevn_run_verify_it_goal() {
       maven_args+=("$@")
     fi
 
-    makevn_run_logged_in_context "${repo_root}" code "${maven_base_path}" "${log_name}" verify-it "${log_name}" "${maven_args[@]}"
+    MAKEVN_COMPACT_OUTPUT=1 makevn_run_logged_in_context "${repo_root}" code "${maven_base_path}" "${log_name}" verify-it "${log_name}" "${maven_args[@]}"
     return 0
   fi
 
@@ -630,7 +630,7 @@ makevn_run_verify_it_goal() {
     maven_args+=("$@")
   fi
 
-  makevn_run_logged_in_context "${repo_root}" code "${maven_base_path}" "${log_name}" verify-it "${log_name}" "${maven_args[@]}"
+  MAKEVN_COMPACT_OUTPUT=1 makevn_run_logged_in_context "${repo_root}" code "${maven_base_path}" "${log_name}" verify-it "${log_name}" "${maven_args[@]}"
 }
 
 makevn_run_maven_goal() {
@@ -687,7 +687,7 @@ makevn_run_maven_goal() {
     maven_args+=("$@")
   fi
 
-  makevn_run_logged_in_context "${repo_root}" code "${maven_base_path}" "${log_name}" "${command_name}" "${log_name}" "${maven_args[@]}"
+  MAKEVN_COMPACT_OUTPUT=1 makevn_run_logged_in_context "${repo_root}" code "${maven_base_path}" "${log_name}" "${command_name}" "${log_name}" "${maven_args[@]}"
 }
 
 makevn_run_command_configured() {

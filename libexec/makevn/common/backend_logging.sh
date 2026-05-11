@@ -84,6 +84,33 @@ makevn_frontend_owns_loader() {
   [[ "${MAKEVN_FRONTEND:-}" == "rust" && "${MAKEVN_FRONTEND_OWNS_LOADER:-}" == "1" ]]
 }
 
+makevn_compact_output_enabled() {
+  [[ "${MAKEVN_COMPACT_OUTPUT:-}" == "1" ]]
+}
+
+makevn_print_failure_excerpt() {
+  local logfile="$1"
+  local matched_lines=""
+  local fallback_lines=""
+
+  [[ -f "${logfile}" ]] || return 0
+
+  matched_lines="$(
+    grep -E 'BUILD FAILURE|COMPILATION ERROR|There are test failures|Failed tests:|Tests run:|Failures:|Errors:|Caused by:|^\[ERROR\]' "${logfile}" 2>/dev/null | tail -n 20 || true
+  )"
+  if [[ -n "${matched_lines}" ]]; then
+    printf '%s\n' "$(makevn_warn ":: failure excerpt")"
+    printf '%s\n' "${matched_lines}"
+    return 0
+  fi
+
+  fallback_lines="$(tail -n 40 "${logfile}" 2>/dev/null || true)"
+  if [[ -n "${fallback_lines}" ]]; then
+    printf '%s\n' "$(makevn_warn ":: last log lines")"
+    printf '%s\n' "${fallback_lines}"
+  fi
+}
+
 makevn_quote_command() {
   local out=""
   local arg
@@ -190,11 +217,19 @@ makevn_run_logged_in_context() {
     makevn_print_command_header "${title}" "" "${relative_log_path}"
     makevn_trace_command exec env JAVA_HOME="${java_home}" "$@"
     set +e
-    (
-      cd "${repo_root}"
-      env JAVA_HOME="${java_home}" PATH="${java_home}/bin:${PATH}" "$@"
-    ) 2>&1 | tee "${logfile}"
-    exit_code=${PIPESTATUS[0]}
+    if makevn_compact_output_enabled; then
+      (
+        cd "${repo_root}"
+        env JAVA_HOME="${java_home}" PATH="${java_home}/bin:${PATH}" "$@"
+      ) > "${logfile}" 2>&1
+      exit_code=$?
+    else
+      (
+        cd "${repo_root}"
+        env JAVA_HOME="${java_home}" PATH="${java_home}/bin:${PATH}" "$@"
+      ) 2>&1 | tee "${logfile}"
+      exit_code=${PIPESTATUS[0]}
+    fi
     set -e
     end_epoch="$(date +%s)"
     duration_seconds=$((end_epoch - start_epoch))
@@ -202,6 +237,9 @@ makevn_run_logged_in_context() {
     if [[ ${exit_code} -eq 0 ]]; then
       printf '%s %s\n' "$(makevn_accent '[ok]')" "$(makevn_accent "${duration_display}")"
     else
+      if makevn_compact_output_enabled; then
+        makevn_print_failure_excerpt "${logfile}"
+      fi
       printf '%s %s\n' "$(makevn_warn 'fail')" "$(makevn_warn "exit ${exit_code} after ${duration_display}; check the log for details")"
     fi
     return ${exit_code}
@@ -338,11 +376,19 @@ makevn_run_logged() {
     makevn_print_command_header "${title}" "" "${relative_log_path}"
     makevn_trace_command exec "$@"
     set +e
-    (
-      cd "${repo_root}"
-      "$@"
-    ) 2>&1 | tee "${logfile}"
-    exit_code=${PIPESTATUS[0]}
+    if makevn_compact_output_enabled; then
+      (
+        cd "${repo_root}"
+        "$@"
+      ) > "${logfile}" 2>&1
+      exit_code=$?
+    else
+      (
+        cd "${repo_root}"
+        "$@"
+      ) 2>&1 | tee "${logfile}"
+      exit_code=${PIPESTATUS[0]}
+    fi
     set -e
     end_epoch="$(date +%s)"
     duration_seconds=$((end_epoch - start_epoch))
@@ -350,6 +396,9 @@ makevn_run_logged() {
     if [[ ${exit_code} -eq 0 ]]; then
       printf '%s %s\n' "$(makevn_accent '[ok]')" "$(makevn_accent "${duration_display}")"
     else
+      if makevn_compact_output_enabled; then
+        makevn_print_failure_excerpt "${logfile}"
+      fi
       printf '%s %s\n' "$(makevn_warn 'fail')" "$(makevn_warn "exit ${exit_code} after ${duration_display}; check the log for details")"
     fi
     return ${exit_code}

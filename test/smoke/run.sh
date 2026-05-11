@@ -894,6 +894,89 @@ EOF
   "${tail_cli}" --repo "${repo}" uninstall >/dev/null
 }
 
+test_non_tty_run_is_compact_and_keeps_full_log_in_file() {
+  local repo="${TMP_ROOT}/compact-non-tty"
+  local java_home
+  local output=""
+
+  mkdir -p "${repo}"
+  printf '<project/>\n' > "${repo}/pom.xml"
+  java_home="$(detect_java_home)"
+
+  ${CLI} --repo "${repo}" init >/dev/null
+  cat > "${repo}/mvnw" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+printf 'line-01\n'
+printf 'line-02\n'
+printf 'line-03\n'
+printf 'line-04\n'
+printf 'line-05\n'
+printf 'line-06\n'
+printf 'line-07\n'
+printf 'line-08\n'
+printf 'line-09\n'
+printf 'line-10\n'
+printf 'line-11\n'
+printf 'line-12\n'
+printf 'line-13\n'
+printf 'line-14\n'
+printf 'line-15\n'
+printf 'line-16\n'
+printf 'line-17\n'
+printf 'line-18\n'
+printf 'line-19\n'
+printf 'line-20\n'
+printf 'line-21\n'
+printf 'line-22\n'
+printf 'line-23\n'
+printf 'line-24\n'
+printf 'line-25\n'
+printf 'line-26\n'
+printf 'line-27\n'
+printf 'line-28\n'
+printf 'line-29\n'
+printf 'line-30\n'
+printf 'line-31\n'
+printf 'line-32\n'
+printf 'line-33\n'
+printf 'line-34\n'
+printf 'line-35\n'
+printf 'line-36\n'
+printf 'line-37\n'
+printf 'line-38\n'
+printf 'line-39\n'
+printf 'line-40\n'
+printf 'line-41\n'
+printf 'line-42\n'
+printf 'line-43\n'
+printf 'line-44\n'
+printf 'line-45\n'
+printf 'line-46\n'
+printf 'line-47\n'
+printf 'line-48\n'
+printf 'line-49\n'
+printf 'line-50\n'
+EOF
+  chmod +x "${repo}/mvnw"
+  cat > "${repo}/.makevn/config" <<EOF
+MAKEVN_JAVA_HOME="${java_home}"
+MAKEVN_CODE_JAVA_HOME=""
+MAKEVN_KARATE_JAVA_HOME=""
+MAKEVN_CODE_TOOL_VERSIONS=""
+MAKEVN_KARATE_TOOL_VERSIONS=""
+MAKEVN_RUN_CMD=""
+EOF
+
+  output="$(${CLI} --repo "${repo}" compile 2>&1)"
+
+  [[ "${output}" == *"[ok] "* ]] || fail "expected compact output to include success summary"
+  [[ "${output}" != *"line-50"* ]] || fail "expected compact output not to stream full Maven log"
+  assert_contains "${repo}/.makevn/logs/compile.log" "line-50"
+
+  ${CLI} --repo "${repo}" uninstall >/dev/null
+}
+
 test_command_routing() {
   local repo="${TMP_ROOT}/command-routing"
   local java_home
@@ -2940,6 +3023,7 @@ main() {
   test_interactive_ctrl_c_interrupt
   test_make_failure_output
   test_tail_degrades_without_tty
+  test_non_tty_run_is_compact_and_keeps_full_log_in_file
   test_command_routing
   test_docker_commands
   test_docker_up_missing_compose_writes_log
