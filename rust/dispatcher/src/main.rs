@@ -321,10 +321,9 @@ fn validate_command(
             validate_maven_passthrough_args(command, trailing_args)?;
             Ok(CommandValidation::Valid)
         }
-        "help" | "init" | "uninstall" | "exec" | "test" | "coverage"
-        | "coverage-changes" | "docker-up" | "docker-down" | "docker-ps"
-        | "docker-ps-required" | "karate-docker-up" | "karate-docker-down" | "run-app"
-        | "run-app-bg" | "stop-app" | "run" => {
+        "help" | "init" | "uninstall" | "exec" | "test" | "coverage" | "coverage-changes"
+        | "docker-up" | "docker-down" | "docker-ps" | "docker-ps-required" | "karate-docker-up"
+        | "karate-docker-down" | "run-app" | "run-app-bg" | "stop-app" | "run" => {
             Ok(CommandValidation::Valid)
         }
         "doctor" => {
@@ -2010,7 +2009,7 @@ struct SpinnerRenderer {
     second_escape_deadline: Option<Instant>,
     resource_sampler: ResourceSampler,
     resource_visual_load: f32,
-    rendered_block_lines: usize,
+    rendered_block_line_widths: Vec<usize>,
 }
 
 enum InputEvent {
@@ -2040,7 +2039,7 @@ impl SpinnerRenderer {
             second_escape_deadline: None,
             resource_sampler: ResourceSampler::new(),
             resource_visual_load: 0.0,
-            rendered_block_lines: 0,
+            rendered_block_line_widths: Vec::new(),
         })
     }
 
@@ -2176,6 +2175,12 @@ impl SpinnerRenderer {
             spinner_suffix
         ));
 
+        let render_width = terminal_width().max(8);
+        let lines = lines
+            .iter()
+            .map(|line| status_line_text_for_width(line, render_width))
+            .collect::<Vec<_>>();
+
         self.clear_dynamic_block()?;
         for (index, line) in lines.iter().enumerate() {
             if index + 1 == lines.len() {
@@ -2186,7 +2191,8 @@ impl SpinnerRenderer {
         }
 
         io::stdout().flush()?;
-        self.rendered_block_lines = lines.len();
+        self.rendered_block_line_widths =
+            lines.iter().map(|line| visible_char_count(line)).collect();
         self.frame += 1;
         self.next_frame_at = Instant::now() + self.frame_interval();
         Ok(())
@@ -2219,7 +2225,7 @@ impl SpinnerRenderer {
     }
 
     fn clear_frame_line(&mut self) {
-        if self.rendered_block_lines > 0 {
+        if !self.rendered_block_line_widths.is_empty() {
             let _ = self.clear_dynamic_block();
             let _ = io::stdout().flush();
             return;
@@ -2229,15 +2235,17 @@ impl SpinnerRenderer {
     }
 
     fn clear_dynamic_block(&mut self) -> io::Result<()> {
-        if self.rendered_block_lines == 0 {
+        let rendered_rows =
+            physical_rows_for_width(&self.rendered_block_line_widths, terminal_width().max(8));
+        if rendered_rows == 0 {
             return Ok(());
         }
 
         write!(io::stdout(), "\r\u{1b}[2K")?;
-        for _ in 1..self.rendered_block_lines {
+        for _ in 1..rendered_rows {
             write!(io::stdout(), "\u{1b}[1A\r\u{1b}[2K")?;
         }
-        self.rendered_block_lines = 0;
+        self.rendered_block_line_widths.clear();
         Ok(())
     }
 }
