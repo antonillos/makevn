@@ -33,6 +33,7 @@ print_doctor() {
   makevn_print_item "Detected Maven prop flags" "${MAKEVN_DOCTOR_DETECTED_MAVEN_PROP_FLAGS}"
   makevn_print_item "Detected Maven cache" "${MAKEVN_DOCTOR_DETECTED_MAVEN_CACHE_SOURCE}"
   makevn_print_item "Detected app health URL" "${MAKEVN_DOCTOR_DETECTED_APP_HEALTH_URL}"
+  makevn_print_item "Detected coverage activation" "${MAKEVN_DOCTOR_DETECTED_COVERAGE_ACTIVATION}"
   makevn_print_item "JaCoCo report layout" "${MAKEVN_DOCTOR_JACOCO_REPORT_LAYOUT}"
   makevn_print_item "JaCoCo report dir" "${MAKEVN_DOCTOR_JACOCO_REPORT_DIR}"
   makevn_print_item "Detected coverage threshold" "${MAKEVN_DOCTOR_DETECTED_COVERAGE_THRESHOLD}"

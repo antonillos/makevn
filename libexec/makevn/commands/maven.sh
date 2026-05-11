@@ -168,22 +168,38 @@ cmd_test() {
 
 cmd_verify_ut() {
   local repo_root="$1"
+  local cli_flags_value=""
   local coverage_prop_flags_value=""
+  local -a cli_flags=()
   local -a coverage_prop_flags=()
 
   shift
   [[ "${1:-}" == "--" ]] && shift
   makevn_reject_verify_skip_flags verify-ut "$@"
+  cli_flags_value="$(makevn_coverage_cli_flags "${repo_root}")"
+  if [[ -n "${cli_flags_value}" ]]; then
+    read -r -a cli_flags <<< "${cli_flags_value}"
+  fi
   coverage_prop_flags_value="$(makevn_coverage_prop_flags "${repo_root}")"
   if [[ -n "${coverage_prop_flags_value}" ]]; then
     read -r -a coverage_prop_flags <<< "${coverage_prop_flags_value}"
   fi
-  makevn_run_maven_goal "${repo_root}" verify verify-ut "" \
-    "${coverage_prop_flags[@]}" \
-    -DskipITs \
-    -DfailIfNoTests=false \
-    -Dmaven.test.failure.ignore=false \
-    "$@"
+  if [[ ${#cli_flags[@]} -gt 0 ]]; then
+    makevn_run_maven_goal "${repo_root}" verify verify-ut "" \
+      "${cli_flags[@]}" \
+      "${coverage_prop_flags[@]}" \
+      -DskipITs \
+      -DfailIfNoTests=false \
+      -Dmaven.test.failure.ignore=false \
+      "$@"
+  else
+    makevn_run_maven_goal "${repo_root}" verify verify-ut "" \
+      "${coverage_prop_flags[@]}" \
+      -DskipITs \
+      -DfailIfNoTests=false \
+      -Dmaven.test.failure.ignore=false \
+      "$@"
+  fi
 }
 
 cmd_verify_ut_coverage() {

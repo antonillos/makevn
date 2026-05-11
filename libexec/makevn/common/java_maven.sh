@@ -230,9 +230,19 @@ makevn_maven_pre_goals_for_command() {
 
 makevn_coverage_prop_flags() {
   local repo_root="$1"
+  local detected_prop_flags=""
 
   makevn_load_config "${repo_root}"
-  printf '%s\n' "${MAKEVN_COVERAGE_PROP_FLAGS:--Djacoco.skip=false}"
+  makevn_load_profile "${repo_root}"
+  detected_prop_flags="${MAKEVN_PROFILE_COVERAGE_PROP_FLAGS:-}"
+  printf '%s\n' "$(makevn_merge_words "${detected_prop_flags}" "${MAKEVN_COVERAGE_PROP_FLAGS:--Djacoco.skip=false}")"
+}
+
+makevn_coverage_cli_flags() {
+  local repo_root="$1"
+
+  makevn_load_profile "${repo_root}"
+  printf '%s\n' "${MAKEVN_PROFILE_COVERAGE_CLI_FLAGS:-}"
 }
 
 makevn_append_coverage_prop_flags() {
@@ -246,6 +256,19 @@ makevn_append_coverage_prop_flags() {
     prop_flags_value="$(makevn_append_word "${prop_flags_value}" "${token}")"
   done
   printf '%s\n' "${prop_flags_value}"
+}
+
+makevn_append_coverage_cli_flags() {
+  local repo_root="$1"
+  local cli_flags_value="$2"
+  local coverage_cli_flags=""
+  local token=""
+
+  coverage_cli_flags="$(makevn_coverage_cli_flags "${repo_root}")"
+  for token in ${coverage_cli_flags}; do
+    cli_flags_value="$(makevn_append_word "${cli_flags_value}" "${token}")"
+  done
+  printf '%s\n' "${cli_flags_value}"
 }
 
 makevn_test_log_token() {

@@ -2410,6 +2410,53 @@ EOF
   [[ "${output}" == *"Quality gate conditions met"* ]] || fail "expected generated module coverage to pass"
 }
 
+test_coverage_uses_detected_activation_profile() {
+  local repo="${TMP_ROOT}/coverage-activation-profile"
+  local java_home
+  local output
+
+  mkdir -p "${repo}/.github/workflows"
+  printf '<project><profiles><profile><id>jacoco</id></profile></profiles></project>\n' > "${repo}/pom.xml"
+  cat > "${repo}/.github/workflows/test.yml" <<'EOF'
+jobs:
+  test:
+    steps:
+      - run: ./mvnw -B install -Pjacoco
+EOF
+  java_home="$(detect_java_home)"
+  mkdir -p "${repo}/.makevn"
+  cat > "${repo}/.makevn/config" <<EOF
+MAKEVN_JAVA_HOME="${java_home}"
+MAKEVN_CODE_JAVA_HOME=""
+MAKEVN_KARATE_JAVA_HOME=""
+MAKEVN_CODE_TOOL_VERSIONS=""
+MAKEVN_KARATE_TOOL_VERSIONS=""
+MAKEVN_RUN_CMD=""
+EOF
+  cat > "${repo}/mvnw" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+printf 'ARGS=%s\n' "$*" >> .mvnw.log
+case "$*" in
+  *" verify "*)
+    mkdir -p target/site/jacoco
+    printf '<html></html>\n' > target/site/jacoco/index.html
+    cat > target/site/jacoco/jacoco.csv <<'CSV'
+GROUP,PACKAGE,CLASS,INSTRUCTION_MISSED,INSTRUCTION_COVERED,BRANCH_MISSED,BRANCH_COVERED,LINE_MISSED,LINE_COVERED,COMPLEXITY_MISSED,COMPLEXITY_COVERED,METHOD_MISSED,METHOD_COVERED
+makevn,com.example,A,20,80,0,0,0,1,0,1,0,1
+CSV
+    ;;
+esac
+EOF
+  chmod +x "${repo}/mvnw"
+
+  ${CLI} --repo "${repo}" doctor >/dev/null
+  output="$(${CLI} --repo "${repo}" coverage --threshold 80)"
+
+  assert_matches "${repo}/.mvnw.log" '^ARGS=-B -f .*/pom\.xml verify -Pjacoco -Djacoco\.skip=false -DskipITs -DfailIfNoTests=false -Dmaven\.test\.failure\.ignore=false$'
+  [[ "${output}" == *"Quality gate conditions met"* ]] || fail "expected coverage to pass with detected activation profile"
+}
+
 test_verify_rejects_skip_flags() {
   local repo="${TMP_ROOT}/verify-rejects-skip-flags"
   local output=""
@@ -2708,6 +2755,7 @@ main() {
   test_coverage_accepts_decimal_above_threshold
   test_coverage_combines_module_reports
   test_coverage_generates_module_reports_when_missing
+  test_coverage_uses_detected_activation_profile
   test_verify_rejects_skip_flags
   test_verify_split_commands_reject_wrong_skip_flags
   test_sequential_commands

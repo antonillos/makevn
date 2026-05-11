@@ -157,6 +157,72 @@ makevn_detected_command_profile_summary() {
   printf '%s\n' "${summary}"
 }
 
+makevn_detected_coverage_activation_summary() {
+  local cli_flags="${MAKEVN_DETECTED_COVERAGE_CLI_FLAGS:-}"
+  local prop_flags="${MAKEVN_DETECTED_COVERAGE_PROP_FLAGS:-}"
+  local source="${MAKEVN_DETECTED_COVERAGE_SOURCE:-}"
+  local summary=""
+
+  if [[ -z "${cli_flags}" && -z "${prop_flags}" ]]; then
+    printf '%s\n' none
+    return 0
+  fi
+
+  if [[ -n "${source}" ]]; then
+    summary="${source}"
+  else
+    summary="detected"
+  fi
+  if [[ -n "${cli_flags}" ]]; then
+    summary+=" | cli: ${cli_flags}"
+  fi
+  if [[ -n "${prop_flags}" ]]; then
+    summary+=" | props: ${prop_flags}"
+  fi
+
+  printf '%s\n' "${summary}"
+}
+
+makevn_set_detected_coverage_activation() {
+  local source="$1"
+  local cli_flags="$2"
+  local prop_flags="$3"
+  local score="$4"
+
+  MAKEVN_DETECTED_COVERAGE_SOURCE="${source}"
+  MAKEVN_DETECTED_COVERAGE_CLI_FLAGS="${cli_flags}"
+  MAKEVN_DETECTED_COVERAGE_PROP_FLAGS="${prop_flags}"
+  MAKEVN_DETECTED_COVERAGE_SCORE="${score}"
+}
+
+makevn_extract_coverage_profiles_flag() {
+  local token="$1"
+  local profile_csv=""
+  local profile=""
+  local matched=""
+  local -a profiles=()
+
+  case "${token}" in
+    -P*)
+      profile_csv="${token#-P}"
+      ;;
+    *)
+      profile_csv="${token}"
+      ;;
+  esac
+
+  IFS=',' read -r -a profiles <<< "${profile_csv}"
+  for profile in "${profiles[@]}"; do
+    if [[ "${profile}" == *jacoco* || "${profile}" == *coverage* ]]; then
+      matched="$(makevn_append_word "${matched}" "${profile}")"
+    fi
+  done
+
+  matched="${matched// /,}"
+  [[ -n "${matched}" ]] || return 1
+  printf '%s\n' "-P${matched}"
+}
+
 makevn_set_detected_command_profile() {
   local command_name="$1"
   local workflow_file="$2"
@@ -322,6 +388,135 @@ makevn_detect_command_profile_from_invocation() {
     "${prop_flags}" \
     "${pre_goals_value}" \
     "${score}"
+}
+
+makevn_detect_coverage_activation_from_invocation() {
+  local workflow_file="$1"
+  local invocation="$2"
+  local -a tokens=()
+  local -a goals=()
+  local cli_flags=""
+  local prop_flags=""
+  local token=""
+  local profile_arg=""
+  local coverage_profile_flag=""
+  local skip_next=false
+  local has_coverage_signal=false
+  local goal=""
+  local has_build_goal=false
+  local i=0
+  local workflow_file_lc=""
+  local score=0
+  local current_score=-1
+
+  read -r -a tokens <<< "${invocation}"
+  [[ ${#tokens[@]} -gt 1 ]] || return 0
+  workflow_file_lc="$(printf '%s' "${workflow_file}" | tr '[:upper:]' '[:lower:]')"
+
+  for ((i = 1; i < ${#tokens[@]}; i++)); do
+    token="${tokens[$i]}"
+
+    if [[ "${skip_next}" == true ]]; then
+      if [[ "${profile_arg}" == true ]]; then
+        coverage_profile_flag="$(makevn_extract_coverage_profiles_flag "${token}" || true)"
+        if [[ -n "${coverage_profile_flag}" ]]; then
+          cli_flags="$(makevn_append_word "${cli_flags}" "${coverage_profile_flag}")"
+          has_coverage_signal=true
+        fi
+        profile_arg=""
+      fi
+      skip_next=false
+      continue
+    fi
+
+    case "${token}" in
+      -B|--batch-mode)
+        ;;
+      -nsu|--no-snapshot-updates)
+        ;;
+      -f|--file|-pl|--projects|-rf|--resume-from|-s|--settings|-gs|--global-settings|-t|--toolchains)
+        skip_next=true
+        ;;
+      -P*|--activate-profiles)
+        if [[ "${token}" == "--activate-profiles" ]]; then
+          profile_arg=true
+          skip_next=true
+          continue
+        fi
+        coverage_profile_flag="$(makevn_extract_coverage_profiles_flag "${token}" || true)"
+        if [[ -n "${coverage_profile_flag}" ]]; then
+          cli_flags="$(makevn_append_word "${cli_flags}" "${coverage_profile_flag}")"
+          has_coverage_signal=true
+        fi
+        ;;
+      -D*)
+        if [[ "${token}" == "-Djacoco.skip=true" ]]; then
+          continue
+        fi
+        if [[ "${token}" == -Djacoco.skip=false || "${token}" == -Dcoverage.* || "${token}" == -Djacoco-agent.* ]]; then
+          prop_flags="$(makevn_append_word "${prop_flags}" "${token}")"
+          has_coverage_signal=true
+        fi
+        ;;
+      -*)
+        ;;
+      *)
+        goals+=("${token}")
+        ;;
+    esac
+  done
+
+  [[ "${has_coverage_signal}" == true ]] || return 0
+
+  for goal in "${goals[@]}"; do
+    case "${goal}" in
+      test|verify|install|package)
+        has_build_goal=true
+        ;;
+    esac
+  done
+
+  [[ "${has_build_goal}" == true ]] || return 0
+
+  score=10
+  case "${workflow_file_lc}" in
+    *test*|*coverage*|*sonar*)
+      score=$((score + 20))
+      ;;
+  esac
+  if [[ "${cli_flags}" == *"-Pjacoco"* ]]; then
+    score=$((score + 20))
+  fi
+  if [[ "${prop_flags}" == *"-Djacoco.skip=false"* ]]; then
+    score=$((score + 10))
+  fi
+  if [[ ${#goals[@]} -eq 1 ]]; then
+    score=$((score + 5))
+  fi
+
+  current_score="${MAKEVN_DETECTED_COVERAGE_SCORE:- -1}"
+  current_score="${current_score// /}"
+  if (( score <= current_score )); then
+    return 0
+  fi
+
+  makevn_set_detected_coverage_activation "${workflow_file}" "${cli_flags}" "${prop_flags}" "${score}"
+}
+
+makevn_detect_jacoco_profile_from_repo() {
+  local maven_base_path="$1"
+  local pom_path=""
+
+  [[ -n "${maven_base_path}" ]] || return 1
+
+  while IFS= read -r pom_path; do
+    if grep -Eq '<id>[[:space:]]*jacoco[[:space:]]*</id>' "${pom_path}"; then
+      printf '%s\n' "-Pjacoco"
+      return 0
+    fi
+  done < <(find "${maven_base_path}" -name pom.xml -not -path '*/target/*' -not -path '*/node_modules/*' 2>/dev/null | LC_ALL=C sort)
+
+  return 1
 }
 
 makevn_detect_maven_base_path_fresh() {
@@ -1121,6 +1316,10 @@ makevn_detect_workflow_maven_flags() {
   MAKEVN_DETECTED_WORKFLOW_FILES=""
   MAKEVN_DETECTED_MAVEN_CLI_FLAGS=""
   MAKEVN_DETECTED_MAVEN_PROP_FLAGS=""
+  MAKEVN_DETECTED_COVERAGE_CLI_FLAGS=""
+  MAKEVN_DETECTED_COVERAGE_PROP_FLAGS=""
+  MAKEVN_DETECTED_COVERAGE_SOURCE=""
+  MAKEVN_DETECTED_COVERAGE_SCORE=-1
   makevn_init_detected_command_profiles
 
   [[ -d "${workflow_root}" ]] || return 0
@@ -1143,6 +1342,7 @@ makevn_detect_workflow_maven_flags() {
 
           if [[ -n "${invocation}" ]]; then
             makevn_detect_command_profile_from_invocation "${relative_path}" "${invocation}"
+            makevn_detect_coverage_activation_from_invocation "${relative_path}" "${invocation}"
           fi
           ;;
       esac
@@ -1255,6 +1455,7 @@ makevn_detect_repo_profile() {
   local app_health_url=""
   local coverage_threshold=""
   local coverage_changes_threshold=""
+  local coverage_cli_flags=""
 
   maven_base_path="$(makevn_detect_maven_base_path_fresh "${repo_root}" || true)"
   code_tool_versions="$(makevn_detect_code_tool_versions_fresh "${repo_root}" "${maven_base_path}" || true)"
@@ -1269,6 +1470,7 @@ makevn_detect_repo_profile() {
   coverage_threshold="$(makevn_detect_workflow_coverage_threshold "${repo_root}" || true)"
   coverage_changes_threshold="$(makevn_detect_workflow_coverage_changes_threshold "${repo_root}" || true)"
   maven_prop_flags=""
+  coverage_cli_flags="${MAKEVN_DETECTED_COVERAGE_CLI_FLAGS:-}"
 
   if makevn_detect_maven_cache_from_repo "${maven_base_path}"; then
     maven_prop_flags="$(makevn_append_word "${maven_prop_flags}" "-Dmaven.build.cache.enabled=true")"
@@ -1313,6 +1515,14 @@ makevn_detect_repo_profile() {
   MAKEVN_DETECTED_APP_HEALTH_URL="${app_health_url}"
   MAKEVN_DETECTED_COVERAGE_THRESHOLD="${coverage_threshold}"
   MAKEVN_DETECTED_COVERAGE_CHANGES_THRESHOLD="${coverage_changes_threshold}"
+  if [[ -z "${coverage_cli_flags}" ]]; then
+    coverage_cli_flags="$(makevn_detect_jacoco_profile_from_repo "${maven_base_path}" || true)"
+    if [[ -n "${coverage_cli_flags}" ]]; then
+      MAKEVN_DETECTED_COVERAGE_CLI_FLAGS="${coverage_cli_flags}"
+      MAKEVN_DETECTED_COVERAGE_SOURCE="pom profile"
+      MAKEVN_DETECTED_COVERAGE_SCORE=1
+    fi
+  fi
 }
 
 makevn_write_profile() {
@@ -1338,6 +1548,9 @@ makevn_write_profile() {
     printf 'MAKEVN_PROFILE_APP_HEALTH_URL=%q\n' "${MAKEVN_DETECTED_APP_HEALTH_URL:-}"
     printf 'MAKEVN_PROFILE_COVERAGE_THRESHOLD=%q\n' "${MAKEVN_DETECTED_COVERAGE_THRESHOLD:-}"
     printf 'MAKEVN_PROFILE_COVERAGE_CHANGES_THRESHOLD=%q\n' "${MAKEVN_DETECTED_COVERAGE_CHANGES_THRESHOLD:-}"
+    printf 'MAKEVN_PROFILE_COVERAGE_CLI_FLAGS=%q\n' "${MAKEVN_DETECTED_COVERAGE_CLI_FLAGS:-}"
+    printf 'MAKEVN_PROFILE_COVERAGE_PROP_FLAGS=%q\n' "${MAKEVN_DETECTED_COVERAGE_PROP_FLAGS:-}"
+    printf 'MAKEVN_PROFILE_COVERAGE_SOURCE=%q\n' "${MAKEVN_DETECTED_COVERAGE_SOURCE:-}"
     printf 'MAKEVN_PROFILE_COMPILE_WORKFLOW_FILE=%q\n' "${MAKEVN_DETECTED_COMPILE_WORKFLOW_FILE:-}"
     printf 'MAKEVN_PROFILE_COMPILE_CLI_FLAGS=%q\n' "${MAKEVN_DETECTED_COMPILE_CLI_FLAGS:-}"
     printf 'MAKEVN_PROFILE_COMPILE_PROP_FLAGS=%q\n' "${MAKEVN_DETECTED_COMPILE_PROP_FLAGS:-}"

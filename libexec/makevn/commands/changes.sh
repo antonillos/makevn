@@ -65,6 +65,7 @@ cmd_coverage() {
   local csv_path=""
   local combined_csv=""
   local coverage_output=""
+  local coverage_cli_flags_value=""
   local line=""
   local report_path=""
   local rc=0
@@ -96,21 +97,30 @@ cmd_coverage() {
   makevn_write_coverage_frontend_metadata "${repo_root}" "${maven_base_path}"
   report_dirs="$(makevn_jacoco_report_dirs "${maven_base_path}" | sed '/^$/d' || true)"
   if [[ -z "${report_dirs}" ]]; then
-    makevn_print_detail_line "Coverage report not found; attempting jacoco:report from existing test data."
-    maven_executable="$(makevn_maven_executable "${repo_root}" "${maven_base_path}")"
-    cli_flags_value="$(makevn_maven_cli_flags_for_command "${repo_root}" verify)"
-    cli_flags_value="$(makevn_append_word "${cli_flags_value}" "-nsu")"
-    if [[ -n "${cli_flags_value}" ]]; then
-      read -r -a cli_flags <<< "${cli_flags_value}"
+    coverage_cli_flags_value="$(makevn_coverage_cli_flags "${repo_root}")"
+    if [[ -n "${coverage_cli_flags_value}" ]]; then
+      makevn_print_detail_line "Coverage report not found; detected coverage activation profile, running verify-ut coverage flow."
+      cmd_verify_ut "${repo_root}"
+      rc=$?
+      [[ ${rc} -eq 0 ]] || return ${rc}
+    else
+      makevn_print_detail_line "Coverage report not found; attempting jacoco:report from existing test data."
+      maven_executable="$(makevn_maven_executable "${repo_root}" "${maven_base_path}")"
+      cli_flags_value="$(makevn_maven_cli_flags_for_command "${repo_root}" verify)"
+      cli_flags_value="$(makevn_append_coverage_cli_flags "${repo_root}" "${cli_flags_value}")"
+      cli_flags_value="$(makevn_append_word "${cli_flags_value}" "-nsu")"
+      if [[ -n "${cli_flags_value}" ]]; then
+        read -r -a cli_flags <<< "${cli_flags_value}"
+      fi
+      report_args=("${maven_executable}")
+      if [[ ${#cli_flags[@]} -gt 0 ]]; then
+        report_args+=("${cli_flags[@]}")
+      fi
+      report_args+=(-f "${maven_base_path}/pom.xml" jacoco:report -Dmaven.build.cache.enabled=false)
+      makevn_run_logged_in_context "${repo_root}" code "${maven_base_path}" coverage-report coverage "coverage report" "${report_args[@]}"
+      rc=$?
+      [[ ${rc} -eq 0 ]] || return ${rc}
     fi
-    report_args=("${maven_executable}")
-    if [[ ${#cli_flags[@]} -gt 0 ]]; then
-      report_args+=("${cli_flags[@]}")
-    fi
-    report_args+=(-f "${maven_base_path}/pom.xml" jacoco:report -Dmaven.build.cache.enabled=false)
-    makevn_run_logged_in_context "${repo_root}" code "${maven_base_path}" coverage-report coverage "coverage report" "${report_args[@]}"
-    rc=$?
-    [[ ${rc} -eq 0 ]] || return ${rc}
     makevn_write_coverage_frontend_metadata "${repo_root}" "${maven_base_path}"
     report_dirs="$(makevn_jacoco_report_dirs "${maven_base_path}" | sed '/^$/d' || true)"
   fi
