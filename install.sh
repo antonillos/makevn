@@ -65,10 +65,15 @@ cp -R "${SCRIPT_DIR}/libexec/makevn/coverage" "${LIBEXEC_DIR}/coverage"
 cp -R "${SCRIPT_DIR}/libexec/makevn/docker" "${LIBEXEC_DIR}/docker"
 cp -R "${SCRIPT_DIR}/libexec/makevn/jdk" "${LIBEXEC_DIR}/jdk"
 cp -R "${SCRIPT_DIR}/libexec/makevn/compat" "${LIBEXEC_DIR}/compat"
+mkdir -p "${LIBEXEC_DIR}/mcp"
+if [[ -f "${SCRIPT_DIR}/mcp/dist/makevn-mcp.js" ]]; then
+  cp "${SCRIPT_DIR}/mcp/dist/makevn-mcp.js" "${LIBEXEC_DIR}/mcp/makevn-mcp.js"
+fi
 cp -R "${SCRIPT_DIR}/share/makevn/." "${SHARE_DIR}/"
 cp -R "${SCRIPT_DIR}/skills/makevn/." "${SKILL_DIR}/"
 
 chmod +x "${BIN_DIR}/makevn" "${LIBEXEC_DIR}/cli.sh" "${LIBEXEC_DIR}/backend.sh" "${LIBEXEC_DIR}/common.sh"
+[[ -f "${LIBEXEC_DIR}/mcp/makevn-mcp.js" ]] && chmod +x "${LIBEXEC_DIR}/mcp/makevn-mcp.js"
 find "${LIBEXEC_DIR}/commands" "${LIBEXEC_DIR}/coverage" "${LIBEXEC_DIR}/docker" "${LIBEXEC_DIR}/jdk" "${LIBEXEC_DIR}/compat" -type f -name '*.sh' -exec chmod +x {} +
 
 printf 'Installed makevn to %s\n' "${PREFIX}"

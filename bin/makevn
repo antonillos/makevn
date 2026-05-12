@@ -4,6 +4,22 @@ set -euo pipefail
 BIN_DIR="$(CDPATH= cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 INSTALL_ROOT="$(CDPATH= cd -- "${BIN_DIR}/.." && pwd)"
 CLI_SCRIPT="${INSTALL_ROOT}/libexec/makevn/cli.sh"
+MCP_SERVER="${INSTALL_ROOT}/libexec/makevn/mcp/makevn-mcp.js"
+
+if [[ "${1:-}" == "--mcp" ]]; then
+  if [[ -f "${MCP_SERVER}" ]]; then
+    if command -v node &>/dev/null; then
+      export MAKEVN_BIN_PATH="${BIN_DIR}/makevn"
+      exec node "${MCP_SERVER}"
+    fi
+    printf 'Error: --mcp requires Node.js to run the JS MCP server.\n' >&2
+    printf 'Install Node.js, or build the Rust dispatcher for a self-contained MCP server.\n' >&2
+    exit 1
+  fi
+  printf 'Error: MCP server bundle not found at %s\n' "${MCP_SERVER}" >&2
+  printf 'Rebuild or reinstall makevn to include the MCP server.\n' >&2
+  exit 1
+fi
 
 if [[ ! -f "${CLI_SCRIPT}" ]]; then
   printf 'Error: makevn runtime not found at %s\n' "${CLI_SCRIPT}" >&2

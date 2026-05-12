@@ -81,10 +81,17 @@ Today that guidance is forward-looking: public `--json` behavior is still part o
 
 ## OpenCode Workflow
 
+The project ships a `.mcp.json` at the root that configures the built-in MCP
+server. OpenCode loads it automatically — no manual setup needed.
+
+When the MCP server is active, the agent can call makevn commands as MCP tools
+(e.g. `doctor`, `test`, `verify`) in addition to running them via the CLI.
+Both approaches use the same `makevn` binary.
+
 Inside OpenCode, the intended flow is:
 
 1. inspect the repository shape
-2. run `makevn doctor`
+2. run `makevn doctor` or use the `doctor` MCP tool
 3. initialize only if needed
 4. prefer `makevn ... --json` when machine-readable output is available and helps with decision making
 5. run `makevn build`, `makevn test`, `makevn verify`, or `makevn exec -- ...`

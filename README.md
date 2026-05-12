@@ -1,27 +1,26 @@
-<h1 align="center">
+<p style="text-align:center">
   <img src="docs/assets/makevn-logo.svg" alt="makevn logo" width="180" /><br />
   <img src="docs/assets/makevn-wordmark.svg" alt="makevn" width="220" />
-</h1>
+</p>
 
-<p align="center">
+<p style="text-align:center">
   <img src="https://img.shields.io/badge/java-21%2B-orange" alt="Java 21+" />
   <img src="https://img.shields.io/badge/maven-workflows-blue" alt="Maven workflows" />
   <img src="https://img.shields.io/badge/agent-ready-2dd4bf" alt="Agent ready" />
   <a href="LICENSE">
     <img src="https://img.shields.io/badge/license-MIT-lightgrey" alt="MIT License" />
   </a>
+  <a href="https://github.com/antonillos/homebrew-tap">
+    <img src="https://img.shields.io/badge/brew-antonillos%2Ftap%2Fmakevn-fbbf24" alt="Homebrew" />
+  </a>
+  <a href="mcp/">
+    <img src="https://img.shields.io/badge/MCP-server-7c3aed" alt="MCP Server" />
+  </a>
 </p>
 
-<h3 align="center">
-  Run Java Maven builds, tests, verification, and changed-code coverage from one terminal command.
-</h3>
+<p style="text-align:center"><em>Run Java Maven builds, tests, verification, and changed-code coverage from one terminal command.</em></p>
 
-<p align="center">
-  <a href="#install">Install</a> •
-  <a href="#usage">Usage</a> •
-  <a href="#verification">Verification</a> •
-  <a href="#ai-agents">AI agents</a>
-</p>
+[Install](#install) • [Usage](#usage) • [Verification](#verification) • [MCP](#mcp) • [AI agents](#ai-agents)
 
 ---
 
@@ -32,6 +31,17 @@ and avoids relying on IDE run configurations or repo-specific helper scripts.
 It does not overwrite an existing root `Makefile` or `GNUmakefile`.
 
 ## Install
+
+### Homebrew
+
+```bash
+brew install antonillos/tap/makevn
+```
+
+The formula builds the Rust dispatcher from source. Requires Rust to be installed
+(`brew install rust` if not already present).
+
+### Source install
 
 From this repository:
 
@@ -140,7 +150,7 @@ makevn pr-verify
 ```
 
 | Command | What it does |
-|---------|--------------|
+| ------- | ------------ |
 | `verify-ut` | Runs unit-test-only verification |
 | `verify-it` | Runs integration-test-only verification |
 | `verify` | Runs combined verification and rejects UT/IT skip flags |
@@ -207,6 +217,60 @@ goal when nothing is configured.
 Agents should not call target-repository legacy helpers under `scripts/make/*`.
 Those scripts can guide parity work, but runtime behavior must come from the
 installed backend under `libexec/makevn/`.
+
+## MCP
+
+makevn ships an official [MCP](https://modelcontextprotocol.io) (Model Context
+Protocol) server so AI agents in any MCP-compatible client (Claude Desktop,
+Cursor, Windsurf, etc.) can run Java/Maven workflows directly.
+
+The MCP server ships in two forms: built into the Rust dispatcher (self-contained,
+no extra deps) and as a JS bundle for shell-only installations (requires Node.js).
+Both are invoked with `makevn --mcp`.
+
+### Quick start
+
+Add to your MCP client config:
+
+```json
+{
+  "mcpServers": {
+    "makevn": {
+      "command": "makevn",
+      "args": ["--mcp"]
+    }
+  }
+}
+```
+
+If `makevn` is not in PATH, use the full path (e.g. `/usr/local/bin/makevn`).
+
+### Available tools
+
+| Tool | Description |
+| ---- | ----------- |
+| `doctor` | Inspect a Java/Maven repository |
+| `init` | Initialize makevn in a repository |
+| `test` | Run tests with optional name filter |
+| `verify` | Full combined verification |
+| `verify_ut` | Unit-test-only verification |
+| `verify_it` | Integration-test-only verification |
+| `verify_changes` | Verify only changed modules |
+| `compile` | Compile source code |
+| `build` | Full Maven build |
+| `coverage` | Check aggregate coverage |
+| `coverage_changes` | Check changed-code coverage |
+| `clean` | Clean build output |
+| `package` | Package without tests |
+| `format` | Check or apply formatting |
+| `exec` | Run arbitrary Maven command |
+| `jdk_current` | Show resolved JDK version |
+| `docker_ps` | List compose containers |
+| `pr_verify` | PR-style verification |
+| `checkstyle` | Run Checkstyle checks |
+
+All tools accept an optional `repo` argument to target a specific repository
+path, and `compact` for agent-friendly output.
 
 ## What gets installed
 

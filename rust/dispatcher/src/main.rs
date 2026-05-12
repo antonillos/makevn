@@ -19,6 +19,8 @@ use std::os::unix::process::ExitStatusExt;
 #[cfg(unix)]
 use signal_hook::consts::signal::{SIGINT, SIGTERM};
 
+mod mcp_server;
+
 fn main() {
     let action = match parse_invocation(env::args_os().skip(1).collect()) {
         Ok(action) => action,
@@ -33,6 +35,18 @@ fn main() {
     if let Action::PrintHelp { with_header } = action {
         print_help(with_header);
         return;
+    }
+
+    if let Action::RunMcpServer = action {
+        let current_exe = match env::current_exe() {
+            Ok(path) => path,
+            Err(error) => exit_with_error(format!("failed to resolve current executable: {error}")),
+        };
+        let exit_code = match mcp_server::run_mcp_server(current_exe) {
+            Ok(code) => code,
+            Err(message) => exit_with_error(message),
+        };
+        process::exit(exit_code);
     }
 
     let current_exe = match env::current_exe() {
@@ -57,6 +71,7 @@ fn main() {
         Action::DispatchToBackend(invocations) => invocations,
         Action::PrintVersion => unreachable!(),
         Action::PrintHelp { .. } => unreachable!(),
+        Action::RunMcpServer => unreachable!(),
     };
 
     let exit_code = match dispatch_backend_invocations(
@@ -80,6 +95,7 @@ enum Action {
     PrintVersion,
     PrintHelp { with_header: bool },
     DispatchToBackend(Vec<BackendInvocation>),
+    RunMcpServer,
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -207,6 +223,9 @@ fn parse_invocation(args: Vec<OsString>) -> Result<Action, String> {
             "--compact" => {
                 global_compact = true;
                 index += 1;
+            }
+            "--mcp" | "serve" => {
+                return Ok(Action::RunMcpServer);
             }
             "--help" | "-h" => {
                 return Ok(Action::PrintHelp { with_header: false });
@@ -2776,6 +2795,7 @@ fn print_help(with_header: bool) {
     println!("  makevn [--repo PATH] exec [--context code|karate] -- COMMAND [ARGS...]");
     println!("  makevn [--repo PATH] jdk current");
     println!("  makevn [--repo PATH] jdk list");
+    println!("  makevn --mcp");
     println!();
     println!("Examples:");
     println!("  makevn doctor");
@@ -2818,6 +2838,7 @@ fn print_help(with_header: bool) {
     println!("  - 'make uninstall' removes only the Make integration and keeps '.makevn/' intact.");
     println!("  - '--compact' forces compact agent-style summaries; non-interactive runs are compact by default.");
     println!("  - '--tail' starts managed-log commands in tail mode; without it, press 't' while a command is running to tail the current log.");
+    println!("  - '--mcp' starts the built-in MCP server over stdio (Model Context Protocol).");
 }
 
 struct Lossy<'a>(&'a OsString);
