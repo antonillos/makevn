@@ -132,11 +132,13 @@ makevn_collect_doctor_snapshot() {
           printf '%s\n' "$(makevn_warn "Invalid selection. Try again.")" >&2
         done
         compose_file="${_found[$((_choice - 1))]}"
-        # Persist in config if config exists
-        if [[ -f "$(makevn_config_path "${repo_root}")" ]]; then
-          makevn_update_config_compose_file "${repo_root}" "${compose_file}"
-          printf '%s\n' "$(makevn_dim "Saved to .makevn/config (MAKEVN_COMPOSE_FILE).")" >&2
+        # Ensure config exists before persisting
+        if [[ ! -f "$(makevn_config_path "${repo_root}")" ]]; then
+          mkdir -p "$(makevn_state_dir "${repo_root}")"
+          makevn_write_config "${repo_root}"
         fi
+        makevn_update_config_compose_file "${repo_root}" "${compose_file}"
+        printf '%s\n' "$(makevn_dim "Saved to .makevn/config (MAKEVN_COMPOSE_FILE).")" >&2
       else
         compose_file="ambiguous (${#_found[@]} files found; set MAKEVN_COMPOSE_FILE in .makevn/config)"
       fi
@@ -178,10 +180,12 @@ makevn_collect_doctor_snapshot() {
           printf '%s\n' "$(makevn_warn "Invalid selection. Try again.")" >&2
         done
         e2e_compose_file="${_e2e_found[$((_echoice - 1))]}"
-        if [[ -f "$(makevn_config_path "${repo_root}")" ]]; then
-          makevn_update_config_e2e_compose_file "${repo_root}" "${e2e_compose_file}"
-          printf '%s\n' "$(makevn_dim "Saved to .makevn/config (MAKEVN_E2E_COMPOSE_FILE).")" >&2
+        if [[ ! -f "$(makevn_config_path "${repo_root}")" ]]; then
+          mkdir -p "$(makevn_state_dir "${repo_root}")"
+          makevn_write_config "${repo_root}"
         fi
+        makevn_update_config_e2e_compose_file "${repo_root}" "${e2e_compose_file}"
+        printf '%s\n' "$(makevn_dim "Saved to .makevn/config (MAKEVN_E2E_COMPOSE_FILE).")" >&2
       else
         e2e_compose_file="ambiguous (${#_e2e_found[@]} files found; set MAKEVN_E2E_COMPOSE_FILE in .makevn/config)"
       fi
