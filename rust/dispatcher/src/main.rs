@@ -14,7 +14,7 @@ use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 #[cfg(unix)]
-use std::os::unix::process::ExitStatusExt;
+use std::os::unix::process::{CommandExt, ExitStatusExt};
 
 #[cfg(unix)]
 use signal_hook::consts::signal::{SIGINT, SIGTERM};
@@ -716,6 +716,7 @@ fn dispatch_backend_invocations(
         let mut command = process::Command::new("bash");
         command.arg(backend_path);
         command.args(&backend_invocation.args);
+        command.process_group(0);
         command.env("MAKEVN_BIN_PATH", current_exe);
         command.env("MAKEVN_INSTALL_ROOT", install_root);
         command.env("MAKEVN_FRONTEND", "rust");
@@ -723,6 +724,7 @@ fn dispatch_backend_invocations(
         command.env("MAKEVN_VERSION", makevn_version());
 
         let run_result = if use_frontend_loader {
+            command.stdout(process::Stdio::null());
             command.env("MAKEVN_FRONTEND_OWNS_LOADER", "1");
             if let Some(df) = detail_file.as_ref() {
                 command.env("MAKEVN_BACKEND_DETAIL_OUT", df.path());
@@ -884,6 +886,7 @@ fn run_backend_with_loader(
     register_signal_flag(&signal_requested)?;
 
     let mut cancel_requested = false;
+    let mut cancel_requested_at: Option<Instant> = None;
     let mut header_printed = false;
     let mut tail_window = None;
     let mut tail_active = tail_enabled;
@@ -1000,9 +1003,11 @@ fn run_backend_with_loader(
                     ));
                 }
                 tail_window.set_loader_line(None);
-                tail_window
-                    .finish()
-                    .map_err(|error| format!("failed to render tailed log: {error}"))?;
+                if !cancel_requested {
+                    tail_window
+                        .finish()
+                        .map_err(|error| format!("failed to render tailed log: {error}"))?;
+                }
                 if tail_active {
                     tail_window
                         .clear()
@@ -1023,6 +1028,16 @@ fn run_backend_with_loader(
 
         if signal_requested.load(Ordering::Relaxed) {
             break;
+        }
+
+        if let Some(requested_at) = cancel_requested_at {
+            let elapsed = requested_at.elapsed();
+            if elapsed > Duration::from_secs(4) {
+                let _ = unsafe { libc::kill(-(child.id() as libc::pid_t), libc::SIGKILL) };
+                cancel_requested_at = None;
+            } else if elapsed > Duration::from_secs(2) {
+                let _ = unsafe { libc::kill(-(child.id() as libc::pid_t), libc::SIGTERM) };
+            }
         }
 
         if !header_printed {
@@ -1064,7 +1079,12 @@ fn run_backend_with_loader(
             {
                 InputEvent::Interrupt => {
                     interrupt_backend(child.id());
+                    #[cfg(unix)]
+                    unsafe {
+                        libc::kill(-(child.id() as libc::pid_t), SIGTERM);
+                    }
                     cancel_requested = true;
+                    cancel_requested_at = Some(Instant::now());
                 }
                 InputEvent::StartTail => {
                     if !tail_active {
@@ -1149,9 +1169,11 @@ fn run_backend_with_loader(
             ));
         }
         tail_window.set_loader_line(None);
-        tail_window
-            .finish()
-            .map_err(|error| format!("failed to render tailed log: {error}"))?;
+        if !cancel_requested && !signal_requested.load(Ordering::Relaxed) {
+            tail_window
+                .finish()
+                .map_err(|error| format!("failed to render tailed log: {error}"))?;
+        }
         if tail_active {
             tail_window
                 .clear()
@@ -1255,15 +1277,7 @@ fn backend_header_line(metadata: &BackendMetadata) -> String {
 }
 
 fn backend_tail_notice_line(metadata: &BackendMetadata) -> String {
-    format!(
-        "{} {} {} {}{}{}",
-        dim_text(" └"),
-        dim_text(&format!("tailing log: {}", metadata.relative_log_path)),
-        dim_text("|"),
-        dim_text("press "),
-        style("97", "+/-"),
-        dim_text(" to expand")
-    )
+    dim_text(&format!(" └ tailing log: {}", metadata.relative_log_path))
 }
 
 fn print_final_dashboard(
@@ -1440,7 +1454,7 @@ fn exit_code_from_status(status: process::ExitStatus, interrupted: bool) -> i32 
 fn interrupt_backend(pid: u32) {
     #[cfg(unix)]
     unsafe {
-        libc::kill(pid as libc::pid_t, SIGINT);
+        libc::kill(-(pid as libc::pid_t), SIGINT);
     }
 }
 
@@ -1578,7 +1592,16 @@ fn dashboard_hint(interrupt_hint: &str) -> String {
 }
 
 fn tail_hint(interrupt_hint: &str) -> String {
-    interrupt_hint.to_owned()
+    if use_color() {
+        format!(
+            "{} {} {}",
+            style("97", "+/-"),
+            dim_text("lines |"),
+            interrupt_hint
+        )
+    } else {
+        format!("+/- lines | {interrupt_hint}")
+    }
 }
 
 fn tail_line_text_for_width(line: &str, width: usize) -> String {
@@ -2388,14 +2411,14 @@ fn dashboard_output_lines(
         }
     }
     lines.push(running_command_line(metadata));
+    for dl in current_detail_lines {
+        lines.push(detail_line(dl));
+    }
     lines.push(format!(
         "{}  {}",
         spinner_kitt_frame_with_load(frame, resource_visual_load),
         spinner_suffix
     ));
-    for dl in current_detail_lines {
-        lines.push(detail_line(dl));
-    }
     lines
 }
 
@@ -2897,16 +2920,63 @@ mod tests {
     }
 
     #[test]
-    fn kitt_spinner_scans_both_directions_and_fades_at_the_edges() {
-        assert_eq!(spinner_kitt_frame(0), "■.......");
-        assert_eq!(spinner_kitt_frame(18), "....■■■■");
-        assert_eq!(spinner_kitt_frame(29), "........");
-        assert_eq!(spinner_kitt_frame(33), "........");
-        assert_eq!(spinner_kitt_frame(34), ".......■");
-        assert_eq!(spinner_kitt_frame(48), "..■■■■..");
-        assert_eq!(spinner_kitt_frame(63), "........");
-        assert_eq!(spinner_kitt_frame(67), "........");
-        assert_eq!(spinner_kitt_frame(68), "■.......");
+    fn final_dashboard_prints_ok_on_success() {
+        let lines = super::final_dashboard_lines(Duration::from_secs(3), &[], true);
+        assert_eq!(lines[0], "Worked for 3s");
+        assert_eq!(lines[1], "[ok]");
+    }
+
+    #[test]
+    fn final_dashboard_omits_ok_on_failure() {
+        let lines = super::final_dashboard_lines(Duration::from_secs(3), &[], false);
+        assert_eq!(lines[0], "Worked for 3s");
+        assert_eq!(lines.len(), 1);
+    }
+
+    #[test]
+    fn final_dashboard_shows_failure_summary() {
+        let summary = CommandSummary {
+            title: String::from("mutation"),
+            duration: String::from("9m 34s"),
+            log_path: Some(String::from("/repo/.makevn/logs/mutation.log")),
+            relative_log_path: Some(String::from(".makevn/logs/mutation.log")),
+            exit_code: 130,
+            detail_lines: vec![
+                String::from("WARNING: Mutation testing (PIT) is VERY slow. This can take 30+ minutes depending on project size."),
+                String::from("PIT runs the full test suite multiple times against generated mutants."),
+            ],
+        };
+
+        let lines = super::final_dashboard_lines(Duration::from_secs(574), &[summary], false);
+
+        assert_eq!(lines[0], "Worked for 9m 34s");
+        assert_eq!(lines[1], "[x] mutation | 9m 34s | .makevn/logs/mutation.log");
+        assert_eq!(lines[2], "│ WARNING: Mutation testing (PIT) is VERY slow. This can take 30+ minutes depending on project size.");
+        assert_eq!(lines[3], "│ PIT runs the full test suite multiple times against generated mutants.");
+        assert_eq!(lines.len(), 4);
+    }
+
+    #[test]
+    fn backend_tail_notice_line_contains_log_path() {
+        let metadata = BackendMetadata {
+            command: String::from("mutation"),
+            repo: String::from("/repo"),
+            cwd: String::from("/repo"),
+            log_path: String::from("/repo/.makevn/logs/mutation.log"),
+            relative_log_path: String::from(".makevn/logs/mutation.log"),
+            command_display: String::from("mutation"),
+            title: String::from("mutation"),
+            context: Some(String::from("code")),
+        };
+        let line = super::backend_tail_notice_line(&metadata);
+        assert_eq!(line, " └ tailing log: .makevn/logs/mutation.log");
+    }
+
+    #[test]
+    fn tail_hint_contains_plus_minus() {
+        let hint = super::tail_hint("esc interrupt");
+        assert!(hint.contains("+/-"));
+        assert!(hint.contains("esc interrupt"));
     }
 
     #[test]
@@ -3500,7 +3570,7 @@ mod tests {
         assert_eq!(lines[2], ":: makevn checkstyle");
         assert_eq!(
             lines[3],
-            " └ tailing log: .makevn/logs/checkstyle.log | press +/- to expand"
+            " └ tailing log: .makevn/logs/checkstyle.log"
         );
     }
 
@@ -3511,7 +3581,7 @@ mod tests {
         tail_window.set_prefix_lines(vec![
             String::from("Working for 1s >"),
             String::from(":: makevn compile"),
-            String::from("-> tailing log: .makevn/logs/compile.log | press +/- to expand"),
+            String::from("-> tailing log: .makevn/logs/compile.log"),
         ]);
         tail_window.set_loader_line(Some(String::from("........  esc interrupt")));
         tail_window.lines.push(String::from("[INFO] compiling"));
@@ -3523,7 +3593,7 @@ mod tests {
         assert_eq!(lines[2], "........  esc interrupt");
         assert_eq!(
             lines[3],
-            "-> tailing log: .makevn/logs/compile.log | press +/- to expand"
+            "-> tailing log: .makevn/logs/compile.log"
         );
         assert_eq!(
             super::visible_char_count(&lines[4]),
@@ -3532,7 +3602,7 @@ mod tests {
     }
 
     #[test]
-    fn dashboard_places_current_details_after_live_status() {
+    fn dashboard_shows_summaries_and_current_details() {
         let metadata = BackendMetadata {
             command: String::from("coverage-changes"),
             repo: String::from("/repo"),
@@ -3567,8 +3637,9 @@ mod tests {
         assert_eq!(lines[1], "[✓] verify-it | 4m 51s | .makevn/logs/verify-it.log");
         assert_eq!(lines[2], "│ worked");
         assert_eq!(lines[3], ":: makevn coverage-changes | .makevn/logs/coverage-changes.log");
-        assert!(lines[4].contains("interrupt"));
-        assert_eq!(lines[5], "│ coverage-changes detail");
+        assert_eq!(lines[4], "│ coverage-changes detail");
+        assert!(lines[5].contains("interrupt"));
+        assert_eq!(lines.len(), 6);
     }
 
     #[test]

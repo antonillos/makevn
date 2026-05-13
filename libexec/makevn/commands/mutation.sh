@@ -83,8 +83,8 @@ cmd_mutation() {
     read -r -a maven_cli_flags <<< "${maven_cli_flags_value}"
   fi
 
-  printf '%s\n' "$(makevn_warn "WARNING: Mutation testing (PIT) is VERY slow. This can take 30+ minutes depending on project size.")"
-  printf '%s\n' "$(makevn_dim "PIT runs the full test suite multiple times against generated mutants.")"
+  makevn_print_detail_line "$(makevn_warn "WARNING: Mutation testing (PIT) is VERY slow. This can take 30+ minutes depending on project size.")"
+  makevn_print_detail_line "$(makevn_dim "PIT runs the full test suite multiple times against generated mutants.")"
 
   maven_args=("${maven_executable}" -q)
   if [[ "${verbose}" == true ]]; then
