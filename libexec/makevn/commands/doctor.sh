@@ -58,6 +58,10 @@ print_doctor() {
   makevn_print_item "Persisted profile" "${MAKEVN_DOCTOR_PROFILE_STATUS}"
   makevn_print_item "Repository support status" "${MAKEVN_DOCTOR_REPO_SUPPORT_STATUS}"
   makevn_print_item "Make integration status" "${MAKEVN_DOCTOR_MAKE_INTEGRATION_STATUS}"
+  makevn_print_item "Mutation testing (PIT)" "${MAKEVN_DOCTOR_MUTATION_AVAILABLE}"
+  if [[ "${MAKEVN_DOCTOR_MUTATION_AVAILABLE}" == "yes" && -n "${MAKEVN_DOCTOR_MUTATION_GOAL}" ]]; then
+    printf '  %s\n' "$(makevn_dim "goal: ${MAKEVN_DOCTOR_MUTATION_GOAL}")"
+  fi
 
   printf '\n'
   makevn_print_header "Suggested next step"

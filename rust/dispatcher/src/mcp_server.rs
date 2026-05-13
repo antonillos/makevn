@@ -179,6 +179,12 @@ fn tools_list() -> Vec<Value> {
             b.opt("verbose", "boolean", "Verbose output");
             b.opt("compact", "boolean", "Use compact output");
         }),
+        tool("mutation", "Run PIT mutation testing. Detects pitest-maven plugin automatically. WARNING: Very slow (30+ min for large projects).", |b| {
+            b.opt("repo", "string", "Path to the repository");
+            b.opt("module", "string", "Specific Maven module to test");
+            b.opt("verbose", "boolean", "Show full Maven/PIT output (default: quiet)");
+            b.opt("compact", "boolean", "Use compact output");
+        }),
     ]
 }
 
@@ -322,6 +328,15 @@ fn handle_tool_call(makevn_bin: &PathBuf, params: &Value) -> Result<String, Stri
             }
         }
         if mapped_name == "checkstyle" {
+            if let Some(m) = args.get("module").and_then(|v| v.as_str()).filter(|s| !s.is_empty()) {
+                cmd_args.push("--module".into());
+                cmd_args.push(m.into());
+            }
+            if args.get("verbose").and_then(|v| v.as_bool()).unwrap_or(false) {
+                cmd_args.push("--verbose".into());
+            }
+        }
+        if mapped_name == "mutation" {
             if let Some(m) = args.get("module").and_then(|v| v.as_str()).filter(|s| !s.is_empty()) {
                 cmd_args.push("--module".into());
                 cmd_args.push(m.into());

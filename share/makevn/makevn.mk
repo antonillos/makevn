@@ -1,7 +1,7 @@
 MAKEVN_BIN ?= makevn
 MAKEVN_REPO_ROOT ?= $(CURDIR)
 
-.PHONY: vn-help vn-doctor vn-init vn-make-install vn-make-uninstall vn-uninstall vn-profile-refresh vn-compile vn-test-compile vn-compile-tests vn-validate vn-package vn-build vn-clean vn-test vn-verify-ut vn-verify-ut-coverage vn-verify-it vn-verify-it-coverage vn-verify vn-verify-changes vn-coverage vn-coverage-changes vn-pr-verify vn-docker-up vn-docker-down vn-docker-ps vn-docker-ps-required vn-karate-docker-up vn-karate-docker-down vn-karate-test vn-karate-all vn-run-app vn-run-app-bg vn-stop-app vn-run vn-jdk-current vn-jdk-list vn-exec
+.PHONY: vn-help vn-doctor vn-init vn-make-install vn-make-uninstall vn-uninstall vn-profile-refresh vn-compile vn-test-compile vn-compile-tests vn-validate vn-package vn-build vn-clean vn-test vn-verify-ut vn-verify-ut-coverage vn-verify-it vn-verify-it-coverage vn-verify vn-verify-changes vn-coverage vn-coverage-changes vn-pr-verify vn-mutation vn-docker-up vn-docker-down vn-docker-ps vn-docker-ps-required vn-karate-docker-up vn-karate-docker-down vn-karate-test vn-karate-all vn-run-app vn-run-app-bg vn-stop-app vn-run vn-jdk-current vn-jdk-list vn-exec
 
 define makevn_run
 	@set +e; \
@@ -42,6 +42,8 @@ vn-help:
 	@printf '%s\n' '  make vn-coverage'
 	@printf '%s\n' '  make vn-coverage-changes'
 	@printf '%s\n' '  make vn-pr-verify'
+	@printf '%s\n' '  make vn-mutation'
+	@printf '%s\n' '  make vn-mutation VERBOSE=true'
 	@printf '%s\n' '  make vn-docker-up'
 	@printf '%s\n' '  make vn-docker-down'
 	@printf '%s\n' '  make vn-docker-ps'
@@ -144,6 +146,22 @@ vn-coverage-changes:
 
 vn-pr-verify:
 	$(call makevn_run,pr-verify $(MAKEVN_PR_VERIFY_ARGS))
+
+vn-mutation:
+	@set +e; \
+	args="$(MAKEVN_MUTATION_ARGS)"; \
+	if [ -n "$(strip $(MODULE))" ]; then \
+		args="$$args --module $(MODULE)"; \
+	fi; \
+	case "$(VERBOSE)" in \
+		1|true|TRUE|yes|YES) args="$$args --verbose" ;; \
+	esac; \
+	"$(MAKEVN_BIN)" --repo "$(MAKEVN_REPO_ROOT)" mutation $$args; \
+	rc=$$?; \
+	if [ "$$rc" -eq 130 ]; then \
+		exit 0; \
+	fi; \
+	exit "$$rc"
 
 vn-docker-up:
 	$(call makevn_run,docker-up)

@@ -5,7 +5,7 @@ import {
   ListToolsRequestSchema,
   Tool,
 } from "@modelcontextprotocol/sdk/types.js";
-import { spawnSync } from "child_process";
+import { spawnSync, spawn } from "child_process";
 
 const MAKEVN_BIN = process.env.MAKEVN_BIN_PATH || "makevn";
 const BUILD_DATE = "__BUILD_DATE__";
@@ -334,6 +334,36 @@ const tools: ToolDefinition[] = [
       return runMakevnDirect(cmdArgs);
     },
   },
+  {
+    tool: {
+      name: "mutation",
+      description: "Run PIT mutation testing in background. Detects pitest-maven plugin automatically. Returns immediately with PID and log path. WARNING: Very slow (30+ min for large projects). Monitor the log file for progress.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          repo: { type: "string", description: "Path to the repository" },
+          module: { type: "string", description: "Specific Maven module to test" },
+          verbose: { type: "boolean", description: "Show full Maven/PIT output (default: quiet)" },
+          compact: { type: "boolean", description: "Use compact output" },
+        },
+      },
+    },
+    handler: (args) => {
+      const cmdArgs = buildArgs("mutation", args);
+      const repo = (args.repo as string) || "(repo root)";
+      const child = spawn(MAKEVN_BIN, cmdArgs, {
+        detached: true,
+        stdio: "ignore",
+      });
+      child.unref();
+      return {
+        content: [{
+          type: "text",
+          text: `mutation started (PID ${child.pid})\nlog: ${repo}/.makevn/logs/mutation.log`,
+        }],
+      };
+    },
+  },
 ];
 
 function buildArgs(command: string, args: Record<string, unknown>): string[] {
@@ -355,7 +385,7 @@ function buildArgs(command: string, args: Record<string, unknown>): string[] {
     result.push(subcommand);
   }
 
-  const flagArgs = ["name", "fast", "apply", "verbose", "threshold", "overall-threshold", "module", "context", "force", "dry-run"];
+  const flagArgs = ["name", "fast", "apply", "verbose", "threshold", "overall-threshold", "module", "context", "force", "dry-run", "tag"];
   for (const key of flagArgs) {
     const value = (args as Record<string, unknown>)[key];
     if (value !== undefined && value !== null) {

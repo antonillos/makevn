@@ -534,6 +534,67 @@ makevn_repo_declares_jacoco_plugin() {
   return 1
 }
 
+makevn_repo_declares_pit_plugin() {
+  local maven_base_path="$1"
+  local pom_path=""
+
+  [[ -n "${maven_base_path}" ]] || return 1
+
+  while IFS= read -r pom_path; do
+    if grep -Eq '<artifactId>[[:space:]]*pitest-maven[[:space:]]*</artifactId>' "${pom_path}"; then
+      return 0
+    fi
+  done < <(find "${maven_base_path}" -name pom.xml -not -path '*/target/*' -not -path '*/node_modules/*' 2>/dev/null | LC_ALL=C sort)
+
+  return 1
+}
+
+makevn_detect_pit_goal() {
+  local maven_base_path="$1"
+  local pom_path=""
+  local detected_goal=""
+
+  [[ -n "${maven_base_path}" ]] || return 1
+
+  while IFS= read -r pom_path; do
+    [[ -f "${pom_path}" ]] || continue
+    detected_goal="$(perl -0ne '
+      sub tag_value {
+        my ($xml, $tag) = @_;
+        return $1 if $xml =~ m{<$tag(?:\s[^>]*)?>\s*([^<]+?)\s*</$tag>}s;
+        return "";
+      }
+
+      while (m{<plugin(?:\s[^>]*)?>.*?</plugin>}sg) {
+        my $plugin = $&;
+        my $group_id = tag_value($plugin, "groupId");
+        my $artifact_id = tag_value($plugin, "artifactId");
+        next unless $artifact_id eq "pitest-maven";
+
+        if ($plugin =~ m{<goal(?:\s[^>]*)?>\s*(mutationCoverage|pit|run)\s*</goal>}s) {
+          print "pitest:$1\n";
+        } else {
+          print "pitest:mutationCoverage\n";
+        }
+        exit 0;
+      }
+    ' "${pom_path}")"
+    if [[ -n "${detected_goal}" ]]; then
+      printf '%s\n' "${detected_goal}"
+      return 0
+    fi
+  done < <(
+    if [[ -f "${maven_base_path}/pom.xml" ]]; then
+      printf '%s\n' "${maven_base_path}/pom.xml"
+    fi
+    find "${maven_base_path}" \
+      \( -path '*/target/*' -o -path '*/node_modules/*' -o -path "${maven_base_path}/pom.xml" \) -prune \
+      -o -name pom.xml -type f -print 2>/dev/null | LC_ALL=C sort
+  )
+
+  return 1
+}
+
 makevn_detect_maven_base_path_fresh() {
   local repo_root="$1"
   local first_pom=""

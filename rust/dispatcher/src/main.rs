@@ -345,7 +345,7 @@ fn validate_command(
         "compile" | "test-compile" | "compile-tests" | "validate" | "package" | "clean"
         | "build" | "verify-ut" | "verify-ut-coverage" | "verify-it" | "verify-it-coverage"
         | "verify" | "verify-changes" | "pr-verify" | "format" | "checkstyle" | "karate-test"
-        | "karate-all" => {
+        | "karate-all" | "mutation" => {
             validate_maven_passthrough_args(command, trailing_args)?;
             Ok(CommandValidation::Valid)
         }
@@ -545,6 +545,7 @@ fn is_top_level_command(arg: &OsString) -> bool {
             | "stop-app"
             | "run"
             | "jdk"
+            | "mutation"
     )
 }
 
@@ -656,6 +657,7 @@ fn command_supports_frontend_loader(command: &OsString) -> bool {
             | "karate-docker-down"
             | "karate-test"
             | "karate-all"
+            | "mutation"
     )
 }
 

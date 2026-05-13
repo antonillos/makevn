@@ -346,6 +346,15 @@ makevn_collect_doctor_snapshot() {
   MAKEVN_DOCTOR_DETECTED_COVERAGE_CHANGES_THRESHOLD="${detected_coverage_changes_threshold}"
   MAKEVN_DOCTOR_COMPILE_PROFILE="${compile_profile}"
   MAKEVN_DOCTOR_BUILD_PROFILE="${build_profile}"
+
+  local mutation_available="no"
+  local mutation_goal=""
+  if [[ -n "${maven_base_path}" ]] && makevn_repo_declares_pit_plugin "${maven_base_path}"; then
+    mutation_available="yes"
+    mutation_goal="$(makevn_detect_pit_goal "${maven_base_path}" || true)"
+  fi
+  MAKEVN_DOCTOR_MUTATION_AVAILABLE="${mutation_available}"
+  MAKEVN_DOCTOR_MUTATION_GOAL="${mutation_goal:-pitest:mutationCoverage}"
   MAKEVN_DOCTOR_TEST_PROFILE="${test_profile}"
   MAKEVN_DOCTOR_VERIFY_PROFILE="${verify_profile}"
   MAKEVN_DOCTOR_CODE_JAVA_HOME="${code_java_home:-unresolved}"
@@ -430,7 +439,9 @@ makevn_print_doctor_json() {
   printf '    "local_containers_default": "%s",\n' "$(makevn_json_escape "${MAKEVN_DOCTOR_LOCAL_CONTAINERS}")"
   printf '    "persisted_profile": "%s",\n' "$(makevn_json_escape "${MAKEVN_DOCTOR_PROFILE_STATUS}")"
   printf '    "repository_support_status": "%s",\n' "$(makevn_json_escape "${MAKEVN_DOCTOR_REPO_SUPPORT_STATUS}")"
-  printf '    "make_integration_status": "%s"\n' "$(makevn_json_escape "${MAKEVN_DOCTOR_MAKE_INTEGRATION_STATUS}")"
+  printf '    "make_integration_status": "%s",\n' "$(makevn_json_escape "${MAKEVN_DOCTOR_MAKE_INTEGRATION_STATUS}")"
+  printf '    "mutation_available": "%s",\n' "$(makevn_json_escape "${MAKEVN_DOCTOR_MUTATION_AVAILABLE}")"
+  printf '    "mutation_goal": "%s"\n' "$(makevn_json_escape "${MAKEVN_DOCTOR_MUTATION_GOAL}")"
   printf '  },\n'
   printf '  "suggested_next_step": {\n'
   printf '    "next": "%s",\n' "$(makevn_json_escape "${MAKEVN_DOCTOR_SUGGESTED_NEXT}")"

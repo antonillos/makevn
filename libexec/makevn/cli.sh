@@ -56,6 +56,7 @@ Usage:
   makevn [--repo PATH] exec [--context code|karate] -- COMMAND [ARGS...]
   makevn [--repo PATH] jdk current
   makevn [--repo PATH] jdk list
+  makevn [--repo PATH] mutation [--module MODULE] [--verbose]
 
 Examples:
   makevn doctor
@@ -113,7 +114,7 @@ print_command_intro() {
 
 makevn_cli_is_top_level_command() {
   case "$1" in
-    help|doctor|init|make|uninstall|profile|exec|compile|test-compile|compile-tests|validate|package|clean|build|test|verify-ut|verify-ut-coverage|verify-it|verify-it-coverage|verify|verify-changes|coverage|coverage-changes|pr-verify|format|checkstyle|docker-up|docker-down|docker-ps|docker-ps-required|karate-docker-up|karate-docker-down|karate-test|karate-all|run-app|run-app-bg|stop-app|run|jdk)
+    help|doctor|init|make|uninstall|profile|exec|compile|test-compile|compile-tests|validate|package|clean|build|test|verify-ut|verify-ut-coverage|verify-it|verify-it-coverage|verify|verify-changes|coverage|coverage-changes|pr-verify|format|checkstyle|docker-up|docker-down|docker-ps|docker-ps-required|karate-docker-up|karate-docker-down|karate-test|karate-all|run-app|run-app-bg|stop-app|run|jdk|mutation)
       return 0
       ;;
   esac
@@ -216,6 +217,8 @@ source "${SCRIPT_DIR}/commands/karate.sh"
 source "${SCRIPT_DIR}/commands/run.sh"
 # shellcheck source=/dev/null
 source "${SCRIPT_DIR}/commands/jdk.sh"
+# shellcheck source=/dev/null
+source "${SCRIPT_DIR}/commands/mutation.sh"
 
 REPO_OVERRIDE=""
 
@@ -403,6 +406,9 @@ case "${COMMAND}" in
         makevn_die "Usage: makevn jdk current|list"
         ;;
     esac
+    ;;
+  mutation)
+    cmd_mutation "${REPO_ROOT}" "$@"
     ;;
   *)
     makevn_die "Unknown command: ${COMMAND}"

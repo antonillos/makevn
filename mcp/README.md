@@ -22,6 +22,28 @@ Both are invoked the same way:
 The shell entrypoint auto-detects the JS bundle and delegates to it when
 Node.js is available. The Rust binary handles `--mcp` natively.
 
+## OpenCode installation
+
+Add this entry to `~/.config/opencode/opencode.jsonc` under the `"mcp"` key:
+
+```jsonc
+"makevn": {
+  "type": "local",
+  "command": ["makevn", "--mcp"],
+  "enabled": true,
+  "timeout": 900000
+}
+```
+
+- `enabled: true` keeps the MCP server always active across sessions
+- `timeout: 900000` (15 min) should be sufficient for all synchronous tools. The `mutation` tool spawns in background and returns immediately, so it is not affected by the timeout.
+
+The `makevn` binary must be in `PATH`, or use an absolute path:
+
+```jsonc
+"command": ["/path/to/makevn", "--mcp"]
+```
+
 ## Development
 
 ```bash
