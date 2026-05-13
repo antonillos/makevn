@@ -15448,6 +15448,7 @@ var StdioServerTransport = class {
 // src/index.ts
 import { spawnSync } from "child_process";
 var MAKEVN_BIN = process.env.MAKEVN_BIN_PATH || "makevn";
+var BUILD_DATE = "__BUILD_DATE__";
 var tools = [
   {
     tool: {
@@ -15769,7 +15770,7 @@ var tools = [
   }
 ];
 function buildArgs(command, args) {
-  const result = [command];
+  const result = [];
   const repo = args.repo;
   if (repo) {
     result.push("--repo", repo);
@@ -15777,6 +15778,7 @@ function buildArgs(command, args) {
   if (args.compact) {
     result.push("--compact");
   }
+  result.push(command);
   const subcommand = args._subcommand;
   if (subcommand) {
     result.push(subcommand);
@@ -15823,7 +15825,7 @@ ${output || "(no output)"}`;
 var server = new Server(
   {
     name: "makevn-mcp",
-    version: "0.1.0-dev-2026.05.13.17.30"
+    version: BUILD_DATE.startsWith("__BUILD") ? "0.1.0-dev" : BUILD_DATE
   },
   {
     capabilities: {

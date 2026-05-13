@@ -337,7 +337,7 @@ const tools: ToolDefinition[] = [
 ];
 
 function buildArgs(command: string, args: Record<string, unknown>): string[] {
-  const result: string[] = [command];
+  const result: string[] = [];
 
   const repo = args.repo as string | undefined;
   if (repo) {
@@ -347,6 +347,8 @@ function buildArgs(command: string, args: Record<string, unknown>): string[] {
   if (args.compact) {
     result.push("--compact");
   }
+
+  result.push(command);
 
   const subcommand = args._subcommand as string | undefined;
   if (subcommand) {
