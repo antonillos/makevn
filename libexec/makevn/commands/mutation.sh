@@ -98,7 +98,7 @@ cmd_mutation() {
     maven_args+=(-pl "${module}")
   fi
   maven_args+=(verify "${mutation_goal}")
-  maven_args+=(-DskipITs -Dskip.integration.tests=true)
+  maven_args+=(-DskipITs -Dskip.integration.tests=true -Dpitest.logLevel=INFO)
   if [[ ${#extra_args[@]} -gt 0 ]]; then
     maven_args+=("${extra_args[@]}")
   fi
