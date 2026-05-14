@@ -1,7 +1,7 @@
 {
   "mcpServers": {
     "makevn": {
-      "command": "makevn",
+      "command": "makevn-shell",
       "args": ["--mcp"]
     }
   }

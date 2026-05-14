@@ -2,6 +2,7 @@
 set -euo pipefail
 
 BIN_DIR="$(CDPATH= cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+BIN_NAME="$(basename "${BASH_SOURCE[0]}")"
 INSTALL_ROOT="$(CDPATH= cd -- "${BIN_DIR}/.." && pwd)"
 CLI_SCRIPT="${INSTALL_ROOT}/libexec/makevn/cli.sh"
 MCP_SERVER="${INSTALL_ROOT}/libexec/makevn/mcp/makevn-mcp.js"
@@ -9,7 +10,7 @@ MCP_SERVER="${INSTALL_ROOT}/libexec/makevn/mcp/makevn-mcp.js"
 if [[ "${1:-}" == "--mcp" ]]; then
   if [[ -f "${MCP_SERVER}" ]]; then
     if command -v node &>/dev/null; then
-      export MAKEVN_BIN_PATH="${BIN_DIR}/makevn"
+      export MAKEVN_BIN_PATH="${BIN_DIR}/${BIN_NAME}"
       exec node "${MCP_SERVER}"
     fi
     printf 'Error: --mcp requires Node.js to run the JS MCP server.\n' >&2
@@ -26,7 +27,7 @@ if [[ ! -f "${CLI_SCRIPT}" ]]; then
   exit 1
 fi
 
-export MAKEVN_BIN_PATH="${BIN_DIR}/makevn"
+export MAKEVN_BIN_PATH="${BIN_DIR}/${BIN_NAME}"
 export MAKEVN_INSTALL_ROOT="${INSTALL_ROOT}"
 
 exec "${CLI_SCRIPT}" "$@"
