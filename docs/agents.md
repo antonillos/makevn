@@ -55,6 +55,28 @@ validation, use `makevn docker-ps-required --compose karate`; plain
 be starting, agents should prefer `makevn docker-ps-required --wait-seconds N`
 over inserting shell-level `sleep` calls between commands.
 
+### Docker: Never use `makevn exec` for container operations
+
+Agents must **never** use `makevn exec` to run raw `docker` or `docker compose`
+commands. The `docker-*` and `karate-docker-*` subcommands are the only
+supported interface for container lifecycle management:
+
+- `makevn docker-up` — start all boot compose services
+- `makevn docker-down` — stop all boot compose services
+- `makevn docker-ps` — list all containers
+- `makevn docker-ps-required` — validate required services are healthy
+- `makevn karate-docker-up` — start all Karate E2E compose services
+- `makevn karate-docker-down` — stop all Karate E2E compose services
+
+`makevn docker-up` runs a full lifecycle: `down -v --remove-orphans`,
+`volume prune -f`, then `up --detach` for **all** services. It does not
+support targeting a single service. If only one service needs to be started
+(such as `schema_registry` for local development without the full stack),
+use `makevn docker-up` to start everything — the lifecycle guarantees a clean
+state regardless. Do not fall back to `docker compose up -d <service>` or
+`makevn exec -- docker compose ...`; those bypass `makevn`'s compose file
+resolution, override detection, and logging.
+
 Karate tests need the real application running. For a manual chain, agents should
 use `makevn run-app-bg` before `makevn karate-test` and always finish with
 `makevn stop-app`. For the full flow, `makevn karate-all` owns that lifecycle.

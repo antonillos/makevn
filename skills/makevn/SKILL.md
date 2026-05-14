@@ -253,6 +253,21 @@ For Docker-backed commands (`docker-*`, `karate-docker-up`, and `karate-docker-d
 
 `makevn docker-ps-required` validates the boot compose by default. Use `makevn docker-ps-required --compose karate` when the required services belong to the detected Karate E2E compose. When boot services may still be coming up, prefer `makevn docker-ps-required --wait-seconds N` instead of scripting a separate `sleep`. `makevn karate-docker-up` already waits for required Karate services to be running and healthy before it returns; agents should not add a separate immediate service check after `karate-docker-up` unless they explicitly need a standalone validation command.
 
+### Never use `makevn exec` for Docker operations
+
+`makevn exec` is for Maven commands, not for containers. Agents must **never**
+use `makevn exec` to run raw `docker` or `docker compose` commands — even if the
+command appears correct. Always use the dedicated `docker-*` and `karate-docker-*`
+subcommands. This guarantees that compose file paths, override files, Docker
+binary resolution, and log handling are all applied consistently.
+
+`makevn docker-up` runs a full lifecycle: `down -v --remove-orphans`,
+`volume prune -f`, then `up --detach` for **all** boot compose services.
+There is no option to target a single service. If only one service needs
+starting (e.g., `schema_registry`), run `makevn docker-up` anyway — the
+lifecycle ensures a clean state and unused services remain idle. Do not
+fall back to raw docker commands or `makevn exec -- docker compose ...`.
+
 Do not guess a root `make` target from a `makevn` subcommand name. This is invalid unless the repository itself defines such a target:
 
 ```bash
