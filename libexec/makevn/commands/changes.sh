@@ -296,7 +296,7 @@ No modified Java files detected. Skipping verify-changes."
     if [[ ${#cli_flags[@]} -gt 0 ]]; then
       verify_args+=("${cli_flags[@]}")
     fi
-    verify_args+=(-f "${maven_base_path}/pom.xml" -pl "${module_selection}" verify)
+    verify_args+=(-f "${maven_base_path}/pom.xml" -pl "${module_selection}" -am verify)
     if [[ ${#prop_flags[@]} -gt 0 ]]; then
       verify_args+=("${prop_flags[@]}")
     fi

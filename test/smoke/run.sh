@@ -2541,7 +2541,7 @@ EOF
 
   ${CLI} --repo "${code_repo}" verify-changes >/dev/null
 
-  assert_matches "${code_repo}/.mvnw.log" '^ARGS=-nsu -f .*/code/pom\.xml -pl boot,jacoco-report-aggregate verify -Djacoco\.skip=false -DskipTests=false -Dmaven\.test\.failure\.ignore=false -Dmaven\.build\.cache\.enabled=false$'
+  assert_matches "${code_repo}/.mvnw.log" '^ARGS=-nsu -f .*/code/pom\.xml -pl boot,jacoco-report-aggregate -am verify -Djacoco\.skip=false -DskipTests=false -Dmaven\.test\.failure\.ignore=false -Dmaven\.build\.cache\.enabled=false$'
 
   ${CLI} --repo "${code_repo}" uninstall >/dev/null
 }
