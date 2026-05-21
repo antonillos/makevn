@@ -35,6 +35,22 @@ require_command() {
   fi
 }
 
+require_installed_mcp_tool() {
+  local tool_name="$1"
+  local mcp_server="${PREFIX}/libexec/makevn/mcp/makevn-mcp.js"
+
+  if [[ ! -f "${mcp_server}" ]]; then
+    printf 'Installed MCP server not found: %s\n' "${mcp_server}" >&2
+    exit 1
+  fi
+
+  if ! grep -Fq "name: \"${tool_name}\"" "${mcp_server}"; then
+    printf 'Installed MCP server is missing tool: %s\n' "${tool_name}" >&2
+    printf 'Check the bundle step and reinstall before using MCP agents.\n' >&2
+    exit 1
+  fi
+}
+
 info "Checking prerequisites"
 require_command git
 require_command node
@@ -71,6 +87,10 @@ info "Installing Rust frontend"
 run bash "$SCRIPT_DIR/install.sh" --rust
 run cp "$BIN_DIR/makevn" "$RUST_BIN"
 run chmod +x "$RUST_BIN"
+
+info "Validating installed MCP tools"
+require_installed_mcp_tool docker_up
+require_installed_mcp_tool docker_ps_required
 
 printf '\nInstalled artifacts:\n'
 printf '  - %s (default frontend: rust)\n' "${BIN_DIR}/makevn"
