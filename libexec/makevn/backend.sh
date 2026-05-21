@@ -72,7 +72,7 @@ done
 [[ -z "${METADATA_OUT}" || "${METADATA_OUT}" = /* ]] || makevn_die "Backend --metadata-out must be an absolute path: ${METADATA_OUT}"
 
 case "${COMMAND}" in
-  doctor|init|make|uninstall|profile|exec|compile|test-compile|compile-tests|validate|package|build|clean|test|verify-ut|verify-ut-coverage|verify-it|verify-it-coverage|verify|verify-changes|coverage|coverage-changes|pr-verify|format|checkstyle|docker-up|docker-down|docker-ps|docker-ps-required|karate-docker-up|karate-docker-down|karate-test|karate-all|run-app|run-app-bg|stop-app|run|jdk|mutation)
+  doctor|init|make|uninstall|profile|exec|compile|test-compile|compile-tests|validate|package|build|clean|test|verify-ut|verify-ut-coverage|verify-it|verify-it-coverage|verify|verify-changes|coverage|coverage-changes|pr-verify|format|checkstyle|docker-up|docker-down|docker-ps|docker-stats|docker-ps-required|karate-docker-up|karate-docker-down|karate-test|karate-all|run-app|run-app-bg|stop-app|run|jdk|mutation)
     ;;
   *)
     makevn_die "Unknown backend command: ${COMMAND}"
@@ -109,6 +109,7 @@ fi
 
 if [[ "${COMPACT_OUTPUT}" == "true" ]]; then
   export MAKEVN_COMPACT_OUTPUT=1
+  export NO_COLOR=1
 fi
 
 if [[ "${COMMAND}" == "doctor" && "${FORMAT:-text}" == "json" ]]; then

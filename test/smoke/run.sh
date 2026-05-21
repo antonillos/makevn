@@ -977,6 +977,48 @@ EOF
   ${CLI} --repo "${repo}" uninstall >/dev/null
 }
 
+test_compact_tty_omits_color_and_loader() {
+  local repo="${TMP_ROOT}/compact-tty-no-color-loader"
+  local install_prefix="${TMP_ROOT}/compact-tty-no-color-loader-install"
+  local compact_cli="${install_prefix}/bin/makevn"
+  local java_home
+  local output_file="${repo}/compact.out"
+
+  [[ -x "${ROOT_DIR}/target/release/makevn" ]] || return 0
+
+  mkdir -p "${repo}"
+  printf '<project/>\n' > "${repo}/pom.xml"
+  java_home="$(detect_java_home)"
+
+  PREFIX="${install_prefix}" "${ROOT_DIR}/install.sh" --rust >/dev/null
+  "${compact_cli}" --repo "${repo}" init >/dev/null
+  cat > "${repo}/mvnw" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+printf 'compact-tty-ok\n'
+EOF
+  chmod +x "${repo}/mvnw"
+  cat > "${repo}/.makevn/config" <<EOF
+MAKEVN_JAVA_HOME="${java_home}"
+MAKEVN_CODE_JAVA_HOME=""
+MAKEVN_KARATE_JAVA_HOME=""
+MAKEVN_CODE_TOOL_VERSIONS=""
+MAKEVN_KARATE_TOOL_VERSIONS=""
+MAKEVN_RUN_CMD=""
+EOF
+
+  script -q /dev/null bash -lc "\"${compact_cli}\" --repo \"${repo}\" --compact compile" > "${output_file}" 2>&1
+
+  [[ "$(tr -d '\r' < "${output_file}")" == *"[..] makevn compile |"* ]] || fail "expected compact tty output to include plain compact header"
+  [[ "$(tr -d '\r' < "${output_file}")" == *"log: .makevn/logs/compile.log"* ]] || fail "expected compact tty output to include log path"
+  [[ "$(tr -d '\r' < "${output_file}")" != *$'\033['* ]] || fail "expected compact tty output not to include ANSI color"
+  [[ "$(tr -d '\r' < "${output_file}")" != *"■"* ]] || fail "expected compact tty output not to include loader glyphs"
+  [[ "$(tr -d '\r' < "${output_file}")" != *"esc interrupt"* ]] || fail "expected compact tty output not to include loader hints"
+  assert_contains "${repo}/.makevn/logs/compile.log" "compact-tty-ok"
+
+  "${compact_cli}" --repo "${repo}" uninstall >/dev/null
+}
+
 test_command_routing() {
   local repo="${TMP_ROOT}/command-routing"
   local java_home
@@ -1197,8 +1239,13 @@ fi
 if [[ "$1" == "volume" && "${2:-}" == "prune" && "${3:-}" == "-f" ]]; then
   exit 0
 fi
-if [[ "$1" == "ps" && "${2:-}" == "-aq" ]]; then
-  printf 'abc123def456\n'
+  if [[ "$1" == "ps" && "${2:-}" == "-aq" ]]; then
+    printf 'abc123def456\n'
+    exit 0
+  fi
+if [[ "$1" == "stats" && "${2:-}" == "--no-stream" ]]; then
+  printf 'NAME\tCPU %%\tMEM USAGE / LIMIT\tMEM %%\n'
+  printf 'fake-db\t0.39%%\t250.8MiB / 5.772GiB\t4.24%%\n'
   exit 0
 fi
 if [[ "$1" == "inspect" && "${2:-}" == "-f" ]]; then
@@ -1236,11 +1283,15 @@ EOF
   assert_not_contains "${repo}/.docker-compose.log" " ps -q "
   PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" docker-down >/dev/null
   output="$(rtk make -f .makevn/makevn.mk -C "${repo}" MAKEVN_BIN="${repo}/fake-bin/makevn-wrapper" vn-docker-ps)"
+  stats_output="$(PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" docker-stats)"
 
   assert_matches "${repo}/.docker-compose.log" '^docker-compose -f .*/code/boot/src/test/resources/compose/docker-compose\.yml -f .*/code/boot/src/test/resources/compose/docker-compose\.override\.yml down -v --remove-orphans$'
   assert_matches "${repo}/.docker-compose.log" '^docker-compose -f .*/code/boot/src/test/resources/compose/docker-compose\.yml -f .*/code/boot/src/test/resources/compose/docker-compose\.override\.yml up --detach$'
   assert_contains "${repo}/.docker.log" "docker volume prune -f"
+  assert_contains "${repo}/.docker.log" "docker stats --no-stream --format table {{.Name}}\\t{{.CPUPerc}}\\t{{.MemUsage}}\\t{{.MemPerc}}"
   [[ "${output}" == *"fake-db"* ]] || fail "expected docker ps output to include fake container name"
+  [[ "${stats_output}" == *"fake-db"* ]] || fail "expected docker stats output to include fake container name"
+  [[ "${stats_output}" == *"CPU %"* ]] || fail "expected docker stats output to include CPU header"
 
   ${CLI} --repo "${repo}" uninstall >/dev/null
 }
@@ -1262,7 +1313,7 @@ test_docker_up_missing_compose_writes_log() {
   set -e
 
   [[ ${status} -ne 0 ]] || fail "expected docker-up without compose to fail"
-  assert_contains "${output_file}" "[x] docker-up"
+  assert_contains "${output_file}" "docker-up"
   assert_contains "${output_file}" ".makevn/logs/docker-up.log"
   assert_contains "${repo}/.makevn/logs/docker-up.log" "Error: Docker compose file not found."
   assert_contains "${repo}/.makevn/logs/docker-up.log" "command: makevn docker-up"
@@ -1920,7 +1971,7 @@ EOF
   PATH="${repo}/fake-bin:${PATH}" script -q /dev/null bash -lc "\"${rust_cli}\" --repo \"${repo}\" karate-all" > "${output_file}" 2>&1 || true
   tr -d '\r' < "${output_file}" > "${clean_output_file}"
 
-  assert_contains "${clean_output_file}" "[x] run-app-bg"
+  assert_contains "${clean_output_file}" "run-app-bg"
   assert_contains "${clean_output_file}" ".makevn/app/app.log"
   assert_not_contains "${clean_output_file}" "[x] karate-docker-up"
   assert_contains "${repo}/.makevn/app/app.log" "app startup failed"
@@ -3024,6 +3075,7 @@ main() {
   test_make_failure_output
   test_tail_degrades_without_tty
   test_non_tty_run_is_compact_and_keeps_full_log_in_file
+  test_compact_tty_omits_color_and_loader
   test_command_routing
   test_docker_commands
   test_docker_up_missing_compose_writes_log

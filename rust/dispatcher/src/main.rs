@@ -350,10 +350,9 @@ fn validate_command(
             Ok(CommandValidation::Valid)
         }
         "help" | "init" | "uninstall" | "exec" | "test" | "coverage" | "coverage-changes"
-        | "docker-up" | "docker-down" | "docker-ps" | "docker-ps-required" | "karate-docker-up"
-        | "karate-docker-down" | "run-app" | "run-app-bg" | "stop-app" | "run" => {
-            Ok(CommandValidation::Valid)
-        }
+        | "docker-up" | "docker-down" | "docker-ps" | "docker-stats" | "docker-ps-required"
+        | "karate-docker-up" | "karate-docker-down" | "run-app" | "run-app-bg" | "stop-app"
+        | "run" => Ok(CommandValidation::Valid),
         "doctor" => {
             if let Some(extra_arg) = trailing_args.first() {
                 Err(format!("Unknown doctor option: {}", Lossy(extra_arg)))
@@ -535,6 +534,7 @@ fn is_top_level_command(arg: &OsString) -> bool {
             | "docker-up"
             | "docker-down"
             | "docker-ps"
+            | "docker-stats"
             | "docker-ps-required"
             | "karate-docker-up"
             | "karate-docker-down"
@@ -652,6 +652,7 @@ fn command_supports_frontend_loader(command: &OsString) -> bool {
             | "docker-up"
             | "docker-down"
             | "docker-ps"
+            | "docker-stats"
             | "docker-ps-required"
             | "karate-docker-up"
             | "karate-docker-down"
@@ -674,6 +675,10 @@ fn dispatch_backend_invocations(
     let mut last_exit_code = 0;
     let started_at = Instant::now();
     let mut completed_summaries: Vec<CommandSummary> = Vec::new();
+    let compact_output = backend_invocations.iter().any(|invocation| invocation.compact);
+    if compact_output {
+        env::set_var("NO_COLOR", "1");
+    }
     let use_dashboard = backend_invocations
         .iter()
         .any(|invocation| invocation.frontend_loader && !invocation.compact);
@@ -1470,9 +1475,17 @@ fn format_duration(elapsed: Duration) -> String {
 }
 
 fn use_color() -> bool {
+    if agent_output_mode() {
+        return false;
+    }
+
     (io::stdout().is_terminal() || io::stderr().is_terminal())
         && env::var_os("NO_COLOR").is_none()
         && env::var("TERM").map(|term| term != "dumb").unwrap_or(true)
+}
+
+fn agent_output_mode() -> bool {
+    env::var_os("MAKEVN_COMPACT_OUTPUT").is_some() || env::var_os("MAKEVN_AGENT_OUTPUT").is_some()
 }
 
 fn style(code: &str, text: &str) -> String {
@@ -2808,6 +2821,7 @@ fn print_help(with_header: bool) {
     println!("  makevn [--repo PATH] docker-up [--tail]");
     println!("  makevn [--repo PATH] docker-down [--tail]");
     println!("  makevn [--repo PATH] docker-ps [--tail]");
+    println!("  makevn [--repo PATH] docker-stats [--tail]");
     println!("  makevn [--repo PATH] docker-ps-required [--tail] [--compose boot|karate] [--wait-seconds N]");
     println!("  makevn [--repo PATH] karate-docker-up [--tail]");
     println!("  makevn [--repo PATH] karate-docker-down [--tail]");
@@ -2849,6 +2863,7 @@ fn print_help(with_header: bool) {
     println!("  makevn format --apply");
     println!("  makevn checkstyle --module domain --verbose");
     println!("  makevn docker-up");
+    println!("  makevn docker-stats");
     println!("  makevn karate-test");
     println!("  makevn karate-test --tag @smoke");
     println!("  makevn run-app-bg");
@@ -3336,6 +3351,9 @@ mod tests {
         )));
         assert!(command_supports_frontend_loader(&OsString::from(
             "docker-ps-required"
+        )));
+        assert!(command_supports_frontend_loader(&OsString::from(
+            "docker-stats"
         )));
         assert!(command_supports_frontend_loader(&OsString::from(
             "karate-docker-up"

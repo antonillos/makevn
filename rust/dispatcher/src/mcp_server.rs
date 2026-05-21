@@ -169,6 +169,9 @@ fn tools_list() -> Vec<Value> {
         tool("docker_ps", "List running Docker containers for the compose setup.", |b| {
             b.opt("repo", "string", "Path to the repository");
         }),
+        tool("docker_stats", "Show one-shot CPU and memory stats for all running Docker containers.", |b| {
+            b.opt("repo", "string", "Path to the repository");
+        }),
         tool("pr_verify", "Run a local PR-style verification flow.", |b| {
             b.opt("repo", "string", "Path to the repository");
             b.opt("compact", "boolean", "Use compact output");
@@ -279,9 +282,7 @@ fn handle_tool_call(makevn_bin: &PathBuf, params: &Value) -> Result<String, Stri
         cmd_args.push(repo.into());
     }
 
-    if args.get("compact").and_then(|v| v.as_bool()).unwrap_or(false) {
-        cmd_args.push("--compact".into());
-    }
+    cmd_args.push("--compact".into());
 
     if mapped_name == "exec" {
         cmd_args.push("exec".into());
@@ -313,6 +314,8 @@ fn handle_tool_call(makevn_bin: &PathBuf, params: &Value) -> Result<String, Stri
         cmd_args.push("current".into());
     } else if mapped_name == "docker-ps" || mapped_name == "docker_ps" {
         cmd_args.push("docker-ps".into());
+    } else if mapped_name == "docker-stats" || mapped_name == "docker_stats" {
+        cmd_args.push("docker-stats".into());
     } else {
         cmd_args.push(mapped_name.clone());
         if mapped_name == "format" && args.get("apply").and_then(|v| v.as_bool()).unwrap_or(false) {
@@ -355,6 +358,7 @@ fn handle_tool_call(makevn_bin: &PathBuf, params: &Value) -> Result<String, Stri
 
     let output = Command::new(makevn_bin)
         .args(&cmd_args)
+        .env("NO_COLOR", "1")
         .output()
         .map_err(|e| format!("failed to execute makevn: {e}"))?;
 

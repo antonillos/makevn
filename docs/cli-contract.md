@@ -220,8 +220,11 @@ Rules:
 makevn docker-up [--tail]
 makevn docker-down [--tail]
 makevn docker-ps [--tail]
+makevn docker-stats [--tail]
 makevn docker-ps-required [--tail] [--compose boot|karate] [--wait-seconds N]
 ```
+
+`docker-stats` prints a one-shot `docker stats --no-stream` table for all currently running containers with stable columns for name, CPU %, memory usage, and memory %. It does not depend on compose detection so agents can use it for broad troubleshooting.
 
 `docker-ps-required` validates the boot compose by default. Use `--compose karate` to validate the detected E2E Karate compose. Use `--wait-seconds N` to keep polling for required services before failing, instead of scripting a separate `sleep` between `docker-up` and the validation step.
 
@@ -272,6 +275,7 @@ Initial set:
 - `jdk current --json`
 - `jdk list --json`
 - `docker-ps --json`
+- `docker-stats --json`
 - `docker-ps-required --json`
 
 Minimum envelope:

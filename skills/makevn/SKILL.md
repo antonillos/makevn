@@ -39,8 +39,8 @@ It provides:
 6. Prefer `makevn uninstall` over manual cleanup.
 7. Do not edit makefiles manually when `makevn make install` or `makevn make uninstall` owns that behavior.
 8. Prefer `--json` when the command supports structured output and the agent needs reliable machine-readable data.
-9. Avoid `--tail` unless the human explicitly asked for an interactive local log view.
-10. Treat `makevn` subcommands as the primary public interface. Do not translate them into bare `make` targets. For Docker commands, run `makevn docker-up`, `makevn docker-down`, `makevn docker-ps`, or `makevn docker-ps-required`; do not run bare targets such as `make docker-up` or `make docker-ps-required`.
+9. Avoid `--tail` unless the human explicitly asked for an interactive local log view. Use `--compact` for agent-facing runs when invoking the CLI directly; MCP tools already use compact output.
+10. Treat `makevn` subcommands as the primary public interface. Do not translate them into bare `make` targets. For Docker commands, run `makevn docker-up`, `makevn docker-down`, `makevn docker-ps`, `makevn docker-stats`, or `makevn docker-ps-required`; do not run bare targets such as `make docker-up` or `make docker-ps-required`.
 11. Treat Karate workflows the same way: run `makevn karate-docker-up`, `makevn karate-docker-down`, `makevn karate-test`, or `makevn karate-all` only when `makevn doctor` detects Karate files. Do not assume every repository has Karate.
 12. Karate tests need the real app running. Use `makevn run-app-bg` before `makevn karate-test`, and always finish with `makevn stop-app`; `makevn karate-all` owns that lifecycle for the full flow.
 13. Do not assume every repository uses `LOCAL_CONTAINERS`. Let `makevn doctor`, `.makevn/config`, the repository profile, or the user's exported `LOCAL_CONTAINERS` decide that behavior.
@@ -173,11 +173,13 @@ makevn checkstyle --module domain --verbose
 makevn docker-up
 makevn docker-down
 makevn docker-ps
+makevn docker-stats
 makevn docker-ps-required
 makevn docker-ps-required --compose karate
 makevn docker-up --tail
 makevn docker-down --tail
 makevn docker-ps --tail
+makevn docker-stats --tail
 makevn docker-ps-required --tail
 makevn karate-docker-up
 makevn karate-docker-down
@@ -242,6 +244,7 @@ makevn coverage-changes
 makevn docker-up
 makevn docker-down
 makevn docker-ps
+makevn docker-stats
 makevn docker-ps-required
 makevn karate-test
 makevn karate-test --tag @smoke
@@ -275,6 +278,7 @@ Do not guess a root `make` target from a `makevn` subcommand name. This is inval
 make docker-up
 make docker-down
 make docker-ps
+make docker-stats
 make docker-ps-required
 ```
 
@@ -284,6 +288,7 @@ The optional make integration only exposes namespaced `vn-*` targets. Use these 
 make vn-docker-up
 make vn-docker-down
 make vn-docker-ps
+make vn-docker-stats
 make vn-docker-ps-required
 make vn-karate-test
 make vn-run-app-bg
@@ -305,7 +310,7 @@ make vn-docker-ps-required MAKEVN_DOCKER_PS_REQUIRED_ARGS="--compose karate"
 
 `makevn make install` generates `.makevn/makevn.mk` and a root `Makefile` that includes it. All `vn-*` targets delegate to the installed `makevn` binary — they are thin wrappers, not an alternative implementation.
 
-Available targets mirror the `makevn` command surface: `vn-doctor`, `vn-init`, `vn-make-install`, `vn-make-uninstall`, `vn-uninstall`, `vn-profile-refresh`, `vn-compile`, `vn-test-compile`, `vn-compile-tests`, `vn-validate`, `vn-package`, `vn-build`, `vn-clean`, `vn-test`, `vn-verify-ut`, `vn-verify-ut-coverage`, `vn-verify-it`, `vn-verify-it-coverage`, `vn-verify`, `vn-verify-changes`, `vn-coverage-changes`, `vn-pr-verify`, `vn-docker-up`, `vn-docker-down`, `vn-docker-ps`, `vn-docker-ps-required`, `vn-karate-docker-up`, `vn-karate-docker-down`, `vn-karate-test`, `vn-karate-all`, `vn-run-app`, `vn-run-app-bg`, `vn-stop-app`, `vn-run`, `vn-jdk-current`, `vn-jdk-list`, `vn-exec`.
+Available targets mirror the `makevn` command surface: `vn-doctor`, `vn-init`, `vn-make-install`, `vn-make-uninstall`, `vn-uninstall`, `vn-profile-refresh`, `vn-compile`, `vn-test-compile`, `vn-compile-tests`, `vn-validate`, `vn-package`, `vn-build`, `vn-clean`, `vn-test`, `vn-verify-ut`, `vn-verify-ut-coverage`, `vn-verify-it`, `vn-verify-it-coverage`, `vn-verify`, `vn-verify-changes`, `vn-coverage-changes`, `vn-pr-verify`, `vn-docker-up`, `vn-docker-down`, `vn-docker-ps`, `vn-docker-stats`, `vn-docker-ps-required`, `vn-karate-docker-up`, `vn-karate-docker-down`, `vn-karate-test`, `vn-karate-all`, `vn-run-app`, `vn-run-app-bg`, `vn-stop-app`, `vn-run`, `vn-jdk-current`, `vn-jdk-list`, `vn-exec`.
 
 ## Success Criteria
 

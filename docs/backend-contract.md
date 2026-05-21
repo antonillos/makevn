@@ -99,6 +99,7 @@ State command family:
 - `jdk current`
 - `jdk list`
 - `docker-ps`
+- `docker-stats`
 - `docker-ps-required`
 
 Recommended invocation pattern:

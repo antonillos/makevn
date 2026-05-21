@@ -271,3 +271,15 @@ cmd_docker_ps() {
 
   makevn_run_logged "${repo_root}" docker-ps docker-ps docker-ps bash "${docker_ps_script}"
 }
+
+cmd_docker_stats() {
+  local repo_root="$1"
+  local docker_stats_script="${MAKEVN_LIBEXEC_DIR}/docker/stats.sh"
+
+  shift
+  makevn_parse_docker_args "$@"
+
+  [[ -f "${docker_stats_script}" ]] || makevn_die "Docker stats helper script not found: ${docker_stats_script}"
+
+  makevn_run_logged "${repo_root}" docker-stats docker-stats docker-stats bash "${docker_stats_script}"
+}

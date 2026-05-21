@@ -16,7 +16,7 @@ The skill is meant to teach agents to:
 - treat `makevn` as the primary interface instead of relying on IDE actions
 - prefer `--json` when it is available for the command being used
 - avoid `--tail` unless a human explicitly requests an interactive local log view
-- prefer compact non-interactive runs so the agent sees summaries and short failure excerpts instead of full Maven logs
+- prefer compact runs so the agent sees plain summaries and short failure excerpts instead of colors, loaders, or full Maven logs
 - use direct `makevn ...` subcommands by default instead of inventing bare
   root `make` targets
 
@@ -64,6 +64,7 @@ supported interface for container lifecycle management:
 - `makevn docker-up` — start all boot compose services
 - `makevn docker-down` — stop all boot compose services
 - `makevn docker-ps` — list all containers
+- `makevn docker-stats` — show one-shot CPU and memory stats for all running containers
 - `makevn docker-ps-required` — validate required services are healthy
 - `makevn karate-docker-up` — start all Karate E2E compose services
 - `makevn karate-docker-down` — stop all Karate E2E compose services
@@ -83,7 +84,7 @@ use `makevn run-app-bg` before `makevn karate-test` and always finish with
 
 The optional make integration exposes namespaced `vn-*` targets only. Agents should
 run public Docker CLI commands as `makevn docker-up`, `makevn docker-down`,
-`makevn docker-ps`, or `makevn docker-ps-required`, not as bare root targets
+`makevn docker-ps`, `makevn docker-stats`, or `makevn docker-ps-required`, not as bare root targets
 such as `make docker-up` or `make docker-ps-required`. Use
 `make -f .makevn/makevn.mk vn-docker-*` or `vn-karate-*` only when explicitly validating make
 integration.

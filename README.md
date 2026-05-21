@@ -105,6 +105,7 @@ makevn checkstyle --module domain --verbose
 makevn docker-up
 makevn docker-down
 makevn docker-ps
+makevn docker-stats
 makevn docker-ps-required
 makevn docker-ps-required --compose karate
 makevn docker-ps-required --wait-seconds 15
@@ -131,9 +132,9 @@ Use `--tail` only for a human interactive log view. During a normal interactive
 run, press `t` to tail the current managed log. Agents should prefer
 non-interactive runs and generated logs.
 
-Use `--compact` when you want agent-style output even in a TTY. In non-interactive
-runs, `makevn` now keeps the full log under `.makevn/logs/` and prints only a
-compact summary plus a short failure excerpt when needed.
+Use `--compact` when you want agent-style output even in a TTY: no colors, no
+interactive loader, full logs under `.makevn/logs/`, and only a compact summary
+plus a short failure excerpt when needed. MCP tool calls use compact output by default.
 
 ## Verification
 
@@ -266,6 +267,7 @@ If `makevn` is not in PATH, use the full path (e.g. `/usr/local/bin/makevn`).
 | `exec` | Run arbitrary Maven command |
 | `jdk_current` | Show resolved JDK version |
 | `docker_ps` | List compose containers |
+| `docker_stats` | Show one-shot Docker CPU and memory stats |
 | `pr_verify` | PR-style verification |
 | `checkstyle` | Run Checkstyle checks |
 

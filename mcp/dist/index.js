@@ -292,6 +292,19 @@ const tools = [
     },
     {
         tool: {
+            name: "docker_stats",
+            description: "Show one-shot CPU and memory stats for all running Docker containers.",
+            inputSchema: {
+                type: "object",
+                properties: {
+                    repo: { type: "string", description: "Path to the repository" },
+                },
+            },
+        },
+        handler: (args) => runMakevn("docker-stats", args),
+    },
+    {
+        tool: {
             name: "pr_verify",
             description: "Run a local PR-style verification flow.",
             inputSchema: {
@@ -360,9 +373,7 @@ function buildArgs(command, args) {
     if (repo) {
         result.push("--repo", repo);
     }
-    if (args.compact) {
-        result.push("--compact");
-    }
+    result.push("--compact");
     result.push(command);
     const subcommand = args._subcommand;
     if (subcommand) {
@@ -391,6 +402,7 @@ function runMakevn(command, args) {
 function runMakevnDirect(cmdArgs) {
     const result = spawnSync(MAKEVN_BIN, cmdArgs, {
         encoding: "utf-8",
+        env: { ...process.env, NO_COLOR: "1" },
         maxBuffer: 10 * 1024 * 1024,
     });
     const stdout = result.stdout?.trim() || "";
