@@ -104,12 +104,14 @@ Today that guidance is forward-looking: public `--json` behavior is still part o
 
 ## OpenCode Workflow
 
-The project ships a `.mcp.json` at the root that configures the built-in MCP
-server. OpenCode loads it automatically — no manual setup needed.
+The project ships a `.mcp.json` at the root that configures the dedicated
+`makevn-mcp` Rust MCP server. OpenCode loads it automatically — no manual setup
+needed once `makevn-mcp` is installed and available in `PATH`.
 
 When the MCP server is active, the agent can call makevn commands as MCP tools
 (e.g. `doctor`, `test`, `verify`) in addition to running them via the CLI.
-Both approaches use the same `makevn` binary.
+MCP tools invoke the installed sibling `makevn` binary with compact,
+agent-safe output.
 
 Inside OpenCode, the intended flow is:
 

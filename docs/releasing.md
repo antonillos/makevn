@@ -5,7 +5,7 @@
 | Artifact | Location | Source of truth |
 |----------|----------|-----------------|
 | makevn binary | `rust/dispatcher/Cargo.toml` | `version` field |
-| MCP server | built into `makevn` binary | inherits from `Cargo.toml` |
+| MCP server | `makevn-mcp` Rust binary | inherits from `Cargo.toml` |
 | Homebrew formula | `antonillos/homebrew-tap/Formula/makevn.rb` | References release tag |
 
 The canonical version lives in `Cargo.toml`. The `bump-version.sh` script updates
@@ -28,7 +28,6 @@ all locations from a single invocation.
 
 This updates:
 - `rust/dispatcher/Cargo.toml`
-- `mcp/package.json`
 - `packaging/homebrew/makevn.rb` (stable URL, SHA placeholder)
 - `../homebrew-tap/Formula/makevn.rb` (if present locally)
 
@@ -57,9 +56,8 @@ gh workflow run release.yml \
 
 The workflow:
 - validates the version format
-- builds the Rust dispatcher (Linux x86_64)
+- builds the Rust dispatcher and `makevn-mcp` (Linux x86_64)
 - creates the source archive and SHA-256
-- builds the MCP server
 - creates a GitHub release with all assets
 
 ### 4. Update Homebrew formula
@@ -85,18 +83,6 @@ git add Formula/makevn.rb
 git commit -m "makevn: update to v0.1.0"
 git push
 ```
-
-### 5. Publish MCP server to npm (optional)
-
-The MCP server is built into the `makevn` binary. Publishing the JS wrapper
-to npm is optional.
-
-```bash
-cd mcp
-npm publish
-```
-
-Requires npm login with access to the `@antonillos` scope.
 
 ## Development workflow
 
@@ -136,5 +122,4 @@ gh workflow run release.yml -f version=v<version> -f target_ref=main
 
 # Post-release
 cd ../homebrew-tap && git add Formula && git commit -m "makevn: update to v<version>" && git push
-cd mcp && npm publish  # optional
 ```

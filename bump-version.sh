@@ -3,7 +3,6 @@ set -euo pipefail
 
 SCRIPT_DIR="$(CDPATH= cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CARGO_MANIFEST="${SCRIPT_DIR}/rust/dispatcher/Cargo.toml"
-MCP_PACKAGE="${SCRIPT_DIR}/mcp/package.json"
 TAP_FORMULA="${SCRIPT_DIR}/../homebrew-tap/Formula/makevn.rb"
 PACKAGING_FORMULA="${SCRIPT_DIR}/packaging/homebrew/makevn.rb"
 
@@ -36,13 +35,6 @@ printf 'New makevn version:     %s\n' "${VERSION}"
 sed -i '' -E 's/^version = "[^"]+"/version = "'"${VERSION}"'"/' "${CARGO_MANIFEST}"
 printf '  ✔ Updated Cargo.toml\n'
 
-# Bump mcp/package.json to match (JS reference implementation)
-if [[ -f "${MCP_PACKAGE}" ]]; then
-  sed -i '' -E 's/"version": "[^"]+"/"version": "'"${VERSION}"'"/' "${MCP_PACKAGE}"
-  printf '  ✔ Updated mcp/package.json\n'
-fi
-
-
 # Update Homebrew formula stable block if this looks like a release (not dev)
 if ! echo "${VERSION}" | grep -qE '\-'; then
   tag="v${VERSION}"
@@ -67,4 +59,3 @@ printf '  3. git push origin main --tags\n'
 printf '  4. Run the release workflow on GitHub:\n'
 printf '     gh workflow run release.yml -f version=v%s -f target_ref=main\n' "${VERSION}"
 printf '  5. Update the Homebrew formula SHA-256\n'
-printf '  6. Publish MCP server (optional): cd mcp && npm publish\n'
