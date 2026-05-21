@@ -15800,6 +15800,7 @@ var tools = [
       const repo = args.repo || "(repo root)";
       const child = spawn(MAKEVN_BIN, cmdArgs, {
         detached: true,
+        env: { ...process.env, MAKEVN_AGENT_OUTPUT: "1", NO_COLOR: "1" },
         stdio: "ignore"
       });
       child.unref();

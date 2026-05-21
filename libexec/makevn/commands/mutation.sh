@@ -109,7 +109,6 @@ cmd_mutation() {
   logs_dir="$(makevn_logs_dir "${repo_root}")"
   mkdir -p "${logs_dir}"
   logfile="${logs_dir}/mutation.log"
-  : > "${logfile}" 2>/dev/null || true
   relative_log_path=".makevn/logs/mutation.log"
   start_epoch="$(date +%s)"
 
@@ -125,19 +124,30 @@ cmd_mutation() {
     "mutation"
 
   set +e
-  if [[ "${verbose}" == true ]]; then
-    (
-      cd "${repo_root}"
-      env JAVA_HOME="${java_home}" PATH="${java_home}/bin:${PATH}" "${maven_args[@]}"
-    ) > "${logfile}" 2>&1
-    exit_code=$?
-  else
-    (
-      cd "${repo_root}"
-      env JAVA_HOME="${java_home}" PATH="${java_home}/bin:${PATH}" "${maven_args[@]}"
-    ) 2>&1 >/dev/null | grep -v 'PIT >> FINE' > "${logfile}"
-    exit_code=${PIPESTATUS[0]}
-  fi
+  {
+    printf "started: %s\n" "$(date "+%Y-%m-%d %H:%M:%S")"
+    printf "title: mutation\n"
+    printf "command: %s\n" "$(makevn_quote_command "${maven_args[@]}")"
+    printf "repo: %s\n" "${repo_root}"
+    printf "java_home: %s\n" "${java_home}"
+    if [[ "${verbose}" == true ]]; then
+      (
+        cd "${repo_root}"
+        env JAVA_HOME="${java_home}" PATH="${java_home}/bin:${PATH}" "${maven_args[@]}"
+      )
+      exit_code=$?
+    else
+      (
+        cd "${repo_root}"
+        env JAVA_HOME="${java_home}" PATH="${java_home}/bin:${PATH}" "${maven_args[@]}"
+      ) 2>&1 | grep -v 'PIT >> FINE'
+      exit_code=${PIPESTATUS[0]}
+    fi
+    printf "finished: %s | exit_code: %s | duration_seconds: %s\n" \
+      "$(date "+%Y-%m-%d %H:%M:%S")" \
+      "${exit_code}" \
+      "$(( $(date +%s) - start_epoch ))"
+  } > "${logfile}" 2>&1
   set -e
 
   end_epoch="$(date +%s)"
