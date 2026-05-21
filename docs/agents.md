@@ -120,6 +120,34 @@ Inside OpenCode, the intended flow is:
 5. run `makevn build`, `makevn test`, `makevn verify`, or `makevn exec -- ...`
 6. avoid IDE-specific instructions unless the user explicitly asks for them
 
+When using the MCP tools directly, use the explicit `makevn_*` tool names and
+follow this runbook for changed-code verification:
+
+1. `makevn_doctor` on the target repository.
+2. `makevn_init` if doctor reports missing, stale, or uninitialized makevn state.
+3. `makevn_verify_changes` for changed modules or changed tests.
+4. `makevn_coverage_changes` after a coverage-producing run.
+5. Report the makevn failure excerpt or gate result directly.
+
+Agents should not second-guess this sequence by switching to raw `mvn`, adding
+manual `-pl` or `-am` flags, or invoking repository-local helper scripts. Module
+selection, reactor dependencies, Maven base paths, and coverage report paths are
+part of the `makevn verify-changes` and `makevn coverage-changes` contract.
+
+Important MCP tool mappings:
+
+- `makevn doctor` -> `makevn_doctor`
+- `makevn init` -> `makevn_init`
+- `makevn profile refresh` -> `makevn_profile_refresh`
+- `makevn verify-changes` -> `makevn_verify_changes`
+- `makevn coverage-changes` -> `makevn_coverage_changes`
+- `makevn docker-up` -> `makevn_docker_up`
+- `makevn docker-ps-required` -> `makevn_docker_ps_required`
+
+If a documented MCP tool is missing from the visible schema, the client is likely
+using a stale MCP session or a different server command. Restart or reload the
+agent session and confirm the configured command is `makevn-shell --mcp`.
+
 For pull-request or task-final verification, agents should prefer the smallest
 command that proves the touched surface:
 

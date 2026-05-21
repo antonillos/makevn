@@ -207,6 +207,21 @@ Verification intent:
 - use `makevn verify` when the goal is the combined verification path
 - do not turn `makevn verify` into a split workflow with skip flags; pick the explicit command instead
 
+Changed-code verification flow for agents:
+
+1. Run `makevn doctor` first.
+2. Run `makevn init` when doctor says the repository is not initialized, stale,
+   or missing local makevn state.
+3. Run `makevn verify-changes` for changed modules or changed tests.
+4. Run `makevn coverage-changes` after a coverage-producing verification run.
+5. Treat a coverage gate failure as the result to report, not as a reason to
+   invent raw Maven commands.
+
+When using MCP, call the equivalent tools: `makevn_doctor`, `makevn_init`,
+`makevn_verify_changes`, and `makevn_coverage_changes`. Do not add manual Maven
+module flags such as `-pl` or `-am`; `makevn` owns module selection, reactor
+dependencies, Maven base path detection, and coverage report discovery.
+
 ## Running Specific Tests
 
 **Always prefer `makevn test --name` over `makevn exec -- mvn -Dtest=...`** when the goal is to run one or more specific test classes. This works for any test type — unit tests (UT) and integration tests (IT) alike.
