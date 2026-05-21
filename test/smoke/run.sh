@@ -2502,6 +2502,50 @@ EOF
   ${CLI} --repo "${repo}" uninstall >/dev/null
 }
 
+test_verify_changes_nested_maven_base_strips_git_prefix() {
+  local repo="${TMP_ROOT}/verify-changes-nested-maven-base"
+  local code_repo="${repo}/code"
+  local java_home
+
+  mkdir -p "${code_repo}/boot/src/main/java/com/example"
+  mkdir -p "${code_repo}/jacoco-report-aggregate"
+  printf '<project/>\n' > "${code_repo}/pom.xml"
+  java_home="$(detect_java_home)"
+
+  cat > "${code_repo}/boot/src/main/java/com/example/Changed.java" <<'EOF'
+package com.example;
+
+class Changed {}
+EOF
+
+  rtk git init "${repo}" >/dev/null
+  rtk git -C "${repo}" add .
+  rtk git -C "${repo}" -c user.name='Smoke Test' -c user.email='smoke@example.com' commit -m 'init' >/dev/null
+  printf '// local change\n' >> "${code_repo}/boot/src/main/java/com/example/Changed.java"
+
+  ${CLI} --repo "${code_repo}" init >/dev/null
+  cat > "${code_repo}/mvnw" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+printf 'ARGS=%s\n' "$*" >> .mvnw.log
+EOF
+  chmod +x "${code_repo}/mvnw"
+  cat > "${code_repo}/.makevn/config" <<EOF
+MAKEVN_JAVA_HOME="${java_home}"
+MAKEVN_CODE_JAVA_HOME=""
+MAKEVN_KARATE_JAVA_HOME=""
+MAKEVN_CODE_TOOL_VERSIONS=""
+MAKEVN_KARATE_TOOL_VERSIONS=""
+MAKEVN_RUN_CMD=""
+EOF
+
+  ${CLI} --repo "${code_repo}" verify-changes >/dev/null
+
+  assert_matches "${code_repo}/.mvnw.log" '^ARGS=-nsu -f .*/code/pom\.xml -pl boot,jacoco-report-aggregate verify -Djacoco\.skip=false -DskipTests=false -Dmaven\.test\.failure\.ignore=false -Dmaven\.build\.cache\.enabled=false$'
+
+  ${CLI} --repo "${code_repo}" uninstall >/dev/null
+}
+
 test_coverage_changes_command() {
   local repo="${TMP_ROOT}/coverage-changes"
   local output
@@ -3093,6 +3137,7 @@ main() {
   test_verify_respects_local_containers_config
   test_verify_leaves_local_containers_unset_without_repo_signal
   test_verify_changes_command
+  test_verify_changes_nested_maven_base_strips_git_prefix
   test_coverage_changes_command
   test_coverage_changes_fails_changed_module_gate
   test_coverage_changes_ignores_diff_context_lines

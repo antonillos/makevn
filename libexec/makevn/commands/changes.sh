@@ -179,6 +179,10 @@ cmd_verify_changes() {
   local parent_spec=""
   local diff_base=""
   local diff_local=""
+  local git_root=""
+  local maven_git_rel=""
+  local physical_git_root=""
+  local physical_maven_base_path=""
   local changed_src=""
   local changed_test=""
   local modules=""
@@ -211,6 +215,7 @@ cmd_verify_changes() {
   fi
 
   git -C "${repo_root}" rev-parse HEAD >/dev/null 2>&1 || makevn_die "Not a git repository"
+  git_root="$(git -C "${repo_root}" rev-parse --show-toplevel)"
 
   maven_base_path="$(makevn_detect_maven_base_path "${repo_root}" || true)"
   [[ -n "${maven_base_path}" ]] || makevn_die "No Maven project detected in ${repo_root}"
@@ -220,13 +225,15 @@ cmd_verify_changes() {
     maven_base_rel="${maven_base_path#${repo_root}/}"
   fi
   maven_executable="$(makevn_maven_executable "${repo_root}" "${maven_base_path}")"
-  if [[ "${maven_base_path}" == "${repo_root}" ]]; then
+  physical_git_root="$(cd "${git_root}" && pwd -P)"
+  physical_maven_base_path="$(cd "${maven_base_path}" && pwd -P)"
+  if [[ "${physical_maven_base_path}" == "${physical_git_root}" ]]; then
     path_prefix_regex='^'
     strip_prefix=''
   else
-    maven_base_rel="${maven_base_path#${repo_root}/}"
-    path_prefix_regex="^${maven_base_rel}/"
-    strip_prefix="${maven_base_rel}/"
+    maven_git_rel="${physical_maven_base_path#${physical_git_root}/}"
+    path_prefix_regex="^${maven_git_rel}/"
+    strip_prefix="${maven_git_rel}/"
   fi
 
   parent_spec="$(makevn_detect_parent_branch_spec "${repo_root}")"
@@ -235,12 +242,12 @@ cmd_verify_changes() {
   fi
 
   if [[ "${parent_spec}" == "HEAD" ]]; then
-    diff_local="$(git -C "${repo_root}" diff --name-only HEAD || true)"
+    diff_local="$(git -C "${git_root}" diff --name-only HEAD || true)"
     changed_src="$(printf '%s\n' "${diff_local}" | grep -E "${path_prefix_regex}.*src/main/java/.*\.java$" || true)"
     changed_test="$(printf '%s\n' "${diff_local}" | grep -E "${path_prefix_regex}.*src/test/java/.*\.java$" || true)"
   else
-    diff_base="$(git -C "${repo_root}" diff --name-only "${parent_spec}" || true)"
-    diff_local="$(git -C "${repo_root}" diff --name-only HEAD || true)"
+    diff_base="$(git -C "${git_root}" diff --name-only "${parent_spec}" || true)"
+    diff_local="$(git -C "${git_root}" diff --name-only HEAD || true)"
     changed_src="$(printf '%s\n%s\n' "${diff_base}" "${diff_local}" | grep -E "${path_prefix_regex}.*src/main/java/.*\.java$" | LC_ALL=C sort -u || true)"
     changed_test="$(printf '%s\n%s\n' "${diff_base}" "${diff_local}" | grep -E "${path_prefix_regex}.*src/test/java/.*\.java$" | LC_ALL=C sort -u || true)"
   fi
