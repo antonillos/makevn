@@ -337,6 +337,9 @@ cmd_coverage_changes() {
   local repo_root="$1"
   local maven_base_path=""
   local maven_base_rel=""
+  local git_root=""
+  local physical_git_root=""
+  local physical_maven_base_path=""
   local maven_executable=""
   local report_dir=""
   local jacoco_module=""
@@ -345,6 +348,8 @@ cmd_coverage_changes() {
   local overall_threshold=""
   local verbose=false
   local coverage_script=""
+  local coverage_output=""
+  local coverage_output_file=""
   local line=""
   local cli_flags_value=""
   local rc=0
@@ -384,13 +389,16 @@ cmd_coverage_changes() {
   fi
 
   git -C "${repo_root}" rev-parse HEAD >/dev/null 2>&1 || makevn_die "Not a git repository"
+  git_root="$(git -C "${repo_root}" rev-parse --show-toplevel)"
 
   maven_base_path="$(makevn_detect_maven_base_path "${repo_root}" || true)"
   [[ -n "${maven_base_path}" ]] || makevn_die "No Maven project detected in ${repo_root}"
-  if [[ "${maven_base_path}" == "${repo_root}" ]]; then
+  physical_git_root="$(cd "${git_root}" && pwd -P)"
+  physical_maven_base_path="$(cd "${maven_base_path}" && pwd -P)"
+  if [[ "${physical_maven_base_path}" == "${physical_git_root}" ]]; then
     maven_base_rel="."
   else
-    maven_base_rel="${maven_base_path#${repo_root}/}"
+    maven_base_rel="${physical_maven_base_path#${physical_git_root}/}"
   fi
 
   report_dir="$(makevn_jacoco_report_dir "${maven_base_path}" || true)"
@@ -426,14 +434,17 @@ cmd_coverage_changes() {
   coverage_script="$(makevn_internal_make_script_path coverage/changes.sh || true)"
   [[ -n "${coverage_script}" ]] || makevn_die "Internal coverage changes runtime script not found"
 
+  coverage_output_file="$(mktemp "${TMPDIR:-/tmp}/makevn-coverage-changes.XXXXXX")"
   set +e
   (
-    cd "${repo_root}"
-    BASE_PATH="${maven_base_rel}" COVERAGE_VERBOSE="${verbose}" bash "${coverage_script}" "${report_dir}" "${parent_spec}" "${threshold}" "${overall_threshold}" 2>&1
-  ) | while IFS= read -r line; do
-    makevn_print_detail_line "${line}"
-  done
-  rc=${PIPESTATUS[0]}
+    cd "${git_root}" && BASE_PATH="${maven_base_rel}" COVERAGE_VERBOSE="${verbose}" bash "${coverage_script}" "${report_dir}" "${parent_spec}" "${threshold}" "${overall_threshold}"
+  ) > "${coverage_output_file}" 2>&1
+  rc=$?
   set -e
+  coverage_output="$(cat "${coverage_output_file}" || true)"
+  rm -f "${coverage_output_file}"
+  while IFS= read -r line; do
+    makevn_print_detail_line "${line}"
+  done <<< "${coverage_output}"
   return ${rc}
 }
