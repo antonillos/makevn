@@ -54,6 +54,65 @@ const tools: ToolDefinition[] = [
   },
   {
     tool: {
+      name: "make_install",
+      description: "Install makevn Makefile integration in a repository.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          repo: { type: "string", description: "Path to the repository" },
+          "dry-run": { type: "boolean", description: "Show what would be done without making changes" },
+          compact: { type: "boolean", description: "Use compact output" },
+        },
+      },
+    },
+    handler: (args) => runMakevn("make", { ...args, _subcommand: "install" }),
+  },
+  {
+    tool: {
+      name: "make_uninstall",
+      description: "Remove makevn Makefile integration from a repository.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          repo: { type: "string", description: "Path to the repository" },
+          "dry-run": { type: "boolean", description: "Show what would be done without making changes" },
+          compact: { type: "boolean", description: "Use compact output" },
+        },
+      },
+    },
+    handler: (args) => runMakevn("make", { ...args, _subcommand: "uninstall" }),
+  },
+  {
+    tool: {
+      name: "uninstall",
+      description: "Remove makevn Makefile integration from a repository.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          repo: { type: "string", description: "Path to the repository" },
+          "dry-run": { type: "boolean", description: "Show what would be done without making changes" },
+          compact: { type: "boolean", description: "Use compact output" },
+        },
+      },
+    },
+    handler: (args) => runMakevn("uninstall", args),
+  },
+  {
+    tool: {
+      name: "profile_refresh",
+      description: "Refresh makevn repository profile detection.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          repo: { type: "string", description: "Path to the repository" },
+          compact: { type: "boolean", description: "Use compact output" },
+        },
+      },
+    },
+    handler: (args) => runMakevn("profile", { ...args, _subcommand: "refresh" }),
+  },
+  {
+    tool: {
       name: "test",
       description: "Run tests with optional test name filter and fast mode (skip recompilation).",
       inputSchema: {
@@ -67,6 +126,34 @@ const tools: ToolDefinition[] = [
       },
     },
     handler: (args) => runMakevn("test", args),
+  },
+  {
+    tool: {
+      name: "test_compile",
+      description: "Compile test sources.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          repo: { type: "string", description: "Path to the repository" },
+          compact: { type: "boolean", description: "Use compact output" },
+        },
+      },
+    },
+    handler: (args) => runMakevn("test-compile", args),
+  },
+  {
+    tool: {
+      name: "compile_tests",
+      description: "Compile test sources.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          repo: { type: "string", description: "Path to the repository" },
+          compact: { type: "boolean", description: "Use compact output" },
+        },
+      },
+    },
+    handler: (args) => runMakevn("compile-tests", args),
   },
   {
     tool: {
@@ -109,6 +196,34 @@ const tools: ToolDefinition[] = [
       },
     },
     handler: (args) => runMakevn("verify-it", args),
+  },
+  {
+    tool: {
+      name: "verify_ut_coverage",
+      description: "Run unit-test-only verification with coverage.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          repo: { type: "string", description: "Path to the repository" },
+          compact: { type: "boolean", description: "Use compact output" },
+        },
+      },
+    },
+    handler: (args) => runMakevn("verify-ut-coverage", args),
+  },
+  {
+    tool: {
+      name: "verify_it_coverage",
+      description: "Run integration-test-only verification with coverage.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          repo: { type: "string", description: "Path to the repository" },
+          compact: { type: "boolean", description: "Use compact output" },
+        },
+      },
+    },
+    handler: (args) => runMakevn("verify-it-coverage", args),
   },
   {
     tool: {
@@ -290,8 +405,8 @@ const tools: ToolDefinition[] = [
   },
   {
     tool: {
-      name: "docker_ps",
-      description: "List running Docker containers for the repository's compose setup.",
+      name: "jdk_list",
+      description: "List JDK candidates detected for the repository.",
       inputSchema: {
         type: "object",
         properties: {
@@ -299,7 +414,65 @@ const tools: ToolDefinition[] = [
         },
       },
     },
+    handler: (args) => runMakevn("jdk", { ...args, _subcommand: "list" }),
+  },
+  {
+    tool: {
+      name: "docker_up",
+      description: "Start the repository's Docker compose services.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          repo: { type: "string", description: "Path to the repository" },
+          tail: { type: "boolean", description: "Stream command output" },
+        },
+      },
+    },
+    handler: (args) => runMakevn("docker-up", args),
+  },
+  {
+    tool: {
+      name: "docker_down",
+      description: "Stop the repository's Docker compose services.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          repo: { type: "string", description: "Path to the repository" },
+          tail: { type: "boolean", description: "Stream command output" },
+        },
+      },
+    },
+    handler: (args) => runMakevn("docker-down", args),
+  },
+  {
+    tool: {
+      name: "docker_ps",
+      description: "List running Docker containers for the repository's compose setup.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          repo: { type: "string", description: "Path to the repository" },
+          tail: { type: "boolean", description: "Stream command output" },
+        },
+      },
+    },
     handler: (args) => runMakevn("docker-ps", args),
+  },
+  {
+    tool: {
+      name: "docker_ps_required",
+      description: "Check that required Docker compose services are running and healthy.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          repo: { type: "string", description: "Path to the repository" },
+          compose: { type: "string", description: "Compose selection: boot or karate" },
+          "wait-seconds": { type: "number", description: "Seconds to wait for required services" },
+          tail: { type: "boolean", description: "Stream command output" },
+        },
+      },
+    },
+    handler: (args) => runMakevn("docker-ps-required", args),
   },
   {
     tool: {
@@ -309,10 +482,121 @@ const tools: ToolDefinition[] = [
         type: "object",
         properties: {
           repo: { type: "string", description: "Path to the repository" },
+          tail: { type: "boolean", description: "Stream command output" },
         },
       },
     },
     handler: (args) => runMakevn("docker-stats", args),
+  },
+  {
+    tool: {
+      name: "karate_docker_up",
+      description: "Start Docker compose services for Karate tests.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          repo: { type: "string", description: "Path to the repository" },
+          tail: { type: "boolean", description: "Stream command output" },
+        },
+      },
+    },
+    handler: (args) => runMakevn("karate-docker-up", args),
+  },
+  {
+    tool: {
+      name: "karate_docker_down",
+      description: "Stop Docker compose services for Karate tests.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          repo: { type: "string", description: "Path to the repository" },
+          tail: { type: "boolean", description: "Stream command output" },
+        },
+      },
+    },
+    handler: (args) => runMakevn("karate-docker-down", args),
+  },
+  {
+    tool: {
+      name: "karate_test",
+      description: "Run Karate tests, optionally filtered by tag.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          repo: { type: "string", description: "Path to the repository" },
+          tag: { type: "string", description: "Karate tag filter" },
+          compact: { type: "boolean", description: "Use compact output" },
+        },
+      },
+    },
+    handler: (args) => runMakevn("karate-test", args),
+  },
+  {
+    tool: {
+      name: "karate_all",
+      description: "Run the complete Karate flow, optionally filtered by tag.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          repo: { type: "string", description: "Path to the repository" },
+          tag: { type: "string", description: "Karate tag filter" },
+          compact: { type: "boolean", description: "Use compact output" },
+        },
+      },
+    },
+    handler: (args) => runMakevn("karate-all", args),
+  },
+  {
+    tool: {
+      name: "run_app",
+      description: "Run the repository application in the foreground.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          repo: { type: "string", description: "Path to the repository" },
+        },
+      },
+    },
+    handler: (args) => runMakevn("run-app", args),
+  },
+  {
+    tool: {
+      name: "run_app_bg",
+      description: "Run the repository application in the background.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          repo: { type: "string", description: "Path to the repository" },
+        },
+      },
+    },
+    handler: (args) => runMakevn("run-app-bg", args),
+  },
+  {
+    tool: {
+      name: "stop_app",
+      description: "Stop the background repository application.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          repo: { type: "string", description: "Path to the repository" },
+        },
+      },
+    },
+    handler: (args) => runMakevn("stop-app", args),
+  },
+  {
+    tool: {
+      name: "run",
+      description: "Run the repository application using makevn's default run command.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          repo: { type: "string", description: "Path to the repository" },
+        },
+      },
+    },
+    handler: (args) => runMakevn("run", args),
   },
   {
     tool: {
@@ -397,7 +681,7 @@ function buildArgs(command: string, args: Record<string, unknown>): string[] {
     result.push(subcommand);
   }
 
-  const flagArgs = ["name", "fast", "apply", "verbose", "threshold", "overall-threshold", "module", "context", "force", "dry-run", "tag"];
+  const flagArgs = ["name", "fast", "apply", "verbose", "threshold", "overall-threshold", "module", "context", "force", "dry-run", "tag", "tail", "compose", "wait-seconds"];
   for (const key of flagArgs) {
     const value = (args as Record<string, unknown>)[key];
     if (value !== undefined && value !== null) {
