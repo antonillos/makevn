@@ -146,7 +146,7 @@ Important MCP tool mappings:
 
 If a documented MCP tool is missing from the visible schema, the client is likely
 using a stale MCP session or a different server command. Restart or reload the
-agent session and confirm the configured command is `makevn-shell --mcp`.
+agent session and confirm the configured command is `makevn-mcp`.
 
 For pull-request or task-final verification, agents should prefer the smallest
 command that proves the touched surface:

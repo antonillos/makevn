@@ -70,6 +70,7 @@ When the first stable release is cut:
 The formula builds the Rust frontend from source and installs the runtime layout expected by `makevn`:
 
 - `bin/makevn`
+- `bin/makevn-mcp`
 - `libexec/makevn/`
 - `share/makevn/`
 - `share/makevn/skills/makevn/`
@@ -80,10 +81,10 @@ The Rust build entrypoint exposed publicly by this repository is:
 
 ## MCP Server
 
-The `makevn` binary includes a built-in MCP server. Run it with `--mcp`:
+The dedicated `makevn-mcp` binary runs the MCP server:
 
 ```bash
-makevn --mcp
+makevn-mcp
 ```
 
 The server implements the Model Context Protocol over stdio JSON-RPC and
@@ -95,15 +96,14 @@ exposes each `makevn` subcommand as an MCP tool.
 {
   "mcpServers": {
     "makevn": {
-      "command": "makevn",
-      "args": ["--mcp"]
+      "command": "makevn-mcp"
     }
   }
 }
 ```
 
-No extra binaries, no npm, no Node.js. The MCP server is compiled into the
-Rust dispatcher.
+No npm or Node.js runtime is required. The MCP server is compiled from the Rust
+dispatcher crate and installed alongside `makevn`.
 
 ## Private-Repo Caveat
 

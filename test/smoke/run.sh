@@ -652,6 +652,7 @@ test_installer() {
   local prefix="${TMP_ROOT}/install-prefix"
   PREFIX="${prefix}" "${ROOT_DIR}/install.sh" >/dev/null
   assert_file_exists "${prefix}/bin/makevn"
+  assert_file_exists "${prefix}/bin/makevn-mcp"
   assert_file_exists "${prefix}/libexec/makevn/jdk/manager.sh"
   assert_file_exists "${prefix}/libexec/makevn/docker/ps.sh"
   assert_file_exists "${prefix}/libexec/makevn/coverage/changes.sh"
@@ -659,6 +660,27 @@ test_installer() {
   assert_file_exists "${prefix}/share/makevn/makevn.mk"
   assert_file_exists "${prefix}/share/makevn/skills/makevn/SKILL.md"
   "${prefix}/bin/makevn" --help >/dev/null
+}
+
+test_mcp_tool_listing() {
+  local prefix="${TMP_ROOT}/mcp-install-prefix"
+  local output_file="${TMP_ROOT}/mcp-tools.jsonl"
+
+  [[ -x "${ROOT_DIR}/target/release/makevn" ]] || return 0
+  [[ -x "${ROOT_DIR}/target/release/makevn-mcp" ]] || return 0
+
+  PREFIX="${prefix}" "${ROOT_DIR}/install.sh" >/dev/null
+
+  printf '%s\n%s\n' \
+    '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"smoke","version":"0"}}}' \
+    '{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}' \
+    | "${prefix}/bin/makevn-mcp" > "${output_file}"
+
+  assert_contains "${output_file}" '"name":"docker_up"'
+  assert_contains "${output_file}" '"name":"docker_ps_required"'
+  assert_contains "${output_file}" '"name":"make_install"'
+  assert_contains "${output_file}" '"name":"verify_ut_coverage"'
+  assert_contains "${output_file}" '"name":"jdk_list"'
 }
 
 test_init_does_not_touch_existing_makefile() {
@@ -2958,13 +2980,25 @@ EOF
   "${seq_cli}" --repo "${repo}" uninstall >/dev/null
 }
 
-test_shell_entrypoint_sequential_commands() {
+test_legacy_shell_entrypoint_sequential_commands() {
   local repo="${TMP_ROOT}/shell-sequential-commands"
   local install_prefix="${TMP_ROOT}/shell-sequential-install"
   local seq_cli="${install_prefix}/bin/makevn"
   local java_home
 
-  PREFIX="${install_prefix}" "${ROOT_DIR}/install.sh" --shell >/dev/null
+  mkdir -p "${install_prefix}/bin" "${install_prefix}/libexec/makevn"
+  cp "${ROOT_DIR}/bin/makevn" "${seq_cli}"
+  cp "${ROOT_DIR}/libexec/makevn/cli.sh" "${install_prefix}/libexec/makevn/cli.sh"
+  cp "${ROOT_DIR}/libexec/makevn/backend.sh" "${install_prefix}/libexec/makevn/backend.sh"
+  cp "${ROOT_DIR}/libexec/makevn/common.sh" "${install_prefix}/libexec/makevn/common.sh"
+  cp -R "${ROOT_DIR}/libexec/makevn/commands" "${install_prefix}/libexec/makevn/commands"
+  cp -R "${ROOT_DIR}/libexec/makevn/common" "${install_prefix}/libexec/makevn/common"
+  cp -R "${ROOT_DIR}/libexec/makevn/coverage" "${install_prefix}/libexec/makevn/coverage"
+  cp -R "${ROOT_DIR}/libexec/makevn/docker" "${install_prefix}/libexec/makevn/docker"
+  cp -R "${ROOT_DIR}/libexec/makevn/jdk" "${install_prefix}/libexec/makevn/jdk"
+  cp -R "${ROOT_DIR}/libexec/makevn/compat" "${install_prefix}/libexec/makevn/compat"
+  chmod +x "${seq_cli}" "${install_prefix}/libexec/makevn/cli.sh" "${install_prefix}/libexec/makevn/backend.sh" "${install_prefix}/libexec/makevn/common.sh"
+  find "${install_prefix}/libexec/makevn/commands" "${install_prefix}/libexec/makevn/coverage" "${install_prefix}/libexec/makevn/docker" "${install_prefix}/libexec/makevn/jdk" "${install_prefix}/libexec/makevn/compat" -type f -name '*.sh' -exec chmod +x {} +
 
   mkdir -p "${repo}"
   mkdir -p "${repo}/code/boot/src/test/resources/compose"
@@ -3149,7 +3183,8 @@ main() {
   test_verify_rejects_skip_flags
   test_verify_split_commands_reject_wrong_skip_flags
   test_sequential_commands
-  test_shell_entrypoint_sequential_commands
+  test_legacy_shell_entrypoint_sequential_commands
+  test_mcp_tool_listing
   test_command_typo_rejected_before_backend
   test_command_failure_summary_omits_duplicate_elapsed
   printf 'Smoke tests passed\n'

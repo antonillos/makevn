@@ -4,8 +4,8 @@ set -euo pipefail
 SCRIPT_DIR="$(CDPATH= cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PREFIX="${PREFIX:-$HOME/.local}"
 BIN_DIR="${BIN_DIR:-${PREFIX}/bin}"
-SHELL_BIN="${BIN_DIR}/makevn-shell"
 RUST_BIN="${BIN_DIR}/makevn-rust"
+MCP_BIN="${BIN_DIR}/makevn-mcp"
 DO_PULL=1
 
 if [[ "${1:-}" == "--no-pull" ]]; then
@@ -37,24 +37,29 @@ require_command() {
 
 require_installed_mcp_tool() {
   local tool_name="$1"
-  local mcp_server="${PREFIX}/libexec/makevn/mcp/makevn-mcp.js"
+  local output_file
+  output_file="$(mktemp "${TMPDIR:-/tmp}/makevn-mcp-tools.XXXXXX")"
 
-  if [[ ! -f "${mcp_server}" ]]; then
-    printf 'Installed MCP server not found: %s\n' "${mcp_server}" >&2
+  if [[ ! -x "${MCP_BIN}" ]]; then
+    printf 'Installed MCP server not found or not executable: %s\n' "${MCP_BIN}" >&2
     exit 1
   fi
 
-  if ! grep -Fq "name: \"${tool_name}\"" "${mcp_server}"; then
+  printf '%s\n%s\n' \
+    '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"makevn-update-local","version":"0"}}}' \
+    '{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}' \
+    | "${MCP_BIN}" > "${output_file}"
+
+  if ! grep -Fq "\"name\":\"${tool_name}\"" "${output_file}"; then
     printf 'Installed MCP server is missing tool: %s\n' "${tool_name}" >&2
-    printf 'Check the bundle step and reinstall before using MCP agents.\n' >&2
+    rm -f "${output_file}"
     exit 1
   fi
+  rm -f "${output_file}"
 }
 
 info "Checking prerequisites"
 require_command git
-require_command node
-require_command npm
 require_command cargo
 
 if [[ "${#missing[@]}" -gt 0 ]]; then
@@ -71,15 +76,6 @@ if [[ "$DO_PULL" -eq 1 ]]; then
   run git -C "$SCRIPT_DIR" pull --ff-only
 fi
 
-info "Building MCP bundle"
-run npm ci --prefix "$SCRIPT_DIR/mcp"
-run npm run bundle --prefix "$SCRIPT_DIR/mcp"
-
-info "Installing shell frontend"
-run bash "$SCRIPT_DIR/install.sh" --shell
-run cp "$BIN_DIR/makevn" "$SHELL_BIN"
-run chmod +x "$SHELL_BIN"
-
 info "Building Rust frontend"
 run bash "$SCRIPT_DIR/build-rust-dispatcher.sh"
 
@@ -94,6 +90,5 @@ require_installed_mcp_tool docker_ps_required
 
 printf '\nInstalled artifacts:\n'
 printf '  - %s (default frontend: rust)\n' "${BIN_DIR}/makevn"
-printf '  - %s\n' "$SHELL_BIN"
 printf '  - %s\n' "$RUST_BIN"
-printf '  - %s\n' "${PREFIX}/libexec/makevn/mcp/makevn-mcp.js"
+printf '  - %s\n' "$MCP_BIN"

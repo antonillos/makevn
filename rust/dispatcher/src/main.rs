@@ -22,6 +22,25 @@ use signal_hook::consts::signal::{SIGINT, SIGTERM};
 mod mcp_server;
 
 fn main() {
+    let argv0 = env::args_os()
+        .next()
+        .unwrap_or_else(|| OsString::from("makevn"));
+    if Path::new(&argv0)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .is_some_and(|name| name == "makevn-mcp")
+    {
+        let current_exe = match env::current_exe() {
+            Ok(path) => path,
+            Err(error) => exit_with_error(format!("failed to resolve current executable: {error}")),
+        };
+        let exit_code = match mcp_server::run_mcp_server(current_exe) {
+            Ok(code) => code,
+            Err(message) => exit_with_error(message),
+        };
+        process::exit(exit_code);
+    }
+
     let action = match parse_invocation(env::args_os().skip(1).collect()) {
         Ok(action) => action,
         Err(message) => exit_with_error(message),
@@ -675,7 +694,9 @@ fn dispatch_backend_invocations(
     let mut last_exit_code = 0;
     let started_at = Instant::now();
     let mut completed_summaries: Vec<CommandSummary> = Vec::new();
-    let compact_output = backend_invocations.iter().any(|invocation| invocation.compact);
+    let compact_output = backend_invocations
+        .iter()
+        .any(|invocation| invocation.compact);
     if compact_output {
         env::set_var("NO_COLOR", "1");
     }
@@ -1308,7 +1329,10 @@ fn final_dashboard_lines(
             .sum::<usize>()
             + usize::from(success),
     );
-    lines.push(dim_text(&format!("Worked for {}", format_duration(elapsed))));
+    lines.push(dim_text(&format!(
+        "Worked for {}",
+        format_duration(elapsed)
+    )));
     for summary in completed_summaries {
         lines.push(completed_summary_line(summary));
         for dl in &summary.detail_lines {
@@ -2596,7 +2620,11 @@ fn format_resource_sample(sample: &ResourceSample, history: &ResourceHistory) ->
 
 fn format_resource_sample_cpu(sample: &ResourceSample, history: &ResourceHistory) -> String {
     let cpu_sparkline = sparkline_f32(&history.cpu_percent, ResourceHistory::WIDTH, 250.0);
-    format!("cpu {} {:>4}%", cpu_sparkline, sample.cpu_percent.round() as u32)
+    format!(
+        "cpu {} {:>4}%",
+        cpu_sparkline,
+        sample.cpu_percent.round() as u32
+    )
 }
 
 fn format_resource_sample_ram(sample: &ResourceSample, history: &ResourceHistory) -> String {
@@ -2806,15 +2834,21 @@ fn print_help(with_header: bool) {
         "  makevn [--repo PATH] [--compact] test [--tail] [--name TEST]... [--fast] [-- EXTRA_MAVEN_ARGS...]"
     );
     println!("  makevn [--repo PATH] [--compact] verify-ut [--tail] [-- EXTRA_MAVEN_ARGS...]");
-    println!("  makevn [--repo PATH] [--compact] verify-ut-coverage [--tail] [-- EXTRA_MAVEN_ARGS...]");
+    println!(
+        "  makevn [--repo PATH] [--compact] verify-ut-coverage [--tail] [-- EXTRA_MAVEN_ARGS...]"
+    );
     println!("  makevn [--repo PATH] [--compact] verify-it [--tail] [-- EXTRA_MAVEN_ARGS...]");
-    println!("  makevn [--repo PATH] [--compact] verify-it-coverage [--tail] [-- EXTRA_MAVEN_ARGS...]");
+    println!(
+        "  makevn [--repo PATH] [--compact] verify-it-coverage [--tail] [-- EXTRA_MAVEN_ARGS...]"
+    );
     println!("  makevn [--repo PATH] [--compact] verify [--tail] [-- EXTRA_MAVEN_ARGS...]");
     println!("  makevn [--repo PATH] [--compact] verify-changes [--tail] [-- EXTRA_MAVEN_ARGS...]");
     println!("  makevn [--repo PATH] coverage [--threshold PCT]");
     println!("  makevn [--repo PATH] coverage-changes [--threshold PCT] [--overall-threshold PCT] [--verbose]");
     println!("  makevn [--repo PATH] [--compact] pr-verify [--tail] [-- EXTRA_MAVEN_ARGS...]");
-    println!("  makevn [--repo PATH] [--compact] format [--tail] [--apply] [-- EXTRA_MAVEN_ARGS...]");
+    println!(
+        "  makevn [--repo PATH] [--compact] format [--tail] [--apply] [-- EXTRA_MAVEN_ARGS...]"
+    );
     println!(
         "  makevn [--repo PATH] [--compact] checkstyle [--tail] [--module MODULE] [--verbose] [-- EXTRA_MAVEN_ARGS...]"
     );
@@ -2834,7 +2868,6 @@ fn print_help(with_header: bool) {
     println!("  makevn [--repo PATH] exec [--context code|karate] -- COMMAND [ARGS...]");
     println!("  makevn [--repo PATH] jdk current");
     println!("  makevn [--repo PATH] jdk list");
-    println!("  makevn --mcp");
     println!();
     println!("Examples:");
     println!("  makevn doctor");
@@ -2878,7 +2911,7 @@ fn print_help(with_header: bool) {
     println!("  - 'make uninstall' removes only the Make integration and keeps '.makevn/' intact.");
     println!("  - '--compact' forces compact agent-style summaries; non-interactive runs are compact by default.");
     println!("  - '--tail' starts managed-log commands in tail mode; without it, press 't' while a command is running to tail the current log.");
-    println!("  - '--mcp' starts the built-in MCP server over stdio (Model Context Protocol).");
+    println!("  - 'makevn-mcp' starts the MCP server over stdio (Model Context Protocol).");
 }
 
 struct Lossy<'a>(&'a OsString);
@@ -2892,11 +2925,11 @@ impl fmt::Display for Lossy<'_> {
 #[cfg(test)]
 mod tests {
     use super::{
-        command_supports_frontend_loader, dashboard_hint, dim_text, insert_backend_option,
-        format_resource_sample, install_root_with_override, parse_invocation,
-        read_backend_metadata, spinner_hint, spinner_kitt_frame, split_command_segments,
-        strip_frontend_tail_flag, tail_status_lines, Action, BackendInvocation, BackendMetadata,
-        CommandSummary, ResourceHistory, ResourceSample,
+        command_supports_frontend_loader, dashboard_hint, dim_text, format_resource_sample,
+        insert_backend_option, install_root_with_override, parse_invocation, read_backend_metadata,
+        spinner_hint, spinner_kitt_frame, split_command_segments, strip_frontend_tail_flag,
+        tail_status_lines, Action, BackendInvocation, BackendMetadata, CommandSummary,
+        ResourceHistory, ResourceSample,
     };
     use std::env;
     use std::ffi::OsString;
@@ -2965,9 +2998,15 @@ mod tests {
         let lines = super::final_dashboard_lines(Duration::from_secs(574), &[summary], false);
 
         assert_eq!(lines[0], "Worked for 9m 34s");
-        assert_eq!(lines[1], "[x] mutation | 9m 34s | .makevn/logs/mutation.log");
+        assert_eq!(
+            lines[1],
+            "[x] mutation | 9m 34s | .makevn/logs/mutation.log"
+        );
         assert_eq!(lines[2], "│ WARNING: Mutation testing (PIT) is VERY slow. This can take 30+ minutes depending on project size.");
-        assert_eq!(lines[3], "│ PIT runs the full test suite multiple times against generated mutants.");
+        assert_eq!(
+            lines[3],
+            "│ PIT runs the full test suite multiple times against generated mutants."
+        );
         assert_eq!(lines.len(), 4);
     }
 
@@ -3586,10 +3625,7 @@ mod tests {
         assert_eq!(lines[0], "Working for 13s >");
         assert_eq!(lines[1], "[✓] format | 6s | .makevn/logs/format.log");
         assert_eq!(lines[2], ":: makevn checkstyle");
-        assert_eq!(
-            lines[3],
-            " └ tailing log: .makevn/logs/checkstyle.log"
-        );
+        assert_eq!(lines[3], " └ tailing log: .makevn/logs/checkstyle.log");
     }
 
     #[test]
@@ -3609,10 +3645,7 @@ mod tests {
         assert_eq!(lines[0], "Working for 1s >");
         assert_eq!(lines[1], ":: makevn compile");
         assert_eq!(lines[2], "........  esc interrupt");
-        assert_eq!(
-            lines[3],
-            "-> tailing log: .makevn/logs/compile.log"
-        );
+        assert_eq!(lines[3], "-> tailing log: .makevn/logs/compile.log");
         assert_eq!(
             super::visible_char_count(&lines[4]),
             "[INFO] compiling".len()
@@ -3652,9 +3685,15 @@ mod tests {
         );
 
         assert_eq!(lines[0], "Working for 5s >");
-        assert_eq!(lines[1], "[✓] verify-it | 4m 51s | .makevn/logs/verify-it.log");
+        assert_eq!(
+            lines[1],
+            "[✓] verify-it | 4m 51s | .makevn/logs/verify-it.log"
+        );
         assert_eq!(lines[2], "│ worked");
-        assert_eq!(lines[3], ":: makevn coverage-changes | .makevn/logs/coverage-changes.log");
+        assert_eq!(
+            lines[3],
+            ":: makevn coverage-changes | .makevn/logs/coverage-changes.log"
+        );
         assert_eq!(lines[4], "│ coverage-changes detail");
         assert!(lines[5].contains("interrupt"));
         assert_eq!(lines.len(), 6);
@@ -3674,7 +3713,10 @@ mod tests {
         let lines = super::final_dashboard_lines(Duration::from_secs(5), &[summary], true);
 
         assert_eq!(lines[0], "Worked for 5s");
-        assert_eq!(lines[1], "[✓] coverage-changes | 9s | .makevn/logs/coverage-changes.log");
+        assert_eq!(
+            lines[1],
+            "[✓] coverage-changes | 9s | .makevn/logs/coverage-changes.log"
+        );
         assert_eq!(lines[2], "│ coverage detail");
         assert_eq!(lines[3], "[ok]");
     }

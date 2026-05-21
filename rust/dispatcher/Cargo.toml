@@ -8,6 +8,10 @@ publish = false
 name = "makevn"
 path = "src/main.rs"
 
+[[bin]]
+name = "makevn-mcp"
+path = "src/main.rs"
+
 [dependencies]
 libc = "0.2"
 signal-hook = "0.3"

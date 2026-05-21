@@ -225,9 +225,8 @@ makevn ships an official [MCP](https://modelcontextprotocol.io) (Model Context
 Protocol) server so AI agents in any MCP-compatible client (Claude Desktop,
 Cursor, Windsurf, etc.) can run Java/Maven workflows directly.
 
-The MCP server ships in two forms: built into the Rust dispatcher (self-contained,
-no extra deps) and as a JS bundle for shell-only installations (requires Node.js).
-Both are invoked with `makevn --mcp`.
+The MCP server ships as the dedicated Rust `makevn-mcp` binary. It is
+self-contained and has no Node.js dependency.
 
 ### Quick start
 
@@ -237,14 +236,13 @@ Add to your MCP client config:
 {
   "mcpServers": {
     "makevn": {
-      "command": "makevn",
-      "args": ["--mcp"]
+      "command": "makevn-mcp"
     }
   }
 }
 ```
 
-If `makevn` is not in PATH, use the full path (e.g. `/usr/local/bin/makevn`).
+If `makevn-mcp` is not in PATH, use the full path (e.g. `/usr/local/bin/makevn-mcp`).
 
 ### Available tools
 
