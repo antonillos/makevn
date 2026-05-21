@@ -17,7 +17,15 @@ if [ ! -f "$JACOCO_CSV" ]; then
 fi
 # Calculate coverage metrics from CSV
 # CSV Format: GROUP,PACKAGE,CLASS,INSTRUCTION_MISSED,INSTRUCTION_COVERED,BRANCH_MISSED,BRANCH_COVERED,LINE_MISSED,LINE_COVERED,COMPLEXITY_MISSED,COMPLEXITY_COVERED,METHOD_MISSED,METHOD_COVERED
-awk -F',' -v min_threshold="$MIN_THRESHOLD" -v green="${GREEN:-\033[0;32m}" -v nc="${NC:-\033[0m}" '
+if [[ -n "${NO_COLOR:-}" ]]; then
+    GREEN=""
+    NC=""
+else
+    GREEN="${GREEN:-\033[0;32m}"
+    NC="${NC:-\033[0m}"
+fi
+
+awk -F',' -v min_threshold="$MIN_THRESHOLD" -v green="${GREEN}" -v nc="${NC}" '
     NR>1 && NF>0 {
         if ($4 != "" && $5 != "") {
             inst_missed+=$4;
