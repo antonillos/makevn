@@ -281,17 +281,6 @@ makevn_collect_doctor_snapshot() {
     detected_coverage_threshold="${MAKEVN_MIN_COVERAGE_THRESHOLD} (from config)"
   elif [[ -n "${detected_coverage_threshold}" ]]; then
     detected_coverage_threshold="${detected_coverage_threshold} (from workflow)"
-  elif [[ -n "${maven_base_path}" && -t 0 && -t 2 ]]; then
-    if [[ ! -f "$(makevn_config_path "${repo_root}")" ]]; then
-      mkdir -p "$(makevn_state_dir "${repo_root}")"
-      makevn_write_config "${repo_root}"
-    fi
-    printf '\n' >&2
-    printf '%s\n' "$(makevn_warn "No minimum coverage threshold detected in workflows.")" >&2
-    printf '%s\n' "  Enter the repository coverage gate to use for 'makevn coverage'." >&2
-    detected_coverage_threshold="$(makevn_read_editable_default "Minimum coverage threshold [90]: " "90")"
-    makevn_update_config_min_coverage_threshold "${repo_root}" "${detected_coverage_threshold}"
-    printf '%s\n' "$(makevn_dim "Saved to .makevn/config (MAKEVN_MIN_COVERAGE_THRESHOLD).")" >&2
   else
     detected_coverage_threshold="unresolved"
   fi
@@ -300,17 +289,6 @@ makevn_collect_doctor_snapshot() {
     detected_coverage_changes_threshold="${MAKEVN_MIN_COVERAGE_CHANGES_THRESHOLD} (from config)"
   elif [[ -n "${detected_coverage_changes_threshold}" ]]; then
     detected_coverage_changes_threshold="${detected_coverage_changes_threshold} (from workflow)"
-  elif [[ -n "${maven_base_path}" && -t 0 && -t 2 ]]; then
-    if [[ ! -f "$(makevn_config_path "${repo_root}")" ]]; then
-      mkdir -p "$(makevn_state_dir "${repo_root}")"
-      makevn_write_config "${repo_root}"
-    fi
-    printf '\n' >&2
-    printf '%s\n' "$(makevn_warn "No minimum changed-code coverage threshold detected in workflows.")" >&2
-    printf '%s\n' "  Enter the repository coverage gate to use for 'makevn coverage-changes'." >&2
-    detected_coverage_changes_threshold="$(makevn_read_editable_default "Changed-code coverage threshold [90]: " "90")"
-    makevn_update_config_min_coverage_changes_threshold "${repo_root}" "${detected_coverage_changes_threshold}"
-    printf '%s\n' "$(makevn_dim "Saved to .makevn/config (MAKEVN_MIN_COVERAGE_CHANGES_THRESHOLD).")" >&2
   else
     detected_coverage_changes_threshold="unresolved"
   fi

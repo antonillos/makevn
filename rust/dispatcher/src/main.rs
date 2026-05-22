@@ -56,6 +56,11 @@ fn main() {
         return;
     }
 
+    if let Action::PrintCommandHelp { command } = action {
+        print_command_help(&command);
+        return;
+    }
+
     if let Action::RunMcpServer = action {
         let current_exe = match env::current_exe() {
             Ok(path) => path,
@@ -90,6 +95,7 @@ fn main() {
         Action::DispatchToBackend(invocations) => invocations,
         Action::PrintVersion => unreachable!(),
         Action::PrintHelp { .. } => unreachable!(),
+        Action::PrintCommandHelp { .. } => unreachable!(),
         Action::RunMcpServer => unreachable!(),
     };
 
@@ -113,6 +119,7 @@ fn makevn_version() -> &'static str {
 enum Action {
     PrintVersion,
     PrintHelp { with_header: bool },
+    PrintCommandHelp { command: String },
     DispatchToBackend(Vec<BackendInvocation>),
     RunMcpServer,
 }
@@ -266,6 +273,15 @@ fn parse_invocation(args: Vec<OsString>) -> Result<Action, String> {
 
     let command_validation = validate_command(&command, &trailing_args)?;
 
+    if trailing_args
+        .iter()
+        .any(|arg| matches!(arg.to_string_lossy().as_ref(), "--help" | "-h"))
+    {
+        return Ok(Action::PrintCommandHelp {
+            command: command.to_string_lossy().into_owned(),
+        });
+    }
+
     if command == OsString::from("help") {
         let _ = resolve_repo_root(repo_override)?;
         return Ok(Action::PrintHelp { with_header: true });
@@ -360,6 +376,13 @@ fn validate_command(
     command: &OsString,
     trailing_args: &[OsString],
 ) -> Result<CommandValidation, String> {
+    if trailing_args
+        .iter()
+        .any(|arg| matches!(arg.to_string_lossy().as_ref(), "--help" | "-h"))
+    {
+        return Ok(CommandValidation::Valid);
+    }
+
     match command.to_string_lossy().as_ref() {
         "compile" | "test-compile" | "compile-tests" | "validate" | "package" | "clean"
         | "build" | "verify-ut" | "verify-ut-coverage" | "verify-it" | "verify-it-coverage"
@@ -677,6 +700,7 @@ fn command_supports_frontend_loader(command: &OsString) -> bool {
             | "karate-docker-down"
             | "karate-test"
             | "karate-all"
+            | "run-app"
             | "mutation"
     )
 }
@@ -800,6 +824,9 @@ fn dispatch_backend_invocations(
             if let Some(r) = renderer.as_mut() {
                 r.clear_line();
                 r.show_cursor();
+            }
+            if backend_invocation.tail && last_exit_code == 130 {
+                return Ok(last_exit_code);
             }
             if use_dashboard {
                 print_final_dashboard(started_at.elapsed(), &completed_summaries, false)
@@ -1053,14 +1080,18 @@ fn run_backend_with_loader(
         }
 
         if signal_requested.load(Ordering::Relaxed) {
-            break;
+            if !cancel_requested {
+                interrupt_backend(child.id());
+                cancel_requested = true;
+                cancel_requested_at = Some(Instant::now());
+            }
         }
 
         if let Some(requested_at) = cancel_requested_at {
             let elapsed = requested_at.elapsed();
             if elapsed > Duration::from_secs(4) {
                 let _ = unsafe { libc::kill(-(child.id() as libc::pid_t), libc::SIGKILL) };
-                cancel_requested_at = None;
+                break;
             } else if elapsed > Duration::from_secs(2) {
                 let _ = unsafe { libc::kill(-(child.id() as libc::pid_t), libc::SIGTERM) };
             }
@@ -2803,6 +2834,142 @@ fn exit_with_error(message: String) -> ! {
     process::exit(1);
 }
 
+fn print_command_help(command: &str) {
+    let Some((usage, description, options)) = command_help(command) else {
+        eprintln!("Error: Unknown command: {command}");
+        process::exit(1);
+    };
+
+    println!("makevn {command}");
+    println!();
+    println!("{description}");
+    println!();
+    println!("Usage:");
+    println!("  {usage}");
+    if !options.is_empty() {
+        println!();
+        println!("Options:");
+        for option in options {
+            println!("  {option}");
+        }
+    }
+}
+
+fn command_help(command: &str) -> Option<(&'static str, &'static str, &'static [&'static str])> {
+    match command {
+        "help" => Some(("makevn help", "Print the full makevn help.", &[])),
+        "doctor" => Some(("makevn [--repo PATH] doctor", "Inspect repository setup and makevn configuration.", &[])),
+        "init" => Some(("makevn [--repo PATH] init [--dry-run] [--force]", "Initialize .makevn configuration for the repository.", &["--dry-run  Show what would change without writing files", "--force    Refresh existing generated files"])),
+        "make" => Some(("makevn [--repo PATH] make install|uninstall [--dry-run]", "Install or remove optional vn-* Make targets.", &["--dry-run  Show what would change without writing files"])),
+        "uninstall" => Some(("makevn [--repo PATH] uninstall [--dry-run]", "Remove makevn local repository state.", &["--dry-run  Show what would be removed"])),
+        "profile" => Some(("makevn [--repo PATH] profile refresh", "Refresh detected repository profile information.", &[])),
+        "exec" => Some(("makevn [--repo PATH] exec [--context code|karate] -- COMMAND [ARGS...]", "Run an arbitrary command with makevn's resolved environment.", &["--context  Java context to use: code or karate"])),
+        "compile" => maven_command_help("compile", "Compile project sources."),
+        "test-compile" => maven_command_help("test-compile", "Compile project tests."),
+        "compile-tests" => maven_command_help("compile-tests", "Compile project tests."),
+        "validate" => maven_command_help("validate", "Validate the Maven project model."),
+        "package" => maven_command_help("package", "Package the project without running tests."),
+        "build" => maven_command_help("build", "Run the full Maven build."),
+        "clean" => maven_command_help("clean", "Clean Maven build output."),
+        "test" => Some(("makevn [--repo PATH] [--compact] test [--tail] [--name TEST]... [--fast] [-- EXTRA_MAVEN_ARGS...]", "Run tests with optional filtering.", &["--tail     Start in interactive log tail mode", "--compact  Use compact non-interactive output", "--name     Test class name or comma-separated names", "--fast     Skip compilation when sources have not changed"])),
+        "verify-ut" => maven_command_help("verify-ut", "Run unit-test-only verification."),
+        "verify-ut-coverage" => maven_command_help("verify-ut-coverage", "Run unit-test-only verification with coverage."),
+        "verify-it" => maven_command_help("verify-it", "Run integration-test-only verification."),
+        "verify-it-coverage" => maven_command_help("verify-it-coverage", "Run integration-test-only verification with coverage."),
+        "verify" => maven_command_help("verify", "Run full combined verification."),
+        "verify-changes" => maven_command_help("verify-changes", "Verify changed production modules or modified tests."),
+        "coverage" => Some(("makevn [--repo PATH] coverage [--threshold PCT]", "Check the latest aggregate coverage report.", &["--threshold  Required coverage percentage"])),
+        "coverage-changes" => Some(("makevn [--repo PATH] coverage-changes [--threshold PCT] [--overall-threshold PCT] [--verbose]", "Check incremental and per-module coverage.", &["--threshold          Per-module coverage percentage", "--overall-threshold  Overall coverage percentage", "--verbose            Print detailed coverage output"])),
+        "pr-verify" => maven_command_help("pr-verify", "Run a local PR-style verification flow."),
+        "format" => Some(("makevn [--repo PATH] [--compact] format [--tail] [--apply] [-- EXTRA_MAVEN_ARGS...]", "Check or apply code formatting.", &["--tail     Start in interactive log tail mode", "--compact  Use compact non-interactive output", "--apply    Apply formatting changes"])),
+        "checkstyle" => Some(("makevn [--repo PATH] [--compact] checkstyle [--tail] [--module MODULE] [--verbose] [-- EXTRA_MAVEN_ARGS...]", "Run Checkstyle code style checks.", &["--tail     Start in interactive log tail mode", "--compact  Use compact non-interactive output", "--module   Maven module to check", "--verbose  Print detailed output"])),
+        "docker-up" => tail_command_help("docker-up", "Start boot Docker services."),
+        "docker-down" => tail_command_help("docker-down", "Stop boot Docker services."),
+        "docker-ps" => tail_command_help("docker-ps", "List boot Docker containers."),
+        "docker-stats" => tail_command_help("docker-stats", "Show Docker CPU and memory stats."),
+        "docker-ps-required" => Some(("makevn [--repo PATH] docker-ps-required [--tail] [--compose boot|karate] [--wait-seconds N]", "Validate required Docker services are running and healthy.", &["--tail          Start in interactive log tail mode", "--compose       Compose profile: boot or karate", "--wait-seconds  Seconds to wait for services"])),
+        "karate-docker-up" => tail_command_help("karate-docker-up", "Start Karate E2E Docker services."),
+        "karate-docker-down" => tail_command_help("karate-docker-down", "Stop Karate E2E Docker services."),
+        "karate-test" => Some(("makevn [--repo PATH] karate-test [--tail] [--tag TAG] [-- EXTRA_MAVEN_ARGS...]", "Run Karate tests.", &["--tail  Start in interactive log tail mode", "--tag   Karate tag filter"])),
+        "karate-all" => Some(("makevn [--repo PATH] karate-all [--tail] [--tag TAG] [-- EXTRA_MAVEN_ARGS...]", "Run the Karate app and test lifecycle.", &["--tail  Start in interactive log tail mode", "--tag   Karate tag filter"])),
+        "run-app" => Some(("makevn [--repo PATH] run-app [--tail]", "Run the detected application in the foreground.", &["--tail  Start in interactive application log tail mode"])),
+        "run-app-bg" => Some(("makevn [--repo PATH] run-app-bg", "Run the detected application in the background.", &[])),
+        "stop-app" => Some(("makevn [--repo PATH] stop-app", "Stop the background application started by makevn.", &[])),
+        "run" => Some(("makevn [--repo PATH] run", "Run the repository-configured command.", &[])),
+        "jdk" => Some(("makevn [--repo PATH] jdk current|list", "Show or list discovered JDK installations.", &[])),
+        "mutation" => Some(("makevn [--repo PATH] [--compact] mutation [--tail] [--module MODULE] [--verbose]", "Run PIT mutation testing.", &["--tail     Start in interactive log tail mode", "--compact  Use compact non-interactive output", "--module   Maven module to test", "--verbose  Print detailed output"])),
+        _ => None,
+    }
+}
+
+fn maven_command_help(
+    command: &'static str,
+    description: &'static str,
+) -> Option<(&'static str, &'static str, &'static [&'static str])> {
+    let usage = match command {
+        "compile" => "makevn [--repo PATH] [--compact] compile [--tail] [-- EXTRA_MAVEN_ARGS...]",
+        "test-compile" => {
+            "makevn [--repo PATH] [--compact] test-compile [--tail] [-- EXTRA_MAVEN_ARGS...]"
+        }
+        "compile-tests" => {
+            "makevn [--repo PATH] [--compact] compile-tests [--tail] [-- EXTRA_MAVEN_ARGS...]"
+        }
+        "validate" => "makevn [--repo PATH] [--compact] validate [--tail] [-- EXTRA_MAVEN_ARGS...]",
+        "package" => "makevn [--repo PATH] [--compact] package [--tail] [-- EXTRA_MAVEN_ARGS...]",
+        "build" => "makevn [--repo PATH] [--compact] build [--tail] [-- EXTRA_MAVEN_ARGS...]",
+        "clean" => "makevn [--repo PATH] [--compact] clean [--tail] [-- EXTRA_MAVEN_ARGS...]",
+        "verify-ut" => {
+            "makevn [--repo PATH] [--compact] verify-ut [--tail] [-- EXTRA_MAVEN_ARGS...]"
+        }
+        "verify-ut-coverage" => {
+            "makevn [--repo PATH] [--compact] verify-ut-coverage [--tail] [-- EXTRA_MAVEN_ARGS...]"
+        }
+        "verify-it" => {
+            "makevn [--repo PATH] [--compact] verify-it [--tail] [-- EXTRA_MAVEN_ARGS...]"
+        }
+        "verify-it-coverage" => {
+            "makevn [--repo PATH] [--compact] verify-it-coverage [--tail] [-- EXTRA_MAVEN_ARGS...]"
+        }
+        "verify" => "makevn [--repo PATH] [--compact] verify [--tail] [-- EXTRA_MAVEN_ARGS...]",
+        "verify-changes" => {
+            "makevn [--repo PATH] [--compact] verify-changes [--tail] [-- EXTRA_MAVEN_ARGS...]"
+        }
+        "pr-verify" => {
+            "makevn [--repo PATH] [--compact] pr-verify [--tail] [-- EXTRA_MAVEN_ARGS...]"
+        }
+        _ => return None,
+    };
+    Some((
+        usage,
+        description,
+        &[
+            "--tail     Start in interactive log tail mode",
+            "--compact  Use compact non-interactive output",
+            "--          Forward remaining arguments to Maven",
+        ],
+    ))
+}
+
+fn tail_command_help(
+    command: &'static str,
+    description: &'static str,
+) -> Option<(&'static str, &'static str, &'static [&'static str])> {
+    let usage = match command {
+        "docker-up" => "makevn [--repo PATH] docker-up [--tail]",
+        "docker-down" => "makevn [--repo PATH] docker-down [--tail]",
+        "docker-ps" => "makevn [--repo PATH] docker-ps [--tail]",
+        "docker-stats" => "makevn [--repo PATH] docker-stats [--tail]",
+        "karate-docker-up" => "makevn [--repo PATH] karate-docker-up [--tail]",
+        "karate-docker-down" => "makevn [--repo PATH] karate-docker-down [--tail]",
+        _ => return None,
+    };
+    Some((
+        usage,
+        description,
+        &["--tail  Start in interactive log tail mode"],
+    ))
+}
+
 fn print_help(with_header: bool) {
     if with_header {
         println!(":: makevn help");
@@ -2925,11 +3092,11 @@ impl fmt::Display for Lossy<'_> {
 #[cfg(test)]
 mod tests {
     use super::{
-        command_supports_frontend_loader, dashboard_hint, dim_text, format_resource_sample,
-        insert_backend_option, install_root_with_override, parse_invocation, read_backend_metadata,
-        spinner_hint, spinner_kitt_frame, split_command_segments, strip_frontend_tail_flag,
-        tail_status_lines, Action, BackendInvocation, BackendMetadata, CommandSummary,
-        ResourceHistory, ResourceSample,
+        command_help, command_supports_frontend_loader, dashboard_hint, dim_text,
+        format_resource_sample, insert_backend_option, install_root_with_override,
+        parse_invocation, read_backend_metadata, spinner_hint, spinner_kitt_frame,
+        split_command_segments, strip_frontend_tail_flag, tail_status_lines, Action,
+        BackendInvocation, BackendMetadata, CommandSummary, ResourceHistory, ResourceSample,
     };
     use std::env;
     use std::ffi::OsString;
@@ -3406,8 +3573,97 @@ mod tests {
         assert!(command_supports_frontend_loader(&OsString::from(
             "karate-all"
         )));
+        assert!(command_supports_frontend_loader(&OsString::from("run-app")));
         assert!(!command_supports_frontend_loader(&OsString::from("doctor")));
         assert!(!command_supports_frontend_loader(&OsString::from("run")));
+    }
+
+    #[test]
+    fn parses_run_app_tail_as_frontend_loader_command() {
+        let current_dir = env::current_dir().unwrap();
+        let action =
+            parse_invocation(vec![OsString::from("run-app"), OsString::from("--tail")]).unwrap();
+
+        assert_eq!(
+            action,
+            Action::DispatchToBackend(vec![BackendInvocation {
+                args: vec![
+                    OsString::from("run-app"),
+                    OsString::from("--repo"),
+                    current_dir.into_os_string(),
+                ],
+                frontend_loader: true,
+                tail: true,
+                compact: false,
+            }])
+        );
+    }
+
+    #[test]
+    fn parses_run_app_help_without_backend_dispatch() {
+        let action =
+            parse_invocation(vec![OsString::from("run-app"), OsString::from("--help")]).unwrap();
+
+        assert_eq!(
+            action,
+            Action::PrintCommandHelp {
+                command: String::from("run-app"),
+            }
+        );
+    }
+
+    #[test]
+    fn all_top_level_commands_have_command_help() {
+        let commands = [
+            "help",
+            "doctor",
+            "init",
+            "make",
+            "uninstall",
+            "profile",
+            "exec",
+            "compile",
+            "test-compile",
+            "compile-tests",
+            "validate",
+            "package",
+            "clean",
+            "build",
+            "test",
+            "verify-ut",
+            "verify-ut-coverage",
+            "verify-it",
+            "verify-it-coverage",
+            "verify",
+            "verify-changes",
+            "coverage",
+            "coverage-changes",
+            "pr-verify",
+            "format",
+            "checkstyle",
+            "docker-up",
+            "docker-down",
+            "docker-ps",
+            "docker-stats",
+            "docker-ps-required",
+            "karate-docker-up",
+            "karate-docker-down",
+            "karate-test",
+            "karate-all",
+            "run-app",
+            "run-app-bg",
+            "stop-app",
+            "run",
+            "jdk",
+            "mutation",
+        ];
+
+        for command in commands {
+            assert!(
+                command_help(command).is_some(),
+                "missing help for {command}"
+            );
+        }
     }
 
     #[test]

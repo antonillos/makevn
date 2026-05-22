@@ -405,8 +405,10 @@ cmd_run_app() {
   makevn_start_app_background "${repo_root}" run-app
   pid_file="$(makevn_app_log_dir "${repo_root}")/app.pid"
   app_pid="$(cat "${pid_file}" 2>/dev/null || true)"
-  trap 'cmd_stop_app "'"${repo_root}"'" >/dev/null 2>&1 || true' EXIT INT TERM
+  trap 'cmd_stop_app "'"${repo_root}"'" >/dev/null 2>&1 || true' EXIT
+  trap 'cmd_stop_app "'"${repo_root}"'" >/dev/null 2>&1 || true; exit 130' INT TERM
   wait "${app_pid}" 2>/dev/null || true
+  return 0
 }
 
 cmd_stop_app() {

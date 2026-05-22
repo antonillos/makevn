@@ -514,7 +514,7 @@ makevn_detect_jacoco_profile_from_repo() {
       printf '%s\n' "-Pjacoco"
       return 0
     fi
-  done < <(find "${maven_base_path}" -name pom.xml -not -path '*/target/*' -not -path '*/node_modules/*' 2>/dev/null | LC_ALL=C sort)
+  done < <(find "${maven_base_path}" -name pom.xml -not -path '*/target/*' -not -path '*/node_modules/*' 2>/dev/null | LC_ALL=C sort 2>/dev/null)
 
   return 1
 }
@@ -529,7 +529,7 @@ makevn_repo_declares_jacoco_plugin() {
     if grep -Eq '<artifactId>[[:space:]]*jacoco-maven-plugin[[:space:]]*</artifactId>' "${pom_path}"; then
       return 0
     fi
-  done < <(find "${maven_base_path}" -name pom.xml -not -path '*/target/*' -not -path '*/node_modules/*' 2>/dev/null | LC_ALL=C sort)
+  done < <(find "${maven_base_path}" -name pom.xml -not -path '*/target/*' -not -path '*/node_modules/*' 2>/dev/null | LC_ALL=C sort 2>/dev/null)
 
   return 1
 }
@@ -589,7 +589,7 @@ makevn_detect_pit_goal() {
     fi
     find "${maven_base_path}" \
       \( -path '*/target/*' -o -path '*/node_modules/*' -o -path "${maven_base_path}/pom.xml" \) -prune \
-      -o -name pom.xml -type f -print 2>/dev/null | LC_ALL=C sort
+      -o -name pom.xml -type f -print 2>/dev/null | LC_ALL=C sort 2>/dev/null
   )
 
   return 1

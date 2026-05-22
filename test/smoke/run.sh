@@ -205,6 +205,77 @@ raise SystemExit(os.waitstatus_to_exitcode(status))
 PY
 }
 
+run_makevn_pty_run_app_tail_interrupt() {
+  local cli="$1"
+  local repo="$2"
+  local output_file="$3"
+
+  python3 - "${cli}" "${repo}" "${output_file}" <<'PY'
+import os
+import pty
+import select
+import signal
+import sys
+import time
+
+cli, repo, output_file = sys.argv[1:4]
+cmd = [cli, '--repo', repo, 'run-app', '--tail']
+
+pid, fd = pty.fork()
+if pid == 0:
+    os.execv(cmd[0], cmd)
+
+output = bytearray()
+status = None
+sent_interrupt = False
+start = time.time()
+
+while True:
+    readable, _, _ = select.select([fd], [], [], 0.1)
+    if fd in readable:
+        try:
+            chunk = os.read(fd, 4096)
+        except OSError:
+            break
+        if not chunk:
+            break
+        output.extend(chunk)
+
+    if b'fake app log line' in output and not sent_interrupt:
+        os.kill(pid, signal.SIGINT)
+        sent_interrupt = True
+
+    if time.time() - start > 8 and not sent_interrupt:
+        os.kill(pid, signal.SIGINT)
+        sent_interrupt = True
+
+    try:
+        waited = os.waitpid(pid, os.WNOHANG)
+    except ChildProcessError:
+        break
+    if waited != (0, 0):
+        status = waited[1]
+        break
+
+if status is None:
+    status = os.waitpid(pid, 0)[1]
+
+while True:
+    try:
+        chunk = os.read(fd, 4096)
+        if not chunk:
+            break
+        output.extend(chunk)
+    except OSError:
+        break
+
+with open(output_file, 'wb') as fh:
+    fh.write(output)
+
+raise SystemExit(os.waitstatus_to_exitcode(status))
+PY
+}
+
 detect_java_home() {
   local java_home=""
   if [[ -n "${JAVA_HOME:-}" && -x "${JAVA_HOME}/bin/java" ]]; then
@@ -1667,6 +1738,79 @@ EOF
   assert_not_exists "${repo}/.makevn/app/app.pid"
 
   ${CLI} --repo "${repo}" uninstall >/dev/null
+}
+
+test_run_app_tail_shows_application_log() {
+  local repo="${TMP_ROOT}/run-app-tail"
+  local install_prefix="${TMP_ROOT}/run-app-tail-install"
+  local tail_cli="${install_prefix}/bin/makevn"
+  local java_home="${repo}/fake-java-home"
+  local output_file="${TMP_ROOT}/run-app-tail.out"
+  local rc=0
+
+  [[ -x "${ROOT_DIR}/target/release/makevn" ]] || return 0
+  PREFIX="${install_prefix}" "${ROOT_DIR}/install.sh" --rust >/dev/null
+
+  mkdir -p "${repo}/code/boot/src/main/java/com/example"
+  mkdir -p "${repo}/code/boot/target"
+  mkdir -p "${java_home}/bin"
+  cat > "${repo}/code/pom.xml" <<'EOF'
+<project>
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>com.example</groupId>
+  <artifactId>sampleapp</artifactId>
+  <version>1.0.0</version>
+</project>
+EOF
+  cat > "${repo}/code/boot/src/main/java/com/example/Application.java" <<'EOF'
+package com.example;
+
+public class Application {
+  public static void main(String[] args) {
+  }
+}
+EOF
+  make_test_jar_with_manifest "${repo}/code/boot/target/app.jar" "com.example.Application"
+
+  cat > "${java_home}/bin/java" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+if [[ "${1:-}" != "-jar" ]]; then
+  printf '    java.home = %s\n' "$(dirname "$(dirname "$0")")" >&2
+  printf 'openjdk version "21.0.0"\n' >&2
+  exit 0
+fi
+printf 'fake app log line\n'
+while true; do
+  sleep 1
+done
+EOF
+  chmod +x "${java_home}/bin/java"
+
+  "${tail_cli}" --repo "${repo}" init >/dev/null
+  cat > "${repo}/.makevn/config" <<EOF
+MAKEVN_JAVA_HOME="${java_home}"
+MAKEVN_CODE_JAVA_HOME="${java_home}"
+MAKEVN_KARATE_JAVA_HOME=""
+MAKEVN_CODE_TOOL_VERSIONS=""
+MAKEVN_KARATE_TOOL_VERSIONS=""
+MAKEVN_RUN_CMD=""
+EOF
+
+  set +e
+  run_makevn_pty_run_app_tail_interrupt "${tail_cli}" "${repo}" "${output_file}"
+  rc=$?
+  set -e
+
+  [[ ${rc} -eq 0 || ${rc} -eq 130 ]] || fail "expected run-app --tail interrupt to exit 0 or 130, got ${rc}: $(tr -d '\r' < "${output_file}" 2>/dev/null || true) app-log: $(tr -d '\r' < "${repo}/.makevn/app/app.log" 2>/dev/null || true)"
+  [[ "$(tr -d '\r' < "${output_file}")" == *"tailing log: .makevn/app/app.log"* ]] \
+    || fail "expected run-app --tail output to show app log path"
+  [[ "$(tr -d '\r' < "${output_file}")" == *"fake app log line"* ]] \
+    || fail "expected run-app --tail output to include application log line"
+  assert_contains "${repo}/.makevn/app/app.log" "fake app log line"
+  assert_not_exists "${repo}/.makevn/app/app.pid"
+
+  "${tail_cli}" --repo "${repo}" uninstall >/dev/null
 }
 
 test_run_app_bg_packages_when_jar_missing() {
@@ -3160,6 +3304,7 @@ main() {
   test_docker_ps_required_wait_seconds
   test_karate_commands
   test_run_app_bg_reports_early_process_exit
+  test_run_app_tail_shows_application_log
   test_run_app_bg_packages_when_jar_missing
   test_run_app_bg_prefers_executable_jar_candidate
   test_run_app_bg_uses_tool_versions_jdk_before_global_fallback
