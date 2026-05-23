@@ -2830,6 +2830,8 @@ EOF
 
   [[ "${output}" == *"JaCoCo report contains no classes or execution data"* ]] \
     || fail "expected coverage-changes to fail with empty JaCoCo report message"
+  [[ "${output}" == *"makevn profile refresh"* ]] \
+    || fail "expected coverage-changes empty report message to recommend profile refresh"
   [[ "${output}" != *"Coverage: 0.00 %"* ]] \
     || fail "expected coverage-changes not to report an empty JaCoCo report as 0 percent coverage"
 }
@@ -3101,6 +3103,8 @@ EOF
   [[ ! -f "${repo}/.mvnw.log" ]] || fail "expected coverage not to invoke Maven without a detectable JaCoCo strategy"
   [[ "${output}" == *"No JaCoCo activation or jacoco-maven-plugin declaration detected"* ]] \
     || fail "expected coverage to fail early with a clear JaCoCo strategy message"
+  [[ "${output}" == *"makevn profile refresh"* ]] \
+    || fail "expected missing JaCoCo strategy message to recommend profile refresh"
 }
 
 test_verify_rejects_skip_flags() {

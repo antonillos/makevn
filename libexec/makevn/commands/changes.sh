@@ -48,7 +48,7 @@ makevn_require_jacoco_csv_classes() {
   local csv_path="$1"
 
   if ! makevn_jacoco_csv_has_classes "${csv_path}"; then
-    makevn_die "JaCoCo report contains no classes or execution data: ${csv_path}. Run a coverage-enabled verify flow before coverage analysis."
+    makevn_die "JaCoCo report contains no classes or execution data: ${csv_path}. Run 'makevn profile refresh' after changing coverage configuration, then run a coverage-enabled verify flow such as 'makevn verify-ut-coverage' or 'makevn verify-it-coverage' before coverage analysis."
   fi
 }
 
@@ -123,7 +123,7 @@ cmd_coverage() {
       if makevn_repo_declares_jacoco_plugin "${maven_base_path}"; then
         jacoco_plugin_declared=true
       fi
-      [[ "${jacoco_plugin_declared}" == true ]] || makevn_die "No JaCoCo activation or jacoco-maven-plugin declaration detected under ${maven_base_path}. Configure coverage in the repository before running 'makevn coverage'."
+      [[ "${jacoco_plugin_declared}" == true ]] || makevn_die "No JaCoCo activation or jacoco-maven-plugin declaration detected under ${maven_base_path}. Configure coverage in the repository, run 'makevn profile refresh', then run a coverage-enabled verify flow before 'makevn coverage'."
       makevn_print_detail_line "Coverage report not found; attempting jacoco:report from existing test data."
       maven_executable="$(makevn_maven_executable "${repo_root}" "${maven_base_path}")"
       cli_flags_value="$(makevn_maven_cli_flags_for_command "${repo_root}" verify)"
