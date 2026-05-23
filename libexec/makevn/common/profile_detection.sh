@@ -453,7 +453,7 @@ makevn_detect_coverage_activation_from_invocation() {
         if [[ "${token}" == "-Djacoco.skip=true" ]]; then
           continue
         fi
-        if [[ "${token}" == -Djacoco.skip=false || "${token}" == -Dcoverage.* || "${token}" == -Djacoco-agent.* ]]; then
+        if [[ "${token}" == -Djacoco.skip=false || "${token}" == -Dcoverage.* || "${token}" == -Djacoco-agent.* || "${token}" == -Damiga.jacoco || "${token}" == -Damiga.jacoco=* ]]; then
           prop_flags="$(makevn_append_word "${prop_flags}" "${token}")"
           has_coverage_signal=true
         fi

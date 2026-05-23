@@ -37,6 +37,21 @@ makevn_effective_coverage_changes_threshold() {
   printf '%s\n' "90"
 }
 
+makevn_jacoco_csv_has_classes() {
+  local csv_path="$1"
+
+  [[ -f "${csv_path}" ]] || return 1
+  awk 'NR > 1 && $0 !~ /^[[:space:]]*$/ { found=1; exit } END { exit found ? 0 : 1 }' "${csv_path}"
+}
+
+makevn_require_jacoco_csv_classes() {
+  local csv_path="$1"
+
+  if ! makevn_jacoco_csv_has_classes "${csv_path}"; then
+    makevn_die "JaCoCo report contains no classes or execution data: ${csv_path}. Run a coverage-enabled verify flow before coverage analysis."
+  fi
+}
+
 makevn_write_coverage_frontend_metadata() {
   local repo_root="$1"
   local maven_base_path="$2"
@@ -151,6 +166,7 @@ cmd_coverage() {
     csv_path="${combined_csv}"
   fi
   [[ -f "${csv_path}" ]] || makevn_die "JaCoCo CSV report not found"
+  makevn_require_jacoco_csv_classes "${csv_path}"
 
   set +e
   coverage_output="$(NO_COLOR=1 bash "${calculate_script}" "${csv_path}" "${threshold}" 2>&1)"
@@ -352,8 +368,10 @@ cmd_coverage_changes() {
   local coverage_output_file=""
   local line=""
   local cli_flags_value=""
+  local prop_flags_value=""
   local rc=0
   local -a cli_flags=()
+  local -a prop_flags=()
   local -a report_args=()
 
   shift
@@ -414,20 +432,32 @@ cmd_coverage_changes() {
     makevn_print_detail_line "Coverage report not found; attempting jacoco:report-aggregate for ${jacoco_module}."
     maven_executable="$(makevn_maven_executable "${repo_root}" "${maven_base_path}")"
     cli_flags_value="$(makevn_maven_cli_flags_for_command "${repo_root}" verify)"
+    cli_flags_value="$(makevn_append_coverage_cli_flags "${repo_root}" "${cli_flags_value}")"
     cli_flags_value="$(makevn_append_word "${cli_flags_value}" "-nsu")"
     if [[ -n "${cli_flags_value}" ]]; then
       read -r -a cli_flags <<< "${cli_flags_value}"
+    fi
+    prop_flags_value="$(makevn_maven_prop_flags_for_command "${repo_root}" verify)"
+    prop_flags_value="$(makevn_append_coverage_prop_flags "${repo_root}" "${prop_flags_value}")"
+    if [[ -n "${prop_flags_value}" ]]; then
+      read -r -a prop_flags <<< "${prop_flags_value}"
     fi
     report_args=("${maven_executable}")
     if [[ ${#cli_flags[@]} -gt 0 ]]; then
       report_args+=("${cli_flags[@]}")
     fi
-    report_args+=(-f "${maven_base_path}/pom.xml" jacoco:report-aggregate -pl "${jacoco_module}" -Dmaven.build.cache.enabled=false)
+    report_args+=(-f "${maven_base_path}/pom.xml" jacoco:report-aggregate -pl "${jacoco_module}")
+    if [[ ${#prop_flags[@]} -gt 0 ]]; then
+      report_args+=("${prop_flags[@]}")
+    fi
+    report_args+=(-Dmaven.build.cache.enabled=false)
     MAKEVN_COMPACT_OUTPUT=1 makevn_run_logged_in_context "${repo_root}" code "${maven_base_path}" coverage-changes-report coverage-changes "coverage report" "${report_args[@]}"
     rc=$?
     [[ ${rc} -eq 0 ]] || return ${rc}
     [[ -f "${report_dir}/index.html" ]] || makevn_die "Could not generate JaCoCo report. Run 'makevn verify' first."
   fi
+
+  makevn_require_jacoco_csv_classes "${report_dir}/jacoco.csv"
 
   parent_spec="$(makevn_detect_parent_branch_spec "${repo_root}")"
 

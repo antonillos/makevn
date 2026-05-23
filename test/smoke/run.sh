@@ -2804,6 +2804,103 @@ EOF
     || fail "expected coverage-changes to fail the changed module gate"
 }
 
+test_coverage_changes_fails_empty_jacoco_report() {
+  local repo="${TMP_ROOT}/coverage-changes-empty-report"
+  local output
+
+  mkdir -p "${repo}/module-a/src/main/java/com/example"
+  mkdir -p "${repo}/jacoco-report-aggregate/target/site/jacoco-aggregate"
+  printf '<project/>\n' > "${repo}/pom.xml"
+  cat > "${repo}/module-a/src/main/java/com/example/Changed.java" <<'EOF'
+package com.example;
+
+class Changed {}
+EOF
+  printf '<html></html>\n' > "${repo}/jacoco-report-aggregate/target/site/jacoco-aggregate/index.html"
+  cat > "${repo}/jacoco-report-aggregate/target/site/jacoco-aggregate/jacoco.csv" <<'EOF'
+GROUP,PACKAGE,CLASS,INSTRUCTION_MISSED,INSTRUCTION_COVERED,BRANCH_MISSED,BRANCH_COVERED,LINE_MISSED,LINE_COVERED,COMPLEXITY_MISSED,COMPLEXITY_COVERED,METHOD_MISSED,METHOD_COVERED
+EOF
+
+  rtk git init "${repo}" >/dev/null
+  rtk git -C "${repo}" add .
+  rtk git -C "${repo}" -c user.name='Smoke Test' -c user.email='smoke@example.com' commit -m 'init' >/dev/null
+  printf '// local change\n' >> "${repo}/module-a/src/main/java/com/example/Changed.java"
+
+  output="$(${CLI} --repo "${repo}" coverage-changes 2>&1 || true)"
+
+  [[ "${output}" == *"JaCoCo report contains no classes or execution data"* ]] \
+    || fail "expected coverage-changes to fail with empty JaCoCo report message"
+  [[ "${output}" != *"Coverage: 0.00 %"* ]] \
+    || fail "expected coverage-changes not to report an empty JaCoCo report as 0 percent coverage"
+}
+
+test_coverage_changes_report_generation_uses_coverage_flags() {
+  local repo="${TMP_ROOT}/coverage-changes-report-flags"
+  local java_home
+  local output
+
+  mkdir -p "${repo}/.github/workflows"
+  mkdir -p "${repo}/module-a/src/main/java/com/example"
+  mkdir -p "${repo}/jacoco-report-aggregate/target"
+  printf '<project/>\n' > "${repo}/pom.xml"
+  cat > "${repo}/.github/workflows/test.yml" <<'EOF'
+jobs:
+  test:
+    steps:
+      - run: mvn -B clean verify -Djacoco.skip=false -Damiga.jacoco -DskipITs
+EOF
+  cat > "${repo}/module-a/src/main/java/com/example/Changed.java" <<'EOF'
+package com.example;
+
+class Changed {
+  int value() {
+    return 0;
+  }
+}
+EOF
+  java_home="$(detect_java_home)"
+  mkdir -p "${repo}/.makevn"
+  cat > "${repo}/.makevn/config" <<EOF
+MAKEVN_JAVA_HOME="${java_home}"
+MAKEVN_CODE_JAVA_HOME=""
+MAKEVN_KARATE_JAVA_HOME=""
+MAKEVN_CODE_TOOL_VERSIONS=""
+MAKEVN_KARATE_TOOL_VERSIONS=""
+MAKEVN_RUN_CMD=""
+EOF
+  cat > "${repo}/mvnw" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+printf 'ARGS=%s\n' "$*" >> .mvnw.log
+mkdir -p jacoco-report-aggregate/target/site/jacoco-aggregate/com.example
+printf '<html></html>\n' > jacoco-report-aggregate/target/site/jacoco-aggregate/index.html
+cat > jacoco-report-aggregate/target/site/jacoco-aggregate/com.example/Changed.java.html <<'HTML'
+<html><body>
+<span class="fc" id="L5">    return 1;</span>
+</body></html>
+HTML
+cat > jacoco-report-aggregate/target/site/jacoco-aggregate/jacoco.csv <<'CSV'
+GROUP,PACKAGE,CLASS,INSTRUCTION_MISSED,INSTRUCTION_COVERED,BRANCH_MISSED,BRANCH_COVERED,LINE_MISSED,LINE_COVERED,COMPLEXITY_MISSED,COMPLEXITY_COVERED,METHOD_MISSED,METHOD_COVERED
+makevn,com.example,Changed,0,10,0,0,0,1,0,1,0,1
+CSV
+EOF
+  chmod +x "${repo}/mvnw"
+
+  rtk git init "${repo}" >/dev/null
+  rtk git -C "${repo}" add .
+  rtk git -C "${repo}" -c user.name='Smoke Test' -c user.email='smoke@example.com' commit -m 'init' >/dev/null
+  perl -0pi -e 's/return 0;/return 1;/' "${repo}/module-a/src/main/java/com/example/Changed.java"
+
+  ${CLI} --repo "${repo}" doctor >/dev/null
+  output="$(${CLI} --repo "${repo}" coverage-changes --threshold 90)"
+
+  assert_matches "${repo}/.mvnw.log" '^ARGS=-B -nsu -f .*/pom\.xml jacoco:report-aggregate -pl jacoco-report-aggregate -Djacoco\.skip=false -Damiga\.jacoco -Dmaven\.build\.cache\.enabled=false$'
+  [[ "${output}" == *"Coverage report not found; attempting jacoco:report-aggregate"* ]] \
+    || fail "expected coverage-changes to generate the missing aggregate report"
+  [[ "${output}" == *"Quality gate conditions met"* ]] \
+    || fail "expected coverage-changes to pass after generating report with coverage flags"
+}
+
 test_coverage_changes_ignores_diff_context_lines() {
   local repo="${TMP_ROOT}/coverage-changes-context-lines"
   local output
@@ -3319,6 +3416,8 @@ main() {
   test_verify_changes_nested_maven_base_strips_git_prefix
   test_coverage_changes_command
   test_coverage_changes_fails_changed_module_gate
+  test_coverage_changes_fails_empty_jacoco_report
+  test_coverage_changes_report_generation_uses_coverage_flags
   test_coverage_changes_ignores_diff_context_lines
   test_coverage_accepts_decimal_above_threshold
   test_coverage_combines_module_reports
