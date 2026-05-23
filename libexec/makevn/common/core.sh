@@ -26,12 +26,15 @@ makevn_now_utc() {
 makevn_resolve_repo_root() {
   local candidate="${1:-$PWD}"
   local resolved=""
-  local current=""
   if [[ ! -d "${candidate}" ]]; then
     makevn_die "Repository path does not exist: ${candidate}"
   fi
   resolved="$(CDPATH= cd -- "${candidate}" && pwd)"
-  current="${resolved}"
+  makevn_find_git_root_from_resolved_path "${resolved}" || printf '%s\n' "${resolved}"
+}
+
+makevn_find_git_root_from_resolved_path() {
+  local current="$1"
   while [[ "${current}" != "/" ]]; do
     if [[ -d "${current}/.git" || -f "${current}/.git" ]]; then
       printf '%s\n' "${current}"
@@ -39,7 +42,24 @@ makevn_resolve_repo_root() {
     fi
     current="$(dirname "${current}")"
   done
-  printf '%s\n' "${resolved}"
+  return 1
+}
+
+makevn_require_repo_path_is_git_root() {
+  local candidate="$1"
+  local command="$2"
+  local resolved=""
+  local git_root=""
+
+  if [[ ! -d "${candidate}" ]]; then
+    makevn_die "Repository path does not exist: ${candidate}"
+  fi
+
+  resolved="$(CDPATH= cd -- "${candidate}" && pwd)"
+  git_root="$(makevn_find_git_root_from_resolved_path "${resolved}" || true)"
+  if [[ -n "${git_root}" && "${resolved}" != "${git_root}" ]]; then
+    makevn_die "makevn ${command} must be run from the Git repository root: ${git_root} (received: ${resolved})"
+  fi
 }
 
 makevn_state_dir() {

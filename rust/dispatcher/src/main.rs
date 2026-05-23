@@ -502,6 +502,7 @@ fn build_backend_invocations(
     global_tail_prefix: bool,
     global_compact_prefix: bool,
 ) -> Result<Vec<BackendInvocation>, String> {
+    require_repo_path_is_git_root_for_strict_commands(repo_override.as_ref(), &command_segments)?;
     let repo_root = resolve_repo_root(repo_override)?;
     let (command_segments, global_options) = split_trailing_global_options(command_segments);
     let global_tail = global_tail_prefix
@@ -2779,6 +2780,16 @@ fn set_termios(fd: i32, termios: &libc::termios) -> io::Result<()> {
 }
 
 fn resolve_repo_root(repo_override: Option<OsString>) -> Result<PathBuf, String> {
+    let resolved = canonical_repo_candidate(repo_override.as_ref())?;
+
+    if let Some(git_root) = find_git_root(&resolved) {
+        return Ok(git_root);
+    }
+
+    Ok(resolved)
+}
+
+fn canonical_repo_candidate(repo_override: Option<&OsString>) -> Result<PathBuf, String> {
     let candidate = match repo_override {
         Some(path) => PathBuf::from(path),
         None => env::current_dir()
@@ -2792,21 +2803,49 @@ fn resolve_repo_root(repo_override: Option<OsString>) -> Result<PathBuf, String>
         ));
     }
 
-    let resolved = candidate.canonicalize().map_err(|error| {
+    candidate.canonicalize().map_err(|error| {
         format!(
             "failed to resolve repository path {}: {error}",
             candidate.display()
         )
-    })?;
+    })
+}
 
+fn find_git_root(resolved: &Path) -> Option<PathBuf> {
     for current in resolved.ancestors() {
         let git_dir = current.join(".git");
         if git_dir.is_dir() || git_dir.is_file() {
-            return Ok(current.to_path_buf());
+            return Some(current.to_path_buf());
         }
     }
 
-    Ok(resolved)
+    None
+}
+
+fn require_repo_path_is_git_root_for_strict_commands(
+    repo_override: Option<&OsString>,
+    command_segments: &[(OsString, Vec<OsString>)],
+) -> Result<(), String> {
+    let Some(command) = command_segments
+        .iter()
+        .map(|(command, _)| command.to_string_lossy())
+        .find(|command| matches!(command.as_ref(), "doctor" | "init"))
+    else {
+        return Ok(());
+    };
+
+    let resolved = canonical_repo_candidate(repo_override)?;
+    if let Some(git_root) = find_git_root(&resolved) {
+        if resolved != git_root {
+            return Err(format!(
+                "makevn {command} must be run from the Git repository root: {} (received: {})",
+                git_root.display(),
+                resolved.display()
+            ));
+        }
+    }
+
+    Ok(())
 }
 
 fn install_root(current_exe: &Path) -> Result<PathBuf, String> {

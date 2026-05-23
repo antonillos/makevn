@@ -253,7 +253,14 @@ done
 COMMAND="${1:-help}"
 [[ $# -gt 0 ]] && shift
 
-REPO_ROOT="$(makevn_resolve_repo_root "${REPO_OVERRIDE:-$PWD}")"
+REPO_CANDIDATE="${REPO_OVERRIDE:-$PWD}"
+case "${COMMAND}" in
+  doctor|init)
+    makevn_require_repo_path_is_git_root "${REPO_CANDIDATE}" "${COMMAND}"
+    ;;
+esac
+
+REPO_ROOT="$(makevn_resolve_repo_root "${REPO_CANDIDATE}")"
 if makevn_cli_dispatch_sequence_if_needed "${REPO_ROOT}" "${COMMAND}" "$@"; then
   exit 0
 fi
