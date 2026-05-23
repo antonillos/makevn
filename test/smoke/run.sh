@@ -2781,14 +2781,14 @@ EOF
   rtk git -C "${repo}" -c user.name='Smoke Test' -c user.email='smoke@example.com' commit -m 'init' >/dev/null
   printf '// local change\n' >> "${code_repo}/boot/src/main/java/com/example/Changed.java"
 
-  ${CLI} --repo "${code_repo}" init >/dev/null
+  ${CLI} --repo "${repo}" init >/dev/null
   cat > "${code_repo}/mvnw" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
 printf 'ARGS=%s\n' "$*" >> .mvnw.log
 EOF
   chmod +x "${code_repo}/mvnw"
-  cat > "${code_repo}/.makevn/config" <<EOF
+  cat > "${repo}/.makevn/config" <<EOF
 MAKEVN_JAVA_HOME="${java_home}"
 MAKEVN_CODE_JAVA_HOME=""
 MAKEVN_KARATE_JAVA_HOME=""
@@ -2799,9 +2799,9 @@ EOF
 
   ${CLI} --repo "${code_repo}" verify-changes >/dev/null
 
-  assert_matches "${code_repo}/.mvnw.log" '^ARGS=-nsu -f .*/code/pom\.xml -pl boot,jacoco-report-aggregate -am verify -Djacoco\.skip=false -DskipTests=false -Dmaven\.test\.failure\.ignore=false -Dmaven\.build\.cache\.enabled=false$'
+  assert_matches "${repo}/.mvnw.log" '^ARGS=-nsu -f .*/code/pom\.xml -pl boot,jacoco-report-aggregate -am verify -Djacoco\.skip=false -DskipTests=false -Dmaven\.test\.failure\.ignore=false -Dmaven\.build\.cache\.enabled=false$'
 
-  ${CLI} --repo "${code_repo}" uninstall >/dev/null
+  ${CLI} --repo "${repo}" uninstall >/dev/null
 }
 
 test_coverage_changes_command() {
@@ -3089,7 +3089,18 @@ test_coverage_generates_module_reports_when_missing() {
   local output
 
   mkdir -p "${repo}"
-  printf '<project/>\n' > "${repo}/pom.xml"
+  cat > "${repo}/pom.xml" <<'EOF'
+<project>
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.jacoco</groupId>
+        <artifactId>jacoco-maven-plugin</artifactId>
+      </plugin>
+    </plugins>
+  </build>
+</project>
+EOF
   java_home="$(detect_java_home)"
   mkdir -p "${repo}/.makevn"
   cat > "${repo}/.makevn/config" <<EOF
