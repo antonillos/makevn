@@ -166,6 +166,7 @@ makevn verify-it
 makevn verify-it-coverage
 makevn verify
 makevn verify-changes
+makevn coverage
 makevn coverage-changes
 makevn pr-verify
 makevn format --apply
@@ -217,10 +218,45 @@ Changed-code verification flow for agents:
 5. Treat a coverage gate failure as the result to report, not as a reason to
    invent raw Maven commands.
 
+Exact coverage commands for agents:
+
+```bash
+# Changed-code coverage when verify-changes generated coverage data
+makevn verify-changes
+makevn coverage-changes
+
+# Unit-test coverage gate without boot containers
+makevn clean verify-ut-coverage coverage-changes
+
+# Integration-test coverage gate with boot containers
+makevn docker-up docker-ps-required --wait-seconds 30 clean verify-it-coverage coverage-changes
+
+# Latest aggregate coverage gate when the JaCoCo report already exists
+makevn coverage
+```
+
+Do not run `makevn clean verify coverage-changes` when the repository requires
+explicit coverage activation. If `coverage` or `coverage-changes` reports
+`JaCoCo report contains no classes or execution data`, configure the repository
+coverage flags in `.makevn/config` and rerun a coverage-producing command:
+
+```bash
+MAKEVN_COVERAGE_PROP_FLAGS="-Djacoco.skip=false -Damiga.jacoco"
+makevn profile refresh
+makevn docker-up docker-ps-required --wait-seconds 30 clean verify-it-coverage coverage-changes
+```
+
+Use the `verify-ut-coverage` variant instead of `verify-it-coverage` when the
+repository's coverage gate is unit-test based.
+
 When using MCP, call the equivalent tools: `makevn_doctor`, `makevn_init`,
-`makevn_verify_changes`, and `makevn_coverage_changes`. Do not add manual Maven
-module flags such as `-pl` or `-am`; `makevn` owns module selection, reactor
-dependencies, Maven base path detection, and coverage report discovery.
+`makevn_profile_refresh`, `makevn_verify_changes`, `makevn_verify_ut_coverage`,
+`makevn_verify_it_coverage`, `makevn_coverage`, and
+`makevn_coverage_changes`. Use `makevn_docker_up` and
+`makevn_docker_ps_required` with `wait-seconds: 30` for the boot-container
+variant. Do not add manual Maven module flags such as `-pl` or `-am`; `makevn`
+owns module selection, reactor dependencies, Maven base path detection, and
+coverage report discovery.
 
 ## Running Specific Tests
 

@@ -33,6 +33,142 @@ runtime, not by a target repository's legacy `scripts/make/*` folder. Legacy
 Makefile scripts can be useful examples when improving parity, but they must not be
 part of the agent execution contract.
 
+## Exact Commands For Agents
+
+Agents must use these command sequences exactly unless the human asks for a
+different scope. Do not replace them with raw `mvn`, repository-local scripts,
+or guessed root `make` targets.
+
+Initial inspection:
+
+```bash
+makevn doctor
+```
+
+Initialize only when `doctor` reports missing, stale, or uninitialized makevn
+state:
+
+```bash
+makevn init
+makevn doctor
+```
+
+Changed-code verification without a full coverage gate:
+
+```bash
+makevn verify-changes
+```
+
+Changed-code coverage after a coverage-producing run:
+
+```bash
+makevn verify-changes
+makevn coverage-changes
+```
+
+Unit-test coverage gate for repositories that do not need boot containers:
+
+```bash
+makevn clean verify-ut-coverage coverage-changes
+```
+
+Integration-test coverage gate for repositories that need boot containers:
+
+```bash
+makevn docker-up docker-ps-required --wait-seconds 30 clean verify-it-coverage coverage-changes
+```
+
+Latest aggregate coverage gate when a JaCoCo report already exists:
+
+```bash
+makevn coverage
+```
+
+Full confidence pass when coverage is not requested:
+
+```bash
+makevn clean verify
+```
+
+If `coverage` or `coverage-changes` fails with `JaCoCo report contains no
+classes or execution data`, the repository did not produce coverage data. Do not
+retry with raw Maven. First configure coverage activation in `.makevn/config`
+when the repository workflow requires extra JaCoCo flags, then rerun the matching
+coverage-producing command:
+
+```bash
+MAKEVN_COVERAGE_PROP_FLAGS="-Djacoco.skip=false -Damiga.jacoco"
+```
+
+After adding or changing coverage activation, refresh the profile and rerun the
+gate:
+
+```bash
+makevn profile refresh
+makevn clean verify-ut-coverage coverage-changes
+```
+
+Use the integration-test variant instead when the repository's coverage is based
+on ITs or boot services:
+
+```bash
+makevn profile refresh
+makevn docker-up docker-ps-required --wait-seconds 30 clean verify-it-coverage coverage-changes
+```
+
+MCP equivalents for OpenCode agents:
+
+| CLI command | MCP tool |
+| --- | --- |
+| `makevn doctor` | `makevn_doctor` |
+| `makevn init` | `makevn_init` |
+| `makevn uninstall` | `makevn_uninstall` |
+| `makevn profile refresh` | `makevn_profile_refresh` |
+| `makevn make install` | `makevn_make_install` |
+| `makevn make uninstall` | `makevn_make_uninstall` |
+| `makevn validate` | `makevn_validate` |
+| `makevn compile` | `makevn_compile` |
+| `makevn test-compile` | `makevn_test_compile` |
+| `makevn compile-tests` | `makevn_compile_tests` |
+| `makevn package` | `makevn_package` |
+| `makevn build` | `makevn_package` |
+| `makevn clean` | `makevn_clean` |
+| `makevn test` | `makevn_test` |
+| `makevn verify-ut` | `makevn_verify_ut` |
+| `makevn verify-ut-coverage` | `makevn_verify_ut_coverage` |
+| `makevn verify-it` | `makevn_verify_it` |
+| `makevn verify-it-coverage` | `makevn_verify_it_coverage` |
+| `makevn verify` | `makevn_verify` |
+| `makevn verify-changes` | `makevn_verify_changes` |
+| `makevn pr-verify` | `makevn_pr_verify` |
+| `makevn coverage` | `makevn_coverage` |
+| `makevn coverage-changes` | `makevn_coverage_changes` |
+| `makevn coverage --threshold PCT` | `makevn_coverage` with `threshold: PCT` |
+| `makevn coverage-changes --threshold PCT --overall-threshold PCT` | `makevn_coverage_changes` with `threshold` and `overall-threshold` |
+| `makevn format` | `makevn_format` |
+| `makevn format --apply` | `makevn_format` with `apply: true` |
+| `makevn checkstyle` | `makevn_checkstyle` |
+| `makevn checkstyle --module MODULE --verbose` | `makevn_checkstyle` with `module` and `verbose: true` |
+| `makevn docker-up` | `makevn_docker_up` |
+| `makevn docker-down` | `makevn_docker_down` |
+| `makevn docker-ps` | `makevn_docker_ps` |
+| `makevn docker-stats` | `makevn_docker_stats` |
+| `makevn docker-ps-required --wait-seconds 30` | `makevn_docker_ps_required` with `wait-seconds: 30` |
+| `makevn docker-ps-required --compose karate` | `makevn_docker_ps_required` with `compose: karate` |
+| `makevn karate-docker-up` | `makevn_karate_docker_up` |
+| `makevn karate-docker-down` | `makevn_karate_docker_down` |
+| `makevn karate-test` | `makevn_karate_test` |
+| `makevn karate-test --tag TAG` | `makevn_karate_test` with `tag: TAG` |
+| `makevn karate-all` | `makevn_karate_all` |
+| `makevn karate-all --tag TAG` | `makevn_karate_all` with `tag: TAG` |
+| `makevn run-app` | `makevn_run_app` |
+| `makevn run-app-bg` | `makevn_run_app_bg` |
+| `makevn stop-app` | `makevn_stop_app` |
+| `makevn run` | `makevn_run` |
+| `makevn exec -- COMMAND` | `makevn_exec` with `command: COMMAND` |
+| `makevn jdk current` | `makevn_jdk_current` |
+| `makevn jdk list` | `makevn_jdk_list` |
+
 Karate workflows are optional. Agents should first use `makevn doctor` to confirm
 that `Karate .tool-versions` and `Docker e2e compose file` are detected. When they
 are present, use public commands such as:
@@ -138,13 +274,9 @@ part of the `makevn verify-changes` and `makevn coverage-changes` contract.
 
 Important MCP tool mappings:
 
-- `makevn doctor` -> `makevn_doctor`
-- `makevn init` -> `makevn_init`
-- `makevn profile refresh` -> `makevn_profile_refresh`
-- `makevn verify-changes` -> `makevn_verify_changes`
-- `makevn coverage-changes` -> `makevn_coverage_changes`
-- `makevn docker-up` -> `makevn_docker_up`
-- `makevn docker-ps-required` -> `makevn_docker_ps_required`
+- Use the exact MCP mapping table in `Exact Commands For Agents`.
+- Do not infer tool names from CLI names when a tool schema is visible; use the
+  explicit `makevn_*` tool name and its typed parameters.
 
 If a documented MCP tool is missing from the visible schema, the client is likely
 using a stale MCP session or a different server command. Restart or reload the
