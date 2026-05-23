@@ -2792,12 +2792,21 @@ fn resolve_repo_root(repo_override: Option<OsString>) -> Result<PathBuf, String>
         ));
     }
 
-    candidate.canonicalize().map_err(|error| {
+    let resolved = candidate.canonicalize().map_err(|error| {
         format!(
             "failed to resolve repository path {}: {error}",
             candidate.display()
         )
-    })
+    })?;
+
+    for current in resolved.ancestors() {
+        let git_dir = current.join(".git");
+        if git_dir.is_dir() || git_dir.is_file() {
+            return Ok(current.to_path_buf());
+        }
+    }
+
+    Ok(resolved)
 }
 
 fn install_root(current_exe: &Path) -> Result<PathBuf, String> {

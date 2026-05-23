@@ -25,10 +25,21 @@ makevn_now_utc() {
 
 makevn_resolve_repo_root() {
   local candidate="${1:-$PWD}"
+  local resolved=""
+  local current=""
   if [[ ! -d "${candidate}" ]]; then
     makevn_die "Repository path does not exist: ${candidate}"
   fi
-  (CDPATH= cd -- "${candidate}" && pwd)
+  resolved="$(CDPATH= cd -- "${candidate}" && pwd)"
+  current="${resolved}"
+  while [[ "${current}" != "/" ]]; do
+    if [[ -d "${current}/.git" || -f "${current}/.git" ]]; then
+      printf '%s\n' "${current}"
+      return 0
+    fi
+    current="$(dirname "${current}")"
+  done
+  printf '%s\n' "${resolved}"
 }
 
 makevn_state_dir() {

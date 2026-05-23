@@ -616,6 +616,28 @@ test_standalone_mode() {
   assert_not_exists "${repo}/.makevn"
 }
 
+test_commands_resolve_git_root_from_subdirectory() {
+  local repo="${TMP_ROOT}/resolve-git-root"
+  local subdir="${repo}/module-a"
+  local repo_real=""
+  local output=""
+
+  mkdir -p "${subdir}"
+  printf '<project/>\n' > "${repo}/pom.xml"
+  rtk git init "${repo}" >/dev/null
+  repo_real="$(CDPATH= cd -- "${repo}" && pwd)"
+
+  output="$(${CLI} --repo "${subdir}" doctor)"
+  [[ "${output}" == *"Repo root: ${repo_real}"* ]] || fail "doctor should report the Git repo root when invoked from a subdirectory"
+
+  ${CLI} --repo "${subdir}" init >/dev/null
+  assert_dir_exists "${repo}/.makevn"
+  assert_not_exists "${subdir}/.makevn"
+
+  ${CLI} --repo "${subdir}" uninstall >/dev/null
+  assert_not_exists "${repo}/.makevn"
+}
+
 test_init_force_preserves_config() {
   local repo="${TMP_ROOT}/init-force-preserves-config"
 
@@ -3385,6 +3407,7 @@ main() {
   test_exec_uses_compatible_newer_java_home
   test_run_app_bg_disabled_without_executable_app
   test_standalone_mode
+  test_commands_resolve_git_root_from_subdirectory
   test_init_force_preserves_config
   test_format_requires_configured_formatter
   test_checkstyle_requires_configured_plugin
