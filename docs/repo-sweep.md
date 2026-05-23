@@ -44,6 +44,17 @@ The script prints these paths at start and end:
 - `results.tsv`: machine-readable command matrix
 - `tools.json`: MCP tool listing captured for the run
 
+It also prints a cleanup command for the run:
+
+```bash
+test/repo-sweep/run.sh --cleanup /tmp/makevn-repo-sweep.xxxxxx
+```
+
+The cleanup command accepts either the artifacts directory or its `report`
+subdirectory. It removes the temporary clones, report, temporary install prefix,
+and the cache directory recorded by that run when the paths contain sweep
+markers.
+
 The summary includes one verdict:
 
 - `clean`: no actionable makevn issue detected by the selected profile
@@ -76,4 +87,10 @@ Enable mutation only when explicitly needed:
 
 ```bash
 MAKEVN_REPO_SWEEP_MUTATION=1 test/repo-sweep/run.sh --profile full /path/to/repositories
+```
+
+Remove an old run when it is no longer needed:
+
+```bash
+test/repo-sweep/run.sh --cleanup /tmp/makevn-repo-sweep.xxxxxx
 ```

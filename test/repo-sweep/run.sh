@@ -6,6 +6,7 @@ DEFAULT_TARGET_ROOT="${PWD}"
 DEFAULT_TMP_BASE="${TMPDIR:-/tmp}"
 SWEEP_PROFILE="${MAKEVN_REPO_SWEEP_PROFILE:-quick}"
 TARGET_ROOT="${MAKEVN_REPO_SWEEP_ROOT:-${DEFAULT_TARGET_ROOT}}"
+CLEANUP_TARGET=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --profile)
@@ -13,9 +14,15 @@ while [[ $# -gt 0 ]]; do
       SWEEP_PROFILE="$2"
       shift 2
       ;;
+    --cleanup)
+      [[ $# -ge 2 ]] || { printf 'Missing value for --cleanup\n' >&2; exit 2; }
+      CLEANUP_TARGET="$2"
+      shift 2
+      ;;
     --help|-h)
       cat <<'EOF'
 Usage: test/repo-sweep/run.sh [--profile quick|full|destructive] [REPO_OR_ROOT]
+       test/repo-sweep/run.sh --cleanup ARTIFACTS_OR_REPORT_DIR
 
 Profiles:
   quick        MCP contract, init/adoption, JDK, make integration, classifiers
@@ -28,6 +35,10 @@ Environment:
   MAKEVN_REPO_SWEEP_INSTALL_PREFIX   Reusable makevn install prefix
   MAKEVN_REPO_SWEEP_MUTATION=1       Enable PIT mutation command
   MAKEVN_REPO_SWEEP_FAIL_ON_PRODUCT_BUG=0  Always exit 0 after report
+
+Cleanup:
+  --cleanup PATH  Remove a prior sweep artifacts directory or its report directory,
+                  plus the cache directory recorded by that run when safe.
 EOF
       exit 0
       ;;
@@ -42,11 +53,6 @@ case "${SWEEP_PROFILE}" in
   *) printf 'Unknown profile: %s\n' "${SWEEP_PROFILE}" >&2; exit 2 ;;
 esac
 TMP_BASE="${MAKEVN_REPO_SWEEP_TMP_BASE:-${DEFAULT_TMP_BASE}}"
-TMP_ROOT="$(mktemp -d "${TMP_BASE%/}/makevn-repo-sweep.XXXXXX")"
-REPORT_DIR="${TMP_ROOT}/report"
-RESULTS_TSV="${REPORT_DIR}/results.tsv"
-SUMMARY_MD="${REPORT_DIR}/summary.md"
-TOOLS_JSON="${REPORT_DIR}/tools.json"
 COMMAND_TIMEOUT_SECONDS="${MAKEVN_REPO_SWEEP_TIMEOUT_SECONDS:-45}"
 CACHE_DIR="${MAKEVN_REPO_SWEEP_CACHE_DIR:-${TMP_BASE%/}/makevn-repo-sweep-cache}"
 MUTATION_ENABLED="${MAKEVN_REPO_SWEEP_MUTATION:-0}"
@@ -54,11 +60,91 @@ EXIT_ON_PRODUCT_BUG="${MAKEVN_REPO_SWEEP_FAIL_ON_PRODUCT_BUG:-1}"
 
 MAKEVN_BIN="${MAKEVN_BIN:-${ROOT_DIR}/target/release/makevn}"
 MCP_BIN="${MCP_BIN:-${ROOT_DIR}/target/release/makevn-mcp}"
+
+log() {
+  printf '[repo-sweep] %s\n' "$*"
+}
+
+resolve_cleanup_root() {
+  local target="$1"
+  local resolved=""
+
+  [[ -d "${target}" ]] || { printf 'Cleanup path does not exist: %s\n' "${target}" >&2; return 2; }
+  resolved="$(cd "${target}" && pwd -P)"
+  if [[ "$(basename "${resolved}")" == "report" ]]; then
+    resolved="$(cd "${resolved}/.." && pwd -P)"
+  fi
+  printf '%s\n' "${resolved}"
+}
+
+remove_sweep_dir() {
+  local target="$1"
+  local kind="$2"
+  local marker=""
+
+  case "${kind}" in
+    root)
+      marker="${target}/.makevn-repo-sweep-root"
+      if [[ ! -f "${marker}" ]]; then
+        [[ "$(basename "${target}")" == makevn-repo-sweep.* ]] || makevn_cleanup_refuse "${target}"
+        [[ -d "${target}/report" && -f "${target}/report/results.tsv" ]] || makevn_cleanup_refuse "${target}"
+      fi
+      ;;
+    cache)
+      marker="${target}/.makevn-repo-sweep-cache"
+      if [[ ! -f "${marker}" ]]; then
+        [[ "$(basename "${target}")" == "makevn-repo-sweep-cache" ]] || makevn_cleanup_refuse "${target}"
+      fi
+      ;;
+    *)
+      makevn_cleanup_refuse "${target}"
+      ;;
+  esac
+
+  rm -rf -- "${target}"
+  log "removed ${kind}: ${target}"
+}
+
+makevn_cleanup_refuse() {
+  printf 'Refusing to remove unrecognized sweep path: %s\n' "$1" >&2
+  exit 2
+}
+
+cleanup_sweep_work() {
+  local cleanup_root=""
+  local cache_file=""
+  local cache_path=""
+
+  cleanup_root="$(resolve_cleanup_root "$1")"
+  cache_file="${cleanup_root}/report/cache.path"
+  if [[ -f "${cache_file}" ]]; then
+    cache_path="$(<"${cache_file}")"
+  fi
+
+  remove_sweep_dir "${cleanup_root}" root
+  if [[ -n "${cache_path}" && -d "${cache_path}" ]]; then
+    remove_sweep_dir "${cache_path}" cache
+  fi
+}
+
+if [[ -n "${CLEANUP_TARGET}" ]]; then
+  cleanup_sweep_work "${CLEANUP_TARGET}"
+  exit 0
+fi
+
+TMP_ROOT="$(mktemp -d "${TMP_BASE%/}/makevn-repo-sweep.XXXXXX")"
+REPORT_DIR="${TMP_ROOT}/report"
+RESULTS_TSV="${REPORT_DIR}/results.tsv"
+SUMMARY_MD="${REPORT_DIR}/summary.md"
+TOOLS_JSON="${REPORT_DIR}/tools.json"
 INSTALL_PREFIX="${MAKEVN_REPO_SWEEP_INSTALL_PREFIX:-${TMP_ROOT}/install-prefix}"
 INSTALL_BIN_DIR="${INSTALL_PREFIX}/bin"
 
 mkdir -p "${REPORT_DIR}" "${CACHE_DIR}"
 printf 'repo\tworkspace\tcommand\tstatus\tclassification\tnote\n' > "${RESULTS_TSV}"
+printf 'makevn repo sweep artifacts\n' > "${TMP_ROOT}/.makevn-repo-sweep-root"
+printf 'makevn repo sweep cache\n' > "${CACHE_DIR}/.makevn-repo-sweep-cache"
+printf '%s\n' "$(cd "${CACHE_DIR}" && pwd -P)" > "${REPORT_DIR}/cache.path"
 
 resolve_bin() {
   local candidate="$1"
@@ -83,10 +169,6 @@ else
   MAKEVN_BIN="$(resolve_bin "${MAKEVN_BIN}" makevn)"
   MCP_BIN="$(resolve_bin "${MCP_BIN}" makevn-mcp)"
 fi
-
-log() {
-  printf '[repo-sweep] %s\n' "$*"
-}
 
 record() {
   local repo_name="$1"
@@ -823,6 +905,7 @@ log "artifacts: ${REPORT_DIR}"
 log "summary: ${SUMMARY_MD}"
 log "results: ${RESULTS_TSV}"
 log "tools: ${TOOLS_JSON}"
+log "cleanup: test/repo-sweep/run.sh --cleanup ${TMP_ROOT}"
 if [[ "${EXIT_ON_PRODUCT_BUG}" == "1" ]] && python3 - "${RESULTS_TSV}" <<'PY'
 import csv
 import sys
