@@ -337,6 +337,14 @@ fn split_command_segments(args: Vec<OsString>) -> Result<Vec<(OsString, Vec<OsSt
             continue;
         }
 
+        if current_command.as_ref() == Some(&OsString::from("make"))
+            && current_args.is_empty()
+            && (arg == OsString::from("install") || arg == OsString::from("uninstall"))
+        {
+            current_args.push(arg);
+            continue;
+        }
+
         if is_top_level_command(&arg)
             && !COMMAND_SEQUENCE_BREAKERS.contains(&arg.to_string_lossy().as_ref())
         {
@@ -452,7 +460,8 @@ fn validate_maven_passthrough_args(
 
         let arg_text = arg.to_string_lossy();
         if arg_text.starts_with('-') {
-            previous_option_takes_value = maven_option_takes_value(arg);
+            previous_option_takes_value =
+                maven_option_takes_value(arg) || command_local_option_takes_value(command, arg);
             continue;
         }
 
@@ -465,6 +474,16 @@ fn validate_maven_passthrough_args(
     }
 
     Ok(())
+}
+
+fn command_local_option_takes_value(command: &OsString, arg: &OsString) -> bool {
+    matches!(
+        (
+            command.to_string_lossy().as_ref(),
+            arg.to_string_lossy().as_ref()
+        ),
+        ("karate-test" | "karate-all", "--tag")
+    )
 }
 
 fn maven_option_takes_value(arg: &OsString) -> bool {
@@ -3154,6 +3173,10 @@ mod tests {
     use std::process;
     use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
+    fn current_repo_root() -> OsString {
+        super::resolve_repo_root(None).unwrap().into_os_string()
+    }
+
     #[test]
     fn derives_install_root_from_binary_location() {
         let root = install_root_with_override(Path::new("/tmp/makevn/bin/makevn"), None).unwrap();
@@ -3304,8 +3327,13 @@ mod tests {
 
     #[test]
     fn normalizes_repo_for_doctor_dispatch() {
-        let current_dir = env::current_dir().unwrap();
-        let action = parse_invocation(vec![OsString::from("doctor")]).unwrap();
+        let repo_root = current_repo_root();
+        let action = parse_invocation(vec![
+            OsString::from("--repo"),
+            repo_root.clone(),
+            OsString::from("doctor"),
+        ])
+        .unwrap();
 
         assert_eq!(
             action,
@@ -3313,7 +3341,7 @@ mod tests {
                 args: vec![
                     OsString::from("doctor"),
                     OsString::from("--repo"),
-                    current_dir.into_os_string(),
+                    repo_root,
                 ],
                 frontend_loader: false,
                 tail: false,
@@ -3360,7 +3388,7 @@ mod tests {
 
     #[test]
     fn parses_command_sequence_for_backend_dispatch() {
-        let current_dir = env::current_dir().unwrap();
+        let repo_root = current_repo_root();
         let action = parse_invocation(vec![
             OsString::from("clean"),
             OsString::from("verify-it"),
@@ -3375,7 +3403,7 @@ mod tests {
                     args: vec![
                         OsString::from("clean"),
                         OsString::from("--repo"),
-                        current_dir.clone().into_os_string(),
+                        repo_root.clone(),
                     ],
                     frontend_loader: true,
                     tail: true,
@@ -3385,7 +3413,7 @@ mod tests {
                     args: vec![
                         OsString::from("verify-it"),
                         OsString::from("--repo"),
-                        current_dir.into_os_string(),
+                        repo_root,
                     ],
                     frontend_loader: true,
                     tail: true,
@@ -3397,7 +3425,7 @@ mod tests {
 
     #[test]
     fn parses_global_tail_prefix_for_command_sequence() {
-        let current_dir = env::current_dir().unwrap();
+        let repo_root = current_repo_root();
         let action = parse_invocation(vec![
             OsString::from("--tail"),
             OsString::from("clean"),
@@ -3412,7 +3440,7 @@ mod tests {
                     args: vec![
                         OsString::from("clean"),
                         OsString::from("--repo"),
-                        current_dir.clone().into_os_string(),
+                        repo_root.clone(),
                     ],
                     frontend_loader: true,
                     tail: true,
@@ -3422,7 +3450,7 @@ mod tests {
                     args: vec![
                         OsString::from("verify-it"),
                         OsString::from("--repo"),
-                        current_dir.into_os_string(),
+                        repo_root,
                     ],
                     frontend_loader: true,
                     tail: true,
@@ -3434,7 +3462,7 @@ mod tests {
 
     #[test]
     fn parses_global_compact_prefix_for_command_sequence() {
-        let current_dir = env::current_dir().unwrap();
+        let repo_root = current_repo_root();
         let action = parse_invocation(vec![
             OsString::from("--compact"),
             OsString::from("clean"),
@@ -3449,7 +3477,7 @@ mod tests {
                     args: vec![
                         OsString::from("clean"),
                         OsString::from("--repo"),
-                        current_dir.clone().into_os_string(),
+                        repo_root.clone(),
                         OsString::from("--compact"),
                     ],
                     frontend_loader: true,
@@ -3460,7 +3488,7 @@ mod tests {
                     args: vec![
                         OsString::from("verify-it"),
                         OsString::from("--repo"),
-                        current_dir.into_os_string(),
+                        repo_root,
                         OsString::from("--compact"),
                     ],
                     frontend_loader: true,
@@ -3487,7 +3515,7 @@ mod tests {
 
     #[test]
     fn parses_command_sequence_with_options_per_command() {
-        let current_dir = env::current_dir().unwrap();
+        let repo_root = current_repo_root();
         let action = parse_invocation(vec![
             OsString::from("clean"),
             OsString::from("--tail"),
@@ -3503,7 +3531,7 @@ mod tests {
                     args: vec![
                         OsString::from("clean"),
                         OsString::from("--repo"),
-                        current_dir.clone().into_os_string(),
+                        repo_root.clone(),
                     ],
                     frontend_loader: true,
                     tail: true,
@@ -3513,7 +3541,7 @@ mod tests {
                     args: vec![
                         OsString::from("verify-it"),
                         OsString::from("--repo"),
-                        current_dir.into_os_string(),
+                        repo_root,
                     ],
                     frontend_loader: true,
                     tail: true,
@@ -3524,8 +3552,57 @@ mod tests {
     }
 
     #[test]
+    fn keeps_make_uninstall_as_make_subcommand() {
+        let repo_root = current_repo_root();
+        let action =
+            parse_invocation(vec![OsString::from("make"), OsString::from("uninstall")]).unwrap();
+
+        assert_eq!(
+            action,
+            Action::DispatchToBackend(vec![BackendInvocation {
+                args: vec![
+                    OsString::from("make"),
+                    OsString::from("--repo"),
+                    repo_root,
+                    OsString::from("uninstall"),
+                ],
+                frontend_loader: false,
+                tail: false,
+                compact: false,
+            }])
+        );
+    }
+
+    #[test]
+    fn keeps_karate_tag_value_with_karate_command() {
+        let repo_root = current_repo_root();
+        let action = parse_invocation(vec![
+            OsString::from("karate-test"),
+            OsString::from("--tag"),
+            OsString::from("@smoke"),
+        ])
+        .unwrap();
+
+        assert_eq!(
+            action,
+            Action::DispatchToBackend(vec![BackendInvocation {
+                args: vec![
+                    OsString::from("karate-test"),
+                    OsString::from("--repo"),
+                    repo_root,
+                    OsString::from("--tag"),
+                    OsString::from("@smoke"),
+                ],
+                frontend_loader: true,
+                tail: false,
+                compact: false,
+            }])
+        );
+    }
+
+    #[test]
     fn keeps_intermediate_tail_local_to_its_command() {
-        let current_dir = env::current_dir().unwrap();
+        let repo_root = current_repo_root();
         let action = parse_invocation(vec![
             OsString::from("clean"),
             OsString::from("--tail"),
@@ -3540,7 +3617,7 @@ mod tests {
                     args: vec![
                         OsString::from("clean"),
                         OsString::from("--repo"),
-                        current_dir.clone().into_os_string(),
+                        repo_root.clone(),
                     ],
                     frontend_loader: true,
                     tail: true,
@@ -3550,7 +3627,7 @@ mod tests {
                     args: vec![
                         OsString::from("verify-it"),
                         OsString::from("--repo"),
-                        current_dir.into_os_string(),
+                        repo_root,
                     ],
                     frontend_loader: true,
                     tail: false,
@@ -3628,7 +3705,7 @@ mod tests {
 
     #[test]
     fn parses_run_app_tail_as_frontend_loader_command() {
-        let current_dir = env::current_dir().unwrap();
+        let repo_root = current_repo_root();
         let action =
             parse_invocation(vec![OsString::from("run-app"), OsString::from("--tail")]).unwrap();
 
@@ -3638,7 +3715,7 @@ mod tests {
                 args: vec![
                     OsString::from("run-app"),
                     OsString::from("--repo"),
-                    current_dir.into_os_string(),
+                    repo_root,
                 ],
                 frontend_loader: true,
                 tail: true,
@@ -3716,7 +3793,7 @@ mod tests {
 
     #[test]
     fn parses_karate_all_as_frontend_loader_command() {
-        let current_dir = env::current_dir().unwrap();
+        let repo_root = current_repo_root();
         let action =
             parse_invocation(vec![OsString::from("karate-all"), OsString::from("--tail")]).unwrap();
 
@@ -3726,7 +3803,7 @@ mod tests {
                 args: vec![
                     OsString::from("karate-all"),
                     OsString::from("--repo"),
-                    current_dir.into_os_string(),
+                    repo_root,
                 ],
                 frontend_loader: true,
                 tail: true,
@@ -3737,7 +3814,7 @@ mod tests {
 
     #[test]
     fn parses_test_compile_command_for_backend_dispatch() {
-        let current_dir = env::current_dir().unwrap();
+        let repo_root = current_repo_root();
         let action = parse_invocation(vec![OsString::from("test-compile")]).unwrap();
 
         assert_eq!(
@@ -3746,7 +3823,7 @@ mod tests {
                 args: vec![
                     OsString::from("test-compile"),
                     OsString::from("--repo"),
-                    current_dir.into_os_string(),
+                    repo_root,
                 ],
                 frontend_loader: true,
                 tail: false,
@@ -3757,7 +3834,7 @@ mod tests {
 
     #[test]
     fn parses_format_apply_as_loader_command() {
-        let current_dir = env::current_dir().unwrap();
+        let repo_root = current_repo_root();
         let action = parse_invocation(vec![
             OsString::from("format"),
             OsString::from("--apply"),
@@ -3771,7 +3848,7 @@ mod tests {
                 args: vec![
                     OsString::from("format"),
                     OsString::from("--repo"),
-                    current_dir.into_os_string(),
+                    repo_root,
                     OsString::from("--apply"),
                 ],
                 frontend_loader: true,
@@ -3783,7 +3860,7 @@ mod tests {
 
     #[test]
     fn parses_checkstyle_module_verbose_as_loader_command() {
-        let current_dir = env::current_dir().unwrap();
+        let repo_root = current_repo_root();
         let action = parse_invocation(vec![
             OsString::from("checkstyle"),
             OsString::from("--module"),
@@ -3799,7 +3876,7 @@ mod tests {
                 args: vec![
                     OsString::from("checkstyle"),
                     OsString::from("--repo"),
-                    current_dir.into_os_string(),
+                    repo_root,
                     OsString::from("--module"),
                     OsString::from("domain"),
                     OsString::from("--verbose"),

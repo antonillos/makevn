@@ -292,6 +292,28 @@ command that proves the touched surface:
 
 Because agent frameworks differ, this repository ships the skill contents and examples rather than hardcoding a single agent-specific installation path.
 
+## Robustness Sweep
+
+Use `test/repo-sweep/run.sh` when validating makevn against local real-world
+repositories rather than synthetic smoke fixtures.
+
+```bash
+test/repo-sweep/run.sh /Users/antonio.saco/Projects/github
+test/repo-sweep/run.sh /Users/antonio.saco/Projects/github/Iced-Latte
+```
+
+The sweep follows the OpenCode/MCP contract directly: it starts `makevn-mcp`, calls
+tools through JSON-RPC, installs makevn into a temporary prefix, and clones each
+target repository before running mutating commands such as `init`, `make install`,
+`clean`, or `uninstall`. Repository failures are reported as product signal, not
+as instructions to modify the fixture repositories.
+
+Set `MAKEVN_REPO_SWEEP_TIMEOUT_SECONDS` to keep exploratory runs bounded:
+
+```bash
+MAKEVN_REPO_SWEEP_TIMEOUT_SECONDS=60 test/repo-sweep/run.sh /path/to/repos
+```
+
 ## Codex Workflow
 
 Inside Codex, the intended flow is the same terminal contract:

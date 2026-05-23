@@ -316,12 +316,11 @@ fn push_tool_flags(
 
         match option.name {
             "command" => {
-                let command = value
+                value
                     .as_str()
                     .filter(|s| !s.is_empty())
                     .ok_or_else(|| String::from("command must be a non-empty string"))?;
-                cmd_args.push("--".into());
-                cmd_args.extend(command.split_whitespace().map(str::to_owned));
+                continue;
             }
             "apply" | "dry-run" | "fast" | "force" | "verbose" => {
                 if value.as_bool().unwrap_or(false) {
@@ -343,6 +342,14 @@ fn push_tool_flags(
             _ => {}
         }
     }
+    if let Some(command) = args
+        .get("command")
+        .and_then(|value| value.as_str())
+        .filter(|s| !s.is_empty())
+    {
+        cmd_args.push("--".into());
+        cmd_args.extend(command.split_whitespace().map(str::to_owned));
+    }
     Ok(())
 }
 
@@ -351,5 +358,27 @@ fn format_number(number: f64) -> String {
         format!("{number:.0}")
     } else {
         format!("{number}")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{push_tool_flags, TOOL_SPECS};
+    use serde_json::{json, Map};
+
+    #[test]
+    fn exec_command_is_forwarded_after_tool_options() {
+        let spec = TOOL_SPECS.iter().find(|spec| spec.name == "exec").unwrap();
+        let mut args = Map::new();
+        args.insert("context".into(), json!("code"));
+        args.insert("command".into(), json!("mvn -v"));
+        let mut cmd_args = vec![String::from("exec")];
+
+        push_tool_flags(&mut cmd_args, spec, &args).unwrap();
+
+        assert_eq!(
+            cmd_args,
+            vec!["exec", "--context", "code", "--", "mvn", "-v"]
+        );
     }
 }
