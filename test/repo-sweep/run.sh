@@ -762,14 +762,23 @@ while IFS= read -r repo_path; do
 
   run_tool "${repo_name}" clone "${clone_path}" docker_ps '{}' "${fake_bin}" "${clone_doctor}" || true
   run_tool "${repo_name}" clone "${clone_path}" docker_stats '{}' "${fake_bin}" "${clone_doctor}" || true
-  if doctor_indicates "${clone_doctor}" docker_ps_required; then
-    run_tool "${repo_name}" clone "${clone_path}" docker_ps_required '{"wait-seconds": 1}' "${fake_bin}" "${clone_doctor}" || true
+  if [[ "${SWEEP_PROFILE}" == "destructive" ]]; then
+    if ! doctor_indicates "${clone_doctor}" docker_ps_required; then
+      record_skip "${repo_name}" clone docker_ps_required expected_unavailable "doctor did not detect boot compose"
+    fi
+  elif doctor_indicates "${clone_doctor}" docker_ps_required; then
+    record_skip "${repo_name}" clone docker_ps_required slow_path "profile ${SWEEP_PROFILE} skips required-service validation before docker-up"
   else
     record_skip "${repo_name}" clone docker_ps_required expected_unavailable "doctor did not detect boot compose"
   fi
-  if doctor_indicates "${clone_doctor}" karate_test; then
-    run_tool "${repo_name}" clone "${clone_path}" docker_ps_required '{"compose": "karate", "wait-seconds": 1}' "${fake_bin}" "${clone_doctor}" || true
-    run_tool "${repo_name}" clone "${clone_path}" karate_test '{"tag": "@smoke"}' "${fake_bin}" "${clone_doctor}" || true
+  if [[ "${SWEEP_PROFILE}" == "destructive" ]]; then
+    if ! doctor_indicates "${clone_doctor}" karate_test; then
+      record_skip "${repo_name}" clone docker_ps_required_karate expected_unavailable "doctor did not detect Karate compose"
+      record_skip "${repo_name}" clone karate_test expected_unavailable "doctor did not detect Karate project"
+    fi
+  elif doctor_indicates "${clone_doctor}" karate_test; then
+    record_skip "${repo_name}" clone docker_ps_required_karate slow_path "profile ${SWEEP_PROFILE} skips required-service validation before karate-docker-up"
+    record_skip "${repo_name}" clone karate_test slow_path "profile ${SWEEP_PROFILE} skips Karate tests before karate-docker-up"
   else
     record_skip "${repo_name}" clone docker_ps_required_karate expected_unavailable "doctor did not detect Karate compose"
     record_skip "${repo_name}" clone karate_test expected_unavailable "doctor did not detect Karate project"
@@ -777,6 +786,7 @@ while IFS= read -r repo_path; do
   if [[ "${SWEEP_PROFILE}" == "destructive" ]]; then
     if doctor_indicates "${clone_doctor}" docker_up; then
       run_tool "${repo_name}" clone "${clone_path}" docker_up '{}' "${fake_bin}" "${clone_doctor}" || true
+      run_tool "${repo_name}" clone "${clone_path}" docker_ps_required '{"wait-seconds": 1}' "${fake_bin}" "${clone_doctor}" || true
       run_tool "${repo_name}" clone "${clone_path}" docker_down '{}' "${fake_bin}" "${clone_doctor}" || true
     else
       record_skip "${repo_name}" clone docker_up expected_unavailable "doctor did not detect boot compose"
@@ -784,6 +794,7 @@ while IFS= read -r repo_path; do
     fi
     if doctor_indicates "${clone_doctor}" karate_docker_up; then
       run_tool "${repo_name}" clone "${clone_path}" karate_docker_up '{}' "${fake_bin}" "${clone_doctor}" || true
+      run_tool "${repo_name}" clone "${clone_path}" docker_ps_required '{"compose": "karate", "wait-seconds": 1}' "${fake_bin}" "${clone_doctor}" || true
       run_tool "${repo_name}" clone "${clone_path}" karate_docker_down '{}' "${fake_bin}" "${clone_doctor}" || true
       run_tool "${repo_name}" clone "${clone_path}" karate_all '{"tag": "@smoke"}' "${fake_bin}" "${clone_doctor}" || true
     else
