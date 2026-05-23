@@ -33,19 +33,31 @@ It provides:
 1. Always determine the repository root before running any `makevn` command. `makevn` must be executed from the repo root, never from a subdirectory or module. Locate the root by finding the `.git` directory.
 2. Run `makevn doctor` before recommending `init`. If `.makevn/` already exists in the repo root, the repo is already initialized — skip `init` unless the user explicitly asks to reinitialize.
 3. Never overwrite an existing `Makefile` or `GNUmakefile`.
-3. Prefer `makevn init` as the default adoption path.
-4. Use `makevn make install` only when the user explicitly wants `make` support.
-5. Let `makevn make install` choose whether to update one existing makefile or create a minimal root `Makefile`.
-6. Prefer `makevn uninstall` over manual cleanup.
-7. Do not edit makefiles manually when `makevn make install` or `makevn make uninstall` owns that behavior.
-8. Prefer `--json` when the command supports structured output and the agent needs reliable machine-readable data.
-9. Avoid `--tail` unless the human explicitly asked for an interactive local log view. Use `--compact` for agent-facing runs when invoking the CLI directly; MCP tools already use compact output.
-10. Treat `makevn` subcommands as the primary public interface. Do not translate them into bare `make` targets. For Docker commands, run `makevn docker-up`, `makevn docker-down`, `makevn docker-ps`, `makevn docker-stats`, or `makevn docker-ps-required`; do not run bare targets such as `make docker-up` or `make docker-ps-required`.
-11. Treat Karate workflows the same way: run `makevn karate-docker-up`, `makevn karate-docker-down`, `makevn karate-test`, or `makevn karate-all` only when `makevn doctor` detects Karate files. Do not assume every repository has Karate.
-12. Karate tests need the real app running. Use `makevn run-app-bg` before `makevn karate-test`, and always finish with `makevn stop-app`; `makevn karate-all` owns that lifecycle for the full flow.
-13. Do not assume every repository uses `LOCAL_CONTAINERS`. Let `makevn doctor`, `.makevn/config`, the repository profile, or the user's exported `LOCAL_CONTAINERS` decide that behavior.
-14. Do not hardcode company-specific application health URLs, path prefixes, package names, or repository paths. Let `makevn doctor` detect the health URL, or set `MAKEVN_APP_HEALTH_URL` in `.makevn/config` when the repository needs an explicit override.
-15. Do not invent formatter or Checkstyle goals. Use `makevn format` and `makevn checkstyle` only when the repo declares a supported plugin or `.makevn/config` sets `MAKEVN_FORMAT_CHECK_GOAL`, `MAKEVN_FORMAT_APPLY_GOAL`, or `MAKEVN_CHECKSTYLE_GOAL`.
+4. Prefer `makevn init` as the default adoption path.
+5. Use `makevn make install` only when the user explicitly wants `make` support.
+6. Let `makevn make install` choose whether to update one existing makefile or create a minimal root `Makefile`.
+7. Prefer `makevn uninstall` over manual cleanup.
+8. Do not edit makefiles manually when `makevn make install` or `makevn make uninstall` owns that behavior.
+9. Prefer `--json` when the command supports structured output and the agent needs reliable machine-readable data.
+10. Avoid `--tail` unless the human explicitly asked for an interactive local log view. Use `--compact` for agent-facing runs when invoking the CLI directly; MCP tools already use compact output.
+11. Treat `makevn` subcommands as the primary public interface. Do not translate them into bare `make` targets. For Docker commands, run `makevn docker-up`, `makevn docker-down`, `makevn docker-ps`, `makevn docker-stats`, or `makevn docker-ps-required`; do not run bare targets such as `make docker-up` or `make docker-ps-required`.
+12. Treat Karate workflows the same way: run `makevn karate-docker-up`, `makevn karate-docker-down`, `makevn karate-test`, or `makevn karate-all` only when `makevn doctor` detects Karate files. Do not assume every repository has Karate.
+13. Karate tests need the real app running. Use `makevn run-app-bg` before `makevn karate-test`, and always finish with `makevn stop-app`; `makevn karate-all` owns that lifecycle for the full flow.
+14. Do not assume every repository uses `LOCAL_CONTAINERS`. Let `makevn doctor`, `.makevn/config`, the repository profile, or the user's exported `LOCAL_CONTAINERS` decide that behavior.
+15. Do not hardcode company-specific application health URLs, path prefixes, package names, or repository paths. Let `makevn doctor` detect the health URL, or set `MAKEVN_APP_HEALTH_URL` in `.makevn/config` when the repository needs an explicit override.
+16. Do not invent formatter or Checkstyle goals. Use `makevn format` and `makevn checkstyle` only when the repo declares a supported plugin or `.makevn/config` sets `MAKEVN_FORMAT_CHECK_GOAL`, `MAKEVN_FORMAT_APPLY_GOAL`, or `MAKEVN_CHECKSTYLE_GOAL`.
+
+## Failure Triage For Agents
+
+Use this triage before deciding whether to edit repository code, change makevn, or report an environment issue:
+
+- Missing JDK, Maven, Docker, or local executable: report an environment issue. Do not bypass makevn with raw `JAVA_HOME=... mvn`; first use `makevn doctor`, `makevn jdk list`, or ask the human to install/configure the missing prerequisite.
+- Unsupported formatter, Checkstyle, PIT, coverage, Docker compose, or Karate capability: skip that command. Do not invent Maven goals, compose files, or repository scripts.
+- `makevn docker-ps-required`: use it after `makevn docker-up`, or when the human says the required services are already running. Do not treat missing containers as a makevn bug.
+- Karate tests: use `makevn karate-all` for the owned lifecycle, or use `makevn run-app-bg`, `makevn karate-test`, and `makevn stop-app` as a manual chain. Do not run `karate-test` against a stopped app.
+- Coverage gates: run `makevn coverage-changes` only after a coverage-producing verification run. If JaCoCo data is missing or empty, configure coverage activation and rerun the matching `verify-*-coverage` flow instead of switching to raw Maven.
+- Parser errors, unknown makevn commands, MCP option-ordering failures, or makevn usage errors for documented commands are makevn product bugs. Investigate makevn rather than editing the target repository.
+- Repository test/build failures after makevn reached Maven are repository failures. Report the failing command and log path; do not edit fixture repositories unless the human asks.
 
 ## When A Command Counts As OK
 
