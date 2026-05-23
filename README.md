@@ -150,27 +150,6 @@ makevn coverage-changes
 makevn pr-verify
 ```
 
-### Real-Repository Sweep
-
-For local robustness checks across existing Maven repositories, use the external
-repo sweep harness:
-
-```bash
-test/repo-sweep/run.sh /Users/antonio.saco/Projects/github
-test/repo-sweep/run.sh /Users/antonio.saco/Projects/github/Iced-Latte
-```
-
-The sweep installs `makevn` and `makevn-mcp` into a temporary prefix, calls the MCP
-server directly, clones each target repository into a temporary directory, and runs
-the mutable checks only against the clone. This keeps fixture repositories intact
-while still exercising the agent/MCP workflow end-to-end.
-
-Tune per-command runtime with:
-
-```bash
-MAKEVN_REPO_SWEEP_TIMEOUT_SECONDS=60 test/repo-sweep/run.sh /path/to/repos
-```
-
 | Command | What it does |
 | ------- | ------------ |
 | `verify-ut` | Runs unit-test-only verification |
