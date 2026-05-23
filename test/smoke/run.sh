@@ -1439,6 +1439,48 @@ EOF
   ${CLI} --repo "${repo}" uninstall >/dev/null
 }
 
+test_docker_service_extraction_ignores_non_services() {
+  local repo="${TMP_ROOT}/docker-service-extraction"
+  local output
+
+  mkdir -p "${repo}"
+  cat > "${repo}/docker-compose.yml" <<'EOF'
+name: example
+
+networks:
+  app-network:
+
+volumes:
+  postgres-data:
+
+services:
+  postgres:
+    image: postgres:16
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      - app-network
+  backend:
+    image: backend:local
+    profiles: [backend]
+  redis-cache:
+    image: redis:7
+
+configs:
+  app-config:
+    file: ./config.yml
+EOF
+
+  output="$(bash "${ROOT_DIR}/libexec/makevn/docker/extract_services.sh" "${repo}/docker-compose.yml")"
+
+  [[ " ${output} " == *" postgres "* ]] || fail "expected postgres service to be extracted"
+  [[ " ${output} " == *" redis-cache "* ]] || fail "expected redis-cache service to be extracted"
+  [[ " ${output} " != *" backend "* ]] || fail "expected profiled backend service to be skipped"
+  [[ " ${output} " != *" app-network "* ]] || fail "expected network to be ignored"
+  [[ " ${output} " != *" postgres-data "* ]] || fail "expected volume to be ignored"
+  [[ " ${output} " != *" app-config "* ]] || fail "expected config to be ignored"
+}
+
 test_docker_up_missing_compose_writes_log() {
   local repo="${TMP_ROOT}/docker-up-missing-compose"
   local install_prefix="${TMP_ROOT}/docker-up-missing-compose-install"
@@ -3453,6 +3495,7 @@ main() {
   test_compact_tty_omits_color_and_loader
   test_command_routing
   test_docker_commands
+  test_docker_service_extraction_ignores_non_services
   test_docker_up_missing_compose_writes_log
   test_docker_ps_required_wait_seconds
   test_karate_commands
