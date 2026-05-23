@@ -616,7 +616,7 @@ test_standalone_mode() {
   assert_not_exists "${repo}/.makevn"
 }
 
-test_doctor_init_require_git_root() {
+test_strict_commands_require_git_root() {
   local repo="${TMP_ROOT}/require-git-root"
   local subdir="${repo}/module-a"
   local doctor_output=""
@@ -640,6 +640,26 @@ test_doctor_init_require_git_root() {
   ${CLI} --repo "${repo}" doctor >/dev/null
   ${CLI} --repo "${repo}" init >/dev/null
   assert_dir_exists "${repo}/.makevn"
+  assert_not_exists "${subdir}/.makevn"
+
+  ${CLI} --repo "${repo}" uninstall >/dev/null
+  assert_not_exists "${repo}/.makevn"
+}
+
+test_profile_refresh_runs_from_git_root() {
+  local repo="${TMP_ROOT}/profile-refresh-from-subdir"
+  local subdir="${repo}/module-a"
+
+  mkdir -p "${subdir}"
+  printf '<project/>\n' > "${repo}/pom.xml"
+  rtk git init "${repo}" >/dev/null
+
+  ${CLI} --repo "${repo}" init >/dev/null
+  rm -f "${repo}/.makevn/profile.env"
+
+  ${CLI} --repo "${subdir}" profile refresh >/dev/null
+
+  assert_file_exists "${repo}/.makevn/profile.env"
   assert_not_exists "${subdir}/.makevn"
 
   ${CLI} --repo "${repo}" uninstall >/dev/null
@@ -3415,7 +3435,8 @@ main() {
   test_exec_uses_compatible_newer_java_home
   test_run_app_bg_disabled_without_executable_app
   test_standalone_mode
-  test_doctor_init_require_git_root
+  test_strict_commands_require_git_root
+  test_profile_refresh_runs_from_git_root
   test_init_force_preserves_config
   test_format_requires_configured_formatter
   test_checkstyle_requires_configured_plugin
