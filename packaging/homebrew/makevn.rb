@@ -6,39 +6,19 @@ class Makevn < Formula
   homepage "https://github.com/antonillos/makevn"
   license "MIT"
 
-  head "https://github.com/antonillos/makevn.git", branch: "main"
-
-  stable do
-    url "https://github.com/antonillos/makevn/releases/download/v0.1.0/makevn-v0.1.0.tar.gz"
-    sha256 "TBD_AFTER_RELEASE"
+  if Hardware::CPU.arm?
+    url "https://github.com/antonillos/makevn/releases/download/v0.1.0/makevn-v0.1.0-aarch64-apple-darwin.tar.gz"
+    sha256 "d4199327615da6e793846e4527711a5317e3804767b3515bad29a4fd602db888"
+  else
+    url "https://github.com/antonillos/makevn/releases/download/v0.1.0/makevn-v0.1.0-x86_64-apple-darwin.tar.gz"
+    sha256 "4a60fd6cb689db774c1ed1ef7a4e0c09b578af847d9eddb3a15601ad304c060d"
   end
 
-  depends_on "rust" => :build
-
   def install
-    if build.head?
-      system "./build-rust-dispatcher.sh"
-    else
-      system "cargo", "build", "--release", "--manifest-path", "rust/dispatcher/Cargo.toml"
-    end
-
-    bin.install "target/release/makevn"
-    bin.install "target/release/makevn-mcp"
-
-    (libexec/"makevn").install Dir[
-      "libexec/makevn/backend.sh",
-      "libexec/makevn/cli.sh",
-      "libexec/makevn/common.sh",
-      "libexec/makevn/commands",
-      "libexec/makevn/common",
-      "libexec/makevn/coverage",
-      "libexec/makevn/docker",
-      "libexec/makevn/jdk",
-      "libexec/makevn/compat",
-    ]
-
-    (share/"makevn").install Dir["share/makevn/*"]
-    (share/"makevn/skills/makevn").install Dir["skills/makevn/*"]
+    bin.install "bin/makevn"
+    bin.install "bin/makevn-mcp"
+    libexec.install "libexec/makevn"
+    share.install "share/makevn"
   end
 
   def caveats
