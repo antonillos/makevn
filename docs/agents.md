@@ -247,8 +247,27 @@ Today that guidance is forward-looking: public `--json` behavior is still part o
 ## OpenCode Workflow
 
 The project ships a `.mcp.json` at the root that configures the dedicated
-`makevn-mcp` Rust MCP server. OpenCode loads it automatically — no manual setup
-needed once `makevn-mcp` is installed and available in `PATH`.
+`makevn-mcp` Rust MCP server for clients that read `.mcp.json`.
+
+For global OpenCode setup, add makevn to `~/.config/opencode/opencode.json` or
+`~/.config/opencode/opencode.jsonc`:
+
+```jsonc
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "makevn": {
+      "type": "local",
+      "command": ["makevn-mcp"],
+      "enabled": true,
+      "timeout": 900000
+    }
+  }
+}
+```
+
+OpenCode requires `command` to be an array. Restart OpenCode after installing
+makevn or editing MCP config. OpenCode does not hot-reload MCP configuration.
 
 When the MCP server is active, the agent can call makevn commands as MCP tools
 (e.g. `doctor`, `test`, `verify`) in addition to running them via the CLI.
@@ -299,6 +318,19 @@ command that proves the touched surface:
 Because agent frameworks differ, this repository ships the skill contents and examples rather than hardcoding a single agent-specific installation path.
 
 ## Codex Workflow
+
+For global Codex MCP setup, add makevn to `~/.codex/config.toml`:
+
+```toml
+[mcp_servers.makevn]
+command = "makevn-mcp"
+enabled = true
+startup_timeout_sec = 20
+tool_timeout_sec = 900
+```
+
+Project-scoped Codex config belongs in `.codex/config.toml` and is loaded only
+for trusted projects. The Codex CLI and IDE extension share this config.
 
 Inside Codex, the intended flow is the same terminal contract:
 
