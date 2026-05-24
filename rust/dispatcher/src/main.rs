@@ -30,6 +30,18 @@ fn main() {
         .and_then(|name| name.to_str())
         .is_some_and(|name| name == "makevn-mcp")
     {
+        match parse_mcp_invocation(env::args_os().skip(1).collect()) {
+            Ok(McpAction::PrintHelp) => {
+                print_mcp_help();
+                return;
+            }
+            Ok(McpAction::PrintVersion) => {
+                println!("{}", makevn_version());
+                return;
+            }
+            Ok(McpAction::RunServer) => {}
+            Err(message) => exit_with_error(message),
+        }
         let current_exe = match env::current_exe() {
             Ok(path) => path,
             Err(error) => exit_with_error(format!("failed to resolve current executable: {error}")),
@@ -122,6 +134,13 @@ enum Action {
     PrintCommandHelp { command: String },
     DispatchToBackend(Vec<BackendInvocation>),
     RunMcpServer,
+}
+
+#[derive(Debug, Eq, PartialEq)]
+enum McpAction {
+    PrintHelp,
+    PrintVersion,
+    RunServer,
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -295,6 +314,23 @@ fn parse_invocation(args: Vec<OsString>) -> Result<Action, String> {
         global_compact,
     )?;
     Ok(Action::DispatchToBackend(backend_invocations))
+}
+
+fn parse_mcp_invocation(args: Vec<OsString>) -> Result<McpAction, String> {
+    match args.as_slice() {
+        [] => Ok(McpAction::RunServer),
+        [arg] if matches!(arg.to_string_lossy().as_ref(), "--help" | "-h") => {
+            Ok(McpAction::PrintHelp)
+        }
+        [arg] if arg == &OsString::from("--version") => Ok(McpAction::PrintVersion),
+        [arg] => Err(format!(
+            "Unknown makevn-mcp option: {}\nRun `makevn-mcp --help` for usage.",
+            Lossy(arg)
+        )),
+        _ => Err(String::from(
+            "makevn-mcp does not accept positional arguments. Run `makevn-mcp --help` for usage.",
+        )),
+    }
 }
 
 fn split_command_segments(args: Vec<OsString>) -> Result<Vec<(OsString, Vec<OsString>)>, String> {
@@ -3148,6 +3184,19 @@ fn print_help(with_header: bool) {
     println!("  - 'makevn-mcp' starts the MCP server over stdio (Model Context Protocol).");
 }
 
+fn print_mcp_help() {
+    println!("makevn-mcp {}", makevn_version());
+    println!();
+    println!("Model Context Protocol server for makevn.");
+    println!();
+    println!("Usage:");
+    println!("  makevn-mcp");
+    println!("  makevn-mcp --help");
+    println!("  makevn-mcp --version");
+    println!();
+    println!("Run without arguments from an MCP client. The server communicates over stdio.");
+}
+
 struct Lossy<'a>(&'a OsString);
 
 impl fmt::Display for Lossy<'_> {
@@ -3161,9 +3210,9 @@ mod tests {
     use super::{
         command_help, command_supports_frontend_loader, dashboard_hint, dim_text,
         format_resource_sample, insert_backend_option, install_root_with_override,
-        parse_invocation, read_backend_metadata, spinner_hint, spinner_kitt_frame,
+        parse_invocation, parse_mcp_invocation, read_backend_metadata, spinner_hint, spinner_kitt_frame,
         split_command_segments, strip_frontend_tail_flag, tail_status_lines, Action,
-        BackendInvocation, BackendMetadata, CommandSummary, ResourceHistory, ResourceSample,
+        BackendInvocation, BackendMetadata, CommandSummary, McpAction, ResourceHistory, ResourceSample,
     };
     use std::env;
     use std::ffi::OsString;
@@ -3203,6 +3252,30 @@ mod tests {
     fn preserves_global_help_dispatch() {
         let action = parse_invocation(vec![OsString::from("--help")]).unwrap();
         assert_eq!(action, Action::PrintHelp { with_header: false });
+    }
+
+    #[test]
+    fn parses_mcp_help_without_starting_server() {
+        let action = parse_mcp_invocation(vec![OsString::from("--help")]).unwrap();
+        assert_eq!(action, McpAction::PrintHelp);
+    }
+
+    #[test]
+    fn parses_mcp_version_without_starting_server() {
+        let action = parse_mcp_invocation(vec![OsString::from("--version")]).unwrap();
+        assert_eq!(action, McpAction::PrintVersion);
+    }
+
+    #[test]
+    fn parses_mcp_no_args_as_server() {
+        let action = parse_mcp_invocation(Vec::new()).unwrap();
+        assert_eq!(action, McpAction::RunServer);
+    }
+
+    #[test]
+    fn rejects_mcp_positional_args() {
+        let error = parse_mcp_invocation(vec![OsString::from("doctor")]).unwrap_err();
+        assert!(error.contains("Unknown makevn-mcp option"));
     }
 
     #[test]
