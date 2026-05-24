@@ -58,7 +58,7 @@ These paths were verified through the installed Rust binary:
 
 Verification included:
 
-- a real repository check against `mic-icdmmeasurementtemplates` for `doctor`
+- a real repository check against an internal Java/Maven repository for `doctor`
 - a controlled temporary repo with a fake `mvnw` for `compile`
 - an interactive temporary repo with a fake `mvnw` for `build`, including Rust-owned loader/header rendering and double-escape interruption
 - temporary-repo verification for sequential command dispatch and per-command managed logs
@@ -74,13 +74,13 @@ Current source-checkout flow:
 
 Installer modes:
 
-- `./install.sh` installs Rust if `target/release/makevn` already exists, otherwise falls back to shell
-- `./install.sh --rust` requires the Rust binary and fails if it is missing
-- `./install.sh --shell` forces the shell entrypoint
+- `./install.sh` installs the Rust dispatcher and MCP server from `target/release/`
+- `./install.sh --rust` is accepted for compatibility and has the same behavior
 
 Important:
 
 - `install.sh` does not compile Rust
+- shell frontend installation is no longer supported
 - Rust compilation is intentionally separated into `./build-rust-dispatcher.sh`
 
 ## Internal Boundary Today

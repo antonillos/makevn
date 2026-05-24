@@ -44,31 +44,52 @@ jobs:
             v*) ;;
             *) printf 'Error: version must start with v, got %s\n' "$VERSION" >&2; exit 1 ;;
           esac
-          # Strip v prefix for semver
           SEMVER="${VERSION#v}"
-          if ! echo "$SEMVER" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?$'; then
+          if ! [[ "$SEMVER" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?$ ]]; then
             printf 'Error: invalid semver: %s\n' "$SEMVER" >&2
+            exit 1
+          fi
+          manifest_version="$(sed -nE 's/^version = "([^"]+)"/\1/p' rust/dispatcher/Cargo.toml | sed -n '1p')"
+          if [[ "$manifest_version" != "$SEMVER" ]]; then
+            printf 'Error: Cargo.toml version %s does not match release %s\n' "$manifest_version" "$SEMVER" >&2
             exit 1
           fi
           printf 'semver=%s\n' "$SEMVER" >> "$GITHUB_OUTPUT"
 
-  build-rust:
-    runs-on: ubuntu-latest
+  build-runtime-archives:
     needs: validate-version
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+          - runner: macos-13
+            target: x86_64-apple-darwin
+          - runner: macos-14
+            target: aarch64-apple-darwin
+    runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4
         with:
           ref: ${{ inputs.target_ref }}
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
-      - name: Build Rust dispatcher
+      - name: Build Rust binaries
+        shell: bash
         run: |
-          ./build-rust-dispatcher.sh
-      - name: Upload binary
+          set -euo pipefail
+          MAKEVN_RUST_TARGET="${{ matrix.target }}" ./build-rust-dispatcher.sh
+      - name: Build runtime archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash packaging/release/build-runtime-archive.sh "${{ inputs.version }}" "${{ matrix.target }}" dist
+      - name: Upload runtime archive
         uses: actions/upload-artifact@v4
         with:
-          name: makevn-linux-x86_64
-          path: target/release/makevn
+          name: runtime-${{ matrix.target }}
+          path: dist/makevn-${{ inputs.version }}-${{ matrix.target }}.tar.gz*
           if-no-files-found: error
 
   build-source-archive:
@@ -88,12 +109,12 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: source-archive
-          path: dist/
+          path: dist/makevn-${{ inputs.version }}.tar.gz*
           if-no-files-found: error
 
   create-release:
     runs-on: ubuntu-latest
-    needs: [validate-version, build-rust, build-source-archive]
+    needs: [validate-version, build-runtime-archives, build-source-archive]
     steps:
       - uses: actions/checkout@v4
         with:
@@ -107,35 +128,49 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p release-assets
-          cp dist-artifacts/source-archive/*.tar.gz release-assets/
-          cp dist-artifacts/source-archive/*.sha256 release-assets/
-          cp dist-artifacts/makevn-linux-x86_64/makevn release-assets/makevn-linux-x86_64
+          find dist-artifacts -type f -name 'makevn-*.tar.gz' -exec cp {} release-assets/ \;
+          find dist-artifacts -type f -name 'makevn-*.tar.gz.sha256' -exec cp {} release-assets/ \;
+          ls -la release-assets
       - name: Generate release notes
         shell: bash
         run: |
           set -euo pipefail
-          cat > release-notes.md <<RELEASE
+          cat > release-notes.md <<'RELEASE'
           # makevn ${{ inputs.version }}
-
-          ## Assets
-
-          - Source archive (\`makevn-${{ inputs.version }}.tar.gz\`) with SHA-256 checksum
-          - Prebuilt Linux x86_64 binary (\`makevn-linux-x86_64\`)
 
           ## Install
 
-          ### Homebrew
+          Homebrew:
+
+          ```bash
           brew install antonillos/tap/makevn
+          ```
 
-          ### Binary download
-          Download \`makevn-linux-x86_64\`, make it executable, and run:
+          asdf:
 
-            chmod +x makevn-linux-x86_64
-            ./makevn-linux-x86_64 --help
+          ```bash
+          asdf plugin add makevn https://github.com/antonillos/asdf-makevn.git
+          asdf install makevn latest
+          asdf global makevn latest
+          ```
 
-          MCP server is included in the Homebrew formula as \`makevn-mcp\`.
+          Fallback installer:
 
-          ## Changes
+          ```bash
+          curl -fsSL https://raw.githubusercontent.com/antonillos/makevn/main/packaging/install/install-release.sh | sh
+          ```
+
+          MCP server command:
+
+          ```text
+          makevn-mcp
+          ```
+
+          ## Assets
+
+          - Source archive for Homebrew/source builds
+          - Runtime archives for Linux x86_64, macOS x86_64, and macOS arm64
+          - SHA-256 checksum files for each archive
           RELEASE
       - name: Create GitHub release
         env:
@@ -145,17 +180,17 @@ jobs:
           set -euo pipefail
           args=(
             "${{ inputs.version }}"
-            "release-assets/makevn-${{ inputs.version }}.tar.gz"
-            "release-assets/makevn-${{ inputs.version }}.tar.gz.sha256"
-            "release-assets/makevn-linux-x86_64"
-            "--target" "${{ inputs.target_ref }}"
-            "--title" "${{ inputs.version }}"
-            "--notes-file" "release-notes.md"
+            --target "${{ inputs.target_ref }}"
+            --title "${{ inputs.version }}"
+            --notes-file release-notes.md
           )
           if [[ "${{ inputs.prerelease }}" == "true" ]]; then
-            args+=("--prerelease")
+            args+=(--prerelease)
           fi
           if [[ "${{ inputs.draft }}" == "true" ]]; then
-            args+=("--draft")
+            args+=(--draft)
           fi
+          while IFS= read -r asset; do
+            args+=("${asset}")
+          done < <(find release-assets -type f | sort)
           gh release create "${args[@]}"

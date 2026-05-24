@@ -38,23 +38,36 @@ It does not overwrite an existing root `Makefile` or `GNUmakefile`.
 brew install antonillos/tap/makevn
 ```
 
-The formula builds the Rust dispatcher from source. Requires Rust to be installed
-(`brew install rust` if not already present).
+The formula builds from the release source archive and installs both `makevn`
+and `makevn-mcp`.
+
+### asdf
+
+Recommended for WSL2 and Linux workstations managed with asdf:
+
+```bash
+asdf plugin add makevn https://github.com/antonillos/asdf-makevn.git
+asdf install makevn latest
+asdf global makevn latest
+```
+
+### Agent fallback install
+
+For agents or ephemeral environments without Homebrew or asdf, use the release
+installer as a fallback:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/antonillos/makevn/main/packaging/install/install-release.sh | sh
+```
 
 ### Source install
 
-From this repository:
+For makevn development from this repository:
 
 ```bash
 ./build-rust-dispatcher.sh
 ./install.sh --rust
 ~/.local/bin/makevn --help
-```
-
-To install the shell entrypoint explicitly:
-
-```bash
-./install.sh --shell
 ```
 
 ## Usage
@@ -295,6 +308,7 @@ so developers and agents get the same behavior across Java Maven repositories.
 ## Docs
 
 - [Install](docs/install.md)
+- [Agent install](docs/agent-install.md)
 - [Agents](docs/agents.md)
 - [CLI contract](docs/cli-contract.md)
 - [Backend contract](docs/backend-contract.md)

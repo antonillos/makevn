@@ -74,7 +74,7 @@ run_makevn_pty_interrupt() {
   local repo="$2"
   local output_file="$3"
 
-  python3 - "${mode}" "${repo}" "${output_file}" <<'PY'
+  python3 - "${mode}" "${repo}" "${output_file}" "${ROOT_DIR}" <<'PY'
 import os
 import pty
 import select
@@ -82,8 +82,8 @@ import signal
 import sys
 import time
 
-mode, repo, output_file = sys.argv[1:4]
-cmd = ['/Users/antonio.saco/Projects/antonillos/makevn/bin/makevn', '--repo', repo, 'build']
+mode, repo, output_file, root_dir = sys.argv[1:5]
+cmd = [os.path.join(root_dir, 'bin', 'makevn'), '--repo', repo, 'build']
 
 pid, fd = pty.fork()
 if pid == 0:

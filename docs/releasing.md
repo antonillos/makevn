@@ -7,6 +7,7 @@
 | makevn binary | `rust/dispatcher/Cargo.toml` | `version` field |
 | MCP server | `makevn-mcp` Rust binary | inherits from `Cargo.toml` |
 | Homebrew formula | `antonillos/homebrew-tap/Formula/makevn.rb` | References release tag |
+| asdf plugin | `antonillos/asdf-makevn` | Downloads release assets |
 
 The canonical version lives in `Cargo.toml`. The `bump-version.sh` script updates
 all locations from a single invocation.
@@ -56,7 +57,9 @@ gh workflow run release.yml \
 
 The workflow:
 - validates the version format
-- builds the Rust dispatcher and `makevn-mcp` (Linux x86_64)
+- checks that `Cargo.toml` matches the requested version
+- builds the Rust dispatcher and `makevn-mcp`
+- creates runtime archives for Linux x86_64, macOS x86_64, and macOS arm64
 - creates the source archive and SHA-256
 - creates a GitHub release with all assets
 
@@ -94,6 +97,20 @@ The build script appends a timestamp automatically:
 ```
 
 No version bump or tag needed for day-to-day changes.
+
+## Runtime archive layout
+
+Each runtime archive must contain:
+
+```text
+bin/makevn
+bin/makevn-mcp
+libexec/makevn/
+share/makevn/
+share/makevn/skills/makevn/
+```
+
+Homebrew, asdf, and the fallback installer should install that same layout.
 
 ## Testing a release
 

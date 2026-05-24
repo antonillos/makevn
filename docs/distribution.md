@@ -2,19 +2,21 @@
 
 ## Current Goal
 
-Prepare three conventional distribution paths without opening the repository yet:
+makevn should be easy for humans and AI agents to install without compiling from
+source. Distribution is organized around three channels:
 
-- a manual GitHub prerelease workflow
-- a Homebrew formula ready to move into a dedicated tap later
-- an MCP (Model Context Protocol) server for AI agent integration
+- Homebrew for macOS and Homebrew users
+- asdf for WSL2, Linux, and managed developer workstations
+- a release installer for fallback agent bootstrap
 
-## Manual GitHub Test Releases
+All channels should install the same runtime layout and the dedicated
+`makevn-mcp` MCP server.
 
-This repository now includes a manual workflow:
+## GitHub Releases
 
-- `.github/workflows/release-test.yml`
+The release workflow is manual through `workflow_dispatch`:
 
-It is intentionally manual through `workflow_dispatch`.
+- `.github/workflows/release.yml`
 
 Inputs:
 
@@ -28,18 +30,14 @@ What it does:
 - checks out the requested ref
 - creates a versioned source archive from the tagged revision
 - generates a SHA-256 checksum file
+- builds runtime archives for supported Linux and macOS targets
 - creates a GitHub release with those assets attached
 
 You can run it from the GitHub Actions UI or with `gh`:
 
 ```bash
-gh workflow run release-test.yml -f version=v0.1.0-test.1 -f target_ref=main -f prerelease=true -f draft=false
+gh workflow run release.yml -f version=v0.1.0-test.1 -f target_ref=main -f prerelease=true -f draft=false
 ```
-
-Current note while the repository remains private:
-
-- the release is fine for internal testing
-- release assets are not a public distribution channel yet
 
 ## Homebrew
 
@@ -57,15 +55,8 @@ The formula lives in two places kept in sync:
 - `antonillos/homebrew-tap/Formula/makevn.rb` (canonical)
 - `antonillos/makevn/packaging/homebrew/makevn.rb` (reference copy)
 
-The formula is currently `head`-only on purpose because:
-
-- there is no stable public release artifact to pin with `url` and `sha256` yet
-
-When the first stable release is cut:
-
-1. replace the `head` stanza with a stable `url` and `sha256` from a tagged release
-2. update the `stable` block with the correct SHA-256
-3. keep a `head` option for development builds
+The formula keeps both stable and `head` paths. Stable releases use the source
+archive and a pinned SHA-256. The `head` path is for development builds.
 
 The formula builds the Rust frontend from source and installs the runtime layout expected by `makevn`:
 
@@ -78,6 +69,34 @@ The formula builds the Rust frontend from source and installs the runtime layout
 The Rust build entrypoint exposed publicly by this repository is:
 
 - `./build-rust-dispatcher.sh`
+
+## asdf
+
+The asdf plugin lives under `packaging/asdf/` in this repository and is intended
+to be published as `antonillos/asdf-makevn`.
+
+Install command:
+
+```bash
+asdf plugin add makevn https://github.com/antonillos/asdf-makevn.git
+asdf install makevn latest
+asdf global makevn latest
+```
+
+The plugin downloads a runtime archive from GitHub Releases, verifies its
+SHA-256 checksum, and installs the archive layout directly.
+
+## Fallback Installer
+
+The fallback installer is for agents or ephemeral environments without Homebrew
+or asdf:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/antonillos/makevn/main/packaging/install/install-release.sh | sh
+```
+
+It downloads a runtime archive from GitHub Releases, verifies its SHA-256
+checksum, and installs into `~/.local` by default.
 
 ## MCP Server
 
@@ -105,13 +124,7 @@ exposes each `makevn` subcommand as an MCP tool.
 No npm or Node.js runtime is required. The MCP server is compiled from the Rust
 dispatcher crate and installed alongside `makevn`.
 
-## Private-Repo Caveat
+## Agent Contract
 
-As long as `antonillos/makevn` stays private, Homebrew and the published npm
-package are only prepared technically.
-
-That means:
-
-- the formula is useful as a base
-- the release workflow is useful for internal testing
-- the normal public flow should wait until the repository and release assets are ready to be public
+Agents should use `docs/agent-install.md` for installation and MCP setup. The
+stable MCP command is always `makevn-mcp`.

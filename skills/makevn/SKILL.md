@@ -253,7 +253,7 @@ explicit coverage activation. If `coverage` or `coverage-changes` reports
 coverage flags in `.makevn/config` and rerun a coverage-producing command:
 
 ```bash
-MAKEVN_COVERAGE_PROP_FLAGS="-Djacoco.skip=false -Damiga.jacoco"
+MAKEVN_COVERAGE_PROP_FLAGS="-Djacoco.skip=false -Dcoverage.enabled=true"
 makevn profile refresh
 makevn docker-up docker-ps-required --wait-seconds 30 clean verify-it-coverage coverage-changes
 ```
@@ -330,7 +330,7 @@ binary resolution, and log handling are all applied consistently.
 `makevn docker-up` runs a full lifecycle: `down -v --remove-orphans`,
 `volume prune -f`, then `up --detach` for **all** boot compose services.
 There is no option to target a single service. If only one service needs
-starting (e.g., `schema_registry`), run `makevn docker-up` anyway — the
+starting, run `makevn docker-up` anyway — the
 lifecycle ensures a clean state and unused services remain idle. Do not
 fall back to raw docker commands or `makevn exec -- docker compose ...`.
 

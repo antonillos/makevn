@@ -97,7 +97,7 @@ when the repository workflow requires extra JaCoCo flags, then rerun the matchin
 coverage-producing command:
 
 ```bash
-MAKEVN_COVERAGE_PROP_FLAGS="-Djacoco.skip=false -Damiga.jacoco"
+MAKEVN_COVERAGE_PROP_FLAGS="-Djacoco.skip=false -Dcoverage.enabled=true"
 ```
 
 After adding or changing coverage activation, refresh the profile and rerun the
@@ -208,7 +208,7 @@ supported interface for container lifecycle management:
 `makevn docker-up` runs a full lifecycle: `down -v --remove-orphans`,
 `volume prune -f`, then `up --detach` for **all** services. It does not
 support targeting a single service. If only one service needs to be started
-(such as `schema_registry` for local development without the full stack),
+(such as a single dependency service for local development without the full stack),
 use `makevn docker-up` to start everything — the lifecycle guarantees a clean
 state regardless. Do not fall back to `docker compose up -d <service>` or
 `makevn exec -- docker compose ...`; those bypass `makevn`'s compose file

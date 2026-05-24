@@ -3,7 +3,12 @@
 `makevn-mcp` is the dedicated Rust MCP server for makevn. It has no Node.js or
 JavaScript runtime dependency.
 
-## OpenCode Installation
+## Installation
+
+Install makevn first through Homebrew, asdf, or the fallback release installer.
+See `docs/agent-install.md`.
+
+## OpenCode Configuration
 
 Add this entry to `~/.config/opencode/opencode.jsonc` under the `"mcp"` key:
 

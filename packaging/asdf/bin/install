@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+download_path="${ASDF_DOWNLOAD_PATH:?ASDF_DOWNLOAD_PATH is required}"
+install_path="${ASDF_INSTALL_PATH:?ASDF_INSTALL_PATH is required}"
+
+archive="$(find "${download_path}" -maxdepth 1 -type f -name 'makevn-v*.tar.gz' | sed -n '1p')"
+[[ -n "${archive}" ]] || { printf 'No makevn release archive found in %s\n' "${download_path}" >&2; exit 1; }
+
+work_dir="$(mktemp -d "${TMPDIR:-/tmp}/makevn-asdf.XXXXXX")"
+trap 'rm -rf "${work_dir}"' EXIT INT TERM
+
+tar -xzf "${archive}" -C "${work_dir}"
+extracted_dir="$(find "${work_dir}" -mindepth 1 -maxdepth 1 -type d | sed -n '1p')"
+[[ -n "${extracted_dir}" ]] || { printf 'Archive did not contain an install directory\n' >&2; exit 1; }
+
+mkdir -p "${install_path}"
+cp -R "${extracted_dir}/." "${install_path}/"
+chmod +x "${install_path}/bin/makevn" "${install_path}/bin/makevn-mcp"
+
+"${install_path}/bin/makevn" --version >/dev/null

@@ -10,7 +10,7 @@ class Makevn < Formula
 
   stable do
     url "https://github.com/antonillos/makevn/releases/download/v0.1.0/makevn-v0.1.0.tar.gz"
-    sha256 "0000000000000000000000000000000000000000000000000000000000000000"
+    sha256 "TBD_AFTER_RELEASE"
   end
 
   depends_on "rust" => :build
@@ -23,6 +23,7 @@ class Makevn < Formula
     end
 
     bin.install "target/release/makevn"
+    bin.install "target/release/makevn-mcp"
 
     (libexec/"makevn").install Dir[
       "libexec/makevn/backend.sh",
@@ -51,8 +52,7 @@ class Makevn < Formula
       {
         "mcpServers": {
           "makevn": {
-            "command": "#{HOMEBREW_PREFIX}/bin/makevn",
-            "args": ["--mcp"]
+            "command": "#{HOMEBREW_PREFIX}/bin/makevn-mcp"
           }
         }
       }
@@ -61,5 +61,6 @@ class Makevn < Formula
 
   test do
     assert_match "makevn", shell_output("#{bin}/makevn --help")
+    assert_path_exists bin/"makevn-mcp"
   end
 end

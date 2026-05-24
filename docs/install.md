@@ -1,22 +1,66 @@
 # Install
 
-## Direction
+## Recommended Channels
 
-The installation strategy is moving toward two first-class distribution paths:
+Install makevn through one of these channels, in this order:
 
-- Homebrew
-- a curl-install path for local user installs
+- Homebrew for macOS and users who already use Homebrew
+- asdf for WSL2, Linux, and company-managed developer workstations
+- the release installer as a fallback for agents or ephemeral environments
 
-Those release channels are planned, but the current repository install path is still source-first.
+All release channels should install the same runtime layout: `makevn`,
+`makevn-mcp`, `libexec/makevn/`, and `share/makevn/`.
 
 ## Requirements
 
-Current source install assumes:
+Source install assumes:
 
 - a POSIX shell environment
 - `bash`
 - standard Unix user-install paths such as `~/.local`
-- Rust only when you want the Rust frontend from source
+- Rust
+
+## Homebrew
+
+```bash
+brew install antonillos/tap/makevn
+```
+
+Upgrade with:
+
+```bash
+brew upgrade antonillos/tap/makevn
+```
+
+## asdf
+
+```bash
+asdf plugin add makevn https://github.com/antonillos/asdf-makevn.git
+asdf install makevn latest
+asdf global makevn latest
+```
+
+Upgrade with:
+
+```bash
+asdf plugin update makevn
+asdf install makevn latest
+asdf global makevn latest
+```
+
+## Agent Fallback Installer
+
+Use this only when Homebrew or asdf are not available:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/antonillos/makevn/main/packaging/install/install-release.sh | sh
+```
+
+Install a specific version:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/antonillos/makevn/main/packaging/install/install-release.sh | MAKEVN_VERSION=v0.1.0 sh
+```
 
 ## Local Source Install
 
@@ -27,29 +71,19 @@ From the repository root:
 ./install.sh --rust
 ```
 
-If you want the current shell entrypoint instead of the Rust frontend:
-
-```bash
-./install.sh --shell
-```
-
-`install.sh` does not compile Rust. It installs the Rust `makevn` dispatcher only when a
-prebuilt `target/release/makevn` already exists. Otherwise it falls back to the current
-shell entrypoint.
-
-Use `--rust` when you want installation to fail fast unless the Rust frontend is already
-built. Use `--shell` to force the shell entrypoint explicitly.
+`install.sh` does not compile Rust. It installs the Rust `makevn` dispatcher and
+`makevn-mcp` only when prebuilt binaries already exist under `target/release/`.
 
 Supported install modes today:
 
-- `./install.sh` installs the Rust frontend when `target/release/makevn` already exists, otherwise falls back to the shell entrypoint
-- `./install.sh --rust` requires a prebuilt Rust dispatcher and fails if it is missing
-- `./install.sh --shell` always installs the current shell entrypoint
+- `./install.sh` requires prebuilt Rust binaries and fails if they are missing
+- `./install.sh --rust` is accepted for compatibility and has the same behavior
 - `./install.sh --help` prints the installer usage
 
 By default this installs into `~/.local`:
 
 - `~/.local/bin/makevn`
+- `~/.local/bin/makevn-mcp`
 - `~/.local/libexec/makevn/`
 - `~/.local/share/makevn/`
 - `~/.local/share/makevn/skills/makevn/`
@@ -77,22 +111,11 @@ For day-to-day Rust frontend development from a source checkout, the expected lo
 ~/.local/bin/makevn --repo "/path/to/java-repo" compile
 ```
 
-The installer is intentionally simple for now. External packaging such as Homebrew or release artifacts can be added later without changing the repo-local integration model.
-
-If you only want to exercise the shell implementation from a source checkout, `./install.sh --shell` is the most direct path.
-
-## Planned Distribution Channels
-
-Target channels:
-
-- Homebrew for `macOS` and Linux users who want standard package-manager installation
-- curl-install for humans and AI agents that need a one-line local install without root
-
 Target platform support:
 
 - `macOS`
 - `Linux`
-- `Windows` through WSL
+- `Windows` through WSL2
 
 The install contract should continue to ship the full runtime, not only the binary:
 

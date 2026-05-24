@@ -5,24 +5,29 @@ VERSION="${1:?usage: build-source-archive.sh <version> [dist-dir]}"
 DIST_DIR="${2:-dist}"
 SCRIPT_DIR="$(CDPATH= cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(CDPATH= cd -- "${SCRIPT_DIR}/../.." && pwd)"
+if [[ "${DIST_DIR}" = /* ]]; then
+  DIST_ROOT="${DIST_DIR}"
+else
+  DIST_ROOT="${ROOT_DIR}/${DIST_DIR}"
+fi
 ARCHIVE_NAME="makevn-${VERSION}.tar.gz"
-ARCHIVE_PATH="${DIST_DIR}/${ARCHIVE_NAME}"
+ARCHIVE_PATH="${DIST_ROOT}/${ARCHIVE_NAME}"
 CHECKSUM_PATH="${ARCHIVE_PATH}.sha256"
 PREFIX="makevn-${VERSION#v}/"
 
-mkdir -p "${ROOT_DIR}/${DIST_DIR}"
+mkdir -p "${DIST_ROOT}"
 
 git -C "${ROOT_DIR}" archive \
   --format=tar.gz \
   --prefix="${PREFIX}" \
-  -o "${ROOT_DIR}/${ARCHIVE_PATH}" \
+  -o "${ARCHIVE_PATH}" \
   HEAD
 
 if command -v sha256sum >/dev/null 2>&1; then
-  (cd "${ROOT_DIR}/${DIST_DIR}" && sha256sum "${ARCHIVE_NAME}" > "$(basename "${CHECKSUM_PATH}")")
+  (cd "${DIST_ROOT}" && sha256sum "${ARCHIVE_NAME}" > "$(basename "${CHECKSUM_PATH}")")
 else
-  (cd "${ROOT_DIR}/${DIST_DIR}" && shasum -a 256 "${ARCHIVE_NAME}" > "$(basename "${CHECKSUM_PATH}")")
+  (cd "${DIST_ROOT}" && shasum -a 256 "${ARCHIVE_NAME}" > "$(basename "${CHECKSUM_PATH}")")
 fi
 
-printf 'Built source archive at %s\n' "${ROOT_DIR}/${ARCHIVE_PATH}"
-printf 'Built checksum at %s\n' "${ROOT_DIR}/${CHECKSUM_PATH}"
+printf 'Built source archive at %s\n' "${ARCHIVE_PATH}"
+printf 'Built checksum at %s\n' "${CHECKSUM_PATH}"

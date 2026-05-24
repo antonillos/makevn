@@ -1,0 +1,47 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo="${MAKEVN_REPO:-antonillos/makevn}"
+version="${ASDF_INSTALL_VERSION:?ASDF_INSTALL_VERSION is required}"
+download_path="${ASDF_DOWNLOAD_PATH:?ASDF_DOWNLOAD_PATH is required}"
+
+detect_target() {
+  local os arch os_part arch_part
+  os="$(uname -s)"
+  arch="$(uname -m)"
+  case "${os}" in
+    Linux) os_part="unknown-linux-gnu" ;;
+    Darwin) os_part="apple-darwin" ;;
+    *) printf 'Unsupported OS: %s\n' "${os}" >&2; exit 1 ;;
+  esac
+  case "${os}:${arch}" in
+    Linux:x86_64|Linux:amd64) arch_part="x86_64" ;;
+    Darwin:x86_64|Darwin:amd64) arch_part="x86_64" ;;
+    Darwin:arm64|Darwin:aarch64) arch_part="aarch64" ;;
+    Linux:arm64|Linux:aarch64) printf 'Linux arm64 release assets are not published yet\n' >&2; exit 1 ;;
+    *) printf 'Unsupported platform: %s %s\n' "${os}" "${arch}" >&2; exit 1 ;;
+  esac
+  printf '%s-%s\n' "${arch_part}" "${os_part}"
+}
+
+tag="${version}"
+case "${tag}" in
+  v*) ;;
+  *) tag="v${tag}" ;;
+esac
+
+target="$(detect_target)"
+asset="makevn-${tag}-${target}.tar.gz"
+base_url="https://github.com/${repo}/releases/download/${tag}"
+
+mkdir -p "${download_path}"
+curl -fsSL "${base_url}/${asset}" -o "${download_path}/${asset}"
+curl -fsSL "${base_url}/${asset}.sha256" -o "${download_path}/${asset}.sha256"
+
+if command -v sha256sum >/dev/null 2>&1; then
+  (cd "${download_path}" && sha256sum -c "${asset}.sha256")
+else
+  expected="$(sed -n 's/^\([0-9a-fA-F][0-9a-fA-F]*\).*/\1/p' "${download_path}/${asset}.sha256" | sed -n '1p')"
+  actual="$(shasum -a 256 "${download_path}/${asset}" | awk '{print $1}')"
+  [[ "${expected}" == "${actual}" ]] || { printf 'Checksum mismatch for %s\n' "${asset}" >&2; exit 1; }
+fi
