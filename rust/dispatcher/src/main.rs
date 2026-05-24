@@ -2904,7 +2904,29 @@ fn require_repo_path_is_git_root_for_strict_commands(
 }
 
 fn install_root(current_exe: &Path) -> Result<PathBuf, String> {
-    install_root_with_override(current_exe, env::var_os("MAKEVN_INSTALL_ROOT"))
+    if let Some(root) = env::var_os("MAKEVN_INSTALL_ROOT") {
+        if !root.is_empty() {
+            return Ok(PathBuf::from(root));
+        }
+    }
+
+    if let Some(root) = install_root_from_path() {
+        return Ok(root);
+    }
+
+    install_root_with_override(current_exe, None)
+}
+
+fn install_root_from_path() -> Option<PathBuf> {
+    let path_var = env::var_os("PATH")?;
+    env::split_paths(&path_var)
+        .map(|dir| dir.join("makevn"))
+        .filter(|candidate| candidate.is_file())
+        .find_map(|candidate| {
+            install_root_with_override(&candidate, None)
+                .ok()
+                .filter(|root| root.join("libexec/makevn/backend.sh").is_file())
+        })
 }
 
 fn install_root_with_override(
@@ -2917,17 +2939,18 @@ fn install_root_with_override(
         }
     }
 
-    let bin_dir = current_exe.parent().ok_or_else(|| {
+    let resolved_exe = fs::canonicalize(current_exe).unwrap_or_else(|_| current_exe.to_path_buf());
+    let bin_dir = resolved_exe.parent().ok_or_else(|| {
         format!(
             "failed to determine binary directory from {}",
-            current_exe.display()
+            resolved_exe.display()
         )
     })?;
 
     bin_dir.parent().map(Path::to_path_buf).ok_or_else(|| {
         format!(
             "failed to determine install root from {}",
-            current_exe.display()
+            resolved_exe.display()
         )
     })
 }
@@ -3218,6 +3241,8 @@ mod tests {
     use std::ffi::OsString;
     use std::fs;
     use std::io::Write;
+    #[cfg(unix)]
+    use std::os::unix::fs::symlink;
     use std::path::Path;
     use std::process;
     use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -3240,6 +3265,36 @@ mod tests {
         )
         .unwrap();
         assert_eq!(root, Path::new("/worktree/repo"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn derives_install_root_from_resolved_binary_symlink() {
+        let unique_suffix = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let work_dir = env::temp_dir().join(format!(
+            "makevn-symlink-test-{}-{unique_suffix}",
+            process::id()
+        ));
+        let cellar_bin = work_dir.join("Cellar/makevn/0.1.1/bin");
+        let prefix_bin = work_dir.join("bin");
+        fs::create_dir_all(&cellar_bin).unwrap();
+        fs::create_dir_all(&prefix_bin).unwrap();
+
+        let real_binary = cellar_bin.join("makevn");
+        fs::write(&real_binary, b"").unwrap();
+        let linked_binary = prefix_bin.join("makevn");
+        symlink(&real_binary, &linked_binary).unwrap();
+
+        let root = install_root_with_override(&linked_binary, None).unwrap();
+        assert_eq!(
+            root,
+            fs::canonicalize(work_dir.join("Cellar/makevn/0.1.1")).unwrap()
+        );
+
+        fs::remove_dir_all(work_dir).unwrap();
     }
 
     #[test]
