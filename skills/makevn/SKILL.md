@@ -282,9 +282,18 @@ makevn test --name SampleFeatureTogglesTest
 makevn test --name SampleFeatureTogglesTest,DeleteSampleItemsByVariantGroupCommandHandlerTest
 makevn test --name SampleFeatureTogglesTest --name DeleteSampleItemsByVariantGroupCommandHandlerTest
 
-# Skip compilation to run faster when sources have not changed
+# Skip compilation only after a successful compile or test run when sources have not changed
 makevn test --fast --name SampleFeatureTogglesTest
 ```
+
+Do not use `--fast`/`fast=true` on the first test attempt in a repository or
+after changing source/test files. First run `makevn test --name ...` without
+`--fast`, or run `makevn test-compile`/`makevn compile-tests`. Use fast mode only
+for a repeated run after compilation has already succeeded.
+
+For MCP, omit the `fast` parameter on the first `makevn_test` call. Passing
+`fast=false` is equivalent to the normal compile-aware mode; `fast=true` is the
+only mode that skips compilation.
 
 Only fall back to `makevn exec -- mvn` when you need Maven flags or options that `makevn test` does not expose (e.g., `-pl` to target a specific module, or additional `-D` properties). In that case, check `Maven base path` in `makevn doctor` output first and add `-f <path>/pom.xml` if the Maven root is a subdirectory.
 

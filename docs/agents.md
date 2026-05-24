@@ -169,6 +169,12 @@ MCP equivalents for OpenCode agents:
 | `makevn jdk current` | `makevn_jdk_current` |
 | `makevn jdk list` | `makevn_jdk_list` |
 
+For `makevn_test`, agents should omit `fast` or pass `fast: false` on the first
+test run in a repository and after any source/test change. Use `fast: true` only
+for repeated test runs after a successful compile or previous test execution when
+sources have not changed. Fast mode skips compilation and can fail before Maven
+has enough compiled test/module state to resolve selected classes.
+
 Karate workflows are optional. Agents should first use `makevn doctor` to confirm
 that `Karate .tool-versions` and `Docker e2e compose file` are detected. When they
 are present, use public commands such as:
