@@ -58,7 +58,7 @@ jobs:
           printf 'semver=%s\n' "$SEMVER" >> "$GITHUB_OUTPUT"
 
   build-runtime-archives:
-    needs: validate-version
+    needs: [validate-version, create-release]
     strategy:
       fail-fast: false
       matrix:
@@ -88,15 +88,19 @@ jobs:
           set -euo pipefail
           bash packaging/release/build-runtime-archive.sh "${{ inputs.version }}" "${{ matrix.target }}" dist
       - name: Upload runtime archive
-        uses: actions/upload-artifact@v5
-        with:
-          name: runtime-${{ matrix.target }}
-          path: dist/makevn-${{ inputs.version }}-${{ matrix.target }}.tar.gz*
-          if-no-files-found: error
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh release upload "${{ inputs.version }}" \
+            "dist/makevn-${{ inputs.version }}-${{ matrix.target }}.tar.gz" \
+            "dist/makevn-${{ inputs.version }}-${{ matrix.target }}.tar.gz.sha256" \
+            --clobber
 
   build-source-archive:
     runs-on: ubuntu-latest
-    needs: validate-version
+    needs: [validate-version, create-release]
     steps:
       - uses: actions/checkout@v5
         with:
@@ -108,31 +112,23 @@ jobs:
           set -euo pipefail
           bash packaging/release/build-source-archive.sh "${{ inputs.version }}" dist
       - name: Upload source archive
-        uses: actions/upload-artifact@v5
-        with:
-          name: source-archive
-          path: dist/makevn-${{ inputs.version }}.tar.gz*
-          if-no-files-found: error
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh release upload "${{ inputs.version }}" \
+            "dist/makevn-${{ inputs.version }}.tar.gz" \
+            "dist/makevn-${{ inputs.version }}.tar.gz.sha256" \
+            --clobber
 
   create-release:
     runs-on: ubuntu-latest
-    needs: [validate-version, build-runtime-archives, build-source-archive]
+    needs: validate-version
     steps:
       - uses: actions/checkout@v5
         with:
           ref: ${{ inputs.target_ref }}
-      - name: Download all artifacts
-        uses: actions/download-artifact@v5
-        with:
-          path: dist-artifacts
-      - name: Organize release assets
-        shell: bash
-        run: |
-          set -euo pipefail
-          mkdir -p release-assets
-          find dist-artifacts -type f -name 'makevn-*.tar.gz' -exec cp {} release-assets/ \;
-          find dist-artifacts -type f -name 'makevn-*.tar.gz.sha256' -exec cp {} release-assets/ \;
-          ls -la release-assets
       - name: Generate release notes
         shell: bash
         run: |
@@ -192,7 +188,5 @@ jobs:
           if [[ "${{ inputs.draft }}" == "true" ]]; then
             args+=(--draft)
           fi
-          while IFS= read -r asset; do
-            args+=("${asset}")
-          done < <(find release-assets -type f | sort)
+          gh release delete "${{ inputs.version }}" --yes || true
           gh release create "${args[@]}"
