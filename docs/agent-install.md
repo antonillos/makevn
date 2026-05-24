@@ -71,9 +71,11 @@ command -v makevn-mcp
 `makevn-mcp` is the MCP server command. Do not configure MCP clients to run
 `makevn --mcp`.
 
-## MCP Configuration
+## Generic MCP Configuration
 
-Use this command in MCP-compatible clients:
+Use `makevn-mcp` as the MCP server command. Do not use `makevn --mcp`.
+
+Clients that use the common `mcpServers` JSON shape should use:
 
 ```json
 {
@@ -93,21 +95,73 @@ command -v makevn-mcp
 
 ## OpenCode
 
-OpenCode can load repository MCP configuration from `.mcp.json` when
-`makevn-mcp` is in `PATH`. After installing or upgrading makevn, restart or
-reload the OpenCode session if the tool schema does not show makevn tools.
+OpenCode configuration files:
+
+- Global JSON: `~/.config/opencode/opencode.json`
+- Global JSONC: `~/.config/opencode/opencode.jsonc`
+- Project JSON: `./opencode.json` or `.opencode/opencode.json`
+- Project JSONC: `./opencode.jsonc`
+
+Add this under the top-level `"mcp"` key:
+
+```jsonc
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "makevn": {
+      "type": "local",
+      "command": ["makevn-mcp"],
+      "enabled": true,
+      "timeout": 900000
+    }
+  }
+}
+```
+
+If the config file already has `"mcp"`, add only the `"makevn"` entry inside
+that object. OpenCode requires `command` to be an array, not a string.
+
+This repository also ships `.mcp.json` for clients that read that format. Use
+the global OpenCode config above when the agent must have makevn tools in every
+repository.
+
+Restart OpenCode after changing config or installing makevn. OpenCode does not
+hot-reload MCP configuration.
 
 ## Codex
 
-Codex agents should use the CLI when MCP is not available:
+Codex configuration file:
+
+- Global TOML: `~/.codex/config.toml`
+- Project TOML: `.codex/config.toml` in trusted projects only
+
+Add this TOML table:
+
+```toml
+[mcp_servers.makevn]
+command = "makevn-mcp"
+enabled = true
+startup_timeout_sec = 20
+tool_timeout_sec = 900
+```
+
+Alternatively, add it with the Codex CLI:
+
+```bash
+codex mcp add makevn -- makevn-mcp
+```
+
+Use `/mcp` in the Codex TUI to confirm that the `makevn` server is active.
+
+Codex agents should use the CLI when MCP is not active:
 
 ```bash
 makevn doctor
 makevn verify-changes
 ```
 
-When MCP support is available, configure the MCP command as `makevn-mcp` and
-reload the session after install or upgrade.
+Reload the Codex session after installing or upgrading makevn so Codex reads the
+current MCP tool schema.
 
 ## Claude Code
 
