@@ -48,7 +48,8 @@ Recommended for WSL2 and Linux workstations managed with asdf:
 ```bash
 asdf plugin add makevn https://github.com/antonillos/asdf-makevn.git
 asdf install makevn latest
-asdf global makevn latest
+MAKEVN_VERSION="$(asdf latest makevn | sed -n '$p')"
+asdf set -u makevn "${MAKEVN_VERSION}"
 ```
 
 ### Agent fallback install

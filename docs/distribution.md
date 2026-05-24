@@ -80,7 +80,8 @@ Install command:
 ```bash
 asdf plugin add makevn https://github.com/antonillos/asdf-makevn.git
 asdf install makevn latest
-asdf global makevn latest
+MAKEVN_VERSION="$(asdf latest makevn | sed -n '$p')"
+asdf set -u makevn "${MAKEVN_VERSION}"
 ```
 
 The plugin downloads a runtime archive from GitHub Releases, verifies its

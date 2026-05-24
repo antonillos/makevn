@@ -30,10 +30,19 @@ fi
 Install or upgrade:
 
 ```bash
-asdf plugin add makevn https://github.com/antonillos/asdf-makevn.git || asdf plugin update makevn
-asdf install makevn latest
-asdf global makevn latest
+if asdf plugin list | grep -qx makevn; then
+  asdf plugin update makevn
+else
+  asdf plugin add makevn https://github.com/antonillos/asdf-makevn.git
+fi
+
+MAKEVN_VERSION="$(asdf latest makevn | sed -n '$p')"
+asdf install makevn "${MAKEVN_VERSION}"
+asdf set -u makevn "${MAKEVN_VERSION}"
+asdf reshim makevn "${MAKEVN_VERSION}"
 ```
+
+`asdf` 0.16+ uses `asdf set -u` instead of the legacy `asdf global` command.
 
 ## Fallback Installer
 
