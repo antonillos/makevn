@@ -1,36 +1,56 @@
-<p style="text-align:center">
+<p align="center">
   <img src="docs/assets/makevn-logo.svg" alt="makevn logo" width="180" /><br />
   <img src="docs/assets/makevn-wordmark.svg" alt="makevn" width="220" />
 </p>
 
-<p style="text-align:center">
-  <img src="https://img.shields.io/badge/java-21%2B-orange" alt="Java 21+" />
-  <img src="https://img.shields.io/badge/maven-workflows-blue" alt="Maven workflows" />
+<p align="center">
+  <img src="https://img.shields.io/badge/Java-Maven-orange" alt="Java Maven" />
+  <img src="https://img.shields.io/badge/Docker-supported-2496ed" alt="Docker supported" />
+  <img src="https://img.shields.io/badge/Karate-supported-16a34a" alt="Karate supported" />
   <img src="https://img.shields.io/badge/agent-ready-2dd4bf" alt="Agent ready" />
+  <a href="mcp/">
+    <img src="https://img.shields.io/badge/MCP-server-7c3aed" alt="MCP Server" />
+  </a>
   <a href="LICENSE">
     <img src="https://img.shields.io/badge/license-MIT-lightgrey" alt="MIT License" />
   </a>
   <a href="https://github.com/antonillos/homebrew-tap">
     <img src="https://img.shields.io/badge/brew-antonillos%2Ftap%2Fmakevn-fbbf24" alt="Homebrew" />
   </a>
-  <a href="mcp/">
-    <img src="https://img.shields.io/badge/MCP-server-7c3aed" alt="MCP Server" />
-  </a>
 </p>
 
-<p style="text-align:center"><em>Run Java Maven builds, tests, verification, and changed-code coverage from one terminal command.</em></p>
+<p align="center"><em>Analyze a Java/Maven repository and run its build, tests, app, Docker services, coverage, and Karate E2E flows from the terminal.</em></p>
 
-[Install](#install) • [Usage](#usage) • [Verification](#verification) • [MCP](#mcp) • [AI agents](#ai-agents)
+<p align="center">
+  <a href="#install">Install</a> •
+  <a href="#usage">Usage</a> •
+  <a href="#verification">Verification</a> •
+  <a href="#mcp">MCP</a> •
+  <a href="#ai-agents">AI agents</a>
+</p>
 
 ---
 
-`makevn` gives Java/Maven repositories a stable command surface for humans and
-AI agents. It resolves the local Java context, runs the normal Maven workflows,
-and avoids relying on IDE run configurations or repo-specific helper scripts.
+`makevn` is a terminal control plane for Java/Maven repositories. It inspects
+the repository, detects the Java, Maven, Docker, Karate, and coverage setup, and
+prepares safe commands for build, test, verification, application runs, and E2E
+flows.
+
+Think of it as a repository doctor and command runner for Java projects: the
+agent or developer runs `makevn doctor`, then uses the generated context to run
+the right workflow without opening an IDE or guessing repository scripts.
 
 It does not overwrite an existing root `Makefile` or `GNUmakefile`.
 
 ## Install
+
+Use the first available channel:
+
+1. Homebrew on macOS.
+2. asdf on WSL2, Linux, or managed workstations.
+3. Release installer only when Homebrew and asdf are unavailable.
+
+Do not build from source unless you are developing makevn itself.
 
 ### Homebrew
 
@@ -38,8 +58,7 @@ It does not overwrite an existing root `Makefile` or `GNUmakefile`.
 brew install antonillos/tap/makevn
 ```
 
-The formula builds from the release source archive and installs both `makevn`
-and `makevn-mcp`.
+The formula installs prebuilt release binaries for `makevn` and `makevn-mcp`.
 
 ### asdf
 
@@ -47,15 +66,17 @@ Recommended for WSL2 and Linux workstations managed with asdf:
 
 ```bash
 asdf plugin add makevn https://github.com/antonillos/asdf-makevn.git
-asdf install makevn latest
 MAKEVN_VERSION="$(asdf latest makevn | sed -n '$p')"
+asdf install makevn "${MAKEVN_VERSION}"
 asdf set -u makevn "${MAKEVN_VERSION}"
+asdf reshim makevn "${MAKEVN_VERSION}"
 ```
+
+`asdf` 0.16+ uses `asdf set -u`, not `asdf global`.
 
 ### Agent fallback install
 
-For agents or ephemeral environments without Homebrew or asdf, use the release
-installer as a fallback:
+Use this only when Homebrew and asdf are unavailable:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/antonillos/makevn/main/packaging/install/install-release.sh | sh
@@ -63,7 +84,7 @@ curl -fsSL https://raw.githubusercontent.com/antonillos/makevn/main/packaging/in
 
 ### Source install
 
-For makevn development from this repository:
+Only for makevn development from this repository:
 
 ```bash
 ./build-rust-dispatcher.sh
@@ -77,9 +98,15 @@ For makevn development from this repository:
 
 ```bash
 makevn doctor
-makevn init
 makevn test --name UserRepositoryTest
 makevn verify
+```
+
+If `makevn doctor` reports missing, stale, or uninitialized makevn state, run:
+
+```bash
+makevn init
+makevn doctor
 ```
 
 Run against another repository:
@@ -221,6 +248,7 @@ Recommended agent behavior:
 - use `coverage-changes` after a coverage-producing run
 - use `format`/`checkstyle` only when the repo declares a formatter/style plugin or `.makevn/config` sets explicit goals
 - avoid `--tail` unless a human asks for interactive logs
+- do not build makevn from source unless the human is developing makevn itself
 
 `format` detects common Maven formatters such as Spotless, `fmt-maven-plugin`,
 Revelc `formatter-maven-plugin`, Google Java Format through those plugins, and
@@ -258,38 +286,31 @@ Add to your MCP client config:
 
 If `makevn-mcp` is not in PATH, use the full path (e.g. `/usr/local/bin/makevn-mcp`).
 
-### Available tools
+### Common MCP tools
 
 | Tool | Description |
 | ---- | ----------- |
-| `doctor` | Inspect a Java/Maven repository |
-| `init` | Initialize makevn in a repository |
-| `test` | Run tests with optional name filter |
-| `verify` | Full combined verification |
-| `verify_ut` | Unit-test-only verification |
-| `verify_it` | Integration-test-only verification |
-| `verify_changes` | Verify only changed modules |
-| `compile` | Compile source code |
-| `build` | Full Maven build |
-| `coverage` | Check aggregate coverage |
-| `coverage_changes` | Check changed-code coverage |
-| `clean` | Clean build output |
-| `package` | Package without tests |
-| `format` | Check or apply formatting |
-| `exec` | Run arbitrary Maven command |
-| `jdk_current` | Show resolved JDK version |
-| `docker_ps` | List compose containers |
-| `docker_stats` | Show one-shot Docker CPU and memory stats |
-| `pr_verify` | PR-style verification |
-| `checkstyle` | Run Checkstyle checks |
+| `makevn_doctor` | Inspect a Java/Maven repository |
+| `makevn_init` | Initialize makevn in a repository |
+| `makevn_test` | Run tests with optional name filter |
+| `makevn_verify` | Full combined verification |
+| `makevn_verify_changes` | Verify changed modules or modified tests |
+| `makevn_coverage` | Check aggregate coverage |
+| `makevn_coverage_changes` | Check changed-code coverage |
+| `makevn_format` | Check or apply formatting |
+| `makevn_checkstyle` | Run Checkstyle checks |
+| `makevn_docker_up` | Start boot compose services |
+| `makevn_docker_ps_required` | Validate required compose services |
 
-All tools accept an optional `repo` argument to target a specific repository
-path, and `compact` for agent-friendly output.
+MCP tools accept a `repo` argument to target a specific repository path. Most
+tools accept `compact` for agent-friendly output. See `mcp/README.md` for
+OpenCode and Codex config examples.
 
 ## What gets installed
 
 ```text
 bin/makevn
+bin/makevn-mcp
 libexec/makevn/backend.sh
 libexec/makevn/cli.sh
 libexec/makevn/common.sh
