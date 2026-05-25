@@ -337,6 +337,7 @@ makevn_run_selected_test() {
   local test_file=""
   local relative_test_file=""
   local module_path=""
+  local module_base_path=""
   local package_name=""
   local full_test_class=""
   local boot_module=""
@@ -369,12 +370,20 @@ makevn_run_selected_test() {
   fi
 
   relative_test_file="${test_file#${maven_base_path}/}"
-  if [[ "${relative_test_file}" != */src/* ]]; then
+  if [[ "${relative_test_file}" == src/* ]]; then
+    module_path=""
+  elif [[ "${relative_test_file}" == */src/* ]]; then
+    module_path="${relative_test_file%%/src/*}"
+  else
     printf '%s\n' "$(makevn_warn "Error: could not detect module path for ${test_name}")" >&2
     return 1
   fi
 
-  module_path="${relative_test_file%%/src/*}"
+  if [[ -n "${module_path}" ]]; then
+    module_base_path="${maven_base_path}/${module_path}"
+  else
+    module_base_path="${maven_base_path}"
+  fi
   package_name="$(sed -nE 's/^[[:space:]]*package[[:space:]]+([^;]+);[[:space:]]*$/\1/p' "${test_file}" | head -n 1)"
   if [[ -z "${package_name}" ]]; then
     printf '%s\n' "$(makevn_warn "Error: could not extract package from ${test_file}")" >&2
@@ -405,8 +414,8 @@ makevn_run_selected_test() {
         printf '%s\n' "$(makevn_warn "Error: boot module not compiled (${boot_module}). Run 'makevn test --name ${test_name}' first.")" >&2
         return 1
       fi
-      if [[ ! -d "${maven_base_path}/${module_path}/target/test-classes" ]]; then
-        printf '%s\n' "$(makevn_warn "Error: test classes not compiled for ${module_path}. Run 'makevn test --name ${test_name}' first.")" >&2
+      if [[ ! -d "${module_base_path}/target/test-classes" ]]; then
+        printf '%s\n' "$(makevn_warn "Error: test classes not compiled for ${module_path:-root project}. Run 'makevn test --name ${test_name}' first.")" >&2
         return 1
       fi
       title="test ${test_name} --fast"
@@ -420,7 +429,11 @@ makevn_run_selected_test() {
         read -r -a cli_flags <<< "${cli_flags_value}"
         maven_args+=("${cli_flags[@]}")
       fi
-      maven_args+=(-f "${maven_base_path}/pom.xml" -pl "${module_path}" -am failsafe:integration-test)
+      maven_args+=(-f "${maven_base_path}/pom.xml")
+      if [[ -n "${module_path}" ]]; then
+        maven_args+=(-pl "${module_path}" -am)
+      fi
+      maven_args+=(failsafe:integration-test)
     else
       title="test ${test_name}"
       log_name="test-$(makevn_test_log_token "${test_name}")"
@@ -433,12 +446,16 @@ makevn_run_selected_test() {
         read -r -a cli_flags <<< "${cli_flags_value}"
         maven_args+=("${cli_flags[@]}")
       fi
-      maven_args+=(-f "${maven_base_path}/pom.xml" -pl "${module_path}" -am test-compile failsafe:integration-test)
+      maven_args+=(-f "${maven_base_path}/pom.xml")
+      if [[ -n "${module_path}" ]]; then
+        maven_args+=(-pl "${module_path}" -am)
+      fi
+      maven_args+=(test-compile failsafe:integration-test)
     fi
   else
     if [[ "${fast_mode}" == "true" ]]; then
-      if [[ ! -d "${maven_base_path}/${module_path}/target/test-classes" ]]; then
-        printf '%s\n' "$(makevn_warn "Error: test classes not compiled for ${module_path}. Run 'makevn test --name ${test_name}' first.")" >&2
+      if [[ ! -d "${module_base_path}/target/test-classes" ]]; then
+        printf '%s\n' "$(makevn_warn "Error: test classes not compiled for ${module_path:-root project}. Run 'makevn test --name ${test_name}' first.")" >&2
         return 1
       fi
       title="test ${test_name} --fast"
@@ -453,7 +470,10 @@ makevn_run_selected_test() {
       read -r -a cli_flags <<< "${cli_flags_value}"
       maven_args+=("${cli_flags[@]}")
     fi
-    maven_args+=(-f "${maven_base_path}/pom.xml" -pl "${module_path}" -am)
+    maven_args+=(-f "${maven_base_path}/pom.xml")
+    if [[ -n "${module_path}" ]]; then
+      maven_args+=(-pl "${module_path}" -am)
+    fi
     if [[ "${fast_mode}" == "true" ]]; then
       maven_args+=(surefire:test)
     else
