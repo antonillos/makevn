@@ -6,8 +6,13 @@ class Makevn < Formula
   homepage "https://github.com/antonillos/makevn"
   license "MIT"
 
-  url "https://github.com/antonillos/makevn/releases/download/v0.1.3/makevn-v0.1.3.tar.gz"
-  sha256 "a129067b7020612ce684fbc4a8613148715dd930ed1c225c58bbec864054d2b4"
+  if Hardware::CPU.arm?
+    url "https://github.com/antonillos/makevn/releases/download/v0.1.3/makevn-v0.1.3-aarch64-apple-darwin.tar.gz"
+    sha256 "2a3b68f065f4fd3fcce9a5a8886bea7dd7696a27c073bdb8fccf0ceea04cd69f"
+  else
+    url "https://github.com/antonillos/makevn/releases/download/v0.1.3/makevn-v0.1.3-x86_64-apple-darwin.tar.gz"
+    sha256 "71de52964fc21e96c6d7b283a53c28ecafb697a99e96b59376dabdfffbe07d2b"
+  end
 
   def install
     bin.install "bin/makevn"
