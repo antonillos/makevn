@@ -36,18 +36,20 @@ brew upgrade antonillos/tap/makevn
 
 ```bash
 asdf plugin add makevn https://github.com/antonillos/asdf-makevn.git
-asdf install makevn latest
 MAKEVN_VERSION="$(asdf latest makevn | sed -n '$p')"
+asdf install makevn "${MAKEVN_VERSION}"
 asdf set -u makevn "${MAKEVN_VERSION}"
+asdf reshim makevn "${MAKEVN_VERSION}"
 ```
 
 Upgrade with:
 
 ```bash
 asdf plugin update makevn
-asdf install makevn latest
 MAKEVN_VERSION="$(asdf latest makevn | sed -n '$p')"
+asdf install makevn "${MAKEVN_VERSION}"
 asdf set -u makevn "${MAKEVN_VERSION}"
+asdf reshim makevn "${MAKEVN_VERSION}"
 ```
 
 ## Agent Fallback Installer
