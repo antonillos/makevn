@@ -6,13 +6,8 @@ class Makevn < Formula
   homepage "https://github.com/antonillos/makevn"
   license "MIT"
 
-  if Hardware::CPU.arm?
-    url "https://github.com/antonillos/makevn/releases/download/v0.1.3/makevn-v0.1.3.tar.gz"
-    sha256 "TBD_AFTER_RELEASE"
-  else
-    url "https://github.com/antonillos/makevn/releases/download/v0.1.3/makevn-v0.1.3.tar.gz"
-    sha256 "TBD_AFTER_RELEASE"
-  end
+  url "https://github.com/antonillos/makevn/releases/download/v0.1.3/makevn-v0.1.3.tar.gz"
+  sha256 "a129067b7020612ce684fbc4a8613148715dd930ed1c225c58bbec864054d2b4"
 
   def install
     bin.install "bin/makevn"
