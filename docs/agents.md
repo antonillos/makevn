@@ -165,7 +165,7 @@ MCP equivalents for OpenCode agents:
 | `makevn run-app-bg` | `makevn_run_app_bg` |
 | `makevn stop-app` | `makevn_stop_app` |
 | `makevn run` | `makevn_run` |
-| `makevn exec -- COMMAND` | `makevn_exec` with `command: COMMAND` |
+| `makevn exec -- COMMAND` | `makevn_exec` with `command: COMMAND`; use only as a bounded escape hatch for commands that need makevn's resolved environment |
 | `makevn jdk current` | `makevn_jdk_current` |
 | `makevn jdk list` | `makevn_jdk_list` |
 
@@ -230,6 +230,18 @@ run public Docker CLI commands as `makevn docker-up`, `makevn docker-down`,
 such as `make docker-up` or `make docker-ps-required`. Use
 `make -f .makevn/makevn.mk vn-docker-*` or `vn-karate-*` only when explicitly validating make
 integration.
+
+### Git: Prefer native agent tools over `makevn exec`
+
+Agents should use their native shell/git tools for Git inspection and commit
+workflows. Do not route routine commands such as `git status`, `git diff`,
+`git log`, or `git commit` through `makevn exec`; the MCP wrapper adds context
+and should be reserved for commands that specifically need makevn's resolved Java
+repository environment.
+
+`makevn_exec` has a bounded timeout for safety. Use its `timeout-seconds`
+argument only when the default is inappropriate, and do not use it for
+interactive commands.
 
 ## Generic Workflow
 
