@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+plugin_dir="$(CDPATH= cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+"${plugin_dir}/bin/list-all" | sed -n '$p'
