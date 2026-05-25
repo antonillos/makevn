@@ -40,7 +40,7 @@ makevn_print_item() {
   if [[ -n "${MAKEVN_BACKEND_DETAIL_OUT:-}" ]]; then
     printf '%s: %s\n' "${label}" "${value}" >> "${MAKEVN_BACKEND_DETAIL_OUT}"
   else
-    printf '%s %s%s\n' "$(makevn_dim '│')" "$(makevn_dim "${label}:")" " ${value}"
+    printf '%s %s%s\n' "$(makevn_dim '│')" "${label}:" " ${value}"
   fi
 }
 

@@ -20,9 +20,26 @@ makevn_read_editable_default() {
   fi
 
   printf '%s' "${prompt}" >&2
-  read -r value </dev/tty
+  if [[ -t 0 ]]; then
+    read -r value
+  else
+    read -r value </dev/tty
+  fi
   value="$(makevn_trim "${value}")"
   [[ -n "${value}" ]] || value="${default_value}"
+  printf '%s\n' "${value}"
+}
+
+makevn_read_choice() {
+  local value=""
+
+  if [[ -t 0 ]]; then
+    read -r value
+  else
+    read -r value </dev/tty
+  fi
+
+  value="$(makevn_trim "${value//$'\r'/}")"
   printf '%s\n' "${value}"
 }
 
@@ -70,6 +87,8 @@ makevn_collect_doctor_snapshot() {
   local compose_file=""
   local e2e_compose_file=""
   local local_containers_preference=""
+  local verify_it_local_containers_default=""
+  local local_containers_configured="no"
   local prompted_interactively="no"
 
   makevn_doctor_progress "Inspecting repository layout"
@@ -126,7 +145,7 @@ makevn_collect_doctor_snapshot() {
         local _choice=""
         while true; do
           printf 'Enter number [1-%d]: ' "${#_found[@]}" >&2
-          read -r _choice </dev/tty
+          _choice="$(makevn_read_choice)"
           if [[ "${_choice}" =~ ^[0-9]+$ ]] && (( _choice >= 1 && _choice <= ${#_found[@]} )); then
             break
           fi
@@ -175,7 +194,7 @@ makevn_collect_doctor_snapshot() {
         local _echoice=""
         while true; do
           printf 'Enter number [1-%d]: ' "${#_e2e_found[@]}" >&2
-          read -r _echoice </dev/tty
+          _echoice="$(makevn_read_choice)"
           if [[ "${_echoice}" =~ ^[0-9]+$ ]] && (( _echoice >= 1 && _echoice <= ${#_e2e_found[@]} )); then
             break
           fi
@@ -234,8 +253,17 @@ makevn_collect_doctor_snapshot() {
   profile_path="$(makevn_profile_path "${repo_root}")"
   [[ -f "${profile_path}" ]] && profile_status="${profile_path}"
 
+  verify_it_local_containers_default="${MAKEVN_DETECTED_VERIFY_IT_LOCAL_CONTAINERS:-}"
+  if [[ -z "${verify_it_local_containers_default}" ]]; then
+    makevn_load_profile "${repo_root}"
+    verify_it_local_containers_default="${MAKEVN_PROFILE_VERIFY_IT_LOCAL_CONTAINERS:-}"
+  fi
+  if [[ -f "$(makevn_config_path "${repo_root}")" ]] && grep -q '^MAKEVN_LOCAL_CONTAINERS=' "$(makevn_config_path "${repo_root}")"; then
+    local_containers_configured="yes"
+  fi
+
   makevn_load_config "${repo_root}"
-  if [[ -f "$(makevn_config_path "${repo_root}")" && -n "${MAKEVN_DETECTED_VERIFY_IT_LOCAL_CONTAINERS:-}" && -z "${LOCAL_CONTAINERS+x}" && -z "${MAKEVN_LOCAL_CONTAINERS+x}" && -t 0 && -t 2 ]]; then
+  if [[ -f "$(makevn_config_path "${repo_root}")" && -n "${verify_it_local_containers_default}" && -z "${LOCAL_CONTAINERS+x}" && "${local_containers_configured}" != "yes" && -t 0 && -t 2 ]]; then
     printf '\n' >&2
     printf '%s\n' "$(makevn_warn "Use LOCAL_CONTAINERS=TRUE by default for makevn test/verify commands?")" >&2
     printf '  [1] yes, use local containers\n' >&2
@@ -243,7 +271,7 @@ makevn_collect_doctor_snapshot() {
     local _local_choice=""
     while true; do
       printf 'Enter number [1-2]: ' >&2
-      read -r _local_choice </dev/tty
+      _local_choice="$(makevn_read_choice)"
       case "${_local_choice}" in
         1)
           makevn_update_config_local_containers "${repo_root}" "TRUE"
@@ -351,7 +379,7 @@ makevn_collect_doctor_snapshot() {
   MAKEVN_DOCTOR_MAKE_INTEGRATION_STATUS="${make_integration_status}"
   MAKEVN_DOCTOR_COMPOSE_FILE="${compose_file}"
   MAKEVN_DOCTOR_E2E_COMPOSE_FILE="${e2e_compose_file}"
-  local_containers_preference="$(makevn_effective_local_containers "${repo_root}" "${MAKEVN_DETECTED_VERIFY_IT_LOCAL_CONTAINERS:-}")"
+  local_containers_preference="$(makevn_effective_local_containers "${repo_root}" "${verify_it_local_containers_default}")"
   MAKEVN_DOCTOR_LOCAL_CONTAINERS="${local_containers_preference:-unset}"
   MAKEVN_DOCTOR_SUGGESTED_NEXT=""
   MAKEVN_DOCTOR_SUGGESTED_OPTIONAL=""

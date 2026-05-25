@@ -90,6 +90,13 @@ makevn_load_config() {
   local repo_root="$1"
   local config_path
   config_path="$(makevn_config_path "${repo_root}")"
+
+  unset MAKEVN_JAVA_HOME MAKEVN_CODE_JAVA_HOME MAKEVN_KARATE_JAVA_HOME
+  unset MAKEVN_CODE_TOOL_VERSIONS MAKEVN_KARATE_TOOL_VERSIONS MAKEVN_RUN_CMD
+  unset MAKEVN_FORMAT_CHECK_GOAL MAKEVN_FORMAT_APPLY_GOAL MAKEVN_CHECKSTYLE_GOAL
+  unset MAKEVN_COVERAGE_PROP_FLAGS MAKEVN_MIN_COVERAGE_THRESHOLD MAKEVN_MIN_COVERAGE_CHANGES_THRESHOLD
+  unset MAKEVN_COMPOSE_FILE MAKEVN_E2E_COMPOSE_FILE MAKEVN_LOCAL_CONTAINERS MAKEVN_APP_HEALTH_URL
+
   if [[ -f "${config_path}" ]]; then
     # shellcheck source=/dev/null
     source "${config_path}"
