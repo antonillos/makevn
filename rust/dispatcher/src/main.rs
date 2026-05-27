@@ -3233,9 +3233,10 @@ mod tests {
     use super::{
         command_help, command_supports_frontend_loader, dashboard_hint, dim_text,
         format_resource_sample, insert_backend_option, install_root_with_override,
-        parse_invocation, parse_mcp_invocation, read_backend_metadata, spinner_hint, spinner_kitt_frame,
-        split_command_segments, strip_frontend_tail_flag, tail_status_lines, Action,
-        BackendInvocation, BackendMetadata, CommandSummary, McpAction, ResourceHistory, ResourceSample,
+        parse_invocation, parse_mcp_invocation, read_backend_metadata, spinner_hint,
+        spinner_kitt_frame, split_command_segments, strip_frontend_tail_flag, tail_status_lines,
+        Action, BackendInvocation, BackendMetadata, CommandSummary, McpAction, ResourceHistory,
+        ResourceSample,
     };
     use std::env;
     use std::ffi::OsString;

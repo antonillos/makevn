@@ -31,13 +31,13 @@ assert_not_exists() {
 assert_contains() {
   local path="$1"
   local text="$2"
-  grep -Fq "${text}" "${path}" || fail "expected ${path} to contain: ${text}"
+  grep -Fq -- "${text}" "${path}" || fail "expected ${path} to contain: ${text}"
 }
 
 assert_not_contains() {
   local path="$1"
   local text="$2"
-  if grep -Fq "${text}" "${path}"; then
+  if grep -Fq -- "${text}" "${path}"; then
     fail "expected ${path} not to contain: ${text}"
   fi
 }
@@ -1348,6 +1348,58 @@ EOF
   assert_contains "${repo}/exec-java-home.txt" "${java_home}"
   assert_contains "${repo}/run.out" "run-ok"
   ${CLI} --repo "${repo}" uninstall >/dev/null
+}
+
+test_nested_single_maven_project_routing() {
+  local repo="${TMP_ROOT}/nested-single-maven-project-routing"
+  local java_home
+
+  mkdir -p "${repo}/cataloger-cli/src/test/java/com/example"
+  java_home="$(detect_java_home)"
+  ${CLI} --repo "${repo}" init >/dev/null
+  cat > "${repo}/.makevn/config" <<EOF
+MAKEVN_JAVA_HOME="${java_home}"
+MAKEVN_CODE_JAVA_HOME=""
+MAKEVN_KARATE_JAVA_HOME=""
+MAKEVN_CODE_TOOL_VERSIONS=""
+MAKEVN_KARATE_TOOL_VERSIONS=""
+MAKEVN_RUN_CMD=""
+MAKEVN_FORMAT_CHECK_GOAL=""
+MAKEVN_FORMAT_APPLY_GOAL=""
+MAKEVN_CHECKSTYLE_GOAL=""
+EOF
+  cat > "${repo}/cataloger-cli/pom.xml" <<'EOF'
+<project>
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-checkstyle-plugin</artifactId>
+      </plugin>
+    </plugins>
+  </build>
+</project>
+EOF
+  cat > "${repo}/cataloger-cli/src/test/java/com/example/NestedTest.java" <<'EOF'
+package com.example;
+
+class NestedTest {}
+EOF
+  cat > "${repo}/cataloger-cli/mvnw" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+printf 'ARGS=%s\n' "$*" >> .mvnw.log
+printf 'JAVA_HOME=%s\n' "${JAVA_HOME:-}" >> .mvnw.log
+EOF
+  chmod +x "${repo}/cataloger-cli/mvnw"
+
+  ${CLI} --repo "${repo}" test --name NestedTest >/dev/null
+  ${CLI} --repo "${repo}" checkstyle --module cataloger-cli --verbose >/dev/null
+
+  assert_matches "${repo}/.mvnw.log" '^ARGS=-nsu -f .*/cataloger-cli/pom\.xml test -Dtest=com\.example\.NestedTest -Dfailsafe\.failIfNoSpecifiedTests=false -Dsurefire\.failIfNoSpecifiedTests=false -Dmaven\.build\.cache\.enabled=true -Dsurefire\.testFailureIgnore=false$'
+  assert_matches "${repo}/.mvnw.log" '^ARGS=-f .*/cataloger-cli/pom\.xml org\.apache\.maven\.plugins:maven-checkstyle-plugin:check -Dcheckstyle\.consoleOutput=true$'
+  assert_not_contains "${repo}/.mvnw.log" '-pl cataloger-cli'
+  assert_contains "${repo}/.mvnw.log" "JAVA_HOME=${java_home}"
 }
 
 test_docker_commands() {
@@ -3505,6 +3557,7 @@ main() {
   test_non_tty_run_is_compact_and_keeps_full_log_in_file
   test_compact_tty_omits_color_and_loader
   test_command_routing
+  test_nested_single_maven_project_routing
   test_docker_commands
   test_docker_service_extraction_ignores_non_services
   test_docker_up_missing_compose_writes_log

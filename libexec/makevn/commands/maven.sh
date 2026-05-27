@@ -444,6 +444,7 @@ cmd_checkstyle() {
   local module=""
   local verbose=false
   local maven_base_path=""
+  local maven_base_rel=""
   local maven_executable=""
   local checkstyle_goal=""
   local maven_cli_flags_value=""
@@ -479,6 +480,12 @@ cmd_checkstyle() {
 
   maven_base_path="$(makevn_detect_maven_base_path "${repo_root}" || true)"
   [[ -n "${maven_base_path}" ]] || makevn_die "No Maven project detected in ${repo_root}"
+  if [[ -n "${module}" && ! -f "${repo_root}/pom.xml" ]]; then
+    maven_base_rel="${maven_base_path#${repo_root}/}"
+    if [[ "${module}" == "${maven_base_rel}" || "${module}" == "$(basename "${maven_base_path}")" ]]; then
+      module=""
+    fi
+  fi
   checkstyle_goal="$(makevn_checkstyle_goal_for_project "${repo_root}" "${maven_base_path}")"
   maven_executable="$(makevn_maven_executable "${repo_root}" "${maven_base_path}")"
   maven_cli_flags_value="$(makevn_maven_cli_flags_for_command "${repo_root}" checkstyle)"

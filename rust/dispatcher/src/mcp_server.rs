@@ -1,6 +1,11 @@
-use std::io::{self, BufRead, Write};
+use std::io::{self, BufRead, Read, Write};
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Stdio};
+use std::thread;
+use std::time::{Duration, Instant};
+
+#[cfg(unix)]
+use std::os::unix::process::CommandExt;
 
 use serde_json::{json, Map, Value};
 
@@ -165,6 +170,15 @@ const DRY_RUN: ToolOption = ToolOption {
     description: "Show what would be done",
     required: false,
 };
+const EXEC_TIMEOUT_SECONDS: ToolOption = ToolOption {
+    name: "timeout-seconds",
+    ty: "number",
+    description: "Maximum seconds to wait for exec commands, default 120, range 1-900",
+    required: false,
+};
+
+const EXEC_DEFAULT_TIMEOUT_SECONDS: u64 = 120;
+const EXEC_MAX_TIMEOUT_SECONDS: u64 = 900;
 
 const TOOL_SPECS: &[ToolSpec] = &[
     ToolSpec { name: "doctor", description: "Inspect a Java/Maven repository. Run this first to understand the repo setup.", command: &["doctor"], options: &[COMMON_REPO, COMPACT] },
@@ -205,7 +219,7 @@ const TOOL_SPECS: &[ToolSpec] = &[
     ToolSpec { name: "run_app_bg", description: "Run the detected application in the background.", command: &["run-app-bg"], options: &[COMMON_REPO] },
     ToolSpec { name: "stop_app", description: "Stop the background application started by makevn.", command: &["stop-app"], options: &[COMMON_REPO] },
     ToolSpec { name: "run", description: "Run the detected application using repository defaults.", command: &["run"], options: &[COMMON_REPO] },
-    ToolSpec { name: "exec", description: "Run an arbitrary command in the repository context.", command: &["exec"], options: &[COMMON_REPO, ToolOption { name: "command", ty: "string", description: "The command to execute, e.g. 'mvn -v'", required: true }, ToolOption { name: "context", ty: "string", description: "Execution context: 'code' or 'karate'", required: false }, COMPACT] },
+    ToolSpec { name: "exec", description: "Run a bounded arbitrary command with makevn's resolved repository environment. Prefer typed makevn tools for supported Maven, Docker, and JDK workflows; use native agent shell/git tools for git operations. Do not use for interactive commands.", command: &["exec"], options: &[COMMON_REPO, ToolOption { name: "command", ty: "string", description: "The command to execute, e.g. 'mvn -v'", required: true }, ToolOption { name: "context", ty: "string", description: "Execution context: 'code' or 'karate'", required: false }, EXEC_TIMEOUT_SECONDS, COMPACT] },
     ToolSpec { name: "jdk_current", description: "Show the currently resolved JDK version.", command: &["jdk", "current"], options: &[COMMON_REPO] },
     ToolSpec { name: "jdk_list", description: "List discovered JDK installations.", command: &["jdk", "list"], options: &[COMMON_REPO] },
     ToolSpec { name: "mutation", description: "Run PIT mutation testing. Detects pitest-maven plugin automatically. WARNING: Very slow (30+ min for large projects).", command: &["mutation"], options: &[COMMON_REPO, MODULE, VERBOSE, COMPACT] },
@@ -270,14 +284,19 @@ fn handle_tool_call(makevn_bin: &Path, params: &Value) -> Result<String, String>
     cmd_args.extend(spec.command.iter().map(|part| (*part).to_owned()));
     push_tool_flags(&mut cmd_args, spec, &args)?;
 
-    let output = Command::new(makevn_bin)
-        .args(&cmd_args)
-        .env("NO_COLOR", "1")
-        .env("MAKEVN_COMPACT_OUTPUT", "1")
-        .env("MAKEVN_AGENT_OUTPUT", "1")
-        .env("CI", "1")
-        .output()
-        .map_err(|e| format!("failed to execute makevn: {e}"))?;
+    let output = if tool_name == "exec" {
+        run_makevn_with_timeout(makevn_bin, &cmd_args, exec_timeout_seconds(&args)?)?
+    } else {
+        Command::new(makevn_bin)
+            .args(&cmd_args)
+            .env("NO_COLOR", "1")
+            .env("MAKEVN_COMPACT_OUTPUT", "1")
+            .env("MAKEVN_AGENT_OUTPUT", "1")
+            .env("CI", "1")
+            .output()
+            .map_err(|e| format!("failed to execute makevn: {e}"))?
+            .into()
+    };
 
     let mut result = String::new();
     if !output.stdout.is_empty() {
@@ -289,13 +308,140 @@ fn handle_tool_call(makevn_bin: &Path, params: &Value) -> Result<String, String>
         }
         result.push_str(String::from_utf8_lossy(&output.stderr).trim());
     }
-    if !output.status.success() {
+    if output.timed_out {
+        if !result.is_empty() {
+            result.push('\n');
+        }
+        result.push_str(&format!("timed out after {}s", output.timeout_seconds));
+    } else if !output.status.success() {
         if !result.is_empty() {
             result.push('\n');
         }
         result.push_str(&format!("exit code {}", output.status.code().unwrap_or(-1)));
     }
     Ok(result)
+}
+
+struct ToolOutput {
+    stdout: Vec<u8>,
+    stderr: Vec<u8>,
+    status: std::process::ExitStatus,
+    timed_out: bool,
+    timeout_seconds: u64,
+}
+
+impl From<std::process::Output> for ToolOutput {
+    fn from(output: std::process::Output) -> Self {
+        Self {
+            stdout: output.stdout,
+            stderr: output.stderr,
+            status: output.status,
+            timed_out: false,
+            timeout_seconds: 0,
+        }
+    }
+}
+
+fn exec_timeout_seconds(args: &Map<String, Value>) -> Result<u64, String> {
+    let Some(value) = args.get("timeout-seconds") else {
+        return Ok(EXEC_DEFAULT_TIMEOUT_SECONDS);
+    };
+    let Some(number) = value.as_u64() else {
+        return Err(String::from("timeout-seconds must be an integer number"));
+    };
+    if !(1..=EXEC_MAX_TIMEOUT_SECONDS).contains(&number) {
+        return Err(format!(
+            "timeout-seconds must be between 1 and {EXEC_MAX_TIMEOUT_SECONDS}"
+        ));
+    }
+    Ok(number)
+}
+
+fn run_makevn_with_timeout(
+    makevn_bin: &Path,
+    cmd_args: &[String],
+    timeout_seconds: u64,
+) -> Result<ToolOutput, String> {
+    let mut command = Command::new(makevn_bin);
+    command
+        .args(cmd_args)
+        .env("NO_COLOR", "1")
+        .env("MAKEVN_COMPACT_OUTPUT", "1")
+        .env("MAKEVN_AGENT_OUTPUT", "1")
+        .env("CI", "1")
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    #[cfg(unix)]
+    command.process_group(0);
+
+    let mut child = command
+        .spawn()
+        .map_err(|e| format!("failed to execute makevn: {e}"))?;
+
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or_else(|| String::from("failed to capture makevn stdout"))?;
+    let stderr = child
+        .stderr
+        .take()
+        .ok_or_else(|| String::from("failed to capture makevn stderr"))?;
+    let stdout_reader = thread::spawn(move || read_all(stdout));
+    let stderr_reader = thread::spawn(move || read_all(stderr));
+    let deadline = Instant::now() + Duration::from_secs(timeout_seconds);
+
+    let (status, timed_out) = loop {
+        if let Some(status) = child
+            .try_wait()
+            .map_err(|e| format!("failed to wait for makevn: {e}"))?
+        {
+            break (status, false);
+        }
+        if Instant::now() >= deadline {
+            kill_makevn_child(&mut child);
+            let status = child
+                .wait()
+                .map_err(|e| format!("failed to wait for timed out makevn: {e}"))?;
+            break (status, true);
+        }
+        thread::sleep(Duration::from_millis(50));
+    };
+
+    let stdout = stdout_reader
+        .join()
+        .map_err(|_| String::from("failed to join stdout reader"))??;
+    let stderr = stderr_reader
+        .join()
+        .map_err(|_| String::from("failed to join stderr reader"))??;
+
+    Ok(ToolOutput {
+        stdout,
+        stderr,
+        status,
+        timed_out,
+        timeout_seconds,
+    })
+}
+
+#[cfg(unix)]
+fn kill_makevn_child(child: &mut std::process::Child) {
+    let pid = child.id() as i32;
+    unsafe {
+        libc::killpg(pid, libc::SIGKILL);
+    }
+}
+
+#[cfg(not(unix))]
+fn kill_makevn_child(child: &mut std::process::Child) {
+    let _ = child.kill();
+}
+
+fn read_all(mut reader: impl Read) -> Result<Vec<u8>, String> {
+    let mut buffer = Vec::new();
+    reader
+        .read_to_end(&mut buffer)
+        .map_err(|e| format!("failed to read makevn output: {e}"))?;
+    Ok(buffer)
 }
 
 fn push_tool_flags(
@@ -333,6 +479,9 @@ fn push_tool_flags(
                     cmd_args.push(format_number(number));
                 }
             }
+            "timeout-seconds" => {
+                exec_timeout_seconds(args)?;
+            }
             "compose" | "context" | "module" | "name" | "tag" => {
                 if let Some(text) = value.as_str().filter(|s| !s.is_empty()) {
                     cmd_args.push(format!("--{}", option.name));
@@ -363,7 +512,7 @@ fn format_number(number: f64) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{push_tool_flags, TOOL_SPECS};
+    use super::{exec_timeout_seconds, push_tool_flags, TOOL_SPECS};
     use serde_json::{json, Map};
 
     #[test]
@@ -372,6 +521,7 @@ mod tests {
         let mut args = Map::new();
         args.insert("context".into(), json!("code"));
         args.insert("command".into(), json!("mvn -v"));
+        args.insert("timeout-seconds".into(), json!(5));
         let mut cmd_args = vec![String::from("exec")];
 
         push_tool_flags(&mut cmd_args, spec, &args).unwrap();
@@ -380,5 +530,36 @@ mod tests {
             cmd_args,
             vec!["exec", "--context", "code", "--", "mvn", "-v"]
         );
+    }
+
+    #[test]
+    fn exec_timeout_defaults_when_omitted() {
+        let args = Map::new();
+
+        assert_eq!(exec_timeout_seconds(&args).unwrap(), 120);
+    }
+
+    #[test]
+    fn exec_timeout_accepts_valid_range() {
+        let mut args = Map::new();
+        args.insert("timeout-seconds".into(), json!(900));
+
+        assert_eq!(exec_timeout_seconds(&args).unwrap(), 900);
+    }
+
+    #[test]
+    fn exec_timeout_rejects_zero() {
+        let mut args = Map::new();
+        args.insert("timeout-seconds".into(), json!(0));
+
+        assert!(exec_timeout_seconds(&args).is_err());
+    }
+
+    #[test]
+    fn exec_timeout_rejects_above_maximum() {
+        let mut args = Map::new();
+        args.insert("timeout-seconds".into(), json!(901));
+
+        assert!(exec_timeout_seconds(&args).is_err());
     }
 }
