@@ -10,18 +10,30 @@ See `docs/agent-install.md`.
 
 ## OpenCode Configuration
 
-Add this entry to `~/.config/opencode/opencode.jsonc` under the `"mcp"` key:
+Use one of these global config files:
+
+- `~/.config/opencode/opencode.json`
+- `~/.config/opencode/opencode.jsonc`
+
+Add this top-level `"mcp"` entry:
 
 ```jsonc
-"makevn": {
-  "type": "local",
-  "command": ["makevn-mcp"],
-  "enabled": true,
-  "timeout": 900000
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "makevn": {
+      "type": "local",
+      "command": ["makevn-mcp"],
+      "enabled": true,
+      "timeout": 900000
+    }
+  }
 }
 ```
 
 - `enabled: true` keeps the MCP server always active across sessions.
+- `command` must be an array. Do not write `"command": "makevn-mcp"` in
+  OpenCode config.
 - `timeout: 900000` (15 min) is sufficient for synchronous tools. The `mutation`
   tool spawns in background and returns immediately.
 
@@ -30,6 +42,33 @@ The `makevn-mcp` binary must be in `PATH`, or use an absolute path:
 ```jsonc
 "command": ["/path/to/makevn-mcp"]
 ```
+
+Restart OpenCode after editing config. OpenCode reads MCP configuration when it
+starts and does not hot-reload it.
+
+## Codex Configuration
+
+Use `~/.codex/config.toml` for global Codex config. Use `.codex/config.toml`
+only for a trusted project.
+
+Add this table:
+
+```toml
+[mcp_servers.makevn]
+command = "makevn-mcp"
+enabled = true
+startup_timeout_sec = 20
+tool_timeout_sec = 900
+```
+
+Or run:
+
+```bash
+codex mcp add makevn -- makevn-mcp
+```
+
+Use `/mcp` in the Codex TUI to confirm that the server is active. Restart or
+reload Codex after installing or upgrading makevn.
 
 ## Agent Workflow
 
