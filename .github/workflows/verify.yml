@@ -30,4 +30,14 @@ jobs:
         run: ./build-rust-dispatcher.sh
       - name: Run smoke tests
         shell: bash
-        run: bash test/smoke/run.sh
+        run: |
+          set -euo pipefail
+          mkdir -p "${RUNNER_TEMP}/makevn-smoke"
+          TMPDIR="${RUNNER_TEMP}/makevn-smoke" bash test/smoke/run.sh
+      - name: Upload smoke artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-artifacts
+          path: ${{ runner.temp }}/makevn-smoke
+          if-no-files-found: ignore
