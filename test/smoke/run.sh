@@ -7,18 +7,10 @@ BACKEND="${ROOT_DIR}/libexec/makevn/backend.sh"
 TMP_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/makevn-smoke.XXXXXX")"
 
 cleanup() {
+  [[ "${MAKEVN_KEEP_SMOKE_TMP:-}" != "1" ]] || return 0
   rm -rf "${TMP_ROOT}"
 }
 trap cleanup EXIT
-
-on_error() {
-  local exit_code="$1"
-  local line_no="$2"
-  local command="$3"
-  printf 'FAIL: command failed with exit %s at line %s: %s\n' "${exit_code}" "${line_no}" "${command}" >&2
-  printf 'FAIL: smoke temp root: %s\n' "${TMP_ROOT}" >&2
-}
-trap 'on_error "$?" "$LINENO" "$BASH_COMMAND"' ERR
 
 fail() {
   printf 'FAIL: %s\n' "$*" >&2

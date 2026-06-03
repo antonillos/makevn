@@ -33,7 +33,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p "${RUNNER_TEMP}/makevn-smoke"
-          TMPDIR="${RUNNER_TEMP}/makevn-smoke" bash test/smoke/run.sh
+          MAKEVN_KEEP_SMOKE_TMP=1 TMPDIR="${RUNNER_TEMP}/makevn-smoke" bash test/smoke/run.sh
       - name: Upload smoke artifacts
         if: failure()
         uses: actions/upload-artifact@v4
