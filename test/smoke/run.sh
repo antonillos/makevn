@@ -667,7 +667,7 @@ printf 'openjdk version "21.0.3" 2024-01-01\n' >&2
 EOF
   chmod +x "${java17_home}/bin/java" "${java21_home}/bin/java"
 
-  output="$(MAKEVN_JDK_CANDIDATE_BASES="${fake_home_root}/.sdkman/candidates/java" HOME="${fake_home_root}" ${CLI} --repo "${repo}" doctor)"
+  output="$(JAVA_HOME= MAKEVN_JDK_CANDIDATE_BASES="${fake_home_root}/.sdkman/candidates/java" HOME="${fake_home_root}" ${CLI} --repo "${repo}" doctor)"
 
   [[ "${output}" == *"Code Java version: 6"* ]] || fail "doctor should detect the requested Java version from pom.xml"
   [[ "${output}" == *"Resolved code JAVA_HOME: ${java17_home}"* ]] || fail "doctor should resolve to the lowest compatible newer JDK when no exact match is installed"
@@ -697,7 +697,7 @@ printf 'openjdk version "17.0.9" 2024-01-01\n' >&2
 EOF
   chmod +x "${java17_home}/bin/java"
 
-  MAKEVN_JDK_CANDIDATE_BASES="${fake_home_root}/.sdkman/candidates/java" HOME="${fake_home_root}" ${CLI} --repo "${repo}" exec -- bash -lc 'printf "%s\n" "${JAVA_HOME}"' > "${repo}/exec.out"
+  JAVA_HOME= MAKEVN_JDK_CANDIDATE_BASES="${fake_home_root}/.sdkman/candidates/java" HOME="${fake_home_root}" ${CLI} --repo "${repo}" exec -- bash -lc 'printf "%s\n" "${JAVA_HOME}"' > "${repo}/exec.out"
 
   assert_contains "${repo}/exec.out" "${java17_home}"
 }
