@@ -214,7 +214,7 @@ makevn_collect_doctor_snapshot() {
     app_runnable="yes"
   fi
   makevn_doctor_progress "Resolving Java homes"
-  code_java_home="$(makevn_effective_java_home "${repo_root}" code "${maven_base_path}" || true)"
+  code_java_home="$(MAKEVN_RESOLVE_COMPATIBLE_JAVA_FIRST=1 makevn_effective_java_home "${repo_root}" code "${maven_base_path}" || true)"
   if [[ -z "${code_java_home}" && -n "${code_java_version}" ]]; then
     compatible_code_java_homes="$(makevn_compatible_java_homes_csv "${code_java_version}" || true)"
   fi
