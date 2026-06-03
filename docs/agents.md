@@ -78,6 +78,13 @@ Integration-test coverage gate for repositories that need boot containers:
 makevn docker-up docker-ps-required --wait-seconds 30 clean verify-it-coverage coverage-changes
 ```
 
+Use the boot-container sequence only when `makevn doctor` or `.makevn/config`
+shows that Docker is a test prerequisite: a configured `Docker compose file`, a
+test compose under `src/test/resources/compose`, or a `LOCAL_CONTAINERS default`
+value. Do not infer that `verify` needs Docker merely because the repository has
+a root `docker-compose.yml`; those files are often local-development or sample
+compose files.
+
 Latest aggregate coverage gate when a JaCoCo report already exists:
 
 ```bash
@@ -197,6 +204,11 @@ validation, use `makevn docker-ps-required --compose karate`; plain
 be starting, agents should prefer `makevn docker-ps-required --wait-seconds N`
 over inserting shell-level `sleep` calls between commands.
 
+`makevn verify` and `makevn verify-it` perform Docker preflight only when the
+repository has a clear boot-test Docker signal. If they reach Maven without
+starting Docker, do not add `docker-up` manually unless `doctor`, `.makevn/config`,
+or the human confirms that boot services are required.
+
 ### Docker: Never use `makevn exec` for container operations
 
 Agents must **never** use `makevn exec` to run raw `docker` or `docker compose`
@@ -247,7 +259,7 @@ interactive commands.
 
 1. Load the `makevn` skill in the agent environment.
 2. Run `makevn doctor` in the target repo.
-3. If the repo is not initialized and the user wants installation, run `makevn init`.
+3. If `makevn doctor` reports that the repo is not initialized, run `makevn init` before continuing with adoption or verification work.
 4. Use `makevn make install` only when the user explicitly wants Make integration.
 5. Validate the result.
 6. Use `makevn uninstall` to revert.
@@ -255,6 +267,12 @@ interactive commands.
 When JSON output exists for the command being used, agents should prefer it over parsing prose.
 
 Today that guidance is forward-looking: public `--json` behavior is still part of the Rust transition rather than the currently published CLI surface.
+
+In an interactive terminal, `makevn doctor` may ask the human to persist
+repository-specific defaults such as `MAKEVN_LOCAL_CONTAINERS` or an application
+health URL. Non-interactive agent runs should not hang on these prompts; use the
+reported `LOCAL_CONTAINERS default`, `Docker compose file`, and health URL fields
+instead of guessing.
 
 ## OpenCode Workflow
 
