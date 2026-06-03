@@ -52,10 +52,19 @@ jobs:
           title="chore: sync main into develop"
           body="Sync main back into develop after release."
           pr_url=""
+          pr_number=""
 
-          if gh pr view "${branch}" --repo "${{ github.repository }}" >/dev/null 2>&1; then
-            pr_url="$(gh pr view "${branch}" --repo "${{ github.repository }}" --json url --jq .url)"
-            gh pr edit "${branch}" --repo "${{ github.repository }}" --title "${title}" --body "${body}"
+          pr_number="$(gh pr list \
+            --repo "${{ github.repository }}" \
+            --head "${branch}" \
+            --base develop \
+            --state open \
+            --json number \
+            --jq '.[0].number // empty')"
+
+          if [[ -n "${pr_number}" ]]; then
+            pr_url="$(gh pr view "${pr_number}" --repo "${{ github.repository }}" --json url --jq .url)"
+            gh pr edit "${pr_number}" --repo "${{ github.repository }}" --title "${title}" --body "${body}"
           else
             if ! pr_url="$(gh pr create \
               --repo "${{ github.repository }}" \
