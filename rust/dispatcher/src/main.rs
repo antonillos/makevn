@@ -2910,6 +2910,12 @@ fn install_root(current_exe: &Path) -> Result<PathBuf, String> {
         }
     }
 
+    if let Ok(root) = install_root_with_override(current_exe, None) {
+        if root.join("libexec/makevn/backend.sh").is_file() {
+            return Ok(root);
+        }
+    }
+
     if let Some(root) = install_root_from_path() {
         return Ok(root);
     }
@@ -3232,7 +3238,7 @@ impl fmt::Display for Lossy<'_> {
 mod tests {
     use super::{
         command_help, command_supports_frontend_loader, dashboard_hint, dim_text,
-        format_resource_sample, insert_backend_option, install_root_with_override,
+        format_resource_sample, insert_backend_option, install_root, install_root_with_override,
         parse_invocation, parse_mcp_invocation, read_backend_metadata, spinner_hint,
         spinner_kitt_frame, split_command_segments, strip_frontend_tail_flag, tail_status_lines,
         Action, BackendInvocation, BackendMetadata, CommandSummary, McpAction, ResourceHistory,
@@ -3246,7 +3252,10 @@ mod tests {
     use std::os::unix::fs::symlink;
     use std::path::Path;
     use std::process;
+    use std::sync::Mutex;
     use std::time::{Duration, SystemTime, UNIX_EPOCH};
+
+    static ENV_LOCK: Mutex<()> = Mutex::new(());
 
     fn current_repo_root() -> OsString {
         super::resolve_repo_root(None).unwrap().into_os_string()
@@ -3266,6 +3275,52 @@ mod tests {
         )
         .unwrap();
         assert_eq!(root, Path::new("/worktree/repo"));
+    }
+
+    #[test]
+    fn install_root_prefers_current_executable_runtime_over_path() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        let unique_suffix = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let work_dir = env::temp_dir().join(format!(
+            "makevn-install-root-test-{}-{unique_suffix}",
+            process::id()
+        ));
+        let current_root = work_dir.join("current");
+        let path_root = work_dir.join("from-path");
+        let current_bin = current_root.join("bin/makevn");
+        let path_bin = path_root.join("bin/makevn");
+
+        fs::create_dir_all(current_root.join("bin")).unwrap();
+        fs::create_dir_all(current_root.join("libexec/makevn")).unwrap();
+        fs::create_dir_all(path_root.join("bin")).unwrap();
+        fs::create_dir_all(path_root.join("libexec/makevn")).unwrap();
+        fs::write(&current_bin, b"").unwrap();
+        fs::write(current_root.join("libexec/makevn/backend.sh"), b"").unwrap();
+        fs::write(&path_bin, b"").unwrap();
+        fs::write(path_root.join("libexec/makevn/backend.sh"), b"").unwrap();
+
+        let original_path = env::var_os("PATH");
+        let original_install_root = env::var_os("MAKEVN_INSTALL_ROOT");
+        env::remove_var("MAKEVN_INSTALL_ROOT");
+        env::set_var("PATH", path_root.join("bin"));
+
+        let root = install_root(&current_bin).unwrap();
+        let expected_root = fs::canonicalize(&current_root).unwrap();
+
+        match original_path {
+            Some(path) => env::set_var("PATH", path),
+            None => env::remove_var("PATH"),
+        }
+        match original_install_root {
+            Some(root) => env::set_var("MAKEVN_INSTALL_ROOT", root),
+            None => env::remove_var("MAKEVN_INSTALL_ROOT"),
+        }
+        fs::remove_dir_all(work_dir).unwrap();
+
+        assert_eq!(root, expected_root);
     }
 
     #[cfg(unix)]
