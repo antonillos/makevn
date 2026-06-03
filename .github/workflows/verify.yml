@@ -1,0 +1,43 @@
+name: Verify
+
+on:
+  pull_request:
+    branches:
+      - develop
+      - main
+  push:
+    branches:
+      - develop
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Install Rust
+        shell: bash
+        run: rustup toolchain install stable --profile minimal
+      - name: Build dispatcher
+        shell: bash
+        run: ./build-rust-dispatcher.sh
+      - name: Run smoke tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "${RUNNER_TEMP}/makevn-smoke"
+          MAKEVN_KEEP_SMOKE_TMP=1 TMPDIR="${RUNNER_TEMP}/makevn-smoke" bash test/smoke/run.sh
+      - name: Upload smoke artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-artifacts
+          path: ${{ runner.temp }}/makevn-smoke
+          if-no-files-found: ignore

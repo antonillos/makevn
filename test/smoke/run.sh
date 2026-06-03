@@ -7,6 +7,7 @@ BACKEND="${ROOT_DIR}/libexec/makevn/backend.sh"
 TMP_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/makevn-smoke.XXXXXX")"
 
 cleanup() {
+  [[ "${MAKEVN_KEEP_SMOKE_TMP:-}" != "1" ]] || return 0
   rm -rf "${TMP_ROOT}"
 }
 trap cleanup EXIT
@@ -197,6 +198,54 @@ while True:
         output.extend(chunk)
     except OSError:
         break
+
+with open(output_file, 'wb') as fh:
+    fh.write(output)
+
+raise SystemExit(os.waitstatus_to_exitcode(status))
+PY
+}
+
+run_pty_command() {
+  local output_file="$1"
+  shift
+
+  python3 - "${output_file}" "$@" <<'PY'
+import os
+import pty
+import select
+import sys
+
+output_file = sys.argv[1]
+cmd = sys.argv[2:]
+
+pid, fd = pty.fork()
+if pid == 0:
+    os.execvp(cmd[0], cmd)
+
+output = bytearray()
+status = None
+while True:
+    readable, _, _ = select.select([fd], [], [], 0.1)
+    if fd in readable:
+        try:
+            chunk = os.read(fd, 4096)
+        except OSError:
+            break
+        if not chunk:
+            break
+        output.extend(chunk)
+
+    try:
+        waited = os.waitpid(pid, os.WNOHANG)
+    except ChildProcessError:
+        break
+    if waited != (0, 0):
+        status = waited[1]
+        break
+
+if status is None:
+    status = os.waitpid(pid, 0)[1]
 
 with open(output_file, 'wb') as fh:
     fh.write(output)
@@ -588,7 +637,48 @@ MAKEVN_MIN_COVERAGE_THRESHOLD="70"
 MAKEVN_MIN_COVERAGE_CHANGES_THRESHOLD="70"
 EOF
 
-  script -q /dev/null bash -lc "\"${CLI}\" --repo \"${repo}\" doctor" > "${output_file}" 2>&1
+  python3 - "${CLI}" "${repo}" "${output_file}" <<'PY'
+import os
+import pty
+import select
+import sys
+
+cli, repo, output_file = sys.argv[1:4]
+cmd = [cli, '--repo', repo, 'doctor']
+
+pid, fd = pty.fork()
+if pid == 0:
+    os.execv(cmd[0], cmd)
+
+output = bytearray()
+status = None
+while True:
+    readable, _, _ = select.select([fd], [], [], 0.1)
+    if fd in readable:
+        try:
+            chunk = os.read(fd, 4096)
+        except OSError:
+            break
+        if not chunk:
+            break
+        output.extend(chunk)
+
+    try:
+        waited = os.waitpid(pid, os.WNOHANG)
+    except ChildProcessError:
+        break
+    if waited != (0, 0):
+        status = waited[1]
+        break
+
+if status is None:
+    status = os.waitpid(pid, 0)[1]
+
+with open(output_file, 'wb') as fh:
+    fh.write(output)
+
+raise SystemExit(os.waitstatus_to_exitcode(status))
+PY
 
   assert_contains "${output_file}" "Inspecting repository layout"
   assert_contains "${output_file}" "Scanning workflow and Maven signals"
@@ -625,7 +715,7 @@ printf 'openjdk version "21.0.3" 2024-01-01\n' >&2
 EOF
   chmod +x "${java17_home}/bin/java" "${java21_home}/bin/java"
 
-  output="$(HOME="${fake_home_root}" ${CLI} --repo "${repo}" doctor)"
+  output="$(JAVA_HOME= MAKEVN_JDK_CANDIDATE_BASES="${fake_home_root}/.sdkman/candidates/java" HOME="${fake_home_root}" ${CLI} --repo "${repo}" doctor)"
 
   [[ "${output}" == *"Code Java version: 6"* ]] || fail "doctor should detect the requested Java version from pom.xml"
   [[ "${output}" == *"Resolved code JAVA_HOME: ${java17_home}"* ]] || fail "doctor should resolve to the lowest compatible newer JDK when no exact match is installed"
@@ -655,7 +745,7 @@ printf 'openjdk version "17.0.9" 2024-01-01\n' >&2
 EOF
   chmod +x "${java17_home}/bin/java"
 
-  HOME="${fake_home_root}" ${CLI} --repo "${repo}" exec -- bash -lc 'printf "%s\n" "${JAVA_HOME}"' > "${repo}/exec.out"
+  JAVA_HOME= MAKEVN_JDK_CANDIDATE_BASES="${fake_home_root}/.sdkman/candidates/java" HOME="${fake_home_root}" ${CLI} --repo "${repo}" exec -- bash -lc 'printf "%s\n" "${JAVA_HOME}"' > "${repo}/exec.out"
 
   assert_contains "${repo}/exec.out" "${java17_home}"
 }
@@ -721,7 +811,7 @@ test_strict_commands_require_git_root() {
 
   mkdir -p "${subdir}"
   printf '<project/>\n' > "${repo}/pom.xml"
-  rtk git init "${repo}" >/dev/null
+  git init --initial-branch=main "${repo}" >/dev/null
 
   doctor_output="$(${CLI} --repo "${subdir}" doctor 2>&1 || true)"
   [[ "${doctor_output}" == *"makevn doctor must be run from the Git repository root"* ]] \
@@ -749,7 +839,7 @@ test_profile_refresh_runs_from_git_root() {
 
   mkdir -p "${subdir}"
   printf '<project/>\n' > "${repo}/pom.xml"
-  rtk git init "${repo}" >/dev/null
+  git init --initial-branch=main "${repo}" >/dev/null
 
   ${CLI} --repo "${repo}" init >/dev/null
   rm -f "${repo}/.makevn/profile.env"
@@ -838,7 +928,7 @@ EOF
   assert_file_exists "${repo}/.makevn/makevn.mk"
   assert_contains "${repo}/Makefile" "# makevn:begin"
   assert_contains "${repo}/Makefile" "include .makevn/makevn.mk"
-  rtk make -C "${repo}" vn-doctor >/dev/null
+  make -C "${repo}" vn-doctor >/dev/null
   ${CLI} --repo "${repo}" make uninstall >/dev/null
   assert_dir_exists "${repo}/.makevn"
   assert_file_exists "${repo}/Makefile"
@@ -857,7 +947,7 @@ test_make_install_without_makefile() {
   assert_file_exists "${repo}/Makefile"
   assert_file_exists "${repo}/.makevn/makevn.mk"
   assert_contains "${repo}/Makefile" "Generated by makevn"
-  rtk make -C "${repo}" vn-doctor >/dev/null
+  make -C "${repo}" vn-doctor >/dev/null
   ${CLI} --repo "${repo}" make uninstall >/dev/null
   assert_not_exists "${repo}/Makefile"
   assert_dir_exists "${repo}/.makevn"
@@ -1009,7 +1099,7 @@ MAKEVN_KARATE_TOOL_VERSIONS=""
 MAKEVN_RUN_CMD=""
 EOF
 
-  script -q /dev/null bash -lc "\"${CLI}\" --repo \"${repo}\" build" > "${output_file}" 2>&1
+  run_makevn_pty_command "${CLI}" "${repo}" build "${output_file}"
 
   assert_matches "${output_file}" 'pid:.*[0-9]+'
   assert_matches "${repo}/.makevn/logs/build.log" '^pid: [0-9]+$'
@@ -1089,7 +1179,7 @@ MAKEVN_KARATE_TOOL_VERSIONS=""
 MAKEVN_RUN_CMD=""
 EOF
 
-  output="$(rtk make -f .makevn/makevn.mk -C "${repo}" vn-test 2>&1 || true)"
+  output="$(make -f .makevn/makevn.mk -C "${repo}" vn-test 2>&1 || true)"
 
   [[ "${output}" == *"make: ***"* || "${output}" == *"gmake: ***"* ]] || fail "expected make failure output to still include make failure"
 
@@ -1247,7 +1337,7 @@ MAKEVN_KARATE_TOOL_VERSIONS=""
 MAKEVN_RUN_CMD=""
 EOF
 
-  script -q /dev/null bash -lc "\"${compact_cli}\" --repo \"${repo}\" --compact compile" > "${output_file}" 2>&1
+  run_pty_command "${output_file}" "${compact_cli}" --repo "${repo}" --compact compile
 
   [[ "$(tr -d '\r' < "${output_file}")" == *"[..] makevn compile |"* ]] || fail "expected compact tty output to include plain compact header"
   [[ "$(tr -d '\r' < "${output_file}")" == *"log: .makevn/logs/compile.log"* ]] || fail "expected compact tty output to include log path"
@@ -1404,7 +1494,7 @@ EOF
   PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" test-compile >/dev/null
   PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" compile-tests >/dev/null
   PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" validate >/dev/null
-  package_output="$(PATH="${repo}/fake-bin:${PATH}" rtk make -f .makevn/makevn.mk -C "${repo}" vn-package)"
+  package_output="$(PATH="${repo}/fake-bin:${PATH}" make -f .makevn/makevn.mk -C "${repo}" vn-package)"
   PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" clean >/dev/null
   PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" test >/dev/null
   PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" format --apply >/dev/null
@@ -1412,7 +1502,7 @@ EOF
   PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" test --name UserRepositoryTest >/dev/null
   PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" test --name UserRepositoryTest,OrderRepositoryTest >/dev/null
   mkdir -p "${repo}/module-a/target/test-classes"
-  make_output="$(PATH="${repo}/fake-bin:${PATH}" rtk make -f .makevn/makevn.mk -C "${repo}" vn-test NAME=UserRepositoryTest FAST=true)"
+  make_output="$(PATH="${repo}/fake-bin:${PATH}" make -f .makevn/makevn.mk -C "${repo}" vn-test NAME=UserRepositoryTest FAST=true)"
   PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" test --name UserFlowIT >/dev/null
   PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" verify >/dev/null
   PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" exec -- bash -lc 'printf "%s" "$JAVA_HOME" > exec-java-home.txt' >/dev/null
@@ -1574,7 +1664,7 @@ EOF
   PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" docker-up >/dev/null
   assert_not_contains "${repo}/.docker-compose.log" " ps -q "
   PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" docker-down >/dev/null
-  output="$(rtk make -f .makevn/makevn.mk -C "${repo}" MAKEVN_BIN="${repo}/fake-bin/makevn-wrapper" vn-docker-ps)"
+  output="$(make -f .makevn/makevn.mk -C "${repo}" MAKEVN_BIN="${repo}/fake-bin/makevn-wrapper" vn-docker-ps)"
   stats_output="$(PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" docker-stats)"
 
   assert_matches "${repo}/.docker-compose.log" '^docker-compose -f .*/code/boot/src/test/resources/compose/docker-compose\.yml -f .*/code/boot/src/test/resources/compose/docker-compose\.override\.yml down -v --remove-orphans$'
@@ -1892,12 +1982,12 @@ EOF
   assert_not_contains "${repo}/.docker-compose.log" " ps -q "
   PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" karate-docker-down >/dev/null
   PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" docker-ps-required --compose karate >/dev/null
-  PATH="${repo}/fake-bin:${PATH}" rtk make -f .makevn/makevn.mk -C "${repo}" MAKEVN_BIN="${repo}/fake-bin/makevn-wrapper" vn-docker-ps-required MAKEVN_DOCKER_PS_REQUIRED_ARGS="--compose karate" >/dev/null
+  PATH="${repo}/fake-bin:${PATH}" make -f .makevn/makevn.mk -C "${repo}" MAKEVN_BIN="${repo}/fake-bin/makevn-wrapper" vn-docker-ps-required MAKEVN_DOCKER_PS_REQUIRED_ARGS="--compose karate" >/dev/null
   printf 'not-a-real-jar\n' > "${repo}/code/boot/target/app.jar"
   PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" run-app-bg >/dev/null
   PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" stop-app >/dev/null
   PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" karate-test --tag @smoke >/dev/null
-  output="$(PATH="${repo}/fake-bin:${PATH}" rtk make -f .makevn/makevn.mk -C "${repo}" MAKEVN_BIN="${repo}/fake-bin/makevn-wrapper" vn-karate-all TAG=@smoke)"
+  output="$(PATH="${repo}/fake-bin:${PATH}" make -f .makevn/makevn.mk -C "${repo}" MAKEVN_BIN="${repo}/fake-bin/makevn-wrapper" vn-karate-all TAG=@smoke)"
 
   assert_matches "${repo}/.docker-compose.log" '^docker-compose -f .*/e2e/karate/src/test/resources/compose/docker-compose\.yml -f .*/e2e/karate/src/test/resources/compose/docker-compose\.override\.yml down -v --remove-orphans$'
   assert_matches "${repo}/.docker-compose.log" '^docker-compose -f .*/e2e/karate/src/test/resources/compose/docker-compose\.yml -f .*/e2e/karate/src/test/resources/compose/docker-compose\.override\.yml up --detach$'
@@ -2375,7 +2465,7 @@ MAKEVN_RUN_CMD=""
 MAKEVN_APP_HEALTH_TIMEOUT=5
 EOF
 
-  PATH="${repo}/fake-bin:${PATH}" script -q /dev/null bash -lc "\"${rust_cli}\" --repo \"${repo}\" karate-all" > "${output_file}" 2>&1 || true
+  PATH="${repo}/fake-bin:${PATH}" run_pty_command "${output_file}" "${rust_cli}" --repo "${repo}" karate-all || true
   tr -d '\r' < "${output_file}" > "${clean_output_file}"
 
   assert_contains "${clean_output_file}" "run-app-bg"
@@ -2469,9 +2559,9 @@ EOF
   PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" verify-ut-coverage >/dev/null
   PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" verify-it >/dev/null
   PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" verify-it-coverage >/dev/null
-  output="$(rtk make -f .makevn/makevn.mk -C "${repo}" MAKEVN_BIN="${repo}/fake-bin/makevn-wrapper" vn-verify-ut)"
-  pr_output="$(rtk make -f .makevn/makevn.mk -C "${repo}" MAKEVN_BIN="${repo}/fake-bin/makevn-wrapper" vn-pr-verify)"
-  rtk make -f .makevn/makevn.mk -C "${repo}" MAKEVN_BIN="${repo}/fake-bin/makevn-wrapper" vn-docker-ps-required >/dev/null
+  output="$(make -f .makevn/makevn.mk -C "${repo}" MAKEVN_BIN="${repo}/fake-bin/makevn-wrapper" vn-verify-ut)"
+  pr_output="$(make -f .makevn/makevn.mk -C "${repo}" MAKEVN_BIN="${repo}/fake-bin/makevn-wrapper" vn-pr-verify)"
+  make -f .makevn/makevn.mk -C "${repo}" MAKEVN_BIN="${repo}/fake-bin/makevn-wrapper" vn-docker-ps-required >/dev/null
 
   assert_matches "${repo}/.mvnw.log" '^ARGS=-f .*/pom\.xml verify -Djacoco\.skip=false -DskipITs -DfailIfNoTests=false -Dmaven\.test\.failure\.ignore=false$'
   assert_matches "${repo}/.mvnw.log" '^ARGS=-f .*/pom\.xml verify -Djacoco\.skip=false -DskipUTs -Dskip\.unit\.tests=true -DfailIfNoTests=false -Dmaven\.test\.failure\.ignore=false -Dmaven\.build\.cache\.enabled=false$'
@@ -2922,9 +3012,9 @@ package com.example;
 class ChangedTest {}
 EOF
 
-  rtk git init "${repo}" >/dev/null
-  rtk git -C "${repo}" add .
-  rtk git -C "${repo}" -c user.name='Smoke Test' -c user.email='smoke@example.com' commit -m 'init' >/dev/null
+  git init --initial-branch=main "${repo}" >/dev/null
+  git -C "${repo}" add .
+  git -C "${repo}" -c user.name='Smoke Test' -c user.email='smoke@example.com' commit -m 'init' >/dev/null
   printf '// local change\n' >> "${repo}/module-a/src/test/java/com/example/ChangedTest.java"
 
   ${CLI} --repo "${repo}" init >/dev/null
@@ -2969,9 +3059,9 @@ package com.example;
 class Changed {}
 EOF
 
-  rtk git init "${repo}" >/dev/null
-  rtk git -C "${repo}" add .
-  rtk git -C "${repo}" -c user.name='Smoke Test' -c user.email='smoke@example.com' commit -m 'init' >/dev/null
+  git init --initial-branch=main "${repo}" >/dev/null
+  git -C "${repo}" add .
+  git -C "${repo}" -c user.name='Smoke Test' -c user.email='smoke@example.com' commit -m 'init' >/dev/null
   printf '// local change\n' >> "${code_repo}/boot/src/main/java/com/example/Changed.java"
 
   ${CLI} --repo "${repo}" init >/dev/null
@@ -3027,9 +3117,9 @@ makevn,com.example,Changed,0,10,0,0,0,1,0,1,0,1
 EOF
   printf '<html></html>\n' > "${repo}/jacoco-report-aggregate/target/site/jacoco-aggregate/index.html"
 
-  rtk git init "${repo}" >/dev/null
-  rtk git -C "${repo}" add .
-  rtk git -C "${repo}" -c user.name='Smoke Test' -c user.email='smoke@example.com' commit -m 'init' >/dev/null
+  git init --initial-branch=main "${repo}" >/dev/null
+  git -C "${repo}" add .
+  git -C "${repo}" -c user.name='Smoke Test' -c user.email='smoke@example.com' commit -m 'init' >/dev/null
   perl -0pi -e 's/return 0;/return 1;/' "${repo}/module-a/src/main/java/com/example/Changed.java"
 
   output="$(${CLI} --repo "${repo}" coverage-changes --threshold 90)"
@@ -3072,9 +3162,9 @@ root/module-a,com.example,Changed,50,50,0,0,1,1,0,1,0,1
 EOF
   printf '<html></html>\n' > "${repo}/jacoco-report-aggregate/target/site/jacoco-aggregate/index.html"
 
-  rtk git init "${repo}" >/dev/null
-  rtk git -C "${repo}" add .
-  rtk git -C "${repo}" -c user.name='Smoke Test' -c user.email='smoke@example.com' commit -m 'init' >/dev/null
+  git init --initial-branch=main "${repo}" >/dev/null
+  git -C "${repo}" add .
+  git -C "${repo}" -c user.name='Smoke Test' -c user.email='smoke@example.com' commit -m 'init' >/dev/null
   perl -0pi -e 's/return 0;/return 1;/' "${repo}/module-a/src/main/java/com/example/Changed.java"
 
   output="$(${CLI} --repo "${repo}" coverage-changes --threshold 90 2>&1 || true)"
@@ -3106,9 +3196,9 @@ EOF
 GROUP,PACKAGE,CLASS,INSTRUCTION_MISSED,INSTRUCTION_COVERED,BRANCH_MISSED,BRANCH_COVERED,LINE_MISSED,LINE_COVERED,COMPLEXITY_MISSED,COMPLEXITY_COVERED,METHOD_MISSED,METHOD_COVERED
 EOF
 
-  rtk git init "${repo}" >/dev/null
-  rtk git -C "${repo}" add .
-  rtk git -C "${repo}" -c user.name='Smoke Test' -c user.email='smoke@example.com' commit -m 'init' >/dev/null
+  git init --initial-branch=main "${repo}" >/dev/null
+  git -C "${repo}" add .
+  git -C "${repo}" -c user.name='Smoke Test' -c user.email='smoke@example.com' commit -m 'init' >/dev/null
   printf '// local change\n' >> "${repo}/module-a/src/main/java/com/example/Changed.java"
 
   output="$(${CLI} --repo "${repo}" coverage-changes 2>&1 || true)"
@@ -3173,9 +3263,9 @@ CSV
 EOF
   chmod +x "${repo}/mvnw"
 
-  rtk git init "${repo}" >/dev/null
-  rtk git -C "${repo}" add .
-  rtk git -C "${repo}" -c user.name='Smoke Test' -c user.email='smoke@example.com' commit -m 'init' >/dev/null
+  git init --initial-branch=main "${repo}" >/dev/null
+  git -C "${repo}" add .
+  git -C "${repo}" -c user.name='Smoke Test' -c user.email='smoke@example.com' commit -m 'init' >/dev/null
   perl -0pi -e 's/return 0;/return 1;/' "${repo}/module-a/src/main/java/com/example/Changed.java"
 
   ${CLI} --repo "${repo}" doctor >/dev/null
@@ -3220,9 +3310,9 @@ makevn,com.example,Changed,1,10,0,0,1,1,0,1,0,1
 EOF
   printf '<html></html>\n' > "${repo}/jacoco-report-aggregate/target/site/jacoco-aggregate/index.html"
 
-  rtk git init "${repo}" >/dev/null
-  rtk git -C "${repo}" add .
-  rtk git -C "${repo}" -c user.name='Smoke Test' -c user.email='smoke@example.com' commit -m 'init' >/dev/null
+  git init --initial-branch=main "${repo}" >/dev/null
+  git -C "${repo}" add .
+  git -C "${repo}" -c user.name='Smoke Test' -c user.email='smoke@example.com' commit -m 'init' >/dev/null
   perl -0pi -e 's/return 0;/return 1;/' "${repo}/module-a/src/main/java/com/example/Changed.java"
 
   output="$(${CLI} --repo "${repo}" coverage-changes --threshold 50)"

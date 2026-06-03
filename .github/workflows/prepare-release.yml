@@ -1,0 +1,145 @@
+name: Prepare Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: Semver bump to apply when version is empty
+        required: true
+        type: choice
+        default: patch
+        options:
+          - patch
+          - minor
+          - major
+      version:
+        description: Exact version to prepare, without v prefix (optional)
+        required: false
+      base_branch:
+        description: Branch to open the release PR against
+        required: true
+        default: develop
+
+permissions:
+  contents: write
+  pull-requests: write
+
+env:
+  CARGO_TERM_COLOR: always
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.base_branch }}
+          fetch-depth: 0
+      - name: Install Rust
+        shell: bash
+        run: rustup toolchain install stable --profile minimal
+      - name: Resolve next version
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+          current_version="$(sed -nE 's/^version = "([^"]+)"/\1/p' rust/dispatcher/Cargo.toml | sed -n '1p')"
+          requested_version="${{ inputs.version }}"
+
+          if [[ -n "${requested_version}" ]]; then
+            next_version="${requested_version#v}"
+          else
+            if ! [[ "${current_version}" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
+              printf 'Error: current version is not stable semver: %s\n' "${current_version}" >&2
+              exit 1
+            fi
+            major="${BASH_REMATCH[1]}"
+            minor="${BASH_REMATCH[2]}"
+            patch="${BASH_REMATCH[3]}"
+            case "${{ inputs.bump }}" in
+              patch) patch=$((patch + 1)) ;;
+              minor) minor=$((minor + 1)); patch=0 ;;
+              major) major=$((major + 1)); minor=0; patch=0 ;;
+              *) printf 'Error: unsupported bump: %s\n' "${{ inputs.bump }}" >&2; exit 1 ;;
+            esac
+            next_version="${major}.${minor}.${patch}"
+          fi
+
+          if ! [[ "${next_version}" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?$ ]]; then
+            printf 'Error: invalid version: %s\n' "${next_version}" >&2
+            exit 1
+          fi
+          if [[ "${next_version}" == "${current_version}" ]]; then
+            printf 'Error: requested version already matches Cargo.toml: %s\n' "${next_version}" >&2
+            exit 1
+          fi
+
+          printf 'current=%s\n' "${current_version}" >> "${GITHUB_OUTPUT}"
+          printf 'next=%s\n' "${next_version}" >> "${GITHUB_OUTPUT}"
+          printf 'tag=v%s\n' "${next_version}" >> "${GITHUB_OUTPUT}"
+      - name: Update version files
+        shell: bash
+        run: |
+          set -euo pipefail
+          next_version="${{ steps.version.outputs.next }}"
+          perl -0pi -e 'BEGIN { $c = $ENV{CURRENT_VERSION}; $n = $ENV{NEXT_VERSION}; } s/version = "\Q$c\E"/version = "$n"/' rust/dispatcher/Cargo.toml
+          cargo update --manifest-path rust/dispatcher/Cargo.toml --package makevn-dispatcher --precise "${next_version}"
+        env:
+          CURRENT_VERSION: ${{ steps.version.outputs.current }}
+          NEXT_VERSION: ${{ steps.version.outputs.next }}
+      - name: Build dispatcher
+        shell: bash
+        run: ./build-rust-dispatcher.sh
+      - name: Run smoke tests
+        shell: bash
+        run: bash test/smoke/run.sh
+      - name: Create release branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          branch="release/${{ steps.version.outputs.tag }}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -b "${branch}"
+          git add rust/dispatcher/Cargo.toml rust/dispatcher/Cargo.lock
+          git commit -m "release: bump to ${{ steps.version.outputs.next }}"
+          git push --force-with-lease origin "${branch}"
+      - name: Open release PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          branch="release/${{ steps.version.outputs.tag }}"
+          pr_url=""
+          if gh pr view "${branch}" --repo "${{ github.repository }}" >/dev/null 2>&1; then
+            pr_url="$(gh pr view "${branch}" --repo "${{ github.repository }}" --json url --jq .url)"
+            gh pr edit "${branch}" \
+              --repo "${{ github.repository }}" \
+              --title "release: bump to ${{ steps.version.outputs.next }}" \
+              --body "Prepare ${{ steps.version.outputs.tag }}."
+          else
+            if ! pr_url="$(gh pr create \
+              --repo "${{ github.repository }}" \
+              --base "${{ inputs.base_branch }}" \
+              --head "${branch}" \
+              --title "release: bump to ${{ steps.version.outputs.next }}" \
+              --body "Prepare ${{ steps.version.outputs.tag }}.")"; then
+              {
+                printf '## Release PR not created automatically\n\n'
+                printf 'The release branch was pushed successfully, but this repository does not allow GitHub Actions to create pull requests.\n\n'
+                printf 'Create it manually with:\n\n'
+                printf '```bash\n'
+                printf 'gh pr create --repo %s --base %s --head %s --title %q --body %q\n' \
+                  "${{ github.repository }}" \
+                  "${{ inputs.base_branch }}" \
+                  "${branch}" \
+                  "release: bump to ${{ steps.version.outputs.next }}" \
+                  "Prepare ${{ steps.version.outputs.tag }}."
+                printf '```\n'
+              } >> "${GITHUB_STEP_SUMMARY}"
+              exit 0
+            fi
+          fi
+          printf 'Release PR: %s\n' "${pr_url}" >> "${GITHUB_STEP_SUMMARY}"
