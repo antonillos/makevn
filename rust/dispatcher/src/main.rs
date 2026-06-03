@@ -3277,36 +3277,6 @@ mod tests {
         assert_eq!(root, Path::new("/worktree/repo"));
     }
 
-    #[cfg(unix)]
-    #[test]
-    fn derives_install_root_from_resolved_binary_symlink() {
-        let unique_suffix = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let work_dir = env::temp_dir().join(format!(
-            "makevn-symlink-test-{}-{unique_suffix}",
-            process::id()
-        ));
-        let cellar_bin = work_dir.join("Cellar/makevn/0.1.1/bin");
-        let prefix_bin = work_dir.join("bin");
-        fs::create_dir_all(&cellar_bin).unwrap();
-        fs::create_dir_all(&prefix_bin).unwrap();
-
-        let real_binary = cellar_bin.join("makevn");
-        fs::write(&real_binary, b"").unwrap();
-        let linked_binary = prefix_bin.join("makevn");
-        symlink(&real_binary, &linked_binary).unwrap();
-
-        let root = install_root_with_override(&linked_binary, None).unwrap();
-        assert_eq!(
-            root,
-            fs::canonicalize(work_dir.join("Cellar/makevn/0.1.1")).unwrap()
-        );
-
-        fs::remove_dir_all(work_dir).unwrap();
-    }
-
     #[test]
     fn install_root_prefers_current_executable_runtime_over_path() {
         let _guard = ENV_LOCK.lock().unwrap();
@@ -3351,6 +3321,36 @@ mod tests {
         fs::remove_dir_all(work_dir).unwrap();
 
         assert_eq!(root, expected_root);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn derives_install_root_from_resolved_binary_symlink() {
+        let unique_suffix = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let work_dir = env::temp_dir().join(format!(
+            "makevn-symlink-test-{}-{unique_suffix}",
+            process::id()
+        ));
+        let cellar_bin = work_dir.join("Cellar/makevn/0.1.1/bin");
+        let prefix_bin = work_dir.join("bin");
+        fs::create_dir_all(&cellar_bin).unwrap();
+        fs::create_dir_all(&prefix_bin).unwrap();
+
+        let real_binary = cellar_bin.join("makevn");
+        fs::write(&real_binary, b"").unwrap();
+        let linked_binary = prefix_bin.join("makevn");
+        symlink(&real_binary, &linked_binary).unwrap();
+
+        let root = install_root_with_override(&linked_binary, None).unwrap();
+        assert_eq!(
+            root,
+            fs::canonicalize(work_dir.join("Cellar/makevn/0.1.1")).unwrap()
+        );
+
+        fs::remove_dir_all(work_dir).unwrap();
     }
 
     #[test]
