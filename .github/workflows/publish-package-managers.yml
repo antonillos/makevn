@@ -1,0 +1,156 @@
+name: Publish Package Managers
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Release tag to publish, e.g. v0.1.6
+        required: true
+
+permissions:
+  contents: read
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: main
+      - name: Validate release
+        id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ inputs.version }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "${VERSION}" in
+            v*) ;;
+            *) printf 'Error: version must start with v, got %s\n' "${VERSION}" >&2; exit 1 ;;
+          esac
+          gh release view "${VERSION}" --repo "${{ github.repository }}" >/dev/null
+          printf 'version=%s\n' "${VERSION}" >> "${GITHUB_OUTPUT}"
+      - name: Read release asset checksums
+        id: checksums
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.release.outputs.version }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist/checksums
+          gh release download "${VERSION}" \
+            --repo "${{ github.repository }}" \
+            --pattern "makevn-${VERSION}-aarch64-apple-darwin.tar.gz.sha256" \
+            --pattern "makevn-${VERSION}-x86_64-apple-darwin.tar.gz.sha256" \
+            --dir dist/checksums
+
+          arm_sha="$(awk '{print $1}' "dist/checksums/makevn-${VERSION}-aarch64-apple-darwin.tar.gz.sha256")"
+          intel_sha="$(awk '{print $1}' "dist/checksums/makevn-${VERSION}-x86_64-apple-darwin.tar.gz.sha256")"
+
+          printf 'arm-sha=%s\n' "${arm_sha}" >> "${GITHUB_OUTPUT}"
+          printf 'intel-sha=%s\n' "${intel_sha}" >> "${GITHUB_OUTPUT}"
+      - name: Publish Homebrew tap
+        env:
+          RELEASE_TOKEN: ${{ secrets.MAKEVN_RELEASE_TOKEN }}
+          VERSION: ${{ steps.release.outputs.version }}
+          ARM_SHA: ${{ steps.checksums.outputs.arm-sha }}
+          INTEL_SHA: ${{ steps.checksums.outputs.intel-sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -z "${RELEASE_TOKEN}" ]]; then
+            printf 'Skipping Homebrew tap update: MAKEVN_RELEASE_TOKEN is not configured.\n' >> "${GITHUB_STEP_SUMMARY}"
+            exit 0
+          fi
+
+          git clone "https://x-access-token:${RELEASE_TOKEN}@github.com/antonillos/homebrew-tap.git" homebrew-tap
+          cd homebrew-tap
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          mkdir -p Formula
+          cat > Formula/makevn.rb <<FORMULA
+          class Makevn < Formula
+            desc "Terminal-first workflows for Java Maven repositories"
+            homepage "https://github.com/antonillos/makevn"
+            license "MIT"
+
+            if Hardware::CPU.arm?
+              url "https://github.com/antonillos/makevn/releases/download/${VERSION}/makevn-${VERSION}-aarch64-apple-darwin.tar.gz"
+              sha256 "${ARM_SHA}"
+            else
+              url "https://github.com/antonillos/makevn/releases/download/${VERSION}/makevn-${VERSION}-x86_64-apple-darwin.tar.gz"
+              sha256 "${INTEL_SHA}"
+            end
+
+            def install
+              bin.install "bin/makevn"
+              bin.install "bin/makevn-mcp"
+              libexec.install "libexec/makevn"
+              share.install "share/makevn"
+            end
+
+            def caveats
+              <<~EOS
+                makevn has been installed. To get started:
+
+                  makevn --help
+
+                For MCP (Model Context Protocol) support, add to your client config:
+
+                {
+                  "mcpServers": {
+                    "makevn": {
+                      "command": "#{HOMEBREW_PREFIX}/bin/makevn-mcp"
+                    }
+                  }
+                }
+              EOS
+            end
+
+            test do
+              assert_match "makevn", shell_output("#{bin}/makevn --help")
+              assert_path_exists bin/"makevn-mcp"
+            end
+          end
+          FORMULA
+
+          if git diff --quiet; then
+            printf 'Homebrew tap already up to date for %s.\n' "${VERSION}" >> "${GITHUB_STEP_SUMMARY}"
+            exit 0
+          fi
+          git add Formula/makevn.rb
+          git commit -m "makevn ${VERSION}"
+          git push origin HEAD:main
+          printf 'Updated Homebrew tap for %s.\n' "${VERSION}" >> "${GITHUB_STEP_SUMMARY}"
+      - name: Publish asdf plugin
+        env:
+          RELEASE_TOKEN: ${{ secrets.MAKEVN_RELEASE_TOKEN }}
+          VERSION: ${{ steps.release.outputs.version }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -z "${RELEASE_TOKEN}" ]]; then
+            printf 'Skipping asdf plugin update: MAKEVN_RELEASE_TOKEN is not configured.\n' >> "${GITHUB_STEP_SUMMARY}"
+            exit 0
+          fi
+
+          git clone "https://x-access-token:${RELEASE_TOKEN}@github.com/antonillos/asdf-makevn.git" asdf-makevn
+          cp -R packaging/asdf/. asdf-makevn/
+          cd asdf-makevn
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          chmod +x bin/download bin/install bin/latest-stable bin/list-all
+
+          if git diff --quiet; then
+            printf 'asdf plugin already up to date for %s.\n' "${VERSION}" >> "${GITHUB_STEP_SUMMARY}"
+            exit 0
+          fi
+          git add .
+          git commit -m "Sync makevn asdf plugin for ${VERSION}"
+          git push origin HEAD:main
+          printf 'Updated asdf plugin for %s.\n' "${VERSION}" >> "${GITHUB_STEP_SUMMARY}"
