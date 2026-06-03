@@ -589,7 +589,48 @@ MAKEVN_MIN_COVERAGE_THRESHOLD="70"
 MAKEVN_MIN_COVERAGE_CHANGES_THRESHOLD="70"
 EOF
 
-  script -q /dev/null bash -lc "\"${CLI}\" --repo \"${repo}\" doctor" > "${output_file}" 2>&1
+  python3 - "${CLI}" "${repo}" "${output_file}" <<'PY'
+import os
+import pty
+import select
+import sys
+
+cli, repo, output_file = sys.argv[1:4]
+cmd = [cli, '--repo', repo, 'doctor']
+
+pid, fd = pty.fork()
+if pid == 0:
+    os.execv(cmd[0], cmd)
+
+output = bytearray()
+status = None
+while True:
+    readable, _, _ = select.select([fd], [], [], 0.1)
+    if fd in readable:
+        try:
+            chunk = os.read(fd, 4096)
+        except OSError:
+            break
+        if not chunk:
+            break
+        output.extend(chunk)
+
+    try:
+        waited = os.waitpid(pid, os.WNOHANG)
+    except ChildProcessError:
+        break
+    if waited != (0, 0):
+        status = waited[1]
+        break
+
+if status is None:
+    status = os.waitpid(pid, 0)[1]
+
+with open(output_file, 'wb') as fh:
+    fh.write(output)
+
+raise SystemExit(os.waitstatus_to_exitcode(status))
+PY
 
   assert_contains "${output_file}" "Inspecting repository layout"
   assert_contains "${output_file}" "Scanning workflow and Maven signals"
