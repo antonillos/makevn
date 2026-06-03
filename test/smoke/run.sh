@@ -479,6 +479,103 @@ EOF
   [[ "${output}" == *"Detected app health URL: http://localhost:18080/actuator/health"* ]] || fail "doctor should detect Actuator health URL"
 }
 
+test_doctor_local_containers_prompt_does_not_chain_health_prompt() {
+  local repo="${TMP_ROOT}/doctor-local-containers-health-pty"
+  local output_file="${TMP_ROOT}/doctor-local-containers-health-pty.out"
+
+  mkdir -p "${repo}/.github/workflows" "${repo}/src/main/resources"
+  cat > "${repo}/pom.xml" <<'EOF'
+<project>
+  <dependencies>
+    <dependency>
+      <groupId>org.testcontainers</groupId>
+      <artifactId>testcontainers</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-actuator</artifactId>
+    </dependency>
+  </dependencies>
+</project>
+EOF
+  cat > "${repo}/src/main/resources/application.yml" <<'EOF'
+server:
+  port: 18080
+EOF
+  cat > "${repo}/.github/workflows/integration.yml" <<'EOF'
+jobs:
+  integration:
+    steps:
+      - run: mvn -B verify -DskipUTs
+EOF
+
+  ${CLI} --repo "${repo}" init >/dev/null
+
+  python3 - "${CLI}" "${repo}" "${output_file}" <<'PY'
+import os
+import pty
+import select
+import signal
+import sys
+import time
+
+cli, repo, output_file = sys.argv[1:4]
+cmd = [cli, '--repo', repo, 'doctor']
+
+pid, fd = pty.fork()
+if pid == 0:
+    os.execv(cmd[0], cmd)
+
+output = bytearray()
+sent_choice = False
+status = None
+start = time.time()
+
+while True:
+    readable, _, _ = select.select([fd], [], [], 0.1)
+    if fd in readable:
+        try:
+            chunk = os.read(fd, 4096)
+        except OSError:
+            break
+        if not chunk:
+            break
+        output.extend(chunk)
+        if not sent_choice and b'Enter number [1-2]:' in output:
+            os.write(fd, b'1\n')
+            sent_choice = True
+
+    try:
+        waited = os.waitpid(pid, os.WNOHANG)
+    except ChildProcessError:
+        break
+    if waited != (0, 0):
+        status = waited[1]
+        break
+    if time.time() - start > 5:
+        os.kill(pid, signal.SIGTERM)
+        time.sleep(0.2)
+        try:
+            os.kill(pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        status = 124 << 8
+        break
+
+if status is None:
+    status = os.waitpid(pid, 0)[1]
+
+with open(output_file, 'wb') as fh:
+    fh.write(output)
+
+raise SystemExit(os.waitstatus_to_exitcode(status))
+PY
+
+  assert_contains "${output_file}" "Saved to .makevn/config (MAKEVN_LOCAL_CONTAINERS)."
+  assert_contains "${output_file}" "LOCAL_CONTAINERS default: TRUE"
+  assert_not_contains "${output_file}" "Health URL ["
+}
+
 test_doctor_shows_progress_in_tty() {
   local repo="${TMP_ROOT}/doctor-progress"
   local output_file="${TMP_ROOT}/doctor-progress.out"
@@ -3535,6 +3632,7 @@ main() {
   test_doctor_resolves_java_version_from_compiler_plugin_source
   test_doctor_does_not_invent_health_check
   test_doctor_detects_actuator_health_check
+  test_doctor_local_containers_prompt_does_not_chain_health_prompt
   test_doctor_shows_progress_in_tty
   test_doctor_reports_compatible_newer_java_homes
   test_exec_uses_compatible_newer_java_home
