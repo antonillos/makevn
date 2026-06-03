@@ -38,6 +38,10 @@ candidate_bases=(
   "/c/Program Files/Azul"
 )
 
+if [[ -n "${MAKEVN_JDK_CANDIDATE_BASES:-}" ]]; then
+  IFS=: read -r -a candidate_bases <<< "${MAKEVN_JDK_CANDIDATE_BASES}"
+fi
+
 normalize_home() {
   local home="$1"
   if [[ -d "${home}/Contents/Home" ]]; then
