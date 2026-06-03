@@ -206,6 +206,54 @@ raise SystemExit(os.waitstatus_to_exitcode(status))
 PY
 }
 
+run_pty_command() {
+  local output_file="$1"
+  shift
+
+  python3 - "${output_file}" "$@" <<'PY'
+import os
+import pty
+import select
+import sys
+
+output_file = sys.argv[1]
+cmd = sys.argv[2:]
+
+pid, fd = pty.fork()
+if pid == 0:
+    os.execvp(cmd[0], cmd)
+
+output = bytearray()
+status = None
+while True:
+    readable, _, _ = select.select([fd], [], [], 0.1)
+    if fd in readable:
+        try:
+            chunk = os.read(fd, 4096)
+        except OSError:
+            break
+        if not chunk:
+            break
+        output.extend(chunk)
+
+    try:
+        waited = os.waitpid(pid, os.WNOHANG)
+    except ChildProcessError:
+        break
+    if waited != (0, 0):
+        status = waited[1]
+        break
+
+if status is None:
+    status = os.waitpid(pid, 0)[1]
+
+with open(output_file, 'wb') as fh:
+    fh.write(output)
+
+raise SystemExit(os.waitstatus_to_exitcode(status))
+PY
+}
+
 run_makevn_pty_run_app_tail_interrupt() {
   local cli="$1"
   local repo="$2"
@@ -1051,7 +1099,7 @@ MAKEVN_KARATE_TOOL_VERSIONS=""
 MAKEVN_RUN_CMD=""
 EOF
 
-  script -q /dev/null bash -lc "\"${CLI}\" --repo \"${repo}\" build" > "${output_file}" 2>&1
+  run_makevn_pty_command "${CLI}" "${repo}" build "${output_file}"
 
   assert_matches "${output_file}" 'pid:.*[0-9]+'
   assert_matches "${repo}/.makevn/logs/build.log" '^pid: [0-9]+$'
@@ -1289,7 +1337,7 @@ MAKEVN_KARATE_TOOL_VERSIONS=""
 MAKEVN_RUN_CMD=""
 EOF
 
-  script -q /dev/null bash -lc "\"${compact_cli}\" --repo \"${repo}\" --compact compile" > "${output_file}" 2>&1
+  run_pty_command "${output_file}" "${compact_cli}" --repo "${repo}" --compact compile
 
   [[ "$(tr -d '\r' < "${output_file}")" == *"[..] makevn compile |"* ]] || fail "expected compact tty output to include plain compact header"
   [[ "$(tr -d '\r' < "${output_file}")" == *"log: .makevn/logs/compile.log"* ]] || fail "expected compact tty output to include log path"
@@ -2417,7 +2465,7 @@ MAKEVN_RUN_CMD=""
 MAKEVN_APP_HEALTH_TIMEOUT=5
 EOF
 
-  PATH="${repo}/fake-bin:${PATH}" script -q /dev/null bash -lc "\"${rust_cli}\" --repo \"${repo}\" karate-all" > "${output_file}" 2>&1 || true
+  PATH="${repo}/fake-bin:${PATH}" run_pty_command "${output_file}" "${rust_cli}" --repo "${repo}" karate-all || true
   tr -d '\r' < "${output_file}" > "${clean_output_file}"
 
   assert_contains "${clean_output_file}" "run-app-bg"
