@@ -811,7 +811,7 @@ test_strict_commands_require_git_root() {
 
   mkdir -p "${subdir}"
   printf '<project/>\n' > "${repo}/pom.xml"
-  git init "${repo}" >/dev/null
+  git init --initial-branch=main "${repo}" >/dev/null
 
   doctor_output="$(${CLI} --repo "${subdir}" doctor 2>&1 || true)"
   [[ "${doctor_output}" == *"makevn doctor must be run from the Git repository root"* ]] \
@@ -839,7 +839,7 @@ test_profile_refresh_runs_from_git_root() {
 
   mkdir -p "${subdir}"
   printf '<project/>\n' > "${repo}/pom.xml"
-  git init "${repo}" >/dev/null
+  git init --initial-branch=main "${repo}" >/dev/null
 
   ${CLI} --repo "${repo}" init >/dev/null
   rm -f "${repo}/.makevn/profile.env"
@@ -3012,7 +3012,7 @@ package com.example;
 class ChangedTest {}
 EOF
 
-  git init "${repo}" >/dev/null
+  git init --initial-branch=main "${repo}" >/dev/null
   git -C "${repo}" add .
   git -C "${repo}" -c user.name='Smoke Test' -c user.email='smoke@example.com' commit -m 'init' >/dev/null
   printf '// local change\n' >> "${repo}/module-a/src/test/java/com/example/ChangedTest.java"
@@ -3059,7 +3059,7 @@ package com.example;
 class Changed {}
 EOF
 
-  git init "${repo}" >/dev/null
+  git init --initial-branch=main "${repo}" >/dev/null
   git -C "${repo}" add .
   git -C "${repo}" -c user.name='Smoke Test' -c user.email='smoke@example.com' commit -m 'init' >/dev/null
   printf '// local change\n' >> "${code_repo}/boot/src/main/java/com/example/Changed.java"
@@ -3117,7 +3117,7 @@ makevn,com.example,Changed,0,10,0,0,0,1,0,1,0,1
 EOF
   printf '<html></html>\n' > "${repo}/jacoco-report-aggregate/target/site/jacoco-aggregate/index.html"
 
-  git init "${repo}" >/dev/null
+  git init --initial-branch=main "${repo}" >/dev/null
   git -C "${repo}" add .
   git -C "${repo}" -c user.name='Smoke Test' -c user.email='smoke@example.com' commit -m 'init' >/dev/null
   perl -0pi -e 's/return 0;/return 1;/' "${repo}/module-a/src/main/java/com/example/Changed.java"
@@ -3162,7 +3162,7 @@ root/module-a,com.example,Changed,50,50,0,0,1,1,0,1,0,1
 EOF
   printf '<html></html>\n' > "${repo}/jacoco-report-aggregate/target/site/jacoco-aggregate/index.html"
 
-  git init "${repo}" >/dev/null
+  git init --initial-branch=main "${repo}" >/dev/null
   git -C "${repo}" add .
   git -C "${repo}" -c user.name='Smoke Test' -c user.email='smoke@example.com' commit -m 'init' >/dev/null
   perl -0pi -e 's/return 0;/return 1;/' "${repo}/module-a/src/main/java/com/example/Changed.java"
@@ -3196,7 +3196,7 @@ EOF
 GROUP,PACKAGE,CLASS,INSTRUCTION_MISSED,INSTRUCTION_COVERED,BRANCH_MISSED,BRANCH_COVERED,LINE_MISSED,LINE_COVERED,COMPLEXITY_MISSED,COMPLEXITY_COVERED,METHOD_MISSED,METHOD_COVERED
 EOF
 
-  git init "${repo}" >/dev/null
+  git init --initial-branch=main "${repo}" >/dev/null
   git -C "${repo}" add .
   git -C "${repo}" -c user.name='Smoke Test' -c user.email='smoke@example.com' commit -m 'init' >/dev/null
   printf '// local change\n' >> "${repo}/module-a/src/main/java/com/example/Changed.java"
@@ -3263,7 +3263,7 @@ CSV
 EOF
   chmod +x "${repo}/mvnw"
 
-  git init "${repo}" >/dev/null
+  git init --initial-branch=main "${repo}" >/dev/null
   git -C "${repo}" add .
   git -C "${repo}" -c user.name='Smoke Test' -c user.email='smoke@example.com' commit -m 'init' >/dev/null
   perl -0pi -e 's/return 0;/return 1;/' "${repo}/module-a/src/main/java/com/example/Changed.java"
@@ -3310,7 +3310,7 @@ makevn,com.example,Changed,1,10,0,0,1,1,0,1,0,1
 EOF
   printf '<html></html>\n' > "${repo}/jacoco-report-aggregate/target/site/jacoco-aggregate/index.html"
 
-  git init "${repo}" >/dev/null
+  git init --initial-branch=main "${repo}" >/dev/null
   git -C "${repo}" add .
   git -C "${repo}" -c user.name='Smoke Test' -c user.email='smoke@example.com' commit -m 'init' >/dev/null
   perl -0pi -e 's/return 0;/return 1;/' "${repo}/module-a/src/main/java/com/example/Changed.java"
