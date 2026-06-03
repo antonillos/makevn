@@ -1,6 +1,12 @@
 name: Release
 
 on:
+  push:
+    branches:
+      - main
+    paths:
+      - rust/dispatcher/Cargo.toml
+      - rust/dispatcher/Cargo.lock
   workflow_dispatch:
     inputs:
       version:
@@ -31,16 +37,25 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       semver: ${{ steps.parse.outputs.semver }}
+      version: ${{ steps.parse.outputs.version }}
+      target-ref: ${{ steps.parse.outputs.target-ref }}
+      prerelease: ${{ steps.parse.outputs.prerelease }}
+      draft: ${{ steps.parse.outputs.draft }}
+      exists: ${{ steps.release.outputs.exists }}
     steps:
       - uses: actions/checkout@v6
         with:
-          ref: ${{ inputs.target_ref }}
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.target_ref || github.sha }}
       - name: Validate and parse version
         id: parse
         shell: bash
         run: |
           set -euo pipefail
-          VERSION="${{ inputs.version }}"
+          manifest_version="$(sed -nE 's/^version = "([^"]+)"/\1/p' rust/dispatcher/Cargo.toml | sed -n '1p')"
+          VERSION="${{ github.event_name == 'workflow_dispatch' && inputs.version || '' }}"
+          if [[ -z "$VERSION" ]]; then
+            VERSION="v${manifest_version}"
+          fi
           case "$VERSION" in
             v*) ;;
             *) printf 'Error: version must start with v, got %s\n' "$VERSION" >&2; exit 1 ;;
@@ -50,15 +65,33 @@ jobs:
             printf 'Error: invalid semver: %s\n' "$SEMVER" >&2
             exit 1
           fi
-          manifest_version="$(sed -nE 's/^version = "([^"]+)"/\1/p' rust/dispatcher/Cargo.toml | sed -n '1p')"
           if [[ "$manifest_version" != "$SEMVER" ]]; then
             printf 'Error: Cargo.toml version %s does not match release %s\n' "$manifest_version" "$SEMVER" >&2
             exit 1
           fi
           printf 'semver=%s\n' "$SEMVER" >> "$GITHUB_OUTPUT"
+          printf 'version=%s\n' "$VERSION" >> "$GITHUB_OUTPUT"
+          printf 'target-ref=%s\n' "${{ github.event_name == 'workflow_dispatch' && inputs.target_ref || github.sha }}" >> "$GITHUB_OUTPUT"
+          printf 'prerelease=%s\n' "${{ github.event_name == 'workflow_dispatch' && inputs.prerelease || false }}" >> "$GITHUB_OUTPUT"
+          printf 'draft=%s\n' "${{ github.event_name == 'workflow_dispatch' && inputs.draft || false }}" >> "$GITHUB_OUTPUT"
+      - name: Skip existing release
+        id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.parse.outputs.version }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if gh release view "$VERSION" >/dev/null 2>&1; then
+            printf 'Release %s already exists. Nothing to publish.\n' "$VERSION"
+            printf 'exists=true\n' >> "$GITHUB_OUTPUT"
+          else
+            printf 'exists=false\n' >> "$GITHUB_OUTPUT"
+          fi
 
   build-runtime-archives:
     needs: [validate-version, create-release]
+    if: needs.validate-version.outputs.exists != 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -73,7 +106,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
-          ref: ${{ inputs.target_ref }}
+          ref: ${{ needs.validate-version.outputs.target-ref }}
       - name: Install Rust
         shell: bash
         run: rustup toolchain install stable --profile minimal
@@ -86,55 +119,57 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          bash packaging/release/build-runtime-archive.sh "${{ inputs.version }}" "${{ matrix.target }}" dist
+          bash packaging/release/build-runtime-archive.sh "${{ needs.validate-version.outputs.version }}" "${{ matrix.target }}" dist
       - name: Upload runtime archive
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           set -euo pipefail
-          gh release upload "${{ inputs.version }}" \
-            "dist/makevn-${{ inputs.version }}-${{ matrix.target }}.tar.gz" \
-            "dist/makevn-${{ inputs.version }}-${{ matrix.target }}.tar.gz.sha256" \
+          gh release upload "${{ needs.validate-version.outputs.version }}" \
+            "dist/makevn-${{ needs.validate-version.outputs.version }}-${{ matrix.target }}.tar.gz" \
+            "dist/makevn-${{ needs.validate-version.outputs.version }}-${{ matrix.target }}.tar.gz.sha256" \
             --clobber
 
   build-source-archive:
+    if: needs.validate-version.outputs.exists != 'true'
     runs-on: ubuntu-latest
     needs: [validate-version, create-release]
     steps:
       - uses: actions/checkout@v6
         with:
-          ref: ${{ inputs.target_ref }}
+          ref: ${{ needs.validate-version.outputs.target-ref }}
           fetch-depth: 0
       - name: Build source archive
         shell: bash
         run: |
           set -euo pipefail
-          bash packaging/release/build-source-archive.sh "${{ inputs.version }}" dist
+          bash packaging/release/build-source-archive.sh "${{ needs.validate-version.outputs.version }}" dist
       - name: Upload source archive
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           set -euo pipefail
-          gh release upload "${{ inputs.version }}" \
-            "dist/makevn-${{ inputs.version }}.tar.gz" \
-            "dist/makevn-${{ inputs.version }}.tar.gz.sha256" \
+          gh release upload "${{ needs.validate-version.outputs.version }}" \
+            "dist/makevn-${{ needs.validate-version.outputs.version }}.tar.gz" \
+            "dist/makevn-${{ needs.validate-version.outputs.version }}.tar.gz.sha256" \
             --clobber
 
   create-release:
+    if: needs.validate-version.outputs.exists != 'true'
     runs-on: ubuntu-latest
     needs: validate-version
     steps:
       - uses: actions/checkout@v6
         with:
-          ref: ${{ inputs.target_ref }}
+          ref: ${{ needs.validate-version.outputs.target-ref }}
       - name: Generate release notes
         shell: bash
         run: |
           set -euo pipefail
           cat > release-notes.md <<'RELEASE'
-          # makevn ${{ inputs.version }}
+          # makevn ${{ needs.validate-version.outputs.version }}
 
           ## Install
 
@@ -178,16 +213,18 @@ jobs:
         run: |
           set -euo pipefail
           args=(
-            "${{ inputs.version }}"
-            --target "${{ inputs.target_ref }}"
-            --title "${{ inputs.version }}"
+            "${{ needs.validate-version.outputs.version }}"
+            --target "${{ needs.validate-version.outputs.target-ref }}"
+            --title "${{ needs.validate-version.outputs.version }}"
             --notes-file release-notes.md
           )
-          if [[ "${{ inputs.prerelease }}" == "true" ]]; then
+          if [[ "${{ needs.validate-version.outputs.prerelease }}" == "true" ]]; then
             args+=(--prerelease)
           fi
-          if [[ "${{ inputs.draft }}" == "true" ]]; then
+          if [[ "${{ needs.validate-version.outputs.draft }}" == "true" ]]; then
             args+=(--draft)
           fi
-          gh release delete "${{ inputs.version }}" --yes || true
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            gh release delete "${{ needs.validate-version.outputs.version }}" --yes || true
+          fi
           gh release create "${args[@]}"
