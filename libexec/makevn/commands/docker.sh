@@ -109,6 +109,30 @@ print_boot_docker_service_issues() {
   fi
 }
 
+makevn_verify_requires_boot_docker() {
+  local repo_root="$1"
+  local compose_file=""
+  local local_containers=""
+
+  compose_file="$(makevn_boot_compose_file_path "${repo_root}" || true)"
+  [[ -f "${compose_file}" ]] || return 1
+
+  makevn_load_config "${repo_root}"
+  if [[ -n "${MAKEVN_COMPOSE_FILE:-}" ]]; then
+    return 0
+  fi
+
+  case "${compose_file}" in
+    */src/test/resources/compose/docker-compose.yml)
+      return 0
+      ;;
+  esac
+
+  makevn_load_profile "${repo_root}"
+  local_containers="$(makevn_effective_local_containers "${repo_root}" "${MAKEVN_PROFILE_VERIFY_IT_LOCAL_CONTAINERS:-}")"
+  [[ -n "${local_containers}" ]]
+}
+
 cmd_docker_ps_required() {
   local repo_root="$1"
   local compose_kind="boot"

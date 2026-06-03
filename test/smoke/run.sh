@@ -2542,6 +2542,50 @@ EOF
   ${CLI} --repo "${repo}" uninstall >/dev/null
 }
 
+test_verify_skips_docker_preflight_without_repo_signal() {
+  local repo="${TMP_ROOT}/verify-dev-compose-no-docker-preflight"
+  local java_home
+
+  mkdir -p "${repo}/fake-bin"
+  printf '<project/>\n' > "${repo}/pom.xml"
+  printf 'services:\n  db:\n    image: postgres:16\n' > "${repo}/docker-compose.yml"
+  java_home="$(detect_java_home)"
+
+  cat > "${repo}/mvnw" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+printf 'ARGS=%s\n' "$*" >> .mvnw.log
+printf 'JAVA_HOME=%s\n' "${JAVA_HOME:-}" >> .mvnw.log
+EOF
+  chmod +x "${repo}/mvnw"
+
+  cat > "${repo}/fake-bin/docker-compose" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+printf 'docker-compose %s\n' "$*" >> .docker-compose.log
+exit 7
+EOF
+  chmod +x "${repo}/fake-bin/docker-compose"
+
+  ${CLI} --repo "${repo}" init >/dev/null
+  cat > "${repo}/.makevn/config" <<EOF
+MAKEVN_JAVA_HOME="${java_home}"
+MAKEVN_CODE_JAVA_HOME=""
+MAKEVN_KARATE_JAVA_HOME=""
+MAKEVN_CODE_TOOL_VERSIONS=""
+MAKEVN_KARATE_TOOL_VERSIONS=""
+MAKEVN_RUN_CMD=""
+EOF
+
+  PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" verify >/dev/null
+
+  assert_contains "${repo}/.mvnw.log" "ARGS="
+  assert_contains "${repo}/.mvnw.log" " verify"
+  assert_not_exists "${repo}/.docker-compose.log"
+
+  ${CLI} --repo "${repo}" uninstall >/dev/null
+}
+
 test_verify_it_uses_verify_lifecycle_when_verify_workflow_skips_it() {
   local repo="${TMP_ROOT}/verify-it-lifecycle"
   local java_home
@@ -3669,6 +3713,7 @@ main() {
   test_karate_all_rust_frontend_reports_run_app_bg_failure
   test_verify_split_commands
   test_verify_it_requires_running_services
+  test_verify_skips_docker_preflight_without_repo_signal
   test_verify_it_uses_verify_lifecycle_when_verify_workflow_skips_it
   test_verify_it_prefers_integration_workflow_when_available
   test_verify_respects_local_containers_config
