@@ -31,7 +31,7 @@ It provides:
 ## Safety Rules
 
 1. Always determine the repository root before running any `makevn` command. `makevn` must be executed from the repo root, never from a subdirectory or module. Locate the root by finding the `.git` directory.
-2. Run `makevn doctor` before recommending `init`. If `.makevn/` already exists in the repo root, the repo is already initialized — skip `init` unless the user explicitly asks to reinitialize.
+2. Run `makevn doctor` before recommending `init`. If `.makevn/` already exists in the repo root, the repo is already initialized — skip `init` unless the user explicitly asks to reinitialize. If `doctor` reports that the repository is not initialized, run `makevn init` before continuing with adoption or verification work.
 3. Never overwrite an existing `Makefile` or `GNUmakefile`.
 4. Prefer `makevn init` as the default adoption path.
 5. Use `makevn make install` only when the user explicitly wants `make` support.
@@ -44,8 +44,9 @@ It provides:
 12. Treat Karate workflows the same way: run `makevn karate-docker-up`, `makevn karate-docker-down`, `makevn karate-test`, or `makevn karate-all` only when `makevn doctor` detects Karate files. Do not assume every repository has Karate.
 13. Karate tests need the real app running. Use `makevn run-app-bg` before `makevn karate-test`, and always finish with `makevn stop-app`; `makevn karate-all` owns that lifecycle for the full flow.
 14. Do not assume every repository uses `LOCAL_CONTAINERS`. Let `makevn doctor`, `.makevn/config`, the repository profile, or the user's exported `LOCAL_CONTAINERS` decide that behavior.
-15. Do not hardcode company-specific application health URLs, path prefixes, package names, or repository paths. Let `makevn doctor` detect the health URL, or set `MAKEVN_APP_HEALTH_URL` in `.makevn/config` when the repository needs an explicit override.
-16. Do not invent formatter or Checkstyle goals. Use `makevn format` and `makevn checkstyle` only when the repo declares a supported plugin or `.makevn/config` sets `MAKEVN_FORMAT_CHECK_GOAL`, `MAKEVN_FORMAT_APPLY_GOAL`, or `MAKEVN_CHECKSTYLE_GOAL`.
+15. Do not assume a repository needs Docker for `verify` just because it has a `docker-compose.yml`. Treat Docker as a verification prerequisite only when `makevn doctor`, `.makevn/config`, a persisted profile, or a test compose under `src/test/resources/compose` says so.
+16. Do not hardcode company-specific application health URLs, path prefixes, package names, or repository paths. Let `makevn doctor` detect the health URL, or set `MAKEVN_APP_HEALTH_URL` in `.makevn/config` when the repository needs an explicit override.
+17. Do not invent formatter or Checkstyle goals. Use `makevn format` and `makevn checkstyle` only when the repo declares a supported plugin or `.makevn/config` sets `MAKEVN_FORMAT_CHECK_GOAL`, `MAKEVN_FORMAT_APPLY_GOAL`, or `MAKEVN_CHECKSTYLE_GOAL`.
 
 ## Failure Triage For Agents
 
@@ -53,7 +54,8 @@ Use this triage before deciding whether to edit repository code, change makevn, 
 
 - Missing JDK, Maven, Docker, or local executable: report an environment issue. Do not bypass makevn with raw `JAVA_HOME=... mvn`; first use `makevn doctor`, `makevn jdk list`, or ask the human to install/configure the missing prerequisite.
 - Unsupported formatter, Checkstyle, PIT, coverage, Docker compose, or Karate capability: skip that command. Do not invent Maven goals, compose files, or repository scripts.
-- `makevn docker-ps-required`: use it after `makevn docker-up`, or when the human says the required services are already running. Do not treat missing containers as a makevn bug.
+- `makevn docker-ps-required`: use it after `makevn docker-up`, or when `doctor`/the human says the required services are already running. Do not treat missing containers as a makevn bug.
+- `makevn verify` / `makevn verify-it`: let makevn decide whether Docker preflight is required. If the command reaches Maven without starting Docker, do not add Docker commands manually unless `doctor`, `.makevn/config`, or the human confirms boot services are required.
 - Karate tests: use `makevn karate-all` for the owned lifecycle, or use `makevn run-app-bg`, `makevn karate-test`, and `makevn stop-app` as a manual chain. Do not run `karate-test` against a stopped app.
 - Coverage gates: run `makevn coverage-changes` only after a coverage-producing verification run. If JaCoCo data is missing or empty, configure coverage activation and rerun the matching `verify-*-coverage` flow instead of switching to raw Maven.
 - Parser errors, unknown makevn commands, MCP option-ordering failures, or makevn usage errors for documented commands are makevn product bugs. Investigate makevn rather than editing the target repository.
@@ -91,7 +93,7 @@ If the command exits `0` but the requested outcome is still not verified, do not
    - `GNUmakefile`
    - `.makevn/` — if this directory exists, the repo is **already initialized**; do not run `makevn init` unless explicitly requested
 3. Run `makevn doctor`.
-4. If the repo is not initialized and the user wants installation, run `makevn init`.
+4. If `makevn doctor` reports that the repo is not initialized, run `makevn init` before continuing with adoption or verification work.
 5. If the user explicitly wants Make integration, run `makevn make install`.
 6. Validate the result with:
     - `makevn doctor`
@@ -261,6 +263,12 @@ makevn docker-up docker-ps-required --wait-seconds 30 clean verify-it-coverage c
 Use the `verify-ut-coverage` variant instead of `verify-it-coverage` when the
 repository's coverage gate is unit-test based.
 
+Use the boot-container coverage variant only when `makevn doctor` reports a
+Docker compose file that is part of the test workflow, `LOCAL_CONTAINERS default`
+is set, or `.makevn/config` explicitly configures `MAKEVN_COMPOSE_FILE`. A root
+`docker-compose.yml` by itself is not enough evidence; it may be for local
+development or examples.
+
 When using MCP, call the equivalent tools: `makevn_doctor`, `makevn_init`,
 `makevn_profile_refresh`, `makevn_verify_changes`, `makevn_verify_ut_coverage`,
 `makevn_verify_it_coverage`, `makevn_coverage`, and
@@ -327,6 +335,12 @@ makevn stop-app
 For Docker-backed commands (`docker-*`, `karate-docker-up`, and `karate-docker-down`), `--tail` is supported but remains a human-facing option. Agents should omit it unless the human asks for an interactive local view.
 
 `makevn docker-ps-required` validates the boot compose by default. Use `makevn docker-ps-required --compose karate` when the required services belong to the detected Karate E2E compose. When boot services may still be coming up, prefer `makevn docker-ps-required --wait-seconds N` instead of scripting a separate `sleep`. `makevn karate-docker-up` already waits for required Karate services to be running and healthy before it returns; agents should not add a separate immediate service check after `karate-docker-up` unless they explicitly need a standalone validation command.
+
+For `makevn verify` and `makevn verify-it`, Docker preflight is conditional.
+makevn uses repository signals from `doctor`, `.makevn/config`, profile data,
+and test compose locations to decide whether boot services are required. Do not
+prepend `makevn docker-up` or `makevn docker-ps-required` just because a compose
+file exists somewhere in the repository.
 
 ### Never use `makevn exec` for Docker operations
 
