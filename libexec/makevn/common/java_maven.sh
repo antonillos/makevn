@@ -111,15 +111,24 @@ makevn_effective_java_home() {
     fi
     if [[ -n "${java_version}" ]]; then
       local resolved_java_home=""
+      if [[ "${MAKEVN_RESOLVE_COMPATIBLE_JAVA_FIRST:-}" == "1" ]]; then
+        resolved_java_home="$(makevn_resolve_compatible_java_version_home "${java_version}" || true)"
+        if [[ -n "${resolved_java_home}" ]]; then
+          printf '%s\n' "${resolved_java_home}"
+          return 0
+        fi
+      fi
       resolved_java_home="$(makevn_resolve_java_version_home "${java_version}" || true)"
       if [[ -n "${resolved_java_home}" ]]; then
         printf '%s\n' "${resolved_java_home}"
         return 0
       fi
-      resolved_java_home="$(makevn_resolve_compatible_java_version_home "${java_version}" || true)"
-      if [[ -n "${resolved_java_home}" ]]; then
-        printf '%s\n' "${resolved_java_home}"
-        return 0
+      if [[ "${MAKEVN_RESOLVE_COMPATIBLE_JAVA_FIRST:-}" != "1" ]]; then
+        resolved_java_home="$(makevn_resolve_compatible_java_version_home "${java_version}" || true)"
+        if [[ -n "${resolved_java_home}" ]]; then
+          printf '%s\n' "${resolved_java_home}"
+          return 0
+        fi
       fi
     fi
   fi

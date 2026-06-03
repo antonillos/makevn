@@ -222,7 +222,9 @@ cmd_verify_it() {
   shift
   [[ "${1:-}" == "--" ]] && shift
   makevn_reject_verify_skip_flags verify-it "$@"
-  cmd_docker_ps_required "${repo_root}"
+  if makevn_verify_requires_boot_docker "${repo_root}"; then
+    cmd_docker_ps_required "${repo_root}"
+  fi
   makevn_run_verify_it_goal "${repo_root}" verify-it "$@"
 }
 
@@ -246,7 +248,9 @@ cmd_verify() {
   shift
   [[ "${1:-}" == "--" ]] && shift
   makevn_reject_verify_skip_flags verify "$@"
-  cmd_docker_ps_required "${repo_root}"
+  if makevn_verify_requires_boot_docker "${repo_root}"; then
+    cmd_docker_ps_required "${repo_root}"
+  fi
   makevn_load_profile "${repo_root}"
   local_containers="$(makevn_effective_local_containers "${repo_root}" "${MAKEVN_PROFILE_VERIFY_IT_LOCAL_CONTAINERS:-}")"
   if [[ -n "${local_containers}" ]]; then

@@ -8,6 +8,7 @@ rust/dispatcher/target/
 .DS_Store
 .idea/
 .vscode/
+.codex/
 *.swp
 *.swo
 *~

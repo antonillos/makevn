@@ -70,6 +70,7 @@ makevn_collect_doctor_snapshot() {
   local compose_file=""
   local e2e_compose_file=""
   local local_containers_preference=""
+  local prompted_interactively="no"
 
   makevn_doctor_progress "Inspecting repository layout"
   if [[ -d "$(makevn_state_dir "${repo_root}")" ]]; then
@@ -132,6 +133,7 @@ makevn_collect_doctor_snapshot() {
           printf '%s\n' "$(makevn_warn "Invalid selection. Try again.")" >&2
         done
         compose_file="${_found[$((_choice - 1))]}"
+        prompted_interactively="yes"
         # Ensure config exists before persisting
         if [[ ! -f "$(makevn_config_path "${repo_root}")" ]]; then
           mkdir -p "$(makevn_state_dir "${repo_root}")"
@@ -180,6 +182,7 @@ makevn_collect_doctor_snapshot() {
           printf '%s\n' "$(makevn_warn "Invalid selection. Try again.")" >&2
         done
         e2e_compose_file="${_e2e_found[$((_echoice - 1))]}"
+        prompted_interactively="yes"
         if [[ ! -f "$(makevn_config_path "${repo_root}")" ]]; then
           mkdir -p "$(makevn_state_dir "${repo_root}")"
           makevn_write_config "${repo_root}"
@@ -211,7 +214,7 @@ makevn_collect_doctor_snapshot() {
     app_runnable="yes"
   fi
   makevn_doctor_progress "Resolving Java homes"
-  code_java_home="$(makevn_effective_java_home "${repo_root}" code "${maven_base_path}" || true)"
+  code_java_home="$(MAKEVN_RESOLVE_COMPATIBLE_JAVA_FIRST=1 makevn_effective_java_home "${repo_root}" code "${maven_base_path}" || true)"
   if [[ -z "${code_java_home}" && -n "${code_java_version}" ]]; then
     compatible_code_java_homes="$(makevn_compatible_java_homes_csv "${code_java_version}" || true)"
   fi
@@ -245,12 +248,14 @@ makevn_collect_doctor_snapshot() {
         1)
           makevn_update_config_local_containers "${repo_root}" "TRUE"
           MAKEVN_LOCAL_CONTAINERS="TRUE"
+          prompted_interactively="yes"
           printf '%s\n' "$(makevn_dim "Saved to .makevn/config (MAKEVN_LOCAL_CONTAINERS).")" >&2
           break
           ;;
         2)
           makevn_update_config_local_containers "${repo_root}" ""
           MAKEVN_LOCAL_CONTAINERS=""
+          prompted_interactively="yes"
           printf '%s\n' "$(makevn_dim "Saved to .makevn/config (MAKEVN_LOCAL_CONTAINERS).")" >&2
           break
           ;;
@@ -266,7 +271,7 @@ makevn_collect_doctor_snapshot() {
   makevn_load_config "${repo_root}"
   if [[ -n "${MAKEVN_APP_HEALTH_URL:-}" ]]; then
     detected_app_health_url="${MAKEVN_APP_HEALTH_URL} (from config)"
-  elif [[ -n "${detected_app_health_url}" && -f "$(makevn_config_path "${repo_root}")" && -t 0 && -t 2 ]]; then
+  elif [[ -n "${detected_app_health_url}" && -f "$(makevn_config_path "${repo_root}")" && "${prompted_interactively}" != "yes" && -t 0 && -t 2 ]]; then
     printf '\n' >&2
     printf '%s\n' "$(makevn_warn "Detected app health URL: ${detected_app_health_url}")" >&2
     printf '%s\n' "  Is this correct? If not, enter the correct URL (or press Enter to keep it)." >&2

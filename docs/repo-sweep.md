@@ -61,6 +61,11 @@ The summary includes one verdict:
 - `repo-or-environment-issues`: makevn reached target commands, but the repo or local environment failed
 - `action-required`: fix makevn or the sweep harness before trusting the result
 
+A `clean` verdict can still include `skip`, `timeout`, or `fail` rows when they
+are classified as `slow_path`, `expected_unavailable`, or another non-product
+classification. Agents should read the `classification` column before deciding
+that makevn needs a code change.
+
 By default the process exits non-zero only for `product_bug` or `tooling_error`.
 Set `MAKEVN_REPO_SWEEP_FAIL_ON_PRODUCT_BUG=0` for exploratory runs where the
 outer automation must continue after the report is written.
@@ -72,7 +77,7 @@ outer automation must continue after the report is written.
 - `repo_failure`: makevn invoked the target command, but the repository command failed
 - `environment_missing`: unresolved JDK, Maven, Docker, or local prerequisite
 - `expected_unavailable`: formatter, Checkstyle, Karate, Docker compose, coverage, or PIT is not declared by the repo
-- `slow_path`: intentionally skipped or bounded expensive work such as mutation testing
+- `slow_path`: intentionally skipped or bounded expensive work such as mutation testing, full Maven lifecycle checks, or exploratory `exec` probes
 - `ok`: command completed successfully
 
 ## Cache Knobs

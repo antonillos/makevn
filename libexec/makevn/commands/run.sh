@@ -131,21 +131,56 @@ makevn_effective_app_local_containers() {
   return 1
 }
 
+makevn_app_process_state() {
+  local app_pid="$1"
+  local app_state=""
+
+  [[ -n "${app_pid}" ]] || { printf '%s\n' gone; return 0; }
+
+  app_state="$(ps -p "${app_pid}" -o stat= 2>/dev/null || true)"
+  if [[ -n "${app_state}" ]]; then
+    if [[ "${app_state}" == Z* ]]; then
+      printf '%s\n' zombie
+    else
+      printf '%s\n' running
+    fi
+    return 0
+  fi
+
+  if kill -0 "${app_pid}" 2>/dev/null; then
+    printf '%s\n' running
+  else
+    printf '%s\n' gone
+  fi
+}
+
+makevn_app_process_exited() {
+  local app_pid="$1"
+  local process_state=""
+
+  process_state="$(makevn_app_process_state "${app_pid}")"
+  [[ "${process_state}" == "gone" || "${process_state}" == "zombie" ]] || return 1
+
+  sleep 0.1
+  process_state="$(makevn_app_process_state "${app_pid}")"
+  [[ "${process_state}" == "gone" || "${process_state}" == "zombie" ]]
+}
+
 makevn_wait_app_health() {
   local health_url="$1"
   local timeout_seconds="${2:-30}"
   local app_pid="${3:-}"
   local log_file="${4:-}"
   local elapsed=0
-  local app_state=""
 
   while (( elapsed < timeout_seconds )); do
     if curl -fsS "${health_url}" >/dev/null 2>&1; then
       return 0
     fi
     if [[ -n "${app_pid}" ]]; then
-      app_state="$(ps -p "${app_pid}" -o stat= 2>/dev/null || true)"
-      if [[ -z "${app_state}" || "${app_state}" == Z* ]]; then
+      if makevn_app_process_exited "${app_pid}"; then
+        MAKEVN_APP_PROCESS_EXITED="yes"
+        sleep 0.1
         if [[ -n "${log_file}" ]]; then
           makevn_report_app_startup_failure "Application process exited during startup. Check the log: ${log_file}" "${log_file}"
         else
@@ -167,12 +202,12 @@ makevn_wait_app_started_without_health() {
   local app_pid="${2:-}"
   local log_file="${3:-}"
   local elapsed=0
-  local app_state=""
 
   while (( elapsed < timeout_seconds )); do
     if [[ -n "${app_pid}" ]]; then
-      app_state="$(ps -p "${app_pid}" -o stat= 2>/dev/null || true)"
-      if [[ -z "${app_state}" || "${app_state}" == Z* ]]; then
+      if makevn_app_process_exited "${app_pid}"; then
+        MAKEVN_APP_PROCESS_EXITED="yes"
+        sleep 0.1
         if [[ -n "${log_file}" ]]; then
           makevn_report_app_startup_failure "Application process exited during startup. Check the log: ${log_file}" "${log_file}"
         else
@@ -266,6 +301,7 @@ makevn_start_app_background() {
   local existing_cmd=""
   local app_pid=""
   local command_display=""
+  local app_process_exited=""
 
   maven_base_path="$(makevn_detect_maven_base_path "${repo_root}" || true)"
   [[ -n "${maven_base_path}" ]] || makevn_die "No Maven project detected in ${repo_root}"
@@ -369,6 +405,7 @@ makevn_start_app_background() {
   printf '%s\n' "${app_pid}" > "${pid_file}"
   printf '%s\n' "${jar_file}" > "${jar_record}"
 
+  MAKEVN_APP_PROCESS_EXITED=""
   set +e
   if [[ -n "${health_url}" ]]; then
     makevn_wait_app_health "${health_url}" "${MAKEVN_APP_HEALTH_TIMEOUT:-60}" "${app_pid}" "${log_file}"
@@ -377,8 +414,13 @@ makevn_start_app_background() {
   fi
   local health_rc=$?
   set -e
+  app_process_exited="${MAKEVN_APP_PROCESS_EXITED:-}"
+  MAKEVN_APP_PROCESS_EXITED=""
   if [[ ${health_rc} -ne 0 ]]; then
-    kill "${app_pid}" 2>/dev/null || true
+    if [[ "${app_process_exited}" != "yes" ]]; then
+      kill "${app_pid}" 2>/dev/null || true
+    fi
+    wait "${app_pid}" 2>/dev/null || true
     rm -f "${pid_file}" "${jar_record}"
     return "${health_rc}"
   fi
