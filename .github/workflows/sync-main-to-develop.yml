@@ -1,0 +1,79 @@
+name: Sync Main To Develop
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Prepare sync branch
+        id: sync
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin main develop
+          if git merge-base --is-ancestor origin/main origin/develop; then
+            printf 'needed=false\n' >> "${GITHUB_OUTPUT}"
+            printf 'Develop already contains main. Nothing to sync.\n' >> "${GITHUB_STEP_SUMMARY}"
+            exit 0
+          fi
+
+          branch="sync/main-to-develop"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -B "${branch}" origin/develop
+          git merge --no-ff --no-edit origin/main
+          git push --force-with-lease origin "${branch}"
+
+          printf 'needed=true\n' >> "${GITHUB_OUTPUT}"
+          printf 'branch=%s\n' "${branch}" >> "${GITHUB_OUTPUT}"
+      - name: Open sync PR
+        if: steps.sync.outputs.needed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          branch="${{ steps.sync.outputs.branch }}"
+          title="chore: sync main into develop"
+          body="Sync main back into develop after release."
+          pr_url=""
+
+          if gh pr view "${branch}" --repo "${{ github.repository }}" >/dev/null 2>&1; then
+            pr_url="$(gh pr view "${branch}" --repo "${{ github.repository }}" --json url --jq .url)"
+            gh pr edit "${branch}" --repo "${{ github.repository }}" --title "${title}" --body "${body}"
+          else
+            if ! pr_url="$(gh pr create \
+              --repo "${{ github.repository }}" \
+              --base develop \
+              --head "${branch}" \
+              --title "${title}" \
+              --body "${body}")"; then
+              {
+                printf '## Sync PR not created automatically\n\n'
+                printf 'The sync branch was pushed successfully, but this repository does not allow GitHub Actions to create pull requests.\n\n'
+                printf 'Create it manually with:\n\n'
+                printf '```bash\n'
+                printf 'gh pr create --repo %s --base develop --head %s --title %q --body %q\n' \
+                  "${{ github.repository }}" "${branch}" "${title}" "${body}"
+                printf '```\n'
+              } >> "${GITHUB_STEP_SUMMARY}"
+              exit 0
+            fi
+          fi
+
+          printf 'Sync PR: %s\n' "${pr_url}" >> "${GITHUB_STEP_SUMMARY}"
