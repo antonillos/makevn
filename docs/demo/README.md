@@ -14,7 +14,7 @@ brew install vhs
 
 VHS requires `ffmpeg` and `ttyd`; Homebrew installs them as dependencies.
 
-The agent recording also requires an authenticated `codex` CLI.
+The agent recordings also require authenticated `codex` and `opencode` CLIs.
 
 ## Generate
 
@@ -23,6 +23,7 @@ Run from the makevn repository root:
 ```bash
 vhs docs/demo/developer.tape
 vhs docs/demo/agent.tape
+vhs docs/demo/opencode.tape
 vhs docs/demo/telemetry.tape
 vhs docs/demo/tail.tape
 # Requires Docker in PATH and a running Docker daemon.
@@ -34,9 +35,9 @@ vhs docs/demo/install-asdf.tape
 The tapes create temporary Java/Maven repositories under `/tmp` and write the
 GIFs to `docs/assets/`.
 
-`telemetry.tape` and `agent.tape` clone a local checkout of the sibling
-`../cathode` repository into a neutral `/tmp` path and use its `cataloger-cli`
-Maven module for the demo.
+`telemetry.tape`, `agent.tape`, and `opencode.tape` clone a local checkout of
+the sibling `../cathode` repository into a neutral `/tmp` path and use its
+`cataloger-cli` Maven module for the demo.
 
 `verify-docker.tape` records `makevn docker-up docker-ps-required verify`
 against a small generated Maven repo with a real Docker Compose service. It is

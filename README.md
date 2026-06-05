@@ -57,15 +57,20 @@ makevn compile --tail
 makevn docker-up docker-ps-required verify
 ```
 
-### AI agent
+### Codex agent
 
-![AI agent workflow using the makevn MCP server to run doctor, clean, compile, and package](docs/assets/makevn-agent.gif)
+![Codex agent running clean, compile, and package in a Maven project](docs/assets/makevn-agent.gif)
 
 ```bash
-doctor
-clean
-compile
-package
+codex exec --model gpt-5.4 'clean compile and package the project'
+```
+
+### OpenCode agent
+
+![OpenCode agent running clean, compile, and package in the same Maven project](docs/assets/makevn-opencode.gif)
+
+```bash
+opencode run -m openai/gpt-5.4 'clean compile and package the project'
 ```
 
 ## Installation
@@ -136,7 +141,7 @@ makevn clean verify-it
 
 Agents use the same `makevn` commands as developers. The included MCP server
 also exposes typed tools such as `doctor`, `clean`, `compile`, `package`, and
-`verify_changes`.
+`verify_changes`, so clients can call them directly when they support MCP.
 
 ```json
 {
