@@ -363,6 +363,7 @@ makevn_run_selected_test() {
   local -a maven_args=()
 
   shift 3
+  makevn_clean_generated_contract_if_needed "${repo_root}"
   makevn_load_profile "${repo_root}"
   local_containers="$(makevn_effective_local_containers "${repo_root}" "${MAKEVN_PROFILE_VERIFY_IT_LOCAL_CONTAINERS:-}")"
 

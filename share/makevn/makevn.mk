@@ -114,6 +114,9 @@ vn-test:
 	case "$(FAST)" in \
 		1|true|TRUE|yes|YES) args="$$args --fast" ;; \
 	esac; \
+	case "$(MAKEVN_CLEAN_GENERATED_CONTRACT_TARGETS)" in \
+		1|true|TRUE|yes|YES) args="$$args --clean-generated-contract-targets" ;; \
+	esac; \
 	"$(MAKEVN_BIN)" --repo "$(MAKEVN_REPO_ROOT)" test $$args; \
 	rc=$$?; \
 	if [ "$$rc" -eq 130 ]; then \
@@ -122,22 +125,82 @@ vn-test:
 	exit "$$rc"
 
 vn-verify-ut:
-	$(call makevn_run,verify-ut $(MAKEVN_VERIFY_UT_ARGS))
+	@set +e; \
+	args="$(MAKEVN_VERIFY_UT_ARGS)"; \
+	case "$(MAKEVN_CLEAN_GENERATED_CONTRACT_TARGETS)" in \
+		1|true|TRUE|yes|YES) args="$$args --clean-generated-contract-targets" ;; \
+	esac; \
+	"$(MAKEVN_BIN)" --repo "$(MAKEVN_REPO_ROOT)" verify-ut $$args; \
+	rc=$$?; \
+	if [ "$$rc" -eq 130 ]; then \
+		exit 0; \
+	fi; \
+	exit "$$rc"
 
 vn-verify-ut-coverage:
-	$(call makevn_run,verify-ut-coverage $(MAKEVN_VERIFY_UT_COVERAGE_ARGS))
+	@set +e; \
+	args="$(MAKEVN_VERIFY_UT_COVERAGE_ARGS)"; \
+	case "$(MAKEVN_CLEAN_GENERATED_CONTRACT_TARGETS)" in \
+		1|true|TRUE|yes|YES) args="$$args --clean-generated-contract-targets" ;; \
+	esac; \
+	"$(MAKEVN_BIN)" --repo "$(MAKEVN_REPO_ROOT)" verify-ut-coverage $$args; \
+	rc=$$?; \
+	if [ "$$rc" -eq 130 ]; then \
+		exit 0; \
+	fi; \
+	exit "$$rc"
 
 vn-verify-it:
-	$(call makevn_run,verify-it $(MAKEVN_VERIFY_IT_ARGS))
+	@set +e; \
+	args="$(MAKEVN_VERIFY_IT_ARGS)"; \
+	case "$(MAKEVN_CLEAN_GENERATED_CONTRACT_TARGETS)" in \
+		1|true|TRUE|yes|YES) args="$$args --clean-generated-contract-targets" ;; \
+	esac; \
+	"$(MAKEVN_BIN)" --repo "$(MAKEVN_REPO_ROOT)" verify-it $$args; \
+	rc=$$?; \
+	if [ "$$rc" -eq 130 ]; then \
+		exit 0; \
+	fi; \
+	exit "$$rc"
 
 vn-verify-it-coverage:
-	$(call makevn_run,verify-it-coverage $(MAKEVN_VERIFY_IT_COVERAGE_ARGS))
+	@set +e; \
+	args="$(MAKEVN_VERIFY_IT_COVERAGE_ARGS)"; \
+	case "$(MAKEVN_CLEAN_GENERATED_CONTRACT_TARGETS)" in \
+		1|true|TRUE|yes|YES) args="$$args --clean-generated-contract-targets" ;; \
+	esac; \
+	"$(MAKEVN_BIN)" --repo "$(MAKEVN_REPO_ROOT)" verify-it-coverage $$args; \
+	rc=$$?; \
+	if [ "$$rc" -eq 130 ]; then \
+		exit 0; \
+	fi; \
+	exit "$$rc"
 
 vn-verify:
-	$(call makevn_run,verify $(MAKEVN_VERIFY_ARGS))
+	@set +e; \
+	args="$(MAKEVN_VERIFY_ARGS)"; \
+	case "$(MAKEVN_CLEAN_GENERATED_CONTRACT_TARGETS)" in \
+		1|true|TRUE|yes|YES) args="$$args --clean-generated-contract-targets" ;; \
+	esac; \
+	"$(MAKEVN_BIN)" --repo "$(MAKEVN_REPO_ROOT)" verify $$args; \
+	rc=$$?; \
+	if [ "$$rc" -eq 130 ]; then \
+		exit 0; \
+	fi; \
+	exit "$$rc"
 
 vn-verify-changes:
-	$(call makevn_run,verify-changes $(MAKEVN_VERIFY_CHANGES_ARGS))
+	@set +e; \
+	args="$(MAKEVN_VERIFY_CHANGES_ARGS)"; \
+	case "$(MAKEVN_CLEAN_GENERATED_CONTRACT_TARGETS)" in \
+		1|true|TRUE|yes|YES) args="$$args --clean-generated-contract-targets" ;; \
+	esac; \
+	"$(MAKEVN_BIN)" --repo "$(MAKEVN_REPO_ROOT)" verify-changes $$args; \
+	rc=$$?; \
+	if [ "$$rc" -eq 130 ]; then \
+		exit 0; \
+	fi; \
+	exit "$$rc"
 
 vn-coverage:
 	$(call makevn_run,coverage $(MAKEVN_COVERAGE_ARGS))

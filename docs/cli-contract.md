@@ -125,12 +125,12 @@ makevn validate [-- EXTRA_MAVEN_ARGS...]
 makevn package [-- EXTRA_MAVEN_ARGS...]
 makevn build [-- EXTRA_MAVEN_ARGS...]
 makevn clean [-- EXTRA_MAVEN_ARGS...]
-makevn verify-ut [-- EXTRA_MAVEN_ARGS...]
-makevn verify-ut-coverage [-- EXTRA_MAVEN_ARGS...]
-makevn verify-it [-- EXTRA_MAVEN_ARGS...]
-makevn verify-it-coverage [-- EXTRA_MAVEN_ARGS...]
-makevn verify [-- EXTRA_MAVEN_ARGS...]
-makevn verify-changes [-- EXTRA_MAVEN_ARGS...]
+makevn verify-ut [--clean-generated-contract-targets] [-- EXTRA_MAVEN_ARGS...]
+makevn verify-ut-coverage [--clean-generated-contract-targets] [-- EXTRA_MAVEN_ARGS...]
+makevn verify-it [--clean-generated-contract-targets] [-- EXTRA_MAVEN_ARGS...]
+makevn verify-it-coverage [--clean-generated-contract-targets] [-- EXTRA_MAVEN_ARGS...]
+makevn verify [--clean-generated-contract-targets] [-- EXTRA_MAVEN_ARGS...]
+makevn verify-changes [--clean-generated-contract-targets] [-- EXTRA_MAVEN_ARGS...]
 makevn pr-verify [-- EXTRA_MAVEN_ARGS...]
 ```
 
@@ -191,7 +191,7 @@ Verification intent:
 ### Test Command
 
 ```bash
-makevn test [--name TEST]... [--fast] [-- EXTRA_MAVEN_ARGS...]
+makevn test [--name TEST]... [--fast] [--clean-generated-contract-targets] [-- EXTRA_MAVEN_ARGS...]
 ```
 
 Rules:
@@ -201,6 +201,10 @@ Rules:
 - `--name FooTest,BarTest` selects multiple tests sequentially
 - repeated `--name` flags are allowed
 - `--fast` requires at least one selected test
+- `--clean-generated-contract-targets` cleans stale generated sources from
+  code-generation plugins (Avro, OpenAPI, Protobuf, etc.) before running.
+  Also controlled by `MAKEVN_CLEAN_GENERATED_CONTRACT_TARGETS` in
+  `.makevn/config` (default: auto-detect based on POM plugins).
 
 ### Command Execution
 

@@ -125,6 +125,8 @@ cmd_test() {
     makevn_die "test --fast requires at least one --name"
   fi
 
+  makevn_clean_generated_contract_if_needed "${repo_root}"
+
   if [[ ${#test_names[@]} -eq 0 ]]; then
     if [[ ${#extra_args[@]} -gt 0 ]]; then
       makevn_run_maven_goal "${repo_root}" test test test "${extra_args[@]}"
@@ -176,6 +178,7 @@ cmd_verify_ut() {
   shift
   [[ "${1:-}" == "--" ]] && shift
   makevn_reject_verify_skip_flags verify-ut "$@"
+  makevn_clean_generated_contract_if_needed "${repo_root}"
   cli_flags_value="$(makevn_coverage_cli_flags "${repo_root}")"
   if [[ -n "${cli_flags_value}" ]]; then
     read -r -a cli_flags <<< "${cli_flags_value}"
@@ -222,6 +225,7 @@ cmd_verify_it() {
   shift
   [[ "${1:-}" == "--" ]] && shift
   makevn_reject_verify_skip_flags verify-it "$@"
+  makevn_clean_generated_contract_if_needed "${repo_root}"
   if makevn_verify_requires_boot_docker "${repo_root}"; then
     cmd_docker_ps_required "${repo_root}"
   fi
@@ -248,6 +252,7 @@ cmd_verify() {
   shift
   [[ "${1:-}" == "--" ]] && shift
   makevn_reject_verify_skip_flags verify "$@"
+  makevn_clean_generated_contract_if_needed "${repo_root}"
   if makevn_verify_requires_boot_docker "${repo_root}"; then
     cmd_docker_ps_required "${repo_root}"
   fi
