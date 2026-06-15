@@ -152,32 +152,52 @@ makevn_clean_generated_contract_targets() {
   local repo_root="$1"
   local maven_base_path="$2"
   local dir=""
-  local outside_target=""
   local warn_dirs=""
+
+  makevn_load_config "${repo_root}"
 
   while IFS= read -r dir; do
     [[ -n "${dir}" ]] || continue
-    if [[ "${dir}" != target/* && "${dir}" != target ]]; then
-      # Skip paths with unresolved Maven properties (the catch-all covers them)
-      if [[ "${dir}" != *'${'* ]]; then
-        warn_dirs="$(makevn_append_word "${warn_dirs}" "${dir}")"
-      fi
+    if [[ "${dir}" == *'${'* ]]; then
+      warn_dirs="$(makevn_append_word "${warn_dirs}" "${dir}")"
       continue
     fi
     if [[ -d "${maven_base_path}/${dir}" ]]; then
-      if makevn_frontend_owns_loader 2>/dev/null; then
-        :
-      else
+      if ! makevn_frontend_owns_loader 2>/dev/null; then
         makevn_print_detail_line "clean generated-contract: ${dir}"
       fi
       rm -rf "${maven_base_path:?}/${dir}"
     fi
   done <<< "$(makevn_detect_generated_contract_output_dirs "${maven_base_path}")"
 
-  if [[ -n "${warn_dirs}" ]]; then
-    printf '%s\n' "$(makevn_warn "Warning: generated-contract output directories outside target/ are not cleaned automatically: ${warn_dirs}")" >&2
-    printf '%s\n' "$(makevn_dim "Add them to MAKEVN_GENERATED_CONTRACT_CLEAN_DIRS in .makevn/config if needed.")" >&2
+  local config_dirs="${MAKEVN_GENERATED_CONTRACT_CLEAN_DIRS:-}"
+  if [[ -n "${config_dirs}" ]]; then
+    for dir in ${config_dirs}; do
+      if [[ -d "${maven_base_path}/${dir}" ]]; then
+        if ! makevn_frontend_owns_loader 2>/dev/null; then
+          makevn_print_detail_line "clean generated-contract (config): ${dir}"
+        fi
+        rm -rf "${maven_base_path:?}/${dir}"
+      fi
+    done
   fi
+
+  if [[ -n "${warn_dirs}" ]]; then
+    printf '%s\n' "$(makevn_warn "Warning: generated-contract output directories with unresolved Maven properties were skipped: ${warn_dirs}")" >&2
+    printf '%s\n' "$(makevn_dim "Set MAKEVN_GENERATED_CONTRACT_CLEAN_DIRS in .makevn/config with the resolved paths if needed.")" >&2
+  fi
+}
+
+makevn_detect_unresolved_generated_contract_dirs() {
+  local maven_base_path="$1"
+  local dir=""
+
+  while IFS= read -r dir; do
+    [[ -n "${dir}" ]] || continue
+    if [[ "${dir}" == *'${'* ]]; then
+      printf '%s\n' "${dir}"
+    fi
+  done <<< "$(makevn_detect_generated_contract_output_dirs "${maven_base_path}")"
 }
 
 makevn_should_clean_generated_contract_targets() {
