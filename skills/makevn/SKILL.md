@@ -109,6 +109,17 @@ In OpenCode and Codex specifically, the agent should treat `makevn` as the termi
 
 For Codex, keep changes surgical: inspect the repo first, run the smallest `makevn` command that proves the touched behavior, and do not edit `.makevn/` state manually when `makevn init`, `profile refresh`, or `uninstall` owns that behavior.
 
+## `refresh` vs `profile refresh`
+
+These two commands serve different purposes and are **not interchangeable**:
+
+| Command | Qué hace | Cuándo usarlo |
+|---|---|---|
+| `makevn profile refresh` | Re-detecta el perfil del repo (workflows, flags de Maven, cobertura) y regenera solo `.makevn/profile.env`. No toca el resto del estado. | Cuando cambian los workflows de GitHub Actions, o después de modificar configuración de cobertura/compilación. Es el comando para "actualizar la detección". |
+| `makevn refresh` | Borra todo `.makevn/` y lo recrea desde cero (`uninstall` + `init --force`). Elimina también integraciones con Makefile si existen. | Después de actualizar makevn a una nueva versión, o cuando `doctor` muestra estado inconsistente a pesar de que `.makevn/` existe. Es un reset completo. |
+
+**Regla práctica**: si el problema es que makevn no detecta bien los workflows o flags, usa `profile refresh`. Si el problema es que el estado de makevn está corrupto o es de una versión anterior, usa `refresh`.
+
 ## Adoption Model
 
 Default:
