@@ -119,6 +119,7 @@ MAKEVN_MIN_COVERAGE_THRESHOLD=""
 MAKEVN_MIN_COVERAGE_CHANGES_THRESHOLD=""
 MAKEVN_COMPOSE_FILE=""
 MAKEVN_E2E_COMPOSE_FILE=""
+MAKEVN_GENERATED_CONTRACT_CLEAN_DIRS=""
 EOF
 }
 
@@ -328,4 +329,31 @@ makevn_is_managed_bootstrap_makefile() {
   local makefile_path="${repo_root}/Makefile"
   [[ -f "${makefile_path}" ]] || return 1
   cmp -s <(makevn_bootstrap_makefile_content) "${makefile_path}"
+}
+
+makevn_update_config_generated_contract_clean_dirs() {
+  local repo_root="$1"
+  local config_path
+  config_path="$(makevn_config_path "${repo_root}")"
+
+  if [[ ! -f "${config_path}" ]]; then
+    return 1
+  fi
+
+  local maven_base_path=""
+  maven_base_path="$(makevn_detect_maven_base_path "${repo_root}" || true)"
+  [[ -n "${maven_base_path}" ]] || return 0
+
+  local unresolved
+  unresolved="$(makevn_detect_unresolved_generated_contract_dirs "${maven_base_path}" | tr '\n' ' ' | sed 's/ $//')"
+
+  if grep -q '^MAKEVN_GENERATED_CONTRACT_CLEAN_DIRS=' "${config_path}"; then
+    local tmp_file
+    tmp_file="$(mktemp)"
+    awk -v val="${unresolved}" 'BEGIN{q="\""} /^MAKEVN_GENERATED_CONTRACT_CLEAN_DIRS=/ { print "MAKEVN_GENERATED_CONTRACT_CLEAN_DIRS=" q val q; next } { print }' "${config_path}" > "${tmp_file}"
+    mv "${tmp_file}" "${config_path}"
+  else
+    local q="\""
+    printf 'MAKEVN_GENERATED_CONTRACT_CLEAN_DIRS=%s%s%s\n' "${q}" "${unresolved}" "${q}" >> "${config_path}"
+  fi
 }

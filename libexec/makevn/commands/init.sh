@@ -59,6 +59,7 @@ cmd_init() {
   mkdir -p "${logs_dir}"
   [[ -f "${config_path}" ]] || makevn_write_config "${repo_root}"
   makevn_refresh_profile "${repo_root}"
+  makevn_update_config_generated_contract_clean_dirs "${repo_root}"
   if [[ -n "${managed_makefile}" || -n "${generated_root_makefile}" ]]; then
     makevn_render_make_include "${MAKEVN_BIN_PATH}" > "${state_dir}/makevn.mk"
   else

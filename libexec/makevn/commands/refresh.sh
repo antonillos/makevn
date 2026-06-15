@@ -45,6 +45,10 @@ cmd_refresh() {
     return 0
   fi
 
+  printf '\n'
+  print_doctor "${repo_root}"
+  printf '\n'
+
   cmd_init "${repo_root}" --force
 
   if [[ "${was_make_installed}" == true ]]; then
@@ -52,5 +56,4 @@ cmd_refresh() {
   fi
 
   printf '%s\n' "$(makevn_accent "makevn refreshed.")"
-  printf '%s\n' "$(makevn_dim "Run 'makevn doctor' to verify the new state.")"
 }
