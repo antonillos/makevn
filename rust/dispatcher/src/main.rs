@@ -606,7 +606,6 @@ fn is_top_level_command(arg: &OsString) -> bool {
         "help"
             | "doctor"
             | "init"
-            | "refresh"
             | "make"
             | "uninstall"
             | "profile"
