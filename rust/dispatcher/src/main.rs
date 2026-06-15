@@ -435,7 +435,7 @@ fn validate_command(
             validate_maven_passthrough_args(command, trailing_args)?;
             Ok(CommandValidation::Valid)
         }
-        "help" | "init" | "uninstall" | "exec" | "test" | "coverage" | "coverage-changes"
+        "help" | "init" | "refresh" | "uninstall" | "exec" | "test" | "coverage" | "coverage-changes"
         | "docker-up" | "docker-down" | "docker-ps" | "docker-stats" | "docker-ps-required"
         | "karate-docker-up" | "karate-docker-down" | "run-app" | "run-app-bg" | "stop-app"
         | "run" => Ok(CommandValidation::Valid),
@@ -606,6 +606,7 @@ fn is_top_level_command(arg: &OsString) -> bool {
         "help"
             | "doctor"
             | "init"
+            | "refresh"
             | "make"
             | "uninstall"
             | "profile"
@@ -2994,6 +2995,7 @@ fn command_help(command: &str) -> Option<(&'static str, &'static str, &'static [
         "init" => Some(("makevn [--repo PATH] init [--dry-run] [--force]", "Initialize .makevn configuration for the repository.", &["--dry-run  Show what would change without writing files", "--force    Refresh existing generated files"])),
         "make" => Some(("makevn [--repo PATH] make install|uninstall [--dry-run]", "Install or remove optional vn-* Make targets.", &["--dry-run  Show what would change without writing files"])),
         "uninstall" => Some(("makevn [--repo PATH] uninstall [--dry-run]", "Remove makevn local repository state.", &["--dry-run  Show what would be removed"])),
+        "refresh" => Some(("makevn [--repo PATH] refresh [--dry-run]", "Reinitialize makevn state from scratch. Removes stale state and runs init --force.", &["--dry-run  Show what would change without writing files"])),
         "profile" => Some(("makevn [--repo PATH] profile refresh", "Refresh detected repository profile information.", &[])),
         "exec" => Some(("makevn [--repo PATH] exec [--context code|karate] -- COMMAND [ARGS...]", "Run an arbitrary command with makevn's resolved environment.", &["--context  Java context to use: code or karate"])),
         "compile" => maven_command_help("compile", "Compile project sources.", false),
@@ -3126,6 +3128,7 @@ fn print_help(with_header: bool) {
     println!("Usage:");
     println!("  makevn [--repo PATH] doctor");
     println!("  makevn [--repo PATH] init [--dry-run] [--force]");
+    println!("  makevn [--repo PATH] refresh [--dry-run]");
     println!("  makevn [--repo PATH] make install [--dry-run]");
     println!("  makevn [--repo PATH] make uninstall [--dry-run]");
     println!("  makevn [--repo PATH] uninstall [--dry-run]");

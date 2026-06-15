@@ -23,6 +23,7 @@ It provides:
 
 - repository inspection with `makevn doctor`
 - safe initialization with `makevn init`
+- state refresh after updates with `makevn refresh`
 - transparent cleanup with `makevn uninstall`
 - context-aware command execution using JDK resolution from `.tool-versions`
 - optional `make` integration through namespaced `vn-*` targets
@@ -31,7 +32,7 @@ It provides:
 ## Safety Rules
 
 1. Always determine the repository root before running any `makevn` command. `makevn` must be executed from the repo root, never from a subdirectory or module. Locate the root by finding the `.git` directory.
-2. Run `makevn doctor` before recommending `init`. If `.makevn/` already exists in the repo root, the repo is already initialized — skip `init` unless the user explicitly asks to reinitialize. If `doctor` reports that the repository is not initialized, run `makevn init` before continuing with adoption or verification work.
+2. Run `makevn doctor` before recommending `init`. If `.makevn/` already exists in the repo root, the repo is already initialized — skip `init` unless the user explicitly asks to reinitialize. If `doctor` reports that the repository is not initialized, run `makevn init` before continuing with adoption or verification work. After updating makevn itself, run `makevn refresh` to clean stale state and reinitialize.
 3. Never overwrite an existing `Makefile` or `GNUmakefile`.
 4. Prefer `makevn init` as the default adoption path.
 5. Use `makevn make install` only when the user explicitly wants `make` support.

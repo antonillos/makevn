@@ -1,7 +1,7 @@
 MAKEVN_BIN ?= makevn
 MAKEVN_REPO_ROOT ?= $(CURDIR)
 
-.PHONY: vn-help vn-doctor vn-init vn-make-install vn-make-uninstall vn-uninstall vn-profile-refresh vn-compile vn-test-compile vn-compile-tests vn-validate vn-package vn-build vn-clean vn-test vn-verify-ut vn-verify-ut-coverage vn-verify-it vn-verify-it-coverage vn-verify vn-verify-changes vn-coverage vn-coverage-changes vn-pr-verify vn-mutation vn-docker-up vn-docker-down vn-docker-ps vn-docker-stats vn-docker-ps-required vn-karate-docker-up vn-karate-docker-down vn-karate-test vn-karate-all vn-run-app vn-run-app-bg vn-stop-app vn-run vn-jdk-current vn-jdk-list vn-exec
+.PHONY: vn-help vn-doctor vn-init vn-refresh vn-make-install vn-make-uninstall vn-uninstall vn-profile-refresh vn-compile vn-test-compile vn-compile-tests vn-validate vn-package vn-build vn-clean vn-test vn-verify-ut vn-verify-ut-coverage vn-verify-it vn-verify-it-coverage vn-verify vn-verify-changes vn-coverage vn-coverage-changes vn-pr-verify vn-mutation vn-docker-up vn-docker-down vn-docker-ps vn-docker-stats vn-docker-ps-required vn-karate-docker-up vn-karate-docker-down vn-karate-test vn-karate-all vn-run-app vn-run-app-bg vn-stop-app vn-run vn-jdk-current vn-jdk-list vn-exec
 
 define makevn_run
 	@set +e; \
@@ -17,6 +17,7 @@ vn-help:
 	@printf '%s\n' 'makevn make targets:'
 	@printf '%s\n' '  make vn-doctor'
 	@printf '%s\n' '  make vn-init'
+	@printf '%s\n' '  make vn-refresh'
 	@printf '%s\n' '  make vn-make-install'
 	@printf '%s\n' '  make vn-make-uninstall'
 	@printf '%s\n' '  make vn-uninstall'
@@ -68,6 +69,9 @@ vn-doctor:
 
 vn-init:
 	$(call makevn_run,init $(MAKEVN_INIT_ARGS))
+
+vn-refresh:
+	$(call makevn_run,refresh $(MAKEVN_REFRESH_ARGS))
 
 vn-make-install:
 	$(call makevn_run,make install $(MAKEVN_MAKE_INSTALL_ARGS))

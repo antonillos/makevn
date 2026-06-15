@@ -18,6 +18,7 @@ from the terminal without IDE-specific setup. Agents in OpenCode should prefer
 Usage:
   makevn [--repo PATH] [--compact] doctor
   makevn [--repo PATH] [--compact] init [--dry-run] [--force]
+  makevn [--repo PATH] refresh [--dry-run]
   makevn [--repo PATH] [--compact] make install [--dry-run]
   makevn [--repo PATH] [--compact] make uninstall [--dry-run]
   makevn [--repo PATH] [--compact] uninstall [--dry-run]
@@ -118,7 +119,7 @@ print_command_intro() {
 
 makevn_cli_is_top_level_command() {
   case "$1" in
-    help|doctor|init|make|uninstall|profile|exec|compile|test-compile|compile-tests|validate|package|clean|build|test|verify-ut|verify-ut-coverage|verify-it|verify-it-coverage|verify|verify-changes|coverage|coverage-changes|pr-verify|format|checkstyle|docker-up|docker-down|docker-ps|docker-stats|docker-ps-required|karate-docker-up|karate-docker-down|karate-test|karate-all|run-app|run-app-bg|stop-app|run|jdk|mutation)
+    help|doctor|init|refresh|make|uninstall|profile|exec|compile|test-compile|compile-tests|validate|package|clean|build|test|verify-ut|verify-ut-coverage|verify-it|verify-it-coverage|verify|verify-changes|coverage|coverage-changes|pr-verify|format|checkstyle|docker-up|docker-down|docker-ps|docker-stats|docker-ps-required|karate-docker-up|karate-docker-down|karate-test|karate-all|run-app|run-app-bg|stop-app|run|jdk|mutation)
       return 0
       ;;
   esac
@@ -206,6 +207,8 @@ source "${SCRIPT_DIR}/commands/doctor.sh"
 # shellcheck source=/dev/null
 source "${SCRIPT_DIR}/commands/init.sh"
 # shellcheck source=/dev/null
+source "${SCRIPT_DIR}/commands/refresh.sh"
+# shellcheck source=/dev/null
 source "${SCRIPT_DIR}/commands/profile.sh"
 # shellcheck source=/dev/null
 source "${SCRIPT_DIR}/commands/exec.sh"
@@ -291,6 +294,9 @@ case "${COMMAND}" in
     ;;
   doctor)
     print_doctor "${REPO_ROOT}" "$@"
+    ;;
+  refresh)
+    cmd_refresh "${REPO_ROOT}" "$@"
     ;;
   init)
     cmd_init "${REPO_ROOT}" "$@"

@@ -107,6 +107,7 @@ Global option rules:
 ```bash
 makevn doctor
 makevn init [--dry-run] [--force]
+makevn refresh [--dry-run]
 makevn make install [--dry-run]
 makevn make uninstall [--dry-run]
 makevn uninstall [--dry-run]
