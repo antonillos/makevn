@@ -66,11 +66,25 @@ pub fn run_mcp_server(current_exe: PathBuf) -> Result<i32, String> {
         if method == "tools/call" {
             let result = handle_tool_call(&makevn_bin, &params);
             let response = match result {
-                Ok(content) => json!({
-                    "jsonrpc": "2.0",
-                    "id": id,
-                    "result": { "content": [{"type": "text", "text": content}] }
-                }),
+                Ok(tool_result) => {
+                    let mut content = vec![json!({"type": "text", "text": tool_result.output})];
+                    if tool_result.exit_code != 0 || tool_result.duration_ms > 0 {
+                        let tool_name = params["name"].as_str().unwrap_or("unknown");
+                        content.push(json!({
+                            "type": "text",
+                            "text": json!({
+                                "exitCode": tool_result.exit_code,
+                                "durationMs": tool_result.duration_ms,
+                                "tool": tool_name,
+                            }).to_string()
+                        }));
+                    }
+                    json!({
+                        "jsonrpc": "2.0",
+                        "id": id,
+                        "result": { "content": content }
+                    })
+                }
                 Err(err) => json!({
                     "jsonrpc": "2.0",
                     "id": id,
@@ -223,6 +237,8 @@ const TOOL_SPECS: &[ToolSpec] = &[
     ToolSpec { name: "jdk_current", description: "Show the currently resolved JDK version.", command: &["jdk", "current"], options: &[COMMON_REPO] },
     ToolSpec { name: "jdk_list", description: "List discovered JDK installations.", command: &["jdk", "list"], options: &[COMMON_REPO] },
     ToolSpec { name: "mutation", description: "Run PIT mutation testing. Detects pitest-maven plugin automatically. WARNING: Very slow (30+ min for large projects).", command: &["mutation"], options: &[COMMON_REPO, MODULE, VERBOSE, COMPACT] },
+    ToolSpec { name: "composite_run", description: "Execute a sequence of makevn commands with step-by-step progress. Each step is a tool call with optional args. Returns JSON with per-step results. Use fail-fast to stop on first error.", command: &[], options: &[COMMON_REPO, ToolOption { name: "steps", ty: "array", description: "JSON array of command steps. Each step: {\"tool\":\"verify_ut\",\"args\":{\"compact\":true}}", required: true }, ToolOption { name: "fail-fast", ty: "boolean", description: "Stop on first non-zero step (default: true)", required: false }] },
+    ToolSpec { name: "parallel_run", description: "Execute independent makevn commands in parallel. Each step runs in a separate thread. Returns JSON with per-step results. Use for independent operations like parallel UT+IT.", command: &[], options: &[COMMON_REPO, ToolOption { name: "steps", ty: "array", description: "JSON array of command steps. Each step: {\"tool\":\"verify_ut\",\"args\":{\"compact\":true}}", required: true }] },
 ];
 
 fn tools_list() -> Vec<Value> {
@@ -261,15 +277,39 @@ fn tool(spec: &ToolSpec) -> Value {
     })
 }
 
-fn handle_tool_call(makevn_bin: &Path, params: &Value) -> Result<String, String> {
+struct ToolCallResult {
+    output: String,
+    exit_code: i32,
+    duration_ms: u128,
+}
+
+fn handle_tool_call(makevn_bin: &Path, params: &Value) -> Result<ToolCallResult, String> {
     let tool_name = params["name"]
         .as_str()
         .ok_or_else(|| String::from("missing tool name"))?;
+    let args = params["arguments"].as_object().cloned().unwrap_or_default();
+
+    if tool_name == "composite_run" {
+        let output = handle_composite_run(makevn_bin, &args)?;
+        return Ok(ToolCallResult {
+            output,
+            exit_code: 0,
+            duration_ms: 0,
+        });
+    }
+    if tool_name == "parallel_run" {
+        let output = handle_parallel_run(makevn_bin, &args)?;
+        return Ok(ToolCallResult {
+            output,
+            exit_code: 0,
+            duration_ms: 0,
+        });
+    }
+
     let spec = TOOL_SPECS
         .iter()
         .find(|spec| spec.name == tool_name)
         .ok_or_else(|| format!("unknown makevn tool: {tool_name}"))?;
-    let args = params["arguments"].as_object().cloned().unwrap_or_default();
 
     let mut cmd_args: Vec<String> = Vec::new();
     if let Some(repo) = args
@@ -284,6 +324,7 @@ fn handle_tool_call(makevn_bin: &Path, params: &Value) -> Result<String, String>
     cmd_args.extend(spec.command.iter().map(|part| (*part).to_owned()));
     push_tool_flags(&mut cmd_args, spec, &args)?;
 
+    let start = Instant::now();
     let output = if tool_name == "exec" {
         run_makevn_with_timeout(makevn_bin, &cmd_args, exec_timeout_seconds(&args)?)?
     } else {
@@ -297,6 +338,7 @@ fn handle_tool_call(makevn_bin: &Path, params: &Value) -> Result<String, String>
             .map_err(|e| format!("failed to execute makevn: {e}"))?
             .into()
     };
+    let duration_ms = start.elapsed().as_millis();
 
     let mut result = String::new();
     if !output.stdout.is_empty() {
@@ -319,7 +361,231 @@ fn handle_tool_call(makevn_bin: &Path, params: &Value) -> Result<String, String>
         }
         result.push_str(&format!("exit code {}", output.status.code().unwrap_or(-1)));
     }
-    Ok(result)
+
+    let exit_code = if output.timed_out {
+        -1
+    } else {
+        output.status.code().unwrap_or(-1)
+    };
+
+    Ok(ToolCallResult {
+        output: result,
+        exit_code,
+        duration_ms,
+    })
+}
+
+fn parse_steps(args: &Map<String, Value>) -> Result<Vec<Value>, String> {
+    let Some(steps_value) = args.get("steps") else {
+        return Err(String::from("missing required argument: steps"));
+    };
+    let Some(steps_array) = steps_value.as_array() else {
+        return Err(String::from("steps must be a JSON array"));
+    };
+    if steps_array.is_empty() {
+        return Err(String::from("steps must not be empty"));
+    }
+    Ok(steps_array.clone())
+}
+
+fn execute_single_step(
+    makevn_bin: &Path,
+    step: &Value,
+    global_repo: Option<&str>,
+) -> Result<(String, i32, u128), String> {
+    let step_tool = step["tool"]
+        .as_str()
+        .ok_or_else(|| String::from("each step must have a 'tool' field"))?;
+    let step_args = step["arguments"].as_object().cloned().unwrap_or_default();
+
+    let spec = TOOL_SPECS
+        .iter()
+        .find(|spec| spec.name == step_tool)
+        .ok_or_else(|| format!("unknown makevn tool in step: {step_tool}"))?;
+
+    let mut cmd_args: Vec<String> = Vec::new();
+    let repo = step_args
+        .get("repo")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
+        .or(global_repo);
+    if let Some(repo) = repo {
+        cmd_args.push("--repo".into());
+        cmd_args.push(repo.into());
+    }
+    cmd_args.push("--compact".into());
+    cmd_args.extend(spec.command.iter().map(|part| (*part).to_owned()));
+    push_tool_flags(&mut cmd_args, spec, &step_args)?;
+
+    let start = Instant::now();
+    let output = if step_tool == "exec" {
+        run_makevn_with_timeout(makevn_bin, &cmd_args, exec_timeout_seconds(&step_args)?)?
+    } else {
+        Command::new(makevn_bin)
+            .args(&cmd_args)
+            .env("NO_COLOR", "1")
+            .env("MAKEVN_COMPACT_OUTPUT", "1")
+            .env("MAKEVN_AGENT_OUTPUT", "1")
+            .env("CI", "1")
+            .output()
+            .map_err(|e| format!("failed to execute makevn: {e}"))?
+            .into()
+    };
+    let duration_ms = start.elapsed().as_millis();
+
+    let mut result = String::new();
+    if !output.stdout.is_empty() {
+        result.push_str(String::from_utf8_lossy(&output.stdout).trim());
+    }
+    if !output.stderr.is_empty() {
+        if !result.is_empty() {
+            result.push('\n');
+        }
+        result.push_str(String::from_utf8_lossy(&output.stderr).trim());
+    }
+    if output.timed_out {
+        if !result.is_empty() {
+            result.push('\n');
+        }
+        result.push_str(&format!("timed out after {}s", output.timeout_seconds));
+    }
+
+    let exit_code = if output.timed_out {
+        -1
+    } else {
+        output.status.code().unwrap_or(-1)
+    };
+
+    Ok((result, exit_code, duration_ms))
+}
+
+fn handle_composite_run(makevn_bin: &Path, args: &Map<String, Value>) -> Result<String, String> {
+    let steps = parse_steps(args)?;
+    let fail_fast = args
+        .get("fail-fast")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(true);
+    let global_repo = args
+        .get("repo")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty());
+
+    let mut results = Vec::new();
+    let mut overall_exit_code = 0;
+
+    for (i, step) in steps.iter().enumerate() {
+        let step_tool = step["tool"]
+            .as_str()
+            .ok_or_else(|| String::from("each step must have a 'tool' field"))?;
+
+        match execute_single_step(makevn_bin, step, global_repo) {
+            Ok((output, exit_code, duration_ms)) => {
+                let step_result = json!({
+                    "step": i,
+                    "tool": step_tool,
+                    "exitCode": exit_code,
+                    "durationMs": duration_ms,
+                    "output": output,
+                });
+                results.push(step_result);
+
+                if exit_code != 0 {
+                    overall_exit_code = exit_code;
+                    if fail_fast {
+                        break;
+                    }
+                }
+            }
+            Err(err) => {
+                let step_result = json!({
+                    "step": i,
+                    "tool": step_tool,
+                    "exitCode": -1,
+                    "durationMs": 0,
+                    "output": err,
+                });
+                results.push(step_result);
+                overall_exit_code = -1;
+                if fail_fast {
+                    break;
+                }
+            }
+        }
+    }
+
+    let summary = json!({
+        "steps": results,
+        "total_steps": steps.len(),
+        "executed_steps": results.len(),
+        "failed": overall_exit_code != 0,
+        "exitCode": overall_exit_code,
+    });
+
+    Ok(serde_json::to_string_pretty(&summary).unwrap())
+}
+
+fn handle_parallel_run(makevn_bin: &Path, args: &Map<String, Value>) -> Result<String, String> {
+    let steps = parse_steps(args)?;
+    let global_repo = args
+        .get("repo")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
+        .map(|s| s.to_owned());
+
+    let bin = makevn_bin.to_path_buf();
+    let mut handles = Vec::new();
+
+    for (i, step) in steps.iter().enumerate() {
+        let step = step.clone();
+        let bin = bin.clone();
+        let repo = global_repo.clone();
+        handles.push(thread::spawn(move || {
+            let step_tool = step["tool"].as_str().unwrap_or("unknown");
+            match execute_single_step(&bin, &step, repo.as_deref()) {
+                Ok((output, exit_code, duration_ms)) => {
+                    json!({
+                        "step": i,
+                        "tool": step_tool,
+                        "exitCode": exit_code,
+                        "durationMs": duration_ms,
+                        "output": output,
+                    })
+                }
+                Err(err) => {
+                    json!({
+                        "step": i,
+                        "tool": step_tool,
+                        "exitCode": -1,
+                        "durationMs": 0,
+                        "output": err,
+                    })
+                }
+            }
+        }));
+    }
+
+    let mut results = Vec::new();
+    let mut overall_exit_code = 0;
+    for handle in handles {
+        let result = handle
+            .join()
+            .map_err(|_| String::from("thread panicked"))?;
+        if let Some(exit_code) = result["exitCode"].as_i64() {
+            if exit_code != 0 {
+                overall_exit_code = exit_code as i32;
+            }
+        }
+        results.push(result);
+    }
+
+    let summary = json!({
+        "steps": results,
+        "total_steps": steps.len(),
+        "failed": overall_exit_code != 0,
+        "exitCode": overall_exit_code,
+    });
+
+    Ok(serde_json::to_string_pretty(&summary).unwrap())
 }
 
 struct ToolOutput {
@@ -561,5 +827,85 @@ mod tests {
         args.insert("timeout-seconds".into(), json!(901));
 
         assert!(exec_timeout_seconds(&args).is_err());
+    }
+
+    #[test]
+    fn composite_run_tool_exists_in_specs() {
+        let spec = TOOL_SPECS.iter().find(|s| s.name == "composite_run");
+        assert!(spec.is_some(), "composite_run tool must be registered");
+        let spec = spec.unwrap();
+        assert!(spec.description.contains("sequence"));
+        assert!(spec.options.iter().any(|o| o.name == "steps"));
+        assert!(spec.options.iter().any(|o| o.name == "fail-fast"));
+    }
+
+    #[test]
+    fn parallel_run_tool_exists_in_specs() {
+        let spec = TOOL_SPECS.iter().find(|s| s.name == "parallel_run");
+        assert!(spec.is_some(), "parallel_run tool must be registered");
+        let spec = spec.unwrap();
+        assert!(spec.description.contains("parallel"));
+        assert!(spec.options.iter().any(|o| o.name == "steps"));
+    }
+
+    #[test]
+    fn parse_steps_rejects_empty_array() {
+        let mut args = Map::new();
+        args.insert("steps".into(), json!([]));
+
+        let result = super::parse_steps(&args);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("must not be empty"));
+    }
+
+    #[test]
+    fn parse_steps_rejects_non_array() {
+        let mut args = Map::new();
+        args.insert("steps".into(), json!("not an array"));
+
+        let result = super::parse_steps(&args);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("must be a JSON array"));
+    }
+
+    #[test]
+    fn parse_steps_rejects_missing_steps() {
+        let args = Map::new();
+
+        let result = super::parse_steps(&args);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("missing required argument"));
+    }
+
+    #[test]
+    fn parse_steps_accepts_valid_array() {
+        let mut args = Map::new();
+        args.insert(
+            "steps".into(),
+            json!([
+                {"tool": "doctor"},
+                {"tool": "test", "arguments": {"name": "MyTest"}}
+            ]),
+        );
+
+        let result = super::parse_steps(&args);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap().len(), 2);
+    }
+
+    #[test]
+    fn tool_schema_for_composite_run_has_array_type() {
+        let spec = TOOL_SPECS.iter().find(|s| s.name == "composite_run").unwrap();
+        let schema = super::tool(spec);
+        let steps_prop = &schema["inputSchema"]["properties"]["steps"];
+        assert_eq!(steps_prop["type"], "array");
+    }
+
+    #[test]
+    fn tool_schema_for_parallel_run_has_array_type() {
+        let spec = TOOL_SPECS.iter().find(|s| s.name == "parallel_run").unwrap();
+        let schema = super::tool(spec);
+        let steps_prop = &schema["inputSchema"]["properties"]["steps"];
+        assert_eq!(steps_prop["type"], "array");
     }
 }

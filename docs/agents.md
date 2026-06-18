@@ -373,6 +373,84 @@ Inside Codex, the intended flow is the same terminal contract:
 
 Codex-specific repo work should still use normal engineering hygiene: keep edits scoped, verify with concrete commands, and leave the installed `libexec/makevn/` runtime as the source of behavior instead of calling target-repository helper scripts.
 
+## Subagent Workflows
+
+These workflows use the agent framework's subagent mechanism (e.g., OpenCode Task tool). Each subagent appears as an independent card in the TUI with its description as the title, and each `makevn` command within the subagent is visible as an individual tool call.
+
+### TUI visibility
+
+Each subagent appears as an independent card in the TUI with its description as the title. Progress is visible through individual tool calls within each subagent.
+
+```
+OpenCode TUI (lo que ve el usuario):
+─────────────────────────────────────────────────────────
+▶ makevn: boot verify + coverage          ● running
+  ├─▶ makevn docker-up                    ✓ done (8.7s)
+  ├─▶ makevn docker-ps-required           ✓ done (3.2s)
+  ├─▶ makevn clean compile verify         ● running...
+  │
+▶ makevn: unit tests + coverage           ✓ done (34.2s)
+  ├─▶ makevn clean verify-ut-coverage     ✓ done (34.1s)
+```
+
+### Naming convention
+
+Use descriptive descriptions that identify both the action and the scope:
+
+- `"makevn: boot verify + coverage"`
+- `"makevn: multi-test runner"`
+- `"makevn: adaptive test"`
+- `"makevn: karate E2E lifecycle"`
+- `"makevn: changes verification"`
+- `"makevn: parallel verify"`
+
+### Available workflows
+
+See `skills/makevn/SKILL.md` for detailed workflow definitions:
+
+| Workflow | Description | Use case |
+|---|---|---|
+| `boot-verify-coverage` | Docker + clean compile verify + coverage | Full validation before PR |
+| `multi-test-runner` | Multiple tests with consolidated results | Running several test classes |
+| `adaptive-test` | Auto-detect UT/IT and run appropriate command | Modified test, unclear type/scope |
+| `karate-runner` | Full Karate E2E lifecycle | E2E tests with Docker + app |
+| `changes-validator` | Git diff + verify + coverage | Validate changes before commit |
+| `parallel-verify` | UT and IT in parallel | Independent UT/IT, save time |
+
+### MCP alternatives
+
+When using MCP tools directly (instead of the skill), the same orchestration can be achieved with `composite_run` and `parallel_run`:
+
+```json
+// Boot verify + coverage as composite_run:
+{
+  "tool": "composite_run",
+  "args": {
+    "steps": [
+      {"tool": "docker_up"},
+      {"tool": "docker_ps_required", "args": {"wait-seconds": 30}},
+      {"tool": "clean"},
+      {"tool": "compile"},
+      {"tool": "verify"},
+      {"tool": "coverage_changes"}
+    ]
+  }
+}
+
+// Parallel UT + IT:
+{
+  "tool": "parallel_run",
+  "args": {
+    "steps": [
+      {"tool": "verify_ut_coverage"},
+      {"tool": "verify_it_coverage"}
+    ]
+  }
+}
+```
+
+Note: `composite_run` and `parallel_run` execute as a single MCP tool call, so individual step progress is not visible in the TUI. Use the skill-based subagent workflows when step-by-step visibility is desired.
+
 See also:
 
 - `docs/cli-contract.md`

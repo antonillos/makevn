@@ -15,3 +15,4 @@ For work in this repository:
 - If `makevn doctor` reports that the repository is not initialized, run `makevn init` before continuing with adoption or verification work.
 - Do not assume Docker is required for `makevn verify` just because a repository has a root `docker-compose.yml`; use doctor, config, profile, and test-compose signals.
 - Prefer `repo-sweep quick` for real-repository validation, and inspect classifications before deciding whether a failure is a product bug.
+- For multi-step workflows (boot verify, multi-test, adaptive test, karate E2E, parallel verify), use the subagent patterns documented in `docs/agents.md` under "Subagent Workflows".

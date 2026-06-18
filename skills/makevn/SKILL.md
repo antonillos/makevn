@@ -398,6 +398,469 @@ make vn-docker-ps-required MAKEVN_DOCKER_PS_REQUIRED_ARGS="--compose karate"
 
 Available targets mirror the `makevn` command surface: `vn-doctor`, `vn-init`, `vn-make-install`, `vn-make-uninstall`, `vn-uninstall`, `vn-profile-refresh`, `vn-compile`, `vn-test-compile`, `vn-compile-tests`, `vn-validate`, `vn-package`, `vn-build`, `vn-clean`, `vn-test`, `vn-verify-ut`, `vn-verify-ut-coverage`, `vn-verify-it`, `vn-verify-it-coverage`, `vn-verify`, `vn-verify-changes`, `vn-coverage-changes`, `vn-pr-verify`, `vn-docker-up`, `vn-docker-down`, `vn-docker-ps`, `vn-docker-stats`, `vn-docker-ps-required`, `vn-karate-docker-up`, `vn-karate-docker-down`, `vn-karate-test`, `vn-karate-all`, `vn-run-app`, `vn-run-app-bg`, `vn-stop-app`, `vn-run`, `vn-jdk-current`, `vn-jdk-list`, `vn-exec`.
 
+## Subagent Workflows
+
+These workflows use the agent framework's subagent mechanism (e.g., OpenCode Task tool). Each subagent appears as an independent card in the TUI with its description as the title, and each `makevn` command within the subagent is visible as an individual tool call.
+
+### Naming convention
+
+Use descriptive descriptions that identify both the action and the scope:
+
+- `"makevn: boot verify + coverage"`
+- `"makevn: multi-test runner"`
+- `"makevn: adaptive test"`
+- `"makevn: karate E2E lifecycle"`
+- `"makevn: changes verification"`
+- `"makevn: parallel verify"`
+
+**Importante**: OpenCode muestra las primeras palabras del **prompt** como título en el TUI, no el parámetro `description`. Para que el TUI muestre un título identificable, el prompt debe empezar con el nombre del workflow:
+
+```
+Task(description="makevn: boot verify + coverage", prompt="
+  makevn: boot verify + coverage
+  
+  Ejecutar secuencia:
+  1. makevn docker-up
+  ...
+")
+```
+
+Así el TUI mostrará "makevn: boot verify + coverage" como título del subagente.
+
+### Timeout handling
+
+Los subagentes pueden fallar por timeout cuando ejecutan comandos largos. Tiempos de referencia:
+
+| Comando | Timeout típico | Notas |
+|---|---|---|
+| `docker-up` | 60-120s | Depende de imágenes locales vs pull |
+| `docker-ps-required --wait-seconds 30` | 30-60s | Espera explícita + health checks |
+| `compile` | 60-180s | Depende del tamaño del proyecto |
+| `verify-ut` | 120-600s | Depende de número de tests |
+| `verify-it` | 300-1800s | Tests de integración suelen ser lentos |
+| `verify` | 600-3600s | UT + IT combinados |
+| `karate-test` | 120-600s | Depende de escenarios E2E |
+| `coverage-changes` | 30-120s | Análisis de JaCoCo |
+
+**Si un subagente falla por timeout**:
+
+1. **Identificar el paso que colgó**: Revisar el log en `.makevn/logs/<command>-*.log`
+2. **Reintentar con timeout mayor**: Si el comando lo soporta, usar `--timeout-seconds` (ej: `makevn exec --timeout-seconds 300 -- mvn verify`)
+3. **Dividir el workflow**: Si `verify` es muy largo, separar en `verify-ut` + `verify-it` con subagentes paralelos
+4. **Cancelar servicios colgados**: Si `docker-up` se cuelga, ejecutar `makevn docker-down` y reintentar
+
+**Comportamiento del subagente ante timeout**:
+
+- El subagente detecta el timeout y retorna error inmediatamente
+- No ejecuta los pasos siguientes (fail-fast)
+- Reporta qué paso falló y el log path
+- El agente principal puede decidir reintentar o reportar al usuario
+
+**Ejemplo de manejo en el agente principal**:
+
+```
+Task(description="makevn: boot verify + coverage", prompt="
+  Ejecutar secuencia:
+  1. makevn docker-up (timeout: 120s)
+  2. makevn docker-ps-required --wait-seconds 30
+  3. makevn clean compile verify (timeout: 1800s)
+  4. makevn coverage-changes
+  
+  Si algún paso falla por timeout:
+  - Reportar qué paso falló
+  - Incluir log path: .makevn/logs/<command>-*.log
+  - No reintentar automáticamente
+  - Esperar instrucciones del usuario
+")
+```
+
+### `boot-verify-coverage` — Boot containers + full verify + coverage gate
+
+**Visibilidad TUI**: `"makevn: boot verify + coverage"`
+
+**Cuándo usar**:
+- Repos con Docker boot services + coverage gate
+- Validación completa antes de PR
+- Sustituye a la secuencia manual `docker-up docker-ps-required clean compile verify coverage-changes`
+
+**Prompt del subagente**:
+
+```
+makevn: boot verify + coverage
+
+Ejecutar secuencia:
+1. makevn docker-up (timeout: 120s)
+2. makevn docker-ps-required --wait-seconds 30
+3. makevn clean compile verify (timeout: 1800s)
+4. makevn coverage-changes (timeout: 120s)
+
+Si algún paso falla:
+- Reportar qué paso falló
+- Incluir log path: .makevn/logs/<command>-*.log
+- No reintentar automáticamente
+```
+
+**Secuencia**:
+
+```bash
+makevn docker-up                    # timeout: 120s
+makevn docker-ps-required --wait-seconds 30
+makevn clean compile verify         # timeout: 1800s
+makevn coverage-changes             # timeout: 120s
+```
+
+**Comportamiento**: fail-fast — si cualquier paso falla, el subagente retorna error y no ejecuta los siguientes.
+
+**Timeouts**: El subagente debe abortar si `docker-up` tarda más de 120s o `verify` tarda más de 1800s. Si `docker-ps-required` no pasa en 30s, reportar servicios no saludables.
+
+**Resultado**:
+
+```json
+{
+  "steps": 4,
+  "passed": true,
+  "failed_step": null,
+  "docker_healthy": true,
+  "verify_exit_code": 0,
+  "coverage_passed": true
+}
+```
+
+**Troubleshooting**: Si `verify` falla, revisar el log en `.makevn/logs/verify-*.log`. Si `coverage-changes` reporta "JaCoCo report contains no classes", configurar flags de cobertura y repetir. Si `docker-up` se cuelga, ejecutar `makevn docker-down` y reintentar.
+
+### `multi-test-runner` — Multiple tests with consolidated results
+
+**Visibilidad TUI**: `"makevn: multi-test runner"`
+
+**Cuándo usar**:
+- Varias clases de test que no pertenecen al mismo módulo Maven
+- Necesitas un reporte consolidado de qué pasó y qué falló
+- Quieres coverage automático si todos pasan
+
+**Prompt del subagente**:
+
+```
+makevn: multi-test runner
+
+Recibida lista de tests: [AuthTest, PaymentTest, NotificationTest]
+
+Ejecutar:
+1. makevn doctor --compact
+2. Para cada test: makevn test --name <Test> (timeout: 300s por test)
+3. Si todos pasan: makevn coverage-changes
+
+Reportar:
+- Tests que pasaron
+- Tests que fallaron
+- Log paths de cada test
+```
+
+**Secuencia**:
+
+```bash
+makevn doctor --compact
+makevn test --name AuthTest
+makevn test --name PaymentTest
+makevn test --name NotificationTest
+# Si todos pasan:
+makevn coverage-changes
+```
+
+**Comportamiento**: El subagente recibe una lista de test names, ejecuta `makevn test --name` por cada uno. Cada test es una tool call individual en el TUI. Si todos pasan, ejecuta coverage-changes automáticamente.
+
+**Timeouts**: 300s por test individual. Si un test tarda más, abortar ese test y continuar con los siguientes.
+
+**Resultado**:
+
+```json
+{
+  "total": 3,
+  "passed": 2,
+  "failed": ["NotificationTest"],
+  "coverage_passed": false,
+  "logs": [
+    "AuthTest: .makevn/logs/test-AuthTest-*.log",
+    "PaymentTest: .makevn/logs/test-PaymentTest-*.log",
+    "NotificationTest: .makevn/logs/test-NotificationTest-*.log"
+  ]
+}
+```
+
+**Troubleshooting**: Si un test falla, revisar su log individual. Si coverage-changes falla, verificar que los tests generaron datos JaCoCo.
+
+### `adaptive-test` — Auto-detect UT/IT and run appropriate command
+
+**Visibilidad TUI**: `"makevn: adaptive test"`
+
+**Cuándo usar**:
+- Modificaste un test y quieres ejecutarlo correctamente
+- No sabes si es UT o IT
+- No sabes si cambió solo el test o también el código
+
+**Prompt del subagente**:
+
+```
+makevn: adaptive test
+
+Archivos modificados: [AuthServiceTest.java, PaymentService.java]
+
+Analizar:
+1. git diff --name-only HEAD~1
+2. Clasificar cada test (UT/IT por convención de path)
+3. Detectar si cambió código de producción (src/main/java)
+
+Ejecutar según matriz:
+| Test type | Scope | Comando |
+|-----------|-------|--------|
+| UT | solo test | makevn test --fast --name <Test> |
+| UT | test+code | makevn test --name <Test> |
+| IT | solo test | makevn docker-up → docker-ps-required → test --name <Test> |
+| IT | test+code | makevn docker-up → docker-ps-required → test --name <Test> |
+
+Reportar resultado consolidado.
+```
+
+**Secuencia**:
+
+```bash
+# El subagente analiza los archivos modificados:
+git diff --name-only HEAD~1
+
+# Clasifica cada test:
+# - */src/test/java/**/*IT.java → IT
+# - */src/test/java/**/*Test.java → UT
+# - */src/it/** → IT
+
+# Detecta alcance:
+# - ¿Cambió src/main/java/? → test+code
+# - ¿Solo cambió el test? → solo test
+
+# Ejecuta según la matriz:
+# | Test type | Scope | Comando |
+# |-----------|-------|--------|
+# | UT | solo test | makevn test --fast --name <Test> |
+# | UT | test+code | makevn test --name <Test> |
+# | IT | solo test | makevn docker-up → docker-ps-required → test --name <Test> |
+# | IT | test+code | makevn docker-up → docker-ps-required → test --name <Test> |
+```
+
+**Comportamiento**: El subagente recibe los archivos modificados (o un test name explícito), clasifica cada uno, detecta si cambió código de producción, y ejecuta el comando correcto. Si hay múltiples tests del mismo tipo y scope, los combina en un solo `test --name A,B,C`.
+
+**Timeouts**: 120s para docker-up, 30s para docker-ps-required, 300s por test.
+
+**Resultado**:
+
+```json
+{
+  "tests": [
+    {
+      "name": "AuthServiceTest",
+      "type": "UT",
+      "scope": "test+code",
+      "command": "makevn test --name AuthServiceTest",
+      "passed": true,
+      "log": ".makevn/logs/test-AuthServiceTest-*.log"
+    }
+  ],
+  "all_passed": true,
+  "coverage_passed": true
+}
+```
+
+**Troubleshooting**: Si el subagente no puede clasificar un test (convención no estándar), preguntar al usuario. Si Docker no está disponible para IT, reportar error.
+
+### `karate-runner` — Full Karate E2E lifecycle
+
+**Visibilidad TUI**: `"makevn: karate E2E lifecycle"`
+
+**Cuándo usar**:
+- Repos con Karate E2E tests
+- Necesitas el ciclo completo: Docker + app + tests + cleanup
+- Sustituye a `makevn karate-all` manual
+
+**Prompt del subagente**:
+
+```
+makevn: karate E2E lifecycle
+
+Ejecutar ciclo completo:
+1. makevn karate-docker-up (timeout: 120s)
+2. makevn docker-ps-required --compose karate --wait-seconds 30
+3. makevn package (timeout: 300s)
+4. makevn run-app-bg (timeout: 60s para health check)
+5. makevn karate-test --tag @smoke (timeout: 600s)
+6. makevn stop-app
+7. makevn karate-docker-down
+
+Si karate-test falla, ejecutar stop-app y karate-docker-down antes de retornar error.
+Reportar log path: .makevn/logs/karate-test-*.log
+```
+
+**Secuencia**:
+
+```bash
+makevn karate-docker-up
+makevn docker-ps-required --compose karate --wait-seconds 30
+makevn package
+makevn run-app-bg
+makevn karate-test --tag @smoke  # opcional
+makevn stop-app
+makevn karate-docker-down
+```
+
+**Comportamiento**: El subagente ejecuta el ciclo completo. Si `karate-test` falla, el subagente aún ejecuta `stop-app` y `karate-docker-down` antes de retornar error.
+
+**Timeouts**: 120s para docker-up, 60s para run-app-bg health check, 600s para karate-test.
+
+**Resultado**:
+
+```json
+{
+  "docker_healthy": true,
+  "app_started": true,
+  "tests_passed": true,
+  "tests_failed": 0,
+  "cleanup_completed": true,
+  "log": ".makevn/logs/karate-test-*.log"
+}
+```
+
+**Troubleshooting**: Si `run-app-bg` falla, revisar `.makevn/app/app.log`. Si `karate-test` falla, revisar `.makevn/logs/karate-test-*.log`.
+
+### `changes-validator` — Git diff + verify + coverage (PR review)
+
+**Visibilidad TUI**: `"makevn: changes verification"`
+
+**Cuándo usar**:
+- **Revisar todos los cambios de una PR** (workflow más común)
+- Validar cambios antes de commit/PR
+- Necesitas verificar solo los módulos afectados
+- Quieres coverage de los cambios
+- El usuario dice "revisa los cambios de la PR" o "verifica los cambios actuales"
+
+**Prompt del subagente**:
+
+```
+makevn: changes verification
+
+Contexto: Revisión de cambios de PR / working tree
+
+Ejecutar:
+1. makevn doctor --compact
+2. Si doctor detecta Docker compose file o LOCAL_CONTAINERS:
+   - makevn docker-up (timeout: 120s)
+   - makevn docker-ps-required --wait-seconds 30
+3. makevn clean (opcional, si hay dudas de estado previo)
+4. makevn verify-changes (timeout: 1800s)
+5. makevn coverage-changes (timeout: 120s)
+
+Si verify-changes falla, no ejecutar coverage-changes.
+Reportar módulos afectados, tests rotos y resultado de coverage.
+```
+
+**Secuencia completa**:
+
+```bash
+makevn doctor --compact
+# Si doctor detecta Docker necesario:
+makevn docker-up
+makevn docker-ps-required --wait-seconds 30
+makevn clean                          # opcional, si estado previo es incierto
+makevn verify-changes
+makevn coverage-changes
+```
+
+**Comportamiento**: El subagente ejecuta `doctor` primero para detectar si Docker es necesario. Si el repo tiene `Docker compose file`, `LOCAL_CONTAINERS`, o tests bajo `src/test/resources/compose`, arranca los servicios antes de `verify-changes`. Luego ejecuta `verify-changes` (que detecta automáticamente qué módulos cambiaron) y `coverage-changes`. Si `verify-changes` falla, no ejecuta coverage.
+
+**Cuándo usar `clean`**:
+- Si hay builds previos que pueden contaminar resultados
+- Si el usuario reporta resultados inconsistentes
+- Si es la primera verificación después de un rebase/merge
+- Por defecto: omitir `clean` para ahorrar tiempo (makevn usa caché)
+
+**Timeouts**: 120s para docker-up, 30s para docker-ps-required, 1800s para verify-changes, 120s para coverage-changes.
+
+**Resultado**:
+
+```json
+{
+  "docker_started": true,
+  "modules_changed": ["domain", "application"],
+  "tests_passed": 42,
+  "tests_failed": 0,
+  "coverage_passed": true,
+  "log": ".makevn/logs/verify-changes-*.log"
+}
+```
+
+**Troubleshooting**: Si `verify-changes` no detecta cambios, verificar que hay commits en la rama. Si `coverage-changes` falla, verificar que JaCoCo está configurado. Si los tests fallan inconsistentemente, reintentar con `clean` primero. Si Docker falla, revisar `makevn docker-ps` para ver estado de servicios.
+
+### `parallel-verify` — UT and IT in parallel
+
+**Visibilidad TUI**: `"makevn: unit tests + coverage"` + `"makevn: integration tests + coverage"`
+
+**Cuándo usar**:
+- Repos donde UT e IT son independientes
+- Quieres ejecutar ambos en paralelo para ahorrar tiempo
+- El perfil del repo lo permite (detectado por `makevn doctor`)
+
+**Prompt del subagente A (UT)**:
+
+```
+makevn: unit tests + coverage
+
+Ejecutar:
+1. makevn clean verify-ut-coverage (timeout: 1800s)
+
+Reportar exit code y log path.
+```
+
+**Prompt del subagente B (IT)**:
+
+```
+makevn: integration tests + coverage
+
+Ejecutar:
+1. makevn docker-up (timeout: 120s)
+2. makevn docker-ps-required --wait-seconds 30
+3. makevn verify-it-coverage (timeout: 3600s)
+
+Reportar exit code y log path.
+```
+
+**Secuencia**:
+
+```bash
+# Subagente A (UT):
+makevn clean verify-ut-coverage
+
+# Subagente B (IT) - en paralelo:
+makevn docker-up
+makevn docker-ps-required --wait-seconds 30
+makevn verify-it-coverage
+
+# Después de esperar ambos:
+makevn coverage-changes
+```
+
+**Comportamiento**: El agente principal lanza dos subagentes concurrentes. Espera a que ambos terminen. Si ambos pasan, ejecuta `coverage-changes`.
+
+**Timeouts**: 120s para docker-up, 1800s para verify-ut, 3600s para verify-it.
+
+**Resultado**:
+
+```json
+{
+  "ut_passed": true,
+  "it_passed": true,
+  "coverage_passed": true,
+  "ut_log": ".makevn/logs/verify-ut-*.log",
+  "it_log": ".makevn/logs/verify-it-*.log"
+}
+```
+
+**Troubleshooting**: Si UT falla, revisar log UT. Si IT falla, revisar log IT y estado de Docker. Si ambos fallan, priorizar el que tenga más tests.
+
 ## Success Criteria
 
 The skill has been applied correctly if:
