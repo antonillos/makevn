@@ -417,17 +417,36 @@ Available targets mirror the `makevn` command surface: `vn-doctor`, `vn-init`, `
 
 ## Subagent Workflows
 
-These workflows orchestrate multiple makevn commands for common scenarios. Each workflow can be executed either via `composite_run` (MCP tool, low context cost) or via a subagent Task (higher context cost ~34k tokens, but visible in TUI).
+**WARNING**: Subagent Tasks cost ~34k context tokens each and take 3-12 minutes. Only use them when the workflow needs decision-making. For deterministic command sequences, use `composite_run` or `parallel_run` MCP tools (~1k tokens, seconds).
 
-### Context cost
+### Decision tree
 
-| Execution method | Context cost | TUI visibility | Use when |
+```
+Need to run multiple makevn commands?
+─ Does the workflow need decisions (classify, branch, retry)?
+│  └─ YES → Use subagent Task (~34k tokens, 3-12 min)
+│     └─ Only: `adaptive-test`
+│
+└─ NO (deterministic sequence)
+   ├─ Commands are independent and can run in parallel?
+   │  └─ YES → Use `parallel_run` MCP tool (~1k tokens, seconds)
+   │     └─ Example: `parallel-verify` (UT + IT in parallel)
+   │
+   └─ Commands must run sequentially?
+      └─ Use `composite_run` MCP tool (~1k tokens, seconds)
+         └─ Examples: `boot-verify-coverage`, `changes-validator`,
+                      `multi-test-runner`, `karate-runner`
+```
+
+### Context cost comparison
+
+| Execution method | Context cost | Wall time | TUI visibility |
 |---|---|---|---|
-| `composite_run` (MCP) | ~1k tokens | Single tool call | Deterministic sequences, no decisions needed |
-| `parallel_run` (MCP) | ~1k tokens | Single tool call | Independent commands in parallel |
-| Subagent Task | ~34k tokens | Per-step visible | Workflow needs decisions (classify, branch, retry) |
+| `composite_run` (MCP) | ~1k tokens | seconds | Single tool call |
+| `parallel_run` (MCP) | ~1k tokens | seconds | Single tool call |
+| Subagent Task | ~34k tokens | 3-12 min | Per-step visible |
 
-**Rule of thumb**: Prefer `composite_run` for deterministic command sequences. Use subagent Tasks only when the workflow needs analysis or branching logic.
+**Rule**: Default to `composite_run`. Only use subagent Tasks for `adaptive-test`.
 
 ### Timeout handling
 
