@@ -435,7 +435,7 @@ fn validate_command(
             validate_maven_passthrough_args(command, trailing_args)?;
             Ok(CommandValidation::Valid)
         }
-        "help" | "init" | "uninstall" | "exec" | "test" | "coverage" | "coverage-changes"
+        "help" | "init" | "refresh" | "uninstall" | "exec" | "test" | "coverage" | "coverage-changes"
         | "docker-up" | "docker-down" | "docker-ps" | "docker-stats" | "docker-ps-required"
         | "karate-docker-up" | "karate-docker-down" | "run-app" | "run-app-bg" | "stop-app"
         | "run" => Ok(CommandValidation::Valid),
@@ -2994,25 +2994,26 @@ fn command_help(command: &str) -> Option<(&'static str, &'static str, &'static [
         "init" => Some(("makevn [--repo PATH] init [--dry-run] [--force]", "Initialize .makevn configuration for the repository.", &["--dry-run  Show what would change without writing files", "--force    Refresh existing generated files"])),
         "make" => Some(("makevn [--repo PATH] make install|uninstall [--dry-run]", "Install or remove optional vn-* Make targets.", &["--dry-run  Show what would change without writing files"])),
         "uninstall" => Some(("makevn [--repo PATH] uninstall [--dry-run]", "Remove makevn local repository state.", &["--dry-run  Show what would be removed"])),
+        "refresh" => Some(("makevn [--repo PATH] refresh [--dry-run]", "Reinitialize makevn state from scratch. Removes stale state and runs init --force.", &["--dry-run  Show what would change without writing files"])),
         "profile" => Some(("makevn [--repo PATH] profile refresh", "Refresh detected repository profile information.", &[])),
         "exec" => Some(("makevn [--repo PATH] exec [--context code|karate] -- COMMAND [ARGS...]", "Run an arbitrary command with makevn's resolved environment.", &["--context  Java context to use: code or karate"])),
-        "compile" => maven_command_help("compile", "Compile project sources."),
-        "test-compile" => maven_command_help("test-compile", "Compile project tests."),
-        "compile-tests" => maven_command_help("compile-tests", "Compile project tests."),
-        "validate" => maven_command_help("validate", "Validate the Maven project model."),
-        "package" => maven_command_help("package", "Package the project without running tests."),
-        "build" => maven_command_help("build", "Run the full Maven build."),
-        "clean" => maven_command_help("clean", "Clean Maven build output."),
-        "test" => Some(("makevn [--repo PATH] [--compact] test [--tail] [--name TEST]... [--fast] [-- EXTRA_MAVEN_ARGS...]", "Run tests with optional filtering.", &["--tail     Start in interactive log tail mode", "--compact  Use compact non-interactive output", "--name     Test class name or comma-separated names", "--fast     Skip compilation when sources have not changed"])),
-        "verify-ut" => maven_command_help("verify-ut", "Run unit-test-only verification."),
-        "verify-ut-coverage" => maven_command_help("verify-ut-coverage", "Run unit-test-only verification with coverage."),
-        "verify-it" => maven_command_help("verify-it", "Run integration-test-only verification."),
-        "verify-it-coverage" => maven_command_help("verify-it-coverage", "Run integration-test-only verification with coverage."),
-        "verify" => maven_command_help("verify", "Run full combined verification."),
-        "verify-changes" => maven_command_help("verify-changes", "Verify changed production modules or modified tests."),
+        "compile" => maven_command_help("compile", "Compile project sources.", false),
+        "test-compile" => maven_command_help("test-compile", "Compile project tests.", false),
+        "compile-tests" => maven_command_help("compile-tests", "Compile project tests.", false),
+        "validate" => maven_command_help("validate", "Validate the Maven project model.", false),
+        "package" => maven_command_help("package", "Package the project without running tests.", false),
+        "build" => maven_command_help("build", "Run the full Maven build.", false),
+        "clean" => maven_command_help("clean", "Clean Maven build output.", false),
+        "test" => Some(("makevn [--repo PATH] [--compact] test [--tail] [--name TEST]... [--fast] [--clean-generated-contract-targets] [-- EXTRA_MAVEN_ARGS...]", "Run tests with optional filtering.", &["--tail                              Start in interactive log tail mode", "--compact                           Use compact non-interactive output", "--name                              Test class name or comma-separated names", "--fast                              Skip compilation when sources have not changed", "--clean-generated-contract-targets  Clean stale generated sources before running"])),
+        "verify-ut" => maven_command_help("verify-ut", "Run unit-test-only verification.", true),
+        "verify-ut-coverage" => maven_command_help("verify-ut-coverage", "Run unit-test-only verification with coverage.", true),
+        "verify-it" => maven_command_help("verify-it", "Run integration-test-only verification.", true),
+        "verify-it-coverage" => maven_command_help("verify-it-coverage", "Run integration-test-only verification with coverage.", true),
+        "verify" => maven_command_help("verify", "Run full combined verification.", true),
+        "verify-changes" => maven_command_help("verify-changes", "Verify changed production modules or modified tests.", true),
         "coverage" => Some(("makevn [--repo PATH] coverage [--threshold PCT]", "Check the latest aggregate coverage report.", &["--threshold  Required coverage percentage"])),
         "coverage-changes" => Some(("makevn [--repo PATH] coverage-changes [--threshold PCT] [--overall-threshold PCT] [--verbose]", "Check incremental and per-module coverage.", &["--threshold          Per-module coverage percentage", "--overall-threshold  Overall coverage percentage", "--verbose            Print detailed coverage output"])),
-        "pr-verify" => maven_command_help("pr-verify", "Run a local PR-style verification flow."),
+        "pr-verify" => maven_command_help("pr-verify", "Run a local PR-style verification flow.", false),
         "format" => Some(("makevn [--repo PATH] [--compact] format [--tail] [--apply] [-- EXTRA_MAVEN_ARGS...]", "Check or apply code formatting.", &["--tail     Start in interactive log tail mode", "--compact  Use compact non-interactive output", "--apply    Apply formatting changes"])),
         "checkstyle" => Some(("makevn [--repo PATH] [--compact] checkstyle [--tail] [--module MODULE] [--verbose] [-- EXTRA_MAVEN_ARGS...]", "Run Checkstyle code style checks.", &["--tail     Start in interactive log tail mode", "--compact  Use compact non-interactive output", "--module   Maven module to check", "--verbose  Print detailed output"])),
         "docker-up" => tail_command_help("docker-up", "Start boot Docker services."),
@@ -3037,6 +3038,7 @@ fn command_help(command: &str) -> Option<(&'static str, &'static str, &'static [
 fn maven_command_help(
     command: &'static str,
     description: &'static str,
+    clean_contract: bool,
 ) -> Option<(&'static str, &'static str, &'static [&'static str])> {
     let usage = match command {
         "compile" => "makevn [--repo PATH] [--compact] compile [--tail] [-- EXTRA_MAVEN_ARGS...]",
@@ -3051,35 +3053,42 @@ fn maven_command_help(
         "build" => "makevn [--repo PATH] [--compact] build [--tail] [-- EXTRA_MAVEN_ARGS...]",
         "clean" => "makevn [--repo PATH] [--compact] clean [--tail] [-- EXTRA_MAVEN_ARGS...]",
         "verify-ut" => {
-            "makevn [--repo PATH] [--compact] verify-ut [--tail] [-- EXTRA_MAVEN_ARGS...]"
+            "makevn [--repo PATH] [--compact] verify-ut [--tail] [--clean-generated-contract-targets] [-- EXTRA_MAVEN_ARGS...]"
         }
         "verify-ut-coverage" => {
-            "makevn [--repo PATH] [--compact] verify-ut-coverage [--tail] [-- EXTRA_MAVEN_ARGS...]"
+            "makevn [--repo PATH] [--compact] verify-ut-coverage [--tail] [--clean-generated-contract-targets] [-- EXTRA_MAVEN_ARGS...]"
         }
         "verify-it" => {
-            "makevn [--repo PATH] [--compact] verify-it [--tail] [-- EXTRA_MAVEN_ARGS...]"
+            "makevn [--repo PATH] [--compact] verify-it [--tail] [--clean-generated-contract-targets] [-- EXTRA_MAVEN_ARGS...]"
         }
         "verify-it-coverage" => {
-            "makevn [--repo PATH] [--compact] verify-it-coverage [--tail] [-- EXTRA_MAVEN_ARGS...]"
+            "makevn [--repo PATH] [--compact] verify-it-coverage [--tail] [--clean-generated-contract-targets] [-- EXTRA_MAVEN_ARGS...]"
         }
-        "verify" => "makevn [--repo PATH] [--compact] verify [--tail] [-- EXTRA_MAVEN_ARGS...]",
+        "verify" => "makevn [--repo PATH] [--compact] verify [--tail] [--clean-generated-contract-targets] [-- EXTRA_MAVEN_ARGS...]",
         "verify-changes" => {
-            "makevn [--repo PATH] [--compact] verify-changes [--tail] [-- EXTRA_MAVEN_ARGS...]"
+            "makevn [--repo PATH] [--compact] verify-changes [--tail] [--clean-generated-contract-targets] [-- EXTRA_MAVEN_ARGS...]"
         }
         "pr-verify" => {
             "makevn [--repo PATH] [--compact] pr-verify [--tail] [-- EXTRA_MAVEN_ARGS...]"
         }
         _ => return None,
     };
-    Some((
-        usage,
-        description,
-        &[
-            "--tail     Start in interactive log tail mode",
-            "--compact  Use compact non-interactive output",
-            "--          Forward remaining arguments to Maven",
-        ],
-    ))
+    let base_options = &[
+        "--tail     Start in interactive log tail mode",
+        "--compact  Use compact non-interactive output",
+        "--          Forward remaining arguments to Maven",
+    ];
+    if clean_contract {
+        let options: &[&str] = &[
+            "--tail                              Start in interactive log tail mode",
+            "--compact                           Use compact non-interactive output",
+            "--clean-generated-contract-targets  Clean stale generated sources before running",
+            "--                                  Forward remaining arguments to Maven",
+        ];
+        Some((usage, description, options))
+    } else {
+        Some((usage, description, base_options))
+    }
 }
 
 fn tail_command_help(
@@ -3118,6 +3127,7 @@ fn print_help(with_header: bool) {
     println!("Usage:");
     println!("  makevn [--repo PATH] doctor");
     println!("  makevn [--repo PATH] init [--dry-run] [--force]");
+    println!("  makevn [--repo PATH] refresh [--dry-run]");
     println!("  makevn [--repo PATH] make install [--dry-run]");
     println!("  makevn [--repo PATH] make uninstall [--dry-run]");
     println!("  makevn [--repo PATH] uninstall [--dry-run]");
@@ -3130,18 +3140,18 @@ fn print_help(with_header: bool) {
     println!("  makevn [--repo PATH] [--compact] build [--tail] [-- EXTRA_MAVEN_ARGS...]");
     println!("  makevn [--repo PATH] [--compact] clean [--tail] [-- EXTRA_MAVEN_ARGS...]");
     println!(
-        "  makevn [--repo PATH] [--compact] test [--tail] [--name TEST]... [--fast] [-- EXTRA_MAVEN_ARGS...]"
+        "  makevn [--repo PATH] [--compact] test [--tail] [--name TEST]... [--fast] [--clean-generated-contract-targets] [-- EXTRA_MAVEN_ARGS...]"
     );
-    println!("  makevn [--repo PATH] [--compact] verify-ut [--tail] [-- EXTRA_MAVEN_ARGS...]");
+    println!("  makevn [--repo PATH] [--compact] verify-ut [--tail] [--clean-generated-contract-targets] [-- EXTRA_MAVEN_ARGS...]");
     println!(
-        "  makevn [--repo PATH] [--compact] verify-ut-coverage [--tail] [-- EXTRA_MAVEN_ARGS...]"
+        "  makevn [--repo PATH] [--compact] verify-ut-coverage [--tail] [--clean-generated-contract-targets] [-- EXTRA_MAVEN_ARGS...]"
     );
-    println!("  makevn [--repo PATH] [--compact] verify-it [--tail] [-- EXTRA_MAVEN_ARGS...]");
+    println!("  makevn [--repo PATH] [--compact] verify-it [--tail] [--clean-generated-contract-targets] [-- EXTRA_MAVEN_ARGS...]");
     println!(
-        "  makevn [--repo PATH] [--compact] verify-it-coverage [--tail] [-- EXTRA_MAVEN_ARGS...]"
+        "  makevn [--repo PATH] [--compact] verify-it-coverage [--tail] [--clean-generated-contract-targets] [-- EXTRA_MAVEN_ARGS...]"
     );
-    println!("  makevn [--repo PATH] [--compact] verify [--tail] [-- EXTRA_MAVEN_ARGS...]");
-    println!("  makevn [--repo PATH] [--compact] verify-changes [--tail] [-- EXTRA_MAVEN_ARGS...]");
+    println!("  makevn [--repo PATH] [--compact] verify [--tail] [--clean-generated-contract-targets] [-- EXTRA_MAVEN_ARGS...]");
+    println!("  makevn [--repo PATH] [--compact] verify-changes [--tail] [--clean-generated-contract-targets] [-- EXTRA_MAVEN_ARGS...]");
     println!("  makevn [--repo PATH] coverage [--threshold PCT]");
     println!("  makevn [--repo PATH] coverage-changes [--threshold PCT] [--overall-threshold PCT] [--verbose]");
     println!("  makevn [--repo PATH] [--compact] pr-verify [--tail] [-- EXTRA_MAVEN_ARGS...]");

@@ -18,6 +18,7 @@ from the terminal without IDE-specific setup. Agents in OpenCode should prefer
 Usage:
   makevn [--repo PATH] [--compact] doctor
   makevn [--repo PATH] [--compact] init [--dry-run] [--force]
+  makevn [--repo PATH] refresh [--dry-run]
   makevn [--repo PATH] [--compact] make install [--dry-run]
   makevn [--repo PATH] [--compact] make uninstall [--dry-run]
   makevn [--repo PATH] [--compact] uninstall [--dry-run]
@@ -29,13 +30,13 @@ Usage:
   makevn [--repo PATH] package [-- EXTRA_MAVEN_ARGS...]
   makevn [--repo PATH] build [-- EXTRA_MAVEN_ARGS...]
   makevn [--repo PATH] clean [-- EXTRA_MAVEN_ARGS...]
-  makevn [--repo PATH] test [--name TEST]... [--fast] [-- EXTRA_MAVEN_ARGS...]
-  makevn [--repo PATH] verify-ut [-- EXTRA_MAVEN_ARGS...]
-  makevn [--repo PATH] verify-ut-coverage [-- EXTRA_MAVEN_ARGS...]
-  makevn [--repo PATH] verify-it [-- EXTRA_MAVEN_ARGS...]
-  makevn [--repo PATH] verify-it-coverage [-- EXTRA_MAVEN_ARGS...]
-  makevn [--repo PATH] verify [-- EXTRA_MAVEN_ARGS...]
-  makevn [--repo PATH] verify-changes [-- EXTRA_MAVEN_ARGS...]
+  makevn [--repo PATH] test [--name TEST]... [--fast] [--clean-generated-contract-targets] [-- EXTRA_MAVEN_ARGS...]
+  makevn [--repo PATH] verify-ut [--clean-generated-contract-targets] [-- EXTRA_MAVEN_ARGS...]
+  makevn [--repo PATH] verify-ut-coverage [--clean-generated-contract-targets] [-- EXTRA_MAVEN_ARGS...]
+  makevn [--repo PATH] verify-it [--clean-generated-contract-targets] [-- EXTRA_MAVEN_ARGS...]
+  makevn [--repo PATH] verify-it-coverage [--clean-generated-contract-targets] [-- EXTRA_MAVEN_ARGS...]
+  makevn [--repo PATH] verify [--clean-generated-contract-targets] [-- EXTRA_MAVEN_ARGS...]
+  makevn [--repo PATH] verify-changes [--clean-generated-contract-targets] [-- EXTRA_MAVEN_ARGS...]
   makevn [--repo PATH] coverage [--threshold PCT]
   makevn [--repo PATH] coverage-changes [--threshold PCT] [--overall-threshold PCT] [--verbose]
   makevn [--repo PATH] pr-verify [-- EXTRA_MAVEN_ARGS...]
@@ -76,9 +77,11 @@ Examples:
   makevn test --name UserRepositoryTest,OrderRepositoryTest
   makevn test --name UserRepositoryTest --name OrderRepositoryTest
   makevn test --fast --name UserRepositoryTest
+  makevn test --clean-generated-contract-targets --name UserRepositoryTest
   makevn verify-ut
   makevn verify-ut-coverage
   makevn verify-it
+  makevn verify --clean-generated-contract-targets
   makevn coverage
   makevn verify-changes
   makevn coverage-changes
@@ -204,6 +207,8 @@ source "${SCRIPT_DIR}/commands/doctor.sh"
 # shellcheck source=/dev/null
 source "${SCRIPT_DIR}/commands/init.sh"
 # shellcheck source=/dev/null
+source "${SCRIPT_DIR}/commands/refresh.sh"
+# shellcheck source=/dev/null
 source "${SCRIPT_DIR}/commands/profile.sh"
 # shellcheck source=/dev/null
 source "${SCRIPT_DIR}/commands/exec.sh"
@@ -261,6 +266,23 @@ case "${COMMAND}" in
 esac
 
 REPO_ROOT="$(makevn_resolve_repo_root "${REPO_CANDIDATE}")"
+
+# Consume --clean-generated-contract-targets flag across all commands
+_consumed_args=()
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --clean-generated-contract-targets)
+      MAKEVN_CLEAN_GENERATED_CONTRACT_TARGETS=true
+      shift
+      ;;
+    *)
+      _consumed_args+=("$1")
+      shift
+      ;;
+  esac
+done
+[[ ${#_consumed_args[@]} -gt 0 ]] && set -- "${_consumed_args[@]}" || set --
+
 if makevn_cli_dispatch_sequence_if_needed "${REPO_ROOT}" "${COMMAND}" "$@"; then
   exit 0
 fi
@@ -272,6 +294,9 @@ case "${COMMAND}" in
     ;;
   doctor)
     print_doctor "${REPO_ROOT}" "$@"
+    ;;
+  refresh)
+    cmd_refresh "${REPO_ROOT}" "$@"
     ;;
   init)
     cmd_init "${REPO_ROOT}" "$@"

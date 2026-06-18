@@ -36,7 +36,7 @@ jobs:
           MAKEVN_KEEP_SMOKE_TMP=1 TMPDIR="${RUNNER_TEMP}/makevn-smoke" bash test/smoke/run.sh
       - name: Upload smoke artifacts
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: smoke-artifacts
           path: ${{ runner.temp }}/makevn-smoke

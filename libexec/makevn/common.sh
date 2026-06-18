@@ -26,3 +26,5 @@ source "${MAKEVN_LIBEXEC_DIR}/common/profile_detection.sh"
 source "${MAKEVN_LIBEXEC_DIR}/common/java_maven.sh"
 # shellcheck source=/dev/null
 source "${MAKEVN_LIBEXEC_DIR}/common/state_files.sh"
+# shellcheck source=/dev/null
+source "${MAKEVN_LIBEXEC_DIR}/common/generated_contract.sh"
