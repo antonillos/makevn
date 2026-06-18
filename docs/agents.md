@@ -375,54 +375,35 @@ Codex-specific repo work should still use normal engineering hygiene: keep edits
 
 ## Subagent Workflows
 
-These workflows use the agent framework's subagent mechanism (e.g., OpenCode Task tool). Each subagent appears as an independent card in the TUI with its description as the title, and each `makevn` command within the subagent is visible as an individual tool call.
+These workflows orchestrate multiple makevn commands for common scenarios. Each workflow can be executed either via `composite_run`/`parallel_run` (MCP tools, low context cost ~1k tokens) or via a subagent Task (higher context cost ~34k tokens, but visible step-by-step in TUI).
 
-### TUI visibility
+### Context cost guidance
 
-Each subagent appears as an independent card in the TUI with its description as the title. Progress is visible through individual tool calls within each subagent.
+| Execution method | Context cost | TUI visibility | Use when |
+|---|---|---|---|
+| `composite_run` (MCP) | ~1k tokens | Single tool call | Deterministic sequences, no decisions needed |
+| `parallel_run` (MCP) | ~1k tokens | Single tool call | Independent commands in parallel |
+| Subagent Task | ~34k tokens | Per-step visible | Workflow needs analysis or branching logic |
 
-```
-OpenCode TUI (lo que ve el usuario):
-─────────────────────────────────────────────────────────
-▶ makevn: boot verify + coverage          ● running
-  ├─▶ makevn docker-up                    ✓ done (8.7s)
-  ├─▶ makevn docker-ps-required           ✓ done (3.2s)
-  ├─▶ makevn clean compile verify         ● running...
-  │
-▶ makevn: unit tests + coverage           ✓ done (34.2s)
-  ├─▶ makevn clean verify-ut-coverage     ✓ done (34.1s)
-```
-
-### Naming convention
-
-Use descriptive descriptions that identify both the action and the scope:
-
-- `"makevn: boot verify + coverage"`
-- `"makevn: multi-test runner"`
-- `"makevn: adaptive test"`
-- `"makevn: karate E2E lifecycle"`
-- `"makevn: changes verification"`
-- `"makevn: parallel verify"`
+**Rule of thumb**: Prefer `composite_run` for deterministic command sequences. Use subagent Tasks only when the workflow needs decisions (classify, branch, retry).
 
 ### Available workflows
 
 See `skills/makevn/SKILL.md` for detailed workflow definitions:
 
-| Workflow | Description | Use case |
+| Workflow | Execution | Use case |
 |---|---|---|
-| `boot-verify-coverage` | Docker + clean compile verify + coverage | Full validation before PR |
-| `multi-test-runner` | Multiple tests with consolidated results | Running several test classes |
-| `adaptive-test` | Auto-detect UT/IT and run appropriate command | Modified test, unclear type/scope |
-| `karate-runner` | Full Karate E2E lifecycle | E2E tests with Docker + app |
-| `changes-validator` | Git diff + verify + coverage | Validate changes before commit |
-| `parallel-verify` | UT and IT in parallel | Independent UT/IT, save time |
+| `boot-verify-coverage` | `composite_run` | Docker + clean compile verify + coverage |
+| `changes-validator` | `composite_run` | PR review: verify changed modules + coverage |
+| `multi-test-runner` | `composite_run` | Multiple tests with consolidated results |
+| `karate-runner` | `composite_run` | Full Karate E2E lifecycle |
+| `adaptive-test` | Subagent Task | Auto-detect UT/IT, needs decision-making |
+| `parallel-verify` | `parallel_run` | UT and IT in parallel |
 
-### MCP alternatives
-
-When using MCP tools directly (instead of the skill), the same orchestration can be achieved with `composite_run` and `parallel_run`:
+### MCP examples
 
 ```json
-// Boot verify + coverage as composite_run:
+// Boot verify + coverage (deterministic):
 {
   "tool": "composite_run",
   "args": {
@@ -433,11 +414,12 @@ When using MCP tools directly (instead of the skill), the same orchestration can
       {"tool": "compile"},
       {"tool": "verify"},
       {"tool": "coverage_changes"}
-    ]
+    ],
+    "fail-fast": true
   }
 }
 
-// Parallel UT + IT:
+// Parallel UT + IT (independent):
 {
   "tool": "parallel_run",
   "args": {
@@ -449,7 +431,7 @@ When using MCP tools directly (instead of the skill), the same orchestration can
 }
 ```
 
-Note: `composite_run` and `parallel_run` execute as a single MCP tool call, so individual step progress is not visible in the TUI. Use the skill-based subagent workflows when step-by-step visibility is desired.
+Note: `composite_run` and `parallel_run` execute as a single MCP tool call, so individual step progress is not visible in the TUI. Use subagent Tasks when step-by-step visibility is desired and the workflow needs decision-making.
 
 See also:
 
