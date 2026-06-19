@@ -107,19 +107,25 @@ makevn clean verify
 ```
 
 Test/verify in repositories with code-generation plugins (Avro, OpenAPI,
-Protobuf, maven-dependency-plugin unpack). Proactively detect these by scanning
-`pom.xml` for the plugin artifact IDs. If present, add
-`--clean-generated-contract-targets` to prevent stale-generated-source errors:
+Protobuf, maven-dependency-plugin unpack). If `test` fails with stale
+generated source errors (e.g., `cannot find symbol`, `duplicate class`
+referencing `generated-sources`), a hint will be displayed. Run clean with
+the flag to fix:
 
 ```bash
-makevn test --clean-generated-contract-targets --name MyTest
-makevn verify --clean-generated-contract-targets
+makevn clean --clean-generated-contract-targets
+makevn test --name MyTest
 ```
 
-For ongoing protection in such repositories, set in `.makevn/config`:
+MCP equivalent:
 
-```bash
-MAKEVN_CLEAN_GENERATED_CONTRACT_TARGETS=true
+```json
+{
+  "tool": "clean",
+  "arguments": {
+    "clean-generated-contract-targets": true
+  }
+}
 ```
 
 If `coverage` or `coverage-changes` fails with `JaCoCo report contains no
@@ -208,12 +214,21 @@ for repeated test runs after a successful compile or previous test execution whe
 sources have not changed. Fast mode skips compilation and can fail before Maven
 has enough compiled test/module state to resolve selected classes.
 
-**Stale generated sources**: if a repository uses code-generation plugins
-(`avro-maven-plugin`, `openapi-generator-maven-plugin`, `protobuf-maven-plugin`,
-`maven-dependency-plugin` with an `unpack` goal), pass `clean-generated-contract-targets: true`
-to `makevn_test` / `makevn_verify` / `makevn_verify-changes` to auto-clean stale
-generated sources before running. Proactively scan the POM for these plugins
-and use the flag if any is found.
+**Stale generated sources**: if `makevn_test` fails with compilation errors
+referencing `generated-sources` (e.g., `cannot find symbol`, `duplicate class`),
+a hint will be displayed. Run `makevn_clean` with `clean-generated-contract-targets: true`
+to clean stale generated sources:
+
+```json
+{
+  "tool": "clean",
+  "arguments": {
+    "clean-generated-contract-targets": true
+  }
+}
+```
+
+Then re-run the test.
 
 Karate workflows are optional. Agents should first use `makevn doctor` to confirm
 that `Karate .tool-versions` and `Docker e2e compose file` are detected. When they

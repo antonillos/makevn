@@ -184,6 +184,12 @@ const DRY_RUN: ToolOption = ToolOption {
     description: "Show what would be done",
     required: false,
 };
+const CLEAN_GENERATED_CONTRACT_TARGETS: ToolOption = ToolOption {
+    name: "clean-generated-contract-targets",
+    ty: "boolean",
+    description: "Clean stale generated sources from code-generation plugins (Avro, OpenAPI, Protobuf, etc.)",
+    required: false,
+};
 const EXEC_TIMEOUT_SECONDS: ToolOption = ToolOption {
     name: "timeout-seconds",
     ty: "number",
@@ -207,7 +213,7 @@ const TOOL_SPECS: &[ToolSpec] = &[
     ToolSpec { name: "validate", description: "Validate the Maven project model.", command: &["validate"], options: &[COMMON_REPO, COMPACT] },
     ToolSpec { name: "package", description: "Compile and package without running tests.", command: &["package"], options: &[COMMON_REPO, COMPACT] },
     ToolSpec { name: "build", description: "Full Maven build (compile, test, package).", command: &["build"], options: &[COMMON_REPO, COMPACT] },
-    ToolSpec { name: "clean", description: "Clean Maven build output.", command: &["clean"], options: &[COMMON_REPO, COMPACT] },
+    ToolSpec { name: "clean", description: "Clean Maven build output.", command: &["clean"], options: &[COMMON_REPO, CLEAN_GENERATED_CONTRACT_TARGETS, COMPACT] },
     ToolSpec { name: "test", description: "Run tests with optional name filter. Use fast=true only after a successful compile or test run when sources have not changed.", command: &["test"], options: &[COMMON_REPO, ToolOption { name: "name", ty: "string", description: "Test class name or comma-separated names", required: false }, ToolOption { name: "fast", ty: "boolean", description: "Skip compilation only after a successful compile or test run when sources have not changed. Do not use on the first test run.", required: false }, COMPACT] },
     ToolSpec { name: "verify_ut", description: "Run unit-test-only verification.", command: &["verify-ut"], options: &[COMMON_REPO, COMPACT] },
     ToolSpec { name: "verify_ut_coverage", description: "Run unit-test-only verification with coverage.", command: &["verify-ut-coverage"], options: &[COMMON_REPO, COMPACT] },
@@ -734,7 +740,7 @@ fn push_tool_flags(
                     .ok_or_else(|| String::from("command must be a non-empty string"))?;
                 continue;
             }
-            "apply" | "dry-run" | "fast" | "force" | "verbose" => {
+            "apply" | "clean-generated-contract-targets" | "dry-run" | "fast" | "force" | "verbose" => {
                 if value.as_bool().unwrap_or(false) {
                     cmd_args.push(format!("--{}", option.name));
                 }

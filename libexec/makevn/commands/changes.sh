@@ -268,8 +268,6 @@ cmd_verify_changes() {
     changed_test="$(printf '%s\n%s\n' "${diff_base}" "${diff_local}" | grep -E "${path_prefix_regex}.*src/test/java/.*\.java$" | LC_ALL=C sort -u || true)"
   fi
 
-  makevn_clean_generated_contract_if_needed "${repo_root}"
-
   if [[ -z "${changed_src}" && -z "${changed_test}" ]]; then
     if makevn_frontend_owns_loader; then
       makevn_write_quick_backend_log \

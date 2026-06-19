@@ -40,67 +40,48 @@ any other code generator not explicitly mapped, and for annotation processors
 ## Safety Constraints
 
 - **Only paths that resolve to a `target/` subdirectory** (at any module
-  level) are cleaned automatically. The `target/` directory is build output
+  level) are cleaned. The `target/` directory is build output
   (always in `.gitignore`) and safe to delete.
 - If a plugin's configured `outputDirectory` contains unresolved Maven
   properties (e.g., `${project.build.directory}/custom-gen`), the path
   cannot be resolved safely and is **skipped**. During `makevn init`, such
   paths are auto-detected and written to `MAKEVN_GENERATED_CONTRACT_CLEAN_DIRS`
   in `.makevn/config`. Edit that value with the resolved path if needed.
-- The clean runs before the Maven invocation but after all CLI argument
-  parsing. It does not affect the Maven command itself — it only removes
-  stale files so the `generate-sources` phase starts from a clean state.
 
-## Activation
+## Usage
 
-### Automatic (default)
-
-When a module has any of the detected plugins in its POM, the stale-target
-directories for that module are cleaned automatically before every
-`test` / `verify` / `verify-ut` / `verify-it` / `verify-changes` run.
-
-### Opt-out
-
-Set in `.makevn/config`:
+### Clean with generated sources cleanup
 
 ```bash
-MAKEVN_CLEAN_GENERATED_CONTRACT_TARGETS=false
+makevn clean --clean-generated-contract-targets
 ```
 
-### CLI flag (override)
+This runs `mvn clean` and then removes stale generated source directories
+detected from code-generation plugins.
+
+### MCP tool
+
+```json
+{
+  "tool": "clean",
+  "arguments": {
+    "clean-generated-contract-targets": true
+  }
+}
+```
+
+### Post-failure hint in test
+
+When `makevn test` fails with compilation errors related to generated sources
+(e.g., `cannot find symbol`, `duplicate class`, `package does not exist`
+referencing `generated-sources`), a hint is displayed:
 
 ```
-makevn test --clean-generated-contract-targets
-makevn verify --clean-generated-contract-targets
-makevn verify-changes --clean-generated-contract-targets
+Hint: detected stale generated sources error. Run:
+  makevn clean --clean-generated-contract-targets
 ```
 
-The flag overrides the config setting for a single invocation.
-
-## Implementation Plan
-
-### New files
-
-| File | Content |
-|---|---|
-| `libexec/makevn/common/generated_contract.sh` | Detection, cleanup, and flag-checking shell functions + embedded Perl POM parser |
-
-### Modified files
-
-| File | Change |
-|---|---|
-| `libexec/makevn/common/common.sh` | `source` the new module |
-| `libexec/makevn/common/core.sh` | `unset MAKEVN_CLEAN_GENERATED_CONTRACT_TARGETS` in `makevn_load_config` |
-| `libexec/makevn/commands/maven.sh` | Call cleanup in `cmd_test`, `cmd_verify`, `cmd_verify_ut`, `cmd_verify_it`; parse `--clean-generated-contract-targets` flag |
-| `libexec/makevn/commands/changes.sh` | Call cleanup in `cmd_verify_changes` |
-| `libexec/makevn/common/java_maven.sh` | Call cleanup in `makevn_run_selected_test` |
-| `libexec/makevn/cli.sh` | Help text for `--clean-generated-contract-targets` |
-| `rust/dispatcher/src/main.rs` | Add flag to `command_option_takes_value` |
-| `share/makevn/makevn.mk` | `MAKEVN_CLEAN_GENERATED_CONTRACT_TARGETS` variable in `vn-test` / `vn-verify` targets |
-| `docs/cli-contract.md` | Document the flag |
-| `skills/makevn/SKILL.md` | Document in failure triage |
-
-## Functions
+## Implementation
 
 ### Shell functions in `generated_contract.sh`
 
@@ -111,32 +92,23 @@ makevn_detect_generated_contract_output_dirs(maven_base_path)
 makevn_clean_generated_contract_targets(repo_root, maven_base_path)
   # Calls detect, validates paths (must be under target/), rm -rf each
 
-makevn_should_clean_generated_contract_targets(repo_root)
-  # Checks config and flag override
+makevn_should_clean_generated_contract_targets()
+  # Returns true only if --clean-generated-contract-targets flag was passed
 
-makevn_clean_generated_contract_if_needed(repo_root, maven_base_path)
+makevn_clean_generated_contract_if_needed(repo_root)
   # Combines should + detect + clean
 
-makevn_generated_contract_flag_override()
-  # Sets MAKEVN_CLEAN_GENERATED_CONTRACT_TARGETS=true if --clean-generated-contract-targets was passed
+makevn_hint_stale_generated_sources_if_needed(log_file)
+  # Checks log for stale generated sources errors and prints hint
 ```
 
-### Perl POM parsing
+### Integration points
 
-Embedded in `makevn_detect_generated_contract_output_dirs`, iterates over
-`find`-discovered `pom.xml` files (excluding `target/`), extracts plugin
-configurations, and emits `module:path` pairs.
-
-## Integration points
-
-| Command | Where cleanup is called |
+| Command | Behavior |
 |---|---|
-| `cmd_test` | After flag parsing, before `makevn_run_maven_goal` / `makevn_run_selected_test` |
-| `cmd_verify` | After `makevn_reject_verify_skip_flags`, before `makevn_run_maven_goal` |
-| `cmd_verify_ut` | After `makevn_reject_verify_skip_flags`, before `makevn_run_maven_goal` |
-| `cmd_verify_it` | After docker preflight check, before `makevn_run_verify_it_goal` |
-| `cmd_verify_changes` | After parent branch detection, before constructing Maven args |
-| `makevn_run_selected_test` | At the start, before building Maven args |
+| `cmd_clean` | After `mvn clean`, calls `makevn_clean_generated_contract_if_needed` if flag is set |
+| `cmd_test` | Shows hint on failure if log contains stale generated sources errors |
+| `makevn_run_selected_test` | Shows hint on failure if log contains stale generated sources errors |
 
 ## Future refinements
 

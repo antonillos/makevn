@@ -69,6 +69,7 @@ cmd_clean() {
   shift
   [[ "${1:-}" == "--" ]] && shift
   makevn_run_maven_goal "${repo_root}" clean clean "" "$@"
+  makevn_clean_generated_contract_if_needed "${repo_root}"
 }
 
 cmd_test() {
@@ -125,15 +126,21 @@ cmd_test() {
     makevn_die "test --fast requires at least one --name"
   fi
 
-  makevn_clean_generated_contract_if_needed "${repo_root}"
-
   if [[ ${#test_names[@]} -eq 0 ]]; then
+    local rc=0
     if [[ ${#extra_args[@]} -gt 0 ]]; then
       makevn_run_maven_goal "${repo_root}" test test test "${extra_args[@]}"
+      rc=$?
     else
       makevn_run_maven_goal "${repo_root}" test test test
+      rc=$?
     fi
-    return 0
+    if [[ ${rc} -ne 0 ]]; then
+      local logs_dir_hint
+      logs_dir_hint="$(makevn_logs_dir "${repo_root}")"
+      makevn_hint_stale_generated_sources_if_needed "${logs_dir_hint}/test.log"
+    fi
+    return ${rc}
   fi
 
   if [[ ${#test_names[@]} -eq 1 ]]; then
@@ -178,7 +185,6 @@ cmd_verify_ut() {
   shift
   [[ "${1:-}" == "--" ]] && shift
   makevn_reject_verify_skip_flags verify-ut "$@"
-  makevn_clean_generated_contract_if_needed "${repo_root}"
   cli_flags_value="$(makevn_coverage_cli_flags "${repo_root}")"
   if [[ -n "${cli_flags_value}" ]]; then
     read -r -a cli_flags <<< "${cli_flags_value}"
@@ -225,7 +231,6 @@ cmd_verify_it() {
   shift
   [[ "${1:-}" == "--" ]] && shift
   makevn_reject_verify_skip_flags verify-it "$@"
-  makevn_clean_generated_contract_if_needed "${repo_root}"
   if makevn_verify_requires_boot_docker "${repo_root}"; then
     cmd_docker_ps_required "${repo_root}"
   fi
@@ -252,7 +257,6 @@ cmd_verify() {
   shift
   [[ "${1:-}" == "--" ]] && shift
   makevn_reject_verify_skip_flags verify "$@"
-  makevn_clean_generated_contract_if_needed "${repo_root}"
   if makevn_verify_requires_boot_docker "${repo_root}"; then
     cmd_docker_ps_required "${repo_root}"
   fi
