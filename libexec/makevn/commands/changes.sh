@@ -296,8 +296,12 @@ No modified Java files detected. Skipping verify-changes."
   fi
 
   if [[ -n "${changed_src}" ]]; then
-    modules="$(printf '%s\n' "${changed_src}" | sed "s|^${strip_prefix}||" | sed 's|/src/.*||' | LC_ALL=C sort -u | paste -sd, -)"
+    modules="$(printf '%s\n' "${changed_src}" | sed "s|^${strip_prefix}||" | sed 's|/src/.*||' | sed 's|^src/.*||' | LC_ALL=C sort -u | sed '/^$/d' | paste -sd, -)"
+    changed_classes="$(printf '%s\n' "${changed_src}" | sed 's|^.*src/main/java/||' | sed 's|\.java$||' | tr '/' '.' | paste -sd, -)"
     if [[ -z "${modules}" ]]; then
+      if [[ -n "${changed_classes}" ]]; then
+        makevn_print_item "classes" "${changed_classes}"
+      fi
       cmd_verify "${repo_root}"
       return $?
     fi
@@ -319,6 +323,10 @@ No modified Java files detected. Skipping verify-changes."
     verify_args+=(-DskipTests=false -Dmaven.test.failure.ignore=false -Dmaven.build.cache.enabled=false)
     if [[ ${#extra_args[@]} -gt 0 ]]; then
       verify_args+=("${extra_args[@]}")
+    fi
+    makevn_print_item "modules" "${modules}"
+    if [[ -n "${changed_classes}" ]]; then
+      makevn_print_item "classes" "${changed_classes}"
     fi
     MAKEVN_COMPACT_OUTPUT=1 makevn_run_logged_in_context "${repo_root}" code "${maven_base_path}" "${log_name}" verify-changes "verify-changes" "${verify_args[@]}"
     rc=$?
@@ -343,6 +351,7 @@ No modified Java files detected. Skipping verify-changes."
   if [[ ${#extra_args[@]} -gt 0 ]]; then
     verify_args+=("${extra_args[@]}")
   fi
+  makevn_print_item "tests" "${test_list}"
   MAKEVN_COMPACT_OUTPUT=1 makevn_run_logged_in_context "${repo_root}" code "${maven_base_path}" "${log_name}" verify-changes "verify-changes" "${verify_args[@]}"
   rc=$?
   [[ ${rc} -eq 0 ]] && makevn_print_jacoco_report_hint "${maven_base_path}"
