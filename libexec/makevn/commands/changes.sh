@@ -68,6 +68,210 @@ makevn_write_coverage_frontend_metadata() {
     "coverage"
 }
 
+makevn_count_non_empty_lines() {
+  local value="$1"
+
+  printf '%s\n' "${value}" | sed '/^$/d' | wc -l | tr -d '[:space:]'
+}
+
+makevn_verify_changes_plan_path() {
+  local repo_root="$1"
+
+  printf '%s/verify-changes-plan.env\n' "$(makevn_state_dir "${repo_root}")"
+}
+
+makevn_clear_verify_changes_plan() {
+  local repo_root="$1"
+  local plan_path=""
+
+  plan_path="$(makevn_verify_changes_plan_path "${repo_root}")"
+  [[ -f "${plan_path}" ]] && rm -f "${plan_path}"
+}
+
+makevn_write_verify_changes_plan() {
+  local repo_root="$1"
+  local plan_path=""
+  local tmp_path=""
+
+  plan_path="$(makevn_verify_changes_plan_path "${repo_root}")"
+  mkdir -p "$(makevn_state_dir "${repo_root}")"
+  tmp_path="$(mktemp "${plan_path}.tmp.XXXXXX")"
+
+  {
+    printf 'MAKEVN_VERIFY_CHANGES_CACHE_CREATED_AT=%q\n' "$(date +%s)"
+    printf 'MAKEVN_VERIFY_CHANGES_CACHE_HEAD=%q\n' "$(git -C "${repo_root}" rev-parse HEAD)"
+    printf 'MAKEVN_VERIFY_CHANGES_PARENT_SPEC=%q\n' "${MAKEVN_VERIFY_CHANGES_PARENT_SPEC}"
+    printf 'MAKEVN_VERIFY_CHANGES_DIFF_LOCAL=%q\n' "${MAKEVN_VERIFY_CHANGES_DIFF_LOCAL}"
+    printf 'MAKEVN_VERIFY_CHANGES_MAVEN_BASE_PATH=%q\n' "${MAKEVN_VERIFY_CHANGES_MAVEN_BASE_PATH}"
+    printf 'MAKEVN_VERIFY_CHANGES_MAVEN_BASE_REL=%q\n' "${MAKEVN_VERIFY_CHANGES_MAVEN_BASE_REL}"
+    printf 'MAKEVN_VERIFY_CHANGES_MAVEN_EXECUTABLE=%q\n' "${MAKEVN_VERIFY_CHANGES_MAVEN_EXECUTABLE}"
+    printf 'MAKEVN_VERIFY_CHANGES_LOCAL_CONTAINERS=%q\n' "${MAKEVN_VERIFY_CHANGES_LOCAL_CONTAINERS}"
+    printf 'MAKEVN_VERIFY_CHANGES_SRC_FILES=%q\n' "${MAKEVN_VERIFY_CHANGES_SRC_FILES}"
+    printf 'MAKEVN_VERIFY_CHANGES_TEST_FILES=%q\n' "${MAKEVN_VERIFY_CHANGES_TEST_FILES}"
+    printf 'MAKEVN_VERIFY_CHANGES_MODULES=%q\n' "${MAKEVN_VERIFY_CHANGES_MODULES}"
+    printf 'MAKEVN_VERIFY_CHANGES_CLASSES=%q\n' "${MAKEVN_VERIFY_CHANGES_CLASSES}"
+    printf 'MAKEVN_VERIFY_CHANGES_MODULE_SELECTION=%q\n' "${MAKEVN_VERIFY_CHANGES_MODULE_SELECTION}"
+    printf 'MAKEVN_VERIFY_CHANGES_TEST_LIST=%q\n' "${MAKEVN_VERIFY_CHANGES_TEST_LIST}"
+  } > "${tmp_path}"
+
+  mv "${tmp_path}" "${plan_path}"
+}
+
+makevn_load_verify_changes_plan() {
+  local repo_root="$1"
+  local plan_path=""
+  local current_head=""
+  local current_parent_spec=""
+  local current_diff_local=""
+
+  plan_path="$(makevn_verify_changes_plan_path "${repo_root}")"
+  [[ -f "${plan_path}" ]] || return 1
+
+  # shellcheck source=/dev/null
+  source "${plan_path}"
+
+  current_head="$(git -C "${repo_root}" rev-parse HEAD)"
+  current_parent_spec="$(makevn_detect_parent_branch_spec "${repo_root}")"
+  current_diff_local="$(git -C "${repo_root}" diff --name-only HEAD || true)"
+
+  if [[ "${MAKEVN_VERIFY_CHANGES_CACHE_HEAD:-}" != "${current_head}" ]] \
+    || [[ "${MAKEVN_VERIFY_CHANGES_PARENT_SPEC:-}" != "${current_parent_spec}" ]] \
+    || [[ "${MAKEVN_VERIFY_CHANGES_DIFF_LOCAL:-}" != "${current_diff_local}" ]]; then
+    makevn_clear_verify_changes_plan "${repo_root}"
+    return 1
+  fi
+
+  return 0
+}
+
+makevn_collect_verify_changes_scope() {
+  local repo_root="$1"
+  local local_containers=""
+  local diff_base=""
+  local diff_local=""
+  local git_root=""
+  local jacoco_module=""
+  local maven_git_rel=""
+  local path_prefix_regex=""
+  local physical_git_root=""
+  local physical_maven_base_path=""
+  local strip_prefix=""
+
+  MAKEVN_VERIFY_CHANGES_MAVEN_BASE_PATH="$(makevn_detect_maven_base_path "${repo_root}" || true)"
+  [[ -n "${MAKEVN_VERIFY_CHANGES_MAVEN_BASE_PATH}" ]] || makevn_die "No Maven project detected in ${repo_root}"
+
+  if [[ "${MAKEVN_VERIFY_CHANGES_MAVEN_BASE_PATH}" == "${repo_root}" ]]; then
+    MAKEVN_VERIFY_CHANGES_MAVEN_BASE_REL='.'
+  else
+    MAKEVN_VERIFY_CHANGES_MAVEN_BASE_REL="${MAKEVN_VERIFY_CHANGES_MAVEN_BASE_PATH#${repo_root}/}"
+  fi
+
+  MAKEVN_VERIFY_CHANGES_MAVEN_EXECUTABLE="$(makevn_maven_executable "${repo_root}" "${MAKEVN_VERIFY_CHANGES_MAVEN_BASE_PATH}")"
+  local_containers="$(makevn_effective_local_containers "${repo_root}" "${MAKEVN_PROFILE_VERIFY_IT_LOCAL_CONTAINERS:-}")"
+  MAKEVN_VERIFY_CHANGES_LOCAL_CONTAINERS="${local_containers}"
+
+  git -C "${repo_root}" rev-parse HEAD >/dev/null 2>&1 || makevn_die "Not a git repository"
+  git_root="$(git -C "${repo_root}" rev-parse --show-toplevel)"
+  physical_git_root="$(cd "${git_root}" && pwd -P)"
+  physical_maven_base_path="$(cd "${MAKEVN_VERIFY_CHANGES_MAVEN_BASE_PATH}" && pwd -P)"
+  if [[ "${physical_maven_base_path}" == "${physical_git_root}" ]]; then
+    path_prefix_regex='^'
+    strip_prefix=''
+  else
+    maven_git_rel="${physical_maven_base_path#${physical_git_root}/}"
+    path_prefix_regex="^${maven_git_rel}/"
+    strip_prefix="${maven_git_rel}/"
+  fi
+
+  MAKEVN_VERIFY_CHANGES_PARENT_SPEC="$(makevn_detect_parent_branch_spec "${repo_root}")"
+  if [[ "${MAKEVN_VERIFY_CHANGES_PARENT_SPEC}" == "HEAD" ]]; then
+    diff_local="$(git -C "${git_root}" diff --name-only HEAD || true)"
+    MAKEVN_VERIFY_CHANGES_DIFF_LOCAL="${diff_local}"
+    MAKEVN_VERIFY_CHANGES_SRC_FILES="$(printf '%s\n' "${diff_local}" | grep -E "${path_prefix_regex}.*src/main/java/.*\.java$" || true)"
+    MAKEVN_VERIFY_CHANGES_TEST_FILES="$(printf '%s\n' "${diff_local}" | grep -E "${path_prefix_regex}.*src/test/java/.*\.java$" || true)"
+  else
+    diff_base="$(git -C "${git_root}" diff --name-only "${MAKEVN_VERIFY_CHANGES_PARENT_SPEC}" || true)"
+    diff_local="$(git -C "${git_root}" diff --name-only HEAD || true)"
+    MAKEVN_VERIFY_CHANGES_DIFF_LOCAL="${diff_local}"
+    MAKEVN_VERIFY_CHANGES_SRC_FILES="$(printf '%s\n%s\n' "${diff_base}" "${diff_local}" | grep -E "${path_prefix_regex}.*src/main/java/.*\.java$" | LC_ALL=C sort -u || true)"
+    MAKEVN_VERIFY_CHANGES_TEST_FILES="$(printf '%s\n%s\n' "${diff_base}" "${diff_local}" | grep -E "${path_prefix_regex}.*src/test/java/.*\.java$" | LC_ALL=C sort -u || true)"
+  fi
+
+  MAKEVN_VERIFY_CHANGES_MODULES=''
+  MAKEVN_VERIFY_CHANGES_CLASSES=''
+  MAKEVN_VERIFY_CHANGES_MODULE_SELECTION=''
+  if [[ -n "${MAKEVN_VERIFY_CHANGES_SRC_FILES}" ]]; then
+    MAKEVN_VERIFY_CHANGES_MODULES="$(printf '%s\n' "${MAKEVN_VERIFY_CHANGES_SRC_FILES}" | sed "s|^${strip_prefix}||" | sed 's|/src/.*||' | sed 's|^src/.*||' | LC_ALL=C sort -u | sed '/^$/d' | paste -sd, -)"
+    MAKEVN_VERIFY_CHANGES_CLASSES="$(printf '%s\n' "${MAKEVN_VERIFY_CHANGES_SRC_FILES}" | sed 's|^.*src/main/java/||' | sed 's|\.java$||' | tr '/' '.' | paste -sd, -)"
+    if [[ -n "${MAKEVN_VERIFY_CHANGES_MODULES}" ]]; then
+      jacoco_module="$(makevn_detect_jacoco_module_name "${MAKEVN_VERIFY_CHANGES_MAVEN_BASE_PATH}" || true)"
+      MAKEVN_VERIFY_CHANGES_MODULE_SELECTION="${MAKEVN_VERIFY_CHANGES_MODULES}"
+      if [[ -n "${jacoco_module}" && ",${MAKEVN_VERIFY_CHANGES_MODULES}," != *",${jacoco_module},"* ]]; then
+        MAKEVN_VERIFY_CHANGES_MODULE_SELECTION="${MAKEVN_VERIFY_CHANGES_MODULES},${jacoco_module}"
+      fi
+    fi
+  fi
+
+  MAKEVN_VERIFY_CHANGES_TEST_LIST=''
+  if [[ -n "${MAKEVN_VERIFY_CHANGES_TEST_FILES}" ]]; then
+    MAKEVN_VERIFY_CHANGES_TEST_LIST="$(printf '%s\n' "${MAKEVN_VERIFY_CHANGES_TEST_FILES}" | sed "s|^${strip_prefix}||" | sed 's|^.*/src/test/java/||' | sed 's|\.java$||' | tr '/' '.' | paste -sd, -)"
+  fi
+}
+
+makevn_print_verify_changes_preflight() {
+  local command_name="$1"
+  local strategy=""
+
+  makevn_print_item "compare against" "${MAKEVN_VERIFY_CHANGES_PARENT_SPEC}"
+
+  if [[ -z "${MAKEVN_VERIFY_CHANGES_SRC_FILES}" && -z "${MAKEVN_VERIFY_CHANGES_TEST_FILES}" ]]; then
+    makevn_print_item "strategy" "skip"
+    makevn_print_detail_line "No modified Java files detected. Skipping ${command_name}."
+    return 0
+  fi
+
+  if [[ -n "${MAKEVN_VERIFY_CHANGES_SRC_FILES}" ]]; then
+    makevn_print_item "production files" "$(makevn_count_non_empty_lines "${MAKEVN_VERIFY_CHANGES_SRC_FILES}")"
+  fi
+  if [[ -n "${MAKEVN_VERIFY_CHANGES_TEST_FILES}" ]]; then
+    makevn_print_item "test files" "$(makevn_count_non_empty_lines "${MAKEVN_VERIFY_CHANGES_TEST_FILES}")"
+  fi
+
+  if [[ -n "${MAKEVN_VERIFY_CHANGES_SRC_FILES}" ]]; then
+    if [[ -n "${MAKEVN_VERIFY_CHANGES_MODULES}" ]]; then
+      strategy="run verify for affected modules"
+      makevn_print_item "modules" "${MAKEVN_VERIFY_CHANGES_MODULES}"
+      makevn_print_item "verify selection" "${MAKEVN_VERIFY_CHANGES_MODULE_SELECTION}"
+    else
+      strategy="run full verify fallback"
+    fi
+    if [[ -n "${MAKEVN_VERIFY_CHANGES_CLASSES}" ]]; then
+      makevn_print_item "classes" "${MAKEVN_VERIFY_CHANGES_CLASSES}"
+    fi
+  else
+    strategy="run selected tests only"
+    makevn_print_item "tests" "${MAKEVN_VERIFY_CHANGES_TEST_LIST}"
+  fi
+
+  makevn_print_item "strategy" "${strategy}"
+}
+
+cmd_verify_changes_preview() {
+  local repo_root="$1"
+
+  shift
+  [[ $# -eq 0 ]] || makevn_die "verify-changes-preview does not accept extra arguments"
+
+  if ! makevn_frontend_owns_loader; then
+    print_command_intro "${repo_root}" verify-changes-preview
+  fi
+
+  makevn_load_profile "${repo_root}"
+  makevn_collect_verify_changes_scope "${repo_root}"
+  makevn_write_verify_changes_plan "${repo_root}"
+  makevn_print_verify_changes_preflight "verify-changes-preview"
+}
+
 cmd_coverage() {
   local repo_root="$1"
   local maven_base_path=""
@@ -187,25 +391,6 @@ cmd_coverage() {
 
 cmd_verify_changes() {
   local repo_root="$1"
-  local maven_base_path=""
-  local maven_executable=""
-  local maven_base_rel=""
-  local path_prefix_regex=""
-  local strip_prefix=""
-  local parent_spec=""
-  local diff_base=""
-  local diff_local=""
-  local git_root=""
-  local maven_git_rel=""
-  local physical_git_root=""
-  local physical_maven_base_path=""
-  local changed_src=""
-  local changed_test=""
-  local modules=""
-  local test_list=""
-  local module_selection=""
-  local jacoco_module=""
-  local local_containers=""
   local cli_flags_value=""
   local prop_flags_value=""
   local log_name="verify-changes"
@@ -217,7 +402,6 @@ cmd_verify_changes() {
 
   shift
   makevn_load_profile "${repo_root}"
-  local_containers="$(makevn_effective_local_containers "${repo_root}" "${MAKEVN_PROFILE_VERIFY_IT_LOCAL_CONTAINERS:-}")"
   extra_args=()
   if [[ "${1:-}" == "--" ]]; then
     shift
@@ -230,45 +414,13 @@ cmd_verify_changes() {
     print_command_intro "${repo_root}" verify-changes
   fi
 
-  git -C "${repo_root}" rev-parse HEAD >/dev/null 2>&1 || makevn_die "Not a git repository"
-  git_root="$(git -C "${repo_root}" rev-parse --show-toplevel)"
-
-  maven_base_path="$(makevn_detect_maven_base_path "${repo_root}" || true)"
-  [[ -n "${maven_base_path}" ]] || makevn_die "No Maven project detected in ${repo_root}"
-  if [[ "${maven_base_path}" == "${repo_root}" ]]; then
-    maven_base_rel="."
-  else
-    maven_base_rel="${maven_base_path#${repo_root}/}"
+  if ! makevn_load_verify_changes_plan "${repo_root}"; then
+    makevn_collect_verify_changes_scope "${repo_root}"
   fi
-  maven_executable="$(makevn_maven_executable "${repo_root}" "${maven_base_path}")"
-  physical_git_root="$(cd "${git_root}" && pwd -P)"
-  physical_maven_base_path="$(cd "${maven_base_path}" && pwd -P)"
-  if [[ "${physical_maven_base_path}" == "${physical_git_root}" ]]; then
-    path_prefix_regex='^'
-    strip_prefix=''
-  else
-    maven_git_rel="${physical_maven_base_path#${physical_git_root}/}"
-    path_prefix_regex="^${maven_git_rel}/"
-    strip_prefix="${maven_git_rel}/"
-  fi
+  makevn_print_verify_changes_preflight "verify-changes"
 
-  parent_spec="$(makevn_detect_parent_branch_spec "${repo_root}")"
-  if ! makevn_frontend_owns_loader; then
-    makevn_print_item "compare against" "${parent_spec}"
-  fi
-
-  if [[ "${parent_spec}" == "HEAD" ]]; then
-    diff_local="$(git -C "${git_root}" diff --name-only HEAD || true)"
-    changed_src="$(printf '%s\n' "${diff_local}" | grep -E "${path_prefix_regex}.*src/main/java/.*\.java$" || true)"
-    changed_test="$(printf '%s\n' "${diff_local}" | grep -E "${path_prefix_regex}.*src/test/java/.*\.java$" || true)"
-  else
-    diff_base="$(git -C "${git_root}" diff --name-only "${parent_spec}" || true)"
-    diff_local="$(git -C "${git_root}" diff --name-only HEAD || true)"
-    changed_src="$(printf '%s\n%s\n' "${diff_base}" "${diff_local}" | grep -E "${path_prefix_regex}.*src/main/java/.*\.java$" | LC_ALL=C sort -u || true)"
-    changed_test="$(printf '%s\n%s\n' "${diff_base}" "${diff_local}" | grep -E "${path_prefix_regex}.*src/test/java/.*\.java$" | LC_ALL=C sort -u || true)"
-  fi
-
-  if [[ -z "${changed_src}" && -z "${changed_test}" ]]; then
+  if [[ -z "${MAKEVN_VERIFY_CHANGES_SRC_FILES}" && -z "${MAKEVN_VERIFY_CHANGES_TEST_FILES}" ]]; then
+    makevn_clear_verify_changes_plan "${repo_root}"
     if makevn_frontend_owns_loader; then
       makevn_write_quick_backend_log \
         "${repo_root}" \
@@ -276,10 +428,9 @@ cmd_verify_changes() {
         "verify-changes" \
         "verify-changes" \
         "makevn verify-changes" \
-        "compare against: ${parent_spec}
+        "compare against: ${MAKEVN_VERIFY_CHANGES_PARENT_SPEC}
+strategy: skip
 No modified Java files detected. Skipping verify-changes."
-    else
-      printf '%s\n' "$(makevn_dim "No modified Java files detected. Skipping verify-changes.")"
     fi
     return 0
   fi
@@ -295,28 +446,18 @@ No modified Java files detected. Skipping verify-changes."
     read -r -a prop_flags <<< "${prop_flags_value}"
   fi
 
-  if [[ -n "${changed_src}" ]]; then
-    modules="$(printf '%s\n' "${changed_src}" | sed "s|^${strip_prefix}||" | sed 's|/src/.*||' | sed 's|^src/.*||' | LC_ALL=C sort -u | sed '/^$/d' | paste -sd, -)"
-    changed_classes="$(printf '%s\n' "${changed_src}" | sed 's|^.*src/main/java/||' | sed 's|\.java$||' | tr '/' '.' | paste -sd, -)"
-    if [[ -z "${modules}" ]]; then
-      if [[ -n "${changed_classes}" ]]; then
-        makevn_print_item "classes" "${changed_classes}"
-      fi
+  if [[ -n "${MAKEVN_VERIFY_CHANGES_SRC_FILES}" ]]; then
+    if [[ -z "${MAKEVN_VERIFY_CHANGES_MODULES}" ]]; then
+      makevn_clear_verify_changes_plan "${repo_root}"
       cmd_verify "${repo_root}"
       return $?
     fi
 
-    jacoco_module="$(makevn_detect_jacoco_module_name "${maven_base_path}" || true)"
-    module_selection="${modules}"
-    if [[ -n "${jacoco_module}" && ",${modules}," != *",${jacoco_module},"* ]]; then
-      module_selection="${modules},${jacoco_module}"
-    fi
-
-    verify_args=("${maven_executable}")
+    verify_args=("${MAKEVN_VERIFY_CHANGES_MAVEN_EXECUTABLE}")
     if [[ ${#cli_flags[@]} -gt 0 ]]; then
       verify_args+=("${cli_flags[@]}")
     fi
-    verify_args+=(-f "${maven_base_path}/pom.xml" -pl "${module_selection}" -am verify)
+    verify_args+=(-f "${MAKEVN_VERIFY_CHANGES_MAVEN_BASE_PATH}/pom.xml" -pl "${MAKEVN_VERIFY_CHANGES_MODULE_SELECTION}" -am verify)
     if [[ ${#prop_flags[@]} -gt 0 ]]; then
       verify_args+=("${prop_flags[@]}")
     fi
@@ -324,37 +465,33 @@ No modified Java files detected. Skipping verify-changes."
     if [[ ${#extra_args[@]} -gt 0 ]]; then
       verify_args+=("${extra_args[@]}")
     fi
-    makevn_print_item "modules" "${modules}"
-    if [[ -n "${changed_classes}" ]]; then
-      makevn_print_item "classes" "${changed_classes}"
-    fi
-    MAKEVN_COMPACT_OUTPUT=1 makevn_run_logged_in_context "${repo_root}" code "${maven_base_path}" "${log_name}" verify-changes "verify-changes" "${verify_args[@]}"
+    MAKEVN_COMPACT_OUTPUT=1 makevn_run_logged_in_context "${repo_root}" code "${MAKEVN_VERIFY_CHANGES_MAVEN_BASE_PATH}" "${log_name}" verify-changes "verify-changes" "${verify_args[@]}"
     rc=$?
-    [[ ${rc} -eq 0 ]] && makevn_print_jacoco_report_hint "${maven_base_path}"
+    makevn_clear_verify_changes_plan "${repo_root}"
+    [[ ${rc} -eq 0 ]] && makevn_print_jacoco_report_hint "${MAKEVN_VERIFY_CHANGES_MAVEN_BASE_PATH}"
     return ${rc}
   fi
 
-  test_list="$(printf '%s\n' "${changed_test}" | sed "s|^${strip_prefix}||" | sed 's|^.*/src/test/java/||' | sed 's|\.java$||' | tr '/' '.' | paste -sd, -)"
-  if [[ -n "${local_containers}" ]]; then
-    verify_args=(env "LOCAL_CONTAINERS=${local_containers}" "${maven_executable}")
+  if [[ -n "${MAKEVN_VERIFY_CHANGES_LOCAL_CONTAINERS}" ]]; then
+    verify_args=(env "LOCAL_CONTAINERS=${MAKEVN_VERIFY_CHANGES_LOCAL_CONTAINERS}" "${MAKEVN_VERIFY_CHANGES_MAVEN_EXECUTABLE}")
   else
-    verify_args=("${maven_executable}")
+    verify_args=("${MAKEVN_VERIFY_CHANGES_MAVEN_EXECUTABLE}")
   fi
   if [[ ${#cli_flags[@]} -gt 0 ]]; then
     verify_args+=("${cli_flags[@]}")
   fi
-  verify_args+=(-f "${maven_base_path}/pom.xml" verify)
+  verify_args+=(-f "${MAKEVN_VERIFY_CHANGES_MAVEN_BASE_PATH}/pom.xml" verify)
   if [[ ${#prop_flags[@]} -gt 0 ]]; then
     verify_args+=("${prop_flags[@]}")
   fi
-  verify_args+=(-DskipUTs=false -Dtest="${test_list}" -Dit.test="${test_list}" -Dfailsafe.failIfNoSpecifiedTests=false -Dsurefire.failIfNoSpecifiedTests=false -Dawaitility.defaultPollInterval=200ms -Dawaitility.defaultTimeout=2m -Dmaven.build.cache.enabled=false)
+  verify_args+=(-DskipUTs=false -Dtest="${MAKEVN_VERIFY_CHANGES_TEST_LIST}" -Dit.test="${MAKEVN_VERIFY_CHANGES_TEST_LIST}" -Dfailsafe.failIfNoSpecifiedTests=false -Dsurefire.failIfNoSpecifiedTests=false -Dawaitility.defaultPollInterval=200ms -Dawaitility.defaultTimeout=2m -Dmaven.build.cache.enabled=false)
   if [[ ${#extra_args[@]} -gt 0 ]]; then
     verify_args+=("${extra_args[@]}")
   fi
-  makevn_print_item "tests" "${test_list}"
-  MAKEVN_COMPACT_OUTPUT=1 makevn_run_logged_in_context "${repo_root}" code "${maven_base_path}" "${log_name}" verify-changes "verify-changes" "${verify_args[@]}"
+  MAKEVN_COMPACT_OUTPUT=1 makevn_run_logged_in_context "${repo_root}" code "${MAKEVN_VERIFY_CHANGES_MAVEN_BASE_PATH}" "${log_name}" verify-changes "verify-changes" "${verify_args[@]}"
   rc=$?
-  [[ ${rc} -eq 0 ]] && makevn_print_jacoco_report_hint "${maven_base_path}"
+  makevn_clear_verify_changes_plan "${repo_root}"
+  [[ ${rc} -eq 0 ]] && makevn_print_jacoco_report_hint "${MAKEVN_VERIFY_CHANGES_MAVEN_BASE_PATH}"
   return ${rc}
 }
 

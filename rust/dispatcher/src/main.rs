@@ -430,7 +430,7 @@ fn validate_command(
     match command.to_string_lossy().as_ref() {
         "compile" | "test-compile" | "compile-tests" | "validate" | "package" | "clean"
         | "build" | "verify-ut" | "verify-ut-coverage" | "verify-it" | "verify-it-coverage"
-        | "verify" | "verify-changes" | "pr-verify" | "format" | "checkstyle" | "karate-test"
+        | "verify" | "verify-changes-preview" | "verify-changes" | "pr-verify" | "format" | "checkstyle" | "karate-test"
         | "karate-all" | "mutation" => {
             validate_maven_passthrough_args(command, trailing_args)?;
             Ok(CommandValidation::Valid)
@@ -623,6 +623,7 @@ fn is_top_level_command(arg: &OsString) -> bool {
             | "verify-it"
             | "verify-it-coverage"
             | "verify"
+            | "verify-changes-preview"
             | "verify-changes"
             | "coverage"
             | "coverage-changes"
@@ -741,6 +742,7 @@ fn command_supports_frontend_loader(command: &OsString) -> bool {
             | "verify-it"
             | "verify-it-coverage"
             | "verify"
+            | "verify-changes-preview"
             | "verify-changes"
             | "coverage"
             | "coverage-changes"
@@ -3010,6 +3012,7 @@ fn command_help(command: &str) -> Option<(&'static str, &'static str, &'static [
         "verify-it" => maven_command_help("verify-it", "Run integration-test-only verification.", true),
         "verify-it-coverage" => maven_command_help("verify-it-coverage", "Run integration-test-only verification with coverage.", true),
         "verify" => maven_command_help("verify", "Run full combined verification.", true),
+        "verify-changes-preview" => Some(("makevn [--repo PATH] verify-changes-preview", "Preview changed production modules or modified tests without running Maven.", &[])),
         "verify-changes" => maven_command_help("verify-changes", "Verify changed production modules or modified tests.", true),
         "coverage" => Some(("makevn [--repo PATH] coverage [--threshold PCT]", "Check the latest aggregate coverage report.", &["--threshold  Required coverage percentage"])),
         "coverage-changes" => Some(("makevn [--repo PATH] coverage-changes [--threshold PCT] [--overall-threshold PCT] [--verbose]", "Check incremental and per-module coverage.", &["--threshold          Per-module coverage percentage", "--overall-threshold  Overall coverage percentage", "--verbose            Print detailed coverage output"])),
@@ -3151,6 +3154,7 @@ fn print_help(with_header: bool) {
         "  makevn [--repo PATH] [--compact] verify-it-coverage [--tail] [--clean-generated-contract-targets] [-- EXTRA_MAVEN_ARGS...]"
     );
     println!("  makevn [--repo PATH] [--compact] verify [--tail] [--clean-generated-contract-targets] [-- EXTRA_MAVEN_ARGS...]");
+    println!("  makevn [--repo PATH] verify-changes-preview");
     println!("  makevn [--repo PATH] [--compact] verify-changes [--tail] [--clean-generated-contract-targets] [-- EXTRA_MAVEN_ARGS...]");
     println!("  makevn [--repo PATH] coverage [--threshold PCT]");
     println!("  makevn [--repo PATH] coverage-changes [--threshold PCT] [--overall-threshold PCT] [--verbose]");
@@ -3198,6 +3202,7 @@ fn print_help(with_header: bool) {
     println!("  makevn verify-ut");
     println!("  makevn verify-ut-coverage");
     println!("  makevn verify-it");
+    println!("  makevn verify-changes-preview");
     println!("  makevn verify-changes");
     println!("  makevn coverage");
     println!("  makevn coverage-changes");
@@ -3954,6 +3959,7 @@ mod tests {
             "verify-it",
             "verify-it-coverage",
             "verify",
+            "verify-changes-preview",
             "verify-changes",
             "coverage",
             "coverage-changes",

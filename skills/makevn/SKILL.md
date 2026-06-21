@@ -244,15 +244,17 @@ Changed-code verification flow for agents:
 1. Run `makevn doctor` first.
 2. Run `makevn init` when doctor says the repository is not initialized, stale,
    or missing local makevn state.
-3. Run `makevn verify-changes` for changed modules or changed tests.
-4. Run `makevn coverage-changes` after a coverage-producing verification run.
-5. Treat a coverage gate failure as the result to report, not as a reason to
+3. Run `makevn verify-changes-preview` to surface the affected modules/tests quickly.
+4. Run `makevn verify-changes` for changed modules or changed tests.
+5. Run `makevn coverage-changes` after a coverage-producing verification run.
+6. Treat a coverage gate failure as the result to report, not as a reason to
    invent raw Maven commands.
 
 Exact coverage commands for agents:
 
 ```bash
 # Changed-code coverage when verify-changes generated coverage data
+makevn verify-changes-preview
 makevn verify-changes
 makevn coverage-changes
 

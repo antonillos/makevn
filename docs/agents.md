@@ -65,12 +65,14 @@ makevn doctor
 Changed-code verification without a full coverage gate:
 
 ```bash
+makevn verify-changes-preview
 makevn verify-changes
 ```
 
 Changed-code coverage after a coverage-producing run:
 
 ```bash
+makevn verify-changes-preview
 makevn verify-changes
 makevn coverage-changes
 ```
@@ -178,6 +180,7 @@ MCP equivalents for OpenCode agents:
 | `makevn verify-it` | `makevn_verify_it` |
 | `makevn verify-it-coverage` | `makevn_verify_it_coverage` |
 | `makevn verify` | `makevn_verify` |
+| `makevn verify-changes-preview` | `makevn_verify_changes_preview` |
 | `makevn verify-changes` | `makevn_verify_changes` |
 | `makevn pr-verify` | `makevn_pr_verify` |
 | `makevn coverage` | `makevn_coverage` |
@@ -366,9 +369,10 @@ follow this runbook for changed-code verification:
 
 1. `makevn_doctor` on the target repository.
 2. `makevn_init` if doctor reports missing, stale, or uninitialized makevn state.
-3. `makevn_verify_changes` for changed modules or changed tests.
-4. `makevn_coverage_changes` after a coverage-producing run.
-5. Report the makevn failure excerpt or gate result directly.
+3. `makevn_verify_changes_preview` to surface the affected modules/tests quickly.
+4. `makevn_verify_changes` for changed modules or changed tests.
+5. `makevn_coverage_changes` after a coverage-producing run.
+6. Report the makevn failure excerpt or gate result directly.
 
 Agents should not second-guess this sequence by switching to raw `mvn`, adding
 manual `-pl` or `-am` flags, or invoking repository-local helper scripts. Module

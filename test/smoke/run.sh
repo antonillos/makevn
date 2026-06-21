@@ -988,6 +988,7 @@ test_mcp_tool_listing() {
   assert_contains "${output_file}" '"name":"docker_ps_required"'
   assert_contains "${output_file}" '"name":"make_install"'
   assert_contains "${output_file}" '"name":"verify_ut_coverage"'
+  assert_contains "${output_file}" '"name":"verify_changes_preview"'
   assert_contains "${output_file}" '"name":"jdk_list"'
 }
 
@@ -3043,6 +3044,58 @@ EOF
   ${CLI} --repo "${repo}" uninstall >/dev/null
 }
 
+test_verify_changes_preview_command() {
+  local repo="${TMP_ROOT}/verify-changes-preview"
+  local java_home
+  local output
+
+  mkdir -p "${repo}/module-a/src/test/java/com/example"
+  printf '<project/>\n' > "${repo}/pom.xml"
+  java_home="$(detect_java_home)"
+
+  cat > "${repo}/module-a/src/test/java/com/example/ChangedTest.java" <<'EOF'
+package com.example;
+
+class ChangedTest {}
+EOF
+
+  git init --initial-branch=main "${repo}" >/dev/null
+  git -C "${repo}" add .
+  git -C "${repo}" -c user.name='Smoke Test' -c user.email='smoke@example.com' commit -m 'init' >/dev/null
+  printf '// local change\n' >> "${repo}/module-a/src/test/java/com/example/ChangedTest.java"
+
+  ${CLI} --repo "${repo}" init >/dev/null
+  cat > "${repo}/mvnw" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+printf 'ARGS=%s\n' "$*" >> .mvnw.log
+printf 'JAVA_HOME=%s\n' "${JAVA_HOME:-}" >> .mvnw.log
+EOF
+  chmod +x "${repo}/mvnw"
+  cat > "${repo}/.makevn/config" <<EOF
+MAKEVN_JAVA_HOME="${java_home}"
+MAKEVN_CODE_JAVA_HOME=""
+MAKEVN_KARATE_JAVA_HOME=""
+MAKEVN_CODE_TOOL_VERSIONS=""
+MAKEVN_KARATE_TOOL_VERSIONS=""
+MAKEVN_RUN_CMD=""
+EOF
+
+  output="$(${CLI} --repo "${repo}" verify-changes-preview)"
+
+  [[ "${output}" == *"strategy: run selected tests only"* ]] || fail "expected preview output to describe selected-test strategy"
+  [[ "${output}" == *"tests: com.example.ChangedTest"* ]] || fail "expected preview output to include selected tests"
+  [[ -f "${repo}/.makevn/verify-changes-plan.env" ]] || fail "expected preview to persist a verify-changes plan"
+  [[ ! -f "${repo}/.mvnw.log" ]] || fail "preview must not invoke Maven"
+
+  ${CLI} --repo "${repo}" verify-changes >/dev/null
+
+  [[ ! -f "${repo}/.makevn/verify-changes-plan.env" ]] || fail "expected verify-changes to clear the cached preview plan"
+  assert_matches "${repo}/.mvnw.log" '^ARGS=-nsu -f .*/pom\.xml verify -Djacoco\.skip=false -DskipUTs=false -Dtest=com\.example\.ChangedTest -Dit\.test=com\.example\.ChangedTest -Dfailsafe\.failIfNoSpecifiedTests=false -Dsurefire\.failIfNoSpecifiedTests=false -Dawaitility\.defaultPollInterval=200ms -Dawaitility\.defaultTimeout=2m -Dmaven\.build\.cache\.enabled=false$'
+
+  ${CLI} --repo "${repo}" uninstall >/dev/null
+}
+
 test_verify_changes_nested_maven_base_strips_git_prefix() {
   local repo="${TMP_ROOT}/verify-changes-nested-maven-base"
   local code_repo="${repo}/code"
@@ -3808,6 +3861,7 @@ main() {
   test_verify_it_prefers_integration_workflow_when_available
   test_verify_respects_local_containers_config
   test_verify_leaves_local_containers_unset_without_repo_signal
+  test_verify_changes_preview_command
   test_verify_changes_command
   test_verify_changes_nested_maven_base_strips_git_prefix
   test_coverage_changes_command

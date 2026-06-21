@@ -131,6 +131,7 @@ makevn verify-ut-coverage [-- EXTRA_MAVEN_ARGS...]
 makevn verify-it [-- EXTRA_MAVEN_ARGS...]
 makevn verify-it-coverage [-- EXTRA_MAVEN_ARGS...]
 makevn verify [-- EXTRA_MAVEN_ARGS...]
+makevn verify-changes-preview
 makevn verify-changes [-- EXTRA_MAVEN_ARGS...]
 makevn pr-verify [-- EXTRA_MAVEN_ARGS...]
 ```
@@ -163,6 +164,8 @@ makevn coverage-changes [--threshold PCT] [--overall-threshold PCT] [--verbose]
 `coverage` checks the latest aggregate JaCoCo CSV report against the configured repository threshold. It requires a prior coverage-producing command such as `verify`, `verify-ut-coverage`, or `verify-it-coverage`.
 
 `coverage-changes` requires an existing JaCoCo aggregate report. If the aggregate module has already been built but the HTML report is missing, the backend may run `jacoco:report-aggregate` for the detected aggregate module before analysis. The command compares changed Java production code against the detected parent branch and uses the internal coverage runtime packaged under `libexec/makevn/`. It reports line-level incremental coverage, changed-code coverage grouped by JaCoCo module, top offending changed classes, and overall project coverage. `--threshold` applies to incremental coverage and changed-module instruction coverage, `--overall-threshold` applies to the aggregate JaCoCo CSV gate, and `--verbose` includes per-class detail plus ignored class paths.
+
+`verify-changes-preview` computes and prints the affected modules, classes, tests, and selected verification strategy without running Maven. It writes a short-lived preflight snapshot under `.makevn/` so an immediate follow-up `verify-changes` call can reuse the same affected-scope calculation.
 
 `verify-changes` owns its repository-aware command construction in the backend and keeps an internal compatibility runtime script packaged at `libexec/makevn/compat/verify_changes.sh` for parity and future consolidation. It must not call or depend on a target repository's `scripts/make/*` files.
 
