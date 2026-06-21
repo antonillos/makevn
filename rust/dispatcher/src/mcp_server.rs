@@ -240,7 +240,7 @@ const TOOL_SPECS: &[ToolSpec] = &[
     ToolSpec { name: "run_app_bg", description: "Run the detected application in the background.", command: &["run-app-bg"], options: &[COMMON_REPO] },
     ToolSpec { name: "stop_app", description: "Stop the background application started by makevn.", command: &["stop-app"], options: &[COMMON_REPO] },
     ToolSpec { name: "run", description: "Run the detected application using repository defaults.", command: &["run"], options: &[COMMON_REPO] },
-    ToolSpec { name: "exec", description: "Run a bounded arbitrary command with makevn's resolved repository environment. Prefer typed makevn tools for supported Maven, Docker, and JDK workflows; use native agent shell/git tools for git operations. Do not use for interactive commands.", command: &["exec"], options: &[COMMON_REPO, ToolOption { name: "command", ty: "string", description: "The command to execute, e.g. 'mvn -v'", required: true }, ToolOption { name: "context", ty: "string", description: "Execution context: 'code' or 'karate'", required: false }, EXEC_TIMEOUT_SECONDS, COMPACT] },
+    ToolSpec { name: "exec", description: "Run a bounded Maven, Java, or repo-local executable command with makevn's resolved repository environment. Prefer typed makevn tools for supported workflows; use native agent shell/git tools for git and gh operations. Do not use for interactive commands.", command: &["exec"], options: &[COMMON_REPO, ToolOption { name: "command", ty: "string", description: "The command to execute, e.g. 'mvn -v'", required: true }, ToolOption { name: "context", ty: "string", description: "Execution context: 'code' or 'karate'", required: false }, EXEC_TIMEOUT_SECONDS, COMPACT] },
     ToolSpec { name: "jdk_current", description: "Show the currently resolved JDK version.", command: &["jdk", "current"], options: &[COMMON_REPO] },
     ToolSpec { name: "jdk_list", description: "List discovered JDK installations.", command: &["jdk", "list"], options: &[COMMON_REPO] },
     ToolSpec { name: "mutation", description: "Run PIT mutation testing. Detects pitest-maven plugin automatically. WARNING: Very slow (30+ min for large projects).", command: &["mutation"], options: &[COMMON_REPO, MODULE, VERBOSE, COMPACT] },
@@ -802,6 +802,22 @@ mod tests {
         assert_eq!(
             cmd_args,
             vec!["exec", "--context", "code", "--", "mvn", "-v"]
+        );
+    }
+
+    #[test]
+    fn exec_git_command_is_forwarded_verbatim_for_cli_validation() {
+        let spec = TOOL_SPECS.iter().find(|spec| spec.name == "exec").unwrap();
+        let mut args = Map::new();
+        args.insert("context".into(), json!("code"));
+        args.insert("command".into(), json!("git status"));
+        let mut cmd_args = vec![String::from("exec")];
+
+        push_tool_flags(&mut cmd_args, spec, &args).unwrap();
+
+        assert_eq!(
+            cmd_args,
+            vec!["exec", "--context", "code", "--", "git", "status"]
         );
     }
 

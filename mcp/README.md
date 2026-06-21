@@ -106,6 +106,9 @@ Interpretation rules:
   `makevn_make_install` operation.
 - `makevn_verify_changes` owns Maven module selection. Agents should not add
   their own `-pl`, `-am`, or `-f` flags unless explicitly debugging makevn.
+- `makevn_exec` is intentionally narrow: it only accepts `mvn`, `mvnw`, `java`,
+  or repo-local executable paths such as `./script.sh`. Use native shell tools
+  for `git`, `gh`, shell wrappers, Python helpers, and Docker.
 - `makevn_coverage_changes` is a gate. Exit code `1` can be the expected result
   when changed-line, changed-module, or overall coverage is below threshold.
 - If a newly installed tool is not visible in the agent schema, restart or reload

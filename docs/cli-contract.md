@@ -227,6 +227,8 @@ makevn run
 Rules:
 
 - `exec` requires `--` before the delegated command
+- `exec` only accepts `mvn`, `mvnw`, `java`, or repo-local executable paths such as `./script.sh`
+- `exec` must not be used for `git`, `gh`, Docker, shell wrappers, or Python helpers
 - `run` executes the configured repository run command
 
 ### Docker Helpers

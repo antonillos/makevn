@@ -324,6 +324,8 @@ only mode that skips compilation.
 
 Only fall back to `makevn exec -- mvn` when you need Maven flags or options that `makevn test` does not expose (e.g., `-pl` to target a specific module, or additional `-D` properties). In that case, check `Maven base path` in `makevn doctor` output first and add `-f <path>/pom.xml` if the Maven root is a subdirectory.
 
+`makevn exec` is intentionally restricted to `mvn`, `mvnw`, `java`, or repo-local executables such as `./script.sh`. Do not try to route `git`, `gh`, shell wrappers, Python helpers, or Docker through it.
+
 For the frozen public and internal contracts, see:
 
 - `docs/cli-contract.md`

@@ -435,10 +435,11 @@ fn validate_command(
             validate_maven_passthrough_args(command, trailing_args)?;
             Ok(CommandValidation::Valid)
         }
-        "help" | "init" | "refresh" | "uninstall" | "exec" | "test" | "coverage" | "coverage-changes"
+        "help" | "init" | "refresh" | "uninstall" | "test" | "coverage" | "coverage-changes"
         | "docker-up" | "docker-down" | "docker-ps" | "docker-stats" | "docker-ps-required"
         | "karate-docker-up" | "karate-docker-down" | "run-app" | "run-app-bg" | "stop-app"
         | "run" => Ok(CommandValidation::Valid),
+        "exec" => validate_exec_args(trailing_args),
         "doctor" => {
             if let Some(extra_arg) = trailing_args.first() {
                 Err(format!("Unknown doctor option: {}", Lossy(extra_arg)))
@@ -548,6 +549,31 @@ fn command_suggestion_suffix(command: &OsString) -> String {
         "verity-it" => String::from(" Did you mean 'verify-it'?"),
         _ => String::new(),
     }
+}
+
+fn validate_exec_args(trailing_args: &[OsString]) -> Result<CommandValidation, String> {
+    let Some(separator_index) = trailing_args.iter().position(|arg| arg == "--") else {
+        return Err(String::from("exec requires '--' before the command"));
+    };
+
+    let delegated_args = &trailing_args[(separator_index + 1)..];
+    let Some(delegated_command) = delegated_args.first() else {
+        return Err(String::from("No command provided to exec"));
+    };
+
+    let command_text = delegated_command.to_string_lossy();
+    if exec_command_is_allowed(command_text.as_ref()) {
+        return Ok(CommandValidation::Valid);
+    }
+
+    Err(format!(
+        "makevn exec only supports Maven, Java, or repo-local executable commands; use native agent shell tools for {}",
+        Lossy(delegated_command)
+    ))
+}
+
+fn exec_command_is_allowed(command: &str) -> bool {
+    matches!(command, "mvn" | "mvnw" | "./mvnw" | "java") || command.starts_with("./")
 }
 
 fn build_backend_invocations(
@@ -4405,5 +4431,31 @@ mod tests {
     fn handles_help_command_in_frontend() {
         let action = parse_invocation(vec![OsString::from("help")]).unwrap();
         assert_eq!(action, Action::PrintHelp { with_header: true });
+    }
+
+    #[test]
+    fn rejects_git_exec_command() {
+        let error = parse_invocation(vec![
+            OsString::from("exec"),
+            OsString::from("--"),
+            OsString::from("git"),
+            OsString::from("status"),
+        ])
+        .unwrap_err();
+        assert_eq!(
+            error,
+            "makevn exec only supports Maven, Java, or repo-local executable commands; use native agent shell tools for git"
+        );
+    }
+
+    #[test]
+    fn accepts_repo_local_exec_command() {
+        let action = parse_invocation(vec![
+            OsString::from("exec"),
+            OsString::from("--"),
+            OsString::from("./script.sh"),
+        ])
+        .unwrap();
+        assert!(matches!(action, Action::DispatchToBackend(_)));
     }
 }

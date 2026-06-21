@@ -744,10 +744,29 @@ EOF
 printf 'openjdk version "17.0.9" 2024-01-01\n' >&2
 EOF
   chmod +x "${java17_home}/bin/java"
+  cat > "${repo}/print-java-home.sh" <<'EOF'
+#!/usr/bin/env bash
+printf '%s\n' "${JAVA_HOME}"
+EOF
+  chmod +x "${repo}/print-java-home.sh"
 
-  JAVA_HOME= MAKEVN_JDK_CANDIDATE_BASES="${fake_home_root}/.sdkman/candidates/java" HOME="${fake_home_root}" ${CLI} --repo "${repo}" exec -- bash -lc 'printf "%s\n" "${JAVA_HOME}"' > "${repo}/exec.out"
+  JAVA_HOME= MAKEVN_JDK_CANDIDATE_BASES="${fake_home_root}/.sdkman/candidates/java" HOME="${fake_home_root}" ${CLI} --repo "${repo}" exec -- ./print-java-home.sh > "${repo}/exec.out"
 
   assert_contains "${repo}/exec.out" "${java17_home}"
+}
+
+test_exec_rejects_git_and_shell_commands() {
+  local repo="${TMP_ROOT}/exec-rejects-non-java"
+  local output=""
+
+  mkdir -p "${repo}"
+  printf '<project/>\n' > "${repo}/pom.xml"
+
+  output="$(${CLI} --repo "${repo}" exec -- git status 2>&1 || true)"
+  [[ "${output}" == *"makevn exec only supports Maven, Java, or repo-local executable commands"* ]] || fail "expected git to be rejected by makevn exec"
+
+  output="$(${CLI} --repo "${repo}" exec -- bash -lc 'printf test' 2>&1 || true)"
+  [[ "${output}" == *"makevn exec only supports Maven, Java, or repo-local executable commands"* ]] || fail "expected shell wrappers to be rejected by makevn exec"
 }
 
 test_run_app_bg_disabled_without_executable_app() {
@@ -1490,6 +1509,11 @@ MAKEVN_CHECKSTYLE_GOAL=""
 EOF
   local build_output
   local package_output
+  cat > "${repo}/capture-java-home.sh" <<'EOF'
+#!/usr/bin/env bash
+printf '%s' "$JAVA_HOME" > exec-java-home.txt
+EOF
+  chmod +x "${repo}/capture-java-home.sh"
   PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" make install >/dev/null
   build_output="$(PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" build)"
   PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" test-compile >/dev/null
@@ -1506,7 +1530,7 @@ EOF
   make_output="$(PATH="${repo}/fake-bin:${PATH}" make -f .makevn/makevn.mk -C "${repo}" vn-test NAME=UserRepositoryTest FAST=true)"
   PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" test --name UserFlowIT >/dev/null
   PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" verify >/dev/null
-  PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" exec -- bash -lc 'printf "%s" "$JAVA_HOME" > exec-java-home.txt' >/dev/null
+  PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" exec -- ./capture-java-home.sh >/dev/null
   PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" run >/dev/null
   [[ "${build_output}" == *"[ok] "* ]] || fail "expected build output to include success summary"
   [[ "${package_output}" == *"[ok] "* ]] || fail "expected vn-package output to include success summary"

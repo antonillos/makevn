@@ -306,6 +306,10 @@ repository environment.
 argument only when the default is inappropriate, and do not use it for
 interactive commands.
 
+`makevn exec` is intentionally narrow: it only accepts `mvn`, `mvnw`, `java`,
+or repo-local executable paths such as `./script.sh`. It rejects `git`, `gh`,
+Docker commands, shell wrappers like `sh -c`/`bash -lc`, and Python helpers.
+
 ## Generic Workflow
 
 1. Load the `makevn` skill in the agent environment.
