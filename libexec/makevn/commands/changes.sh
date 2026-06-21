@@ -86,6 +86,7 @@ makevn_clear_verify_changes_plan() {
 
   plan_path="$(makevn_verify_changes_plan_path "${repo_root}")"
   [[ -f "${plan_path}" ]] && rm -f "${plan_path}"
+  return 0
 }
 
 makevn_write_verify_changes_plan() {
