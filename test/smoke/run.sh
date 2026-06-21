@@ -3847,6 +3847,7 @@ main() {
   test_doctor_shows_progress_in_tty
   test_doctor_reports_compatible_newer_java_homes
   test_exec_uses_compatible_newer_java_home
+  test_exec_rejects_git_and_shell_commands
   test_run_app_bg_disabled_without_executable_app
   test_standalone_mode
   test_strict_commands_require_git_root
