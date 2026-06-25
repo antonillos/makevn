@@ -850,7 +850,6 @@ fn dispatch_backend_invocations(
         let mut command = process::Command::new("bash");
         command.arg(backend_path);
         command.args(&backend_invocation.args);
-        command.process_group(0);
         command.env("MAKEVN_BIN_PATH", current_exe);
         command.env("MAKEVN_INSTALL_ROOT", install_root);
         command.env("MAKEVN_FRONTEND", "rust");
@@ -858,6 +857,7 @@ fn dispatch_backend_invocations(
         command.env("MAKEVN_VERSION", makevn_version());
 
         let run_result = if use_frontend_loader {
+            command.process_group(0);
             command.stdout(process::Stdio::null());
             command.env("MAKEVN_FRONTEND_OWNS_LOADER", "1");
             if let Some(df) = detail_file.as_ref() {
