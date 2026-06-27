@@ -36,7 +36,21 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git checkout -B "${branch}" origin/develop
-          git merge --no-ff --no-edit origin/main
+
+          sync_files="$(mktemp)"
+          git diff --name-only -z origin/develop..origin/main > "${sync_files}"
+          if [[ ! -s "${sync_files}" ]]; then
+            printf 'needed=false\n' >> "${GITHUB_OUTPUT}"
+            printf 'Develop differs from main only by commit history. Nothing to sync.\n' >> "${GITHUB_STEP_SUMMARY}"
+            exit 0
+          fi
+
+          while IFS= read -r -d '' path; do
+            git checkout origin/main -- "${path}"
+          done < "${sync_files}"
+
+          xargs -0 git add -- < "${sync_files}"
+          git commit -m "chore: sync main into develop"
           git push --force-with-lease origin "${branch}"
 
           printf 'needed=true\n' >> "${GITHUB_OUTPUT}"
