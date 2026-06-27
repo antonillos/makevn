@@ -40,13 +40,16 @@ any other code generator not explicitly mapped, and for annotation processors
 ## Safety Constraints
 
 - **Only paths that resolve to a `target/` subdirectory** (at any module
-  level) are cleaned. The `target/` directory is build output
+  level) are cleaned automatically. The `target/` directory is build output
   (always in `.gitignore`) and safe to delete.
 - If a plugin's configured `outputDirectory` contains unresolved Maven
   properties (e.g., `${project.build.directory}/custom-gen`), the path
   cannot be resolved safely and is **skipped**. During `makevn init`, such
   paths are auto-detected and written to `MAKEVN_GENERATED_CONTRACT_CLEAN_DIRS`
   in `.makevn/config`. Edit that value with the resolved path if needed.
+- The clean runs before the Maven invocation but after all CLI argument
+  parsing. It does not affect the Maven command itself — it only removes
+  stale files so the `generate-sources` phase starts from a clean state.
 
 ## Usage
 
