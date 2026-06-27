@@ -43,6 +43,20 @@ makevn_read_choice() {
   printf '%s\n' "${value}"
 }
 
+makevn_read_choice_into() {
+  local variable_name="$1"
+  local value=""
+
+  if [[ -r /dev/tty ]]; then
+    IFS= read -r value </dev/tty
+  else
+    IFS= read -r value
+  fi
+
+  value="$(makevn_trim "${value//$'\r'/}")"
+  printf -v "${variable_name}" '%s' "${value}"
+}
+
 makevn_doctor_progress() {
   local message="$1"
   [[ -t 2 ]] || return 0
@@ -145,7 +159,7 @@ makevn_collect_doctor_snapshot() {
         local _choice=""
         while true; do
           printf 'Enter number [1-%d]: ' "${#_found[@]}" >&2
-          _choice="$(makevn_read_choice)"
+          makevn_read_choice_into _choice
           if [[ "${_choice}" =~ ^[0-9]+$ ]] && (( _choice >= 1 && _choice <= ${#_found[@]} )); then
             break
           fi
@@ -194,7 +208,7 @@ makevn_collect_doctor_snapshot() {
         local _echoice=""
         while true; do
           printf 'Enter number [1-%d]: ' "${#_e2e_found[@]}" >&2
-          _echoice="$(makevn_read_choice)"
+          makevn_read_choice_into _echoice
           if [[ "${_echoice}" =~ ^[0-9]+$ ]] && (( _echoice >= 1 && _echoice <= ${#_e2e_found[@]} )); then
             break
           fi
@@ -263,7 +277,7 @@ makevn_collect_doctor_snapshot() {
   fi
 
   makevn_load_config "${repo_root}"
-  if [[ -f "$(makevn_config_path "${repo_root}")" && -n "${verify_it_local_containers_default}" && -z "${LOCAL_CONTAINERS+x}" && "${local_containers_configured}" != "yes" && -t 0 && -t 2 ]]; then
+  if [[ -f "$(makevn_config_path "${repo_root}")" && -n "${verify_it_local_containers_default}" && -z "${LOCAL_CONTAINERS+x}" && "${local_containers_configured}" != "yes" && "${prompted_interactively}" != "yes" && -t 0 && -t 2 ]]; then
     printf '\n' >&2
     printf '%s\n' "$(makevn_warn "Use LOCAL_CONTAINERS=TRUE by default for makevn test/verify commands?")" >&2
     printf '  [1] yes, use local containers\n' >&2
@@ -271,7 +285,7 @@ makevn_collect_doctor_snapshot() {
     local _local_choice=""
     while true; do
       printf 'Enter number [1-2]: ' >&2
-      _local_choice="$(makevn_read_choice)"
+      makevn_read_choice_into _local_choice
       case "${_local_choice}" in
         1)
           makevn_update_config_local_containers "${repo_root}" "TRUE"

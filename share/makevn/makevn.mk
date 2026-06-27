@@ -118,9 +118,6 @@ vn-test:
 	case "$(FAST)" in \
 		1|true|TRUE|yes|YES) args="$$args --fast" ;; \
 	esac; \
-	case "$(MAKEVN_CLEAN_GENERATED_CONTRACT_TARGETS)" in \
-		1|true|TRUE|yes|YES) args="$$args --clean-generated-contract-targets" ;; \
-	esac; \
 	"$(MAKEVN_BIN)" --repo "$(MAKEVN_REPO_ROOT)" test $$args; \
 	rc=$$?; \
 	if [ "$$rc" -eq 130 ]; then \
@@ -131,9 +128,6 @@ vn-test:
 vn-verify-ut:
 	@set +e; \
 	args="$(MAKEVN_VERIFY_UT_ARGS)"; \
-	case "$(MAKEVN_CLEAN_GENERATED_CONTRACT_TARGETS)" in \
-		1|true|TRUE|yes|YES) args="$$args --clean-generated-contract-targets" ;; \
-	esac; \
 	"$(MAKEVN_BIN)" --repo "$(MAKEVN_REPO_ROOT)" verify-ut $$args; \
 	rc=$$?; \
 	if [ "$$rc" -eq 130 ]; then \
@@ -144,9 +138,6 @@ vn-verify-ut:
 vn-verify-ut-coverage:
 	@set +e; \
 	args="$(MAKEVN_VERIFY_UT_COVERAGE_ARGS)"; \
-	case "$(MAKEVN_CLEAN_GENERATED_CONTRACT_TARGETS)" in \
-		1|true|TRUE|yes|YES) args="$$args --clean-generated-contract-targets" ;; \
-	esac; \
 	"$(MAKEVN_BIN)" --repo "$(MAKEVN_REPO_ROOT)" verify-ut-coverage $$args; \
 	rc=$$?; \
 	if [ "$$rc" -eq 130 ]; then \
@@ -157,9 +148,6 @@ vn-verify-ut-coverage:
 vn-verify-it:
 	@set +e; \
 	args="$(MAKEVN_VERIFY_IT_ARGS)"; \
-	case "$(MAKEVN_CLEAN_GENERATED_CONTRACT_TARGETS)" in \
-		1|true|TRUE|yes|YES) args="$$args --clean-generated-contract-targets" ;; \
-	esac; \
 	"$(MAKEVN_BIN)" --repo "$(MAKEVN_REPO_ROOT)" verify-it $$args; \
 	rc=$$?; \
 	if [ "$$rc" -eq 130 ]; then \
@@ -170,9 +158,6 @@ vn-verify-it:
 vn-verify-it-coverage:
 	@set +e; \
 	args="$(MAKEVN_VERIFY_IT_COVERAGE_ARGS)"; \
-	case "$(MAKEVN_CLEAN_GENERATED_CONTRACT_TARGETS)" in \
-		1|true|TRUE|yes|YES) args="$$args --clean-generated-contract-targets" ;; \
-	esac; \
 	"$(MAKEVN_BIN)" --repo "$(MAKEVN_REPO_ROOT)" verify-it-coverage $$args; \
 	rc=$$?; \
 	if [ "$$rc" -eq 130 ]; then \
@@ -183,9 +168,6 @@ vn-verify-it-coverage:
 vn-verify:
 	@set +e; \
 	args="$(MAKEVN_VERIFY_ARGS)"; \
-	case "$(MAKEVN_CLEAN_GENERATED_CONTRACT_TARGETS)" in \
-		1|true|TRUE|yes|YES) args="$$args --clean-generated-contract-targets" ;; \
-	esac; \
 	"$(MAKEVN_BIN)" --repo "$(MAKEVN_REPO_ROOT)" verify $$args; \
 	rc=$$?; \
 	if [ "$$rc" -eq 130 ]; then \
@@ -196,9 +178,6 @@ vn-verify:
 vn-verify-changes:
 	@set +e; \
 	args="$(MAKEVN_VERIFY_CHANGES_ARGS)"; \
-	case "$(MAKEVN_CLEAN_GENERATED_CONTRACT_TARGETS)" in \
-		1|true|TRUE|yes|YES) args="$$args --clean-generated-contract-targets" ;; \
-	esac; \
 	"$(MAKEVN_BIN)" --repo "$(MAKEVN_REPO_ROOT)" verify-changes $$args; \
 	rc=$$?; \
 	if [ "$$rc" -eq 130 ]; then \

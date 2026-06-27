@@ -363,7 +363,6 @@ makevn_run_selected_test() {
   local -a maven_args=()
 
   shift 3
-  makevn_clean_generated_contract_if_needed "${repo_root}"
   makevn_load_profile "${repo_root}"
   local_containers="$(makevn_effective_local_containers "${repo_root}" "${MAKEVN_PROFILE_VERIFY_IT_LOCAL_CONTAINERS:-}")"
 
@@ -508,7 +507,12 @@ makevn_run_selected_test() {
   MAKEVN_COMPACT_OUTPUT=1 makevn_run_logged_in_context "${repo_root}" code "${maven_base_path}" "${log_name}" test "${title}" "${maven_args[@]}"
   rc=$?
   set -e
-  [[ ${rc} -eq 0 ]] || return ${rc}
+  if [[ ${rc} -ne 0 ]]; then
+    local logs_dir_hint
+    logs_dir_hint="$(makevn_logs_dir "${repo_root}")"
+    makevn_hint_stale_generated_sources_if_needed "${logs_dir_hint}/${log_name}.log"
+    return ${rc}
+  fi
 
   if [[ "${test_mode}" == "integration" ]]; then
     makevn_verify_selected_failsafe_summary "${maven_base_path}" "${module_path}" "${test_name}"

@@ -114,6 +114,7 @@ Run against another repository:
 
 ```bash
 makevn --repo "/path/to/java-repo" doctor
+makevn --repo "/path/to/java-repo" verify-changes-preview
 makevn --repo "/path/to/java-repo" verify-changes
 ```
 
@@ -125,7 +126,7 @@ makevn --repo "/path/to/java-repo" verify-changes
 | Initialize local makevn state | `makevn init` |
 | Run one or more tests | `makevn test --name UserRepositoryTest` |
 | Build and verify | `makevn package`, `makevn verify` |
-| Verify changed modules or tests | `makevn verify-changes` |
+| Preview and verify changed modules or tests | `makevn verify-changes-preview`, `makevn verify-changes` |
 | Check aggregate or changed-code coverage | `makevn coverage`, `makevn coverage-changes` |
 | Start and inspect Docker services | `makevn docker-up`, `makevn docker-ps-required` |
 | Run Karate E2E flows | `makevn karate-test`, `makevn karate-all` |
@@ -140,8 +141,9 @@ makevn clean verify-it
 ## AI agents and MCP
 
 Agents use the same `makevn` commands as developers. The included MCP server
-also exposes typed tools such as `doctor`, `clean`, `compile`, `package`, and
-`verify_changes`, so clients can call them directly when they support MCP.
+also exposes typed tools such as `doctor`, `clean`, `compile`, `package`,
+`verify_changes_preview`, and `verify_changes`, so clients can call them
+directly when they support MCP.
 
 ```json
 {
