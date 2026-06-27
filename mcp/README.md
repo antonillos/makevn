@@ -80,10 +80,11 @@ Recommended changed-code verification flow:
 1. Call `makevn_doctor` first for the target repository.
 2. If doctor reports that `.makevn/` is missing, stale, or not initialized, call
    `makevn_init` for that repository.
-3. Call `makevn_verify_changes` to build and test the changed modules/tests.
-4. Call `makevn_coverage_changes` only after a coverage-producing run such as
+3. Call `makevn_verify_changes_preview` to surface the affected modules/tests quickly.
+4. Call `makevn_verify_changes` to build and test the changed modules/tests.
+5. Call `makevn_coverage_changes` only after a coverage-producing run such as
    `makevn_verify_changes`, `makevn_verify_ut_coverage`, or `makevn_verify`.
-5. If a command fails, report the failure excerpt or summary as the result; do
+6. If a command fails, report the failure excerpt or summary as the result; do
    not replace the makevn command with raw `mvn`, raw `docker`, or guessed
    repository-specific scripts.
 
@@ -92,6 +93,7 @@ Tool mapping for common commands:
 - `makevn doctor` -> `makevn_doctor`
 - `makevn init` -> `makevn_init`
 - `makevn profile refresh` -> `makevn_profile_refresh`
+- `makevn verify-changes-preview` -> `makevn_verify_changes_preview`
 - `makevn verify-changes` -> `makevn_verify_changes`
 - `makevn coverage-changes` -> `makevn_coverage_changes`
 - `makevn docker-up` -> `makevn_docker_up`
@@ -104,6 +106,9 @@ Interpretation rules:
   `makevn_make_install` operation.
 - `makevn_verify_changes` owns Maven module selection. Agents should not add
   their own `-pl`, `-am`, or `-f` flags unless explicitly debugging makevn.
+- `makevn_exec` is intentionally narrow: it only accepts `mvn`, `mvnw`, `java`,
+  or repo-local executable paths such as `./script.sh`. Use native shell tools
+  for `git`, `gh`, shell wrappers, Python helpers, and Docker.
 - `makevn_coverage_changes` is a gate. Exit code `1` can be the expected result
   when changed-line, changed-module, or overall coverage is below threshold.
 - If a newly installed tool is not visible in the agent schema, restart or reload

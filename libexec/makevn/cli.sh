@@ -36,6 +36,7 @@ Usage:
   makevn [--repo PATH] verify-it [--clean-generated-contract-targets] [-- EXTRA_MAVEN_ARGS...]
   makevn [--repo PATH] verify-it-coverage [--clean-generated-contract-targets] [-- EXTRA_MAVEN_ARGS...]
   makevn [--repo PATH] verify [--clean-generated-contract-targets] [-- EXTRA_MAVEN_ARGS...]
+  makevn [--repo PATH] verify-changes-preview
   makevn [--repo PATH] verify-changes [--clean-generated-contract-targets] [-- EXTRA_MAVEN_ARGS...]
   makevn [--repo PATH] coverage [--threshold PCT]
   makevn [--repo PATH] coverage-changes [--threshold PCT] [--overall-threshold PCT] [--verbose]
@@ -83,6 +84,7 @@ Examples:
   makevn verify-it
   makevn verify --clean-generated-contract-targets
   makevn coverage
+  makevn verify-changes-preview
   makevn verify-changes
   makevn coverage-changes
   makevn pr-verify
@@ -119,7 +121,7 @@ print_command_intro() {
 
 makevn_cli_is_top_level_command() {
   case "$1" in
-    help|doctor|init|make|uninstall|profile|exec|compile|test-compile|compile-tests|validate|package|clean|build|test|verify-ut|verify-ut-coverage|verify-it|verify-it-coverage|verify|verify-changes|coverage|coverage-changes|pr-verify|format|checkstyle|docker-up|docker-down|docker-ps|docker-stats|docker-ps-required|karate-docker-up|karate-docker-down|karate-test|karate-all|run-app|run-app-bg|stop-app|run|jdk|mutation)
+    help|doctor|init|make|uninstall|profile|exec|compile|test-compile|compile-tests|validate|package|clean|build|test|verify-ut|verify-ut-coverage|verify-it|verify-it-coverage|verify|verify-changes-preview|verify-changes|coverage|coverage-changes|pr-verify|format|checkstyle|docker-up|docker-down|docker-ps|docker-stats|docker-ps-required|karate-docker-up|karate-docker-down|karate-test|karate-all|run-app|run-app-bg|stop-app|run|jdk|mutation)
       return 0
       ;;
   esac
@@ -373,6 +375,9 @@ case "${COMMAND}" in
     ;;
   verify)
     cmd_verify "${REPO_ROOT}" "$@"
+    ;;
+  verify-changes-preview)
+    cmd_verify_changes_preview "${REPO_ROOT}" "$@"
     ;;
   verify-changes)
     cmd_verify_changes "${REPO_ROOT}" "$@"

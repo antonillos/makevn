@@ -201,19 +201,17 @@ makevn_detect_unresolved_generated_contract_dirs() {
 }
 
 makevn_should_clean_generated_contract_targets() {
-  local repo_root="$1"
-  makevn_load_config "${repo_root}"
-  if [[ "${MAKEVN_CLEAN_GENERATED_CONTRACT_TARGETS:-}" == "false" ]]; then
-    return 1
+  if [[ "${MAKEVN_CLEAN_GENERATED_CONTRACT_TARGETS:-}" == "true" ]]; then
+    return 0
   fi
-  return 0
+  return 1
 }
 
 makevn_clean_generated_contract_if_needed() {
   local repo_root="$1"
   local maven_base_path_resolved=""
 
-  makevn_should_clean_generated_contract_targets "${repo_root}" || return 0
+  makevn_should_clean_generated_contract_targets || return 0
 
   maven_base_path_resolved="$(makevn_detect_maven_base_path "${repo_root}" || true)"
   if [[ -z "${maven_base_path_resolved}" ]]; then
@@ -221,4 +219,17 @@ makevn_clean_generated_contract_if_needed() {
   fi
 
   makevn_clean_generated_contract_targets "${repo_root}" "${maven_base_path_resolved}"
+}
+
+makevn_hint_stale_generated_sources_if_needed() {
+  local log_file="$1"
+
+  [[ -f "${log_file}" ]] || return 0
+
+  if grep -qE '(cannot find symbol|package .* does not exist|ClassNotFound|duplicate class)' "${log_file}" 2>/dev/null; then
+    if grep -q 'generated-sources' "${log_file}" 2>/dev/null; then
+      printf '\n%s\n' "$(makevn_warn "Hint: detected stale generated sources error. Run:")" >&2
+      printf '%s\n' "$(makevn_dim "  makevn clean --clean-generated-contract-targets")" >&2
+    fi
+  fi
 }

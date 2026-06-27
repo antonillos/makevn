@@ -430,15 +430,16 @@ fn validate_command(
     match command.to_string_lossy().as_ref() {
         "compile" | "test-compile" | "compile-tests" | "validate" | "package" | "clean"
         | "build" | "verify-ut" | "verify-ut-coverage" | "verify-it" | "verify-it-coverage"
-        | "verify" | "verify-changes" | "pr-verify" | "format" | "checkstyle" | "karate-test"
+        | "verify" | "verify-changes-preview" | "verify-changes" | "pr-verify" | "format" | "checkstyle" | "karate-test"
         | "karate-all" | "mutation" => {
             validate_maven_passthrough_args(command, trailing_args)?;
             Ok(CommandValidation::Valid)
         }
-        "help" | "init" | "refresh" | "uninstall" | "exec" | "test" | "coverage" | "coverage-changes"
+        "help" | "init" | "refresh" | "uninstall" | "test" | "coverage" | "coverage-changes"
         | "docker-up" | "docker-down" | "docker-ps" | "docker-stats" | "docker-ps-required"
         | "karate-docker-up" | "karate-docker-down" | "run-app" | "run-app-bg" | "stop-app"
         | "run" => Ok(CommandValidation::Valid),
+        "exec" => validate_exec_args(trailing_args),
         "doctor" => {
             if let Some(extra_arg) = trailing_args.first() {
                 Err(format!("Unknown doctor option: {}", Lossy(extra_arg)))
@@ -550,6 +551,31 @@ fn command_suggestion_suffix(command: &OsString) -> String {
     }
 }
 
+fn validate_exec_args(trailing_args: &[OsString]) -> Result<CommandValidation, String> {
+    let Some(separator_index) = trailing_args.iter().position(|arg| arg == "--") else {
+        return Err(String::from("exec requires '--' before the command"));
+    };
+
+    let delegated_args = &trailing_args[(separator_index + 1)..];
+    let Some(delegated_command) = delegated_args.first() else {
+        return Err(String::from("No command provided to exec"));
+    };
+
+    let command_text = delegated_command.to_string_lossy();
+    if exec_command_is_allowed(command_text.as_ref()) {
+        return Ok(CommandValidation::Valid);
+    }
+
+    Err(format!(
+        "makevn exec only supports Maven, Java, or repo-local executable commands; use native agent shell tools for {}",
+        Lossy(delegated_command)
+    ))
+}
+
+fn exec_command_is_allowed(command: &str) -> bool {
+    matches!(command, "mvn" | "mvnw" | "./mvnw" | "java") || command.starts_with("./")
+}
+
 fn build_backend_invocations(
     repo_override: Option<OsString>,
     command_segments: Vec<(OsString, Vec<OsString>)>,
@@ -623,6 +649,7 @@ fn is_top_level_command(arg: &OsString) -> bool {
             | "verify-it"
             | "verify-it-coverage"
             | "verify"
+            | "verify-changes-preview"
             | "verify-changes"
             | "coverage"
             | "coverage-changes"
@@ -741,6 +768,7 @@ fn command_supports_frontend_loader(command: &OsString) -> bool {
             | "verify-it"
             | "verify-it-coverage"
             | "verify"
+            | "verify-changes-preview"
             | "verify-changes"
             | "coverage"
             | "coverage-changes"
@@ -822,7 +850,6 @@ fn dispatch_backend_invocations(
         let mut command = process::Command::new("bash");
         command.arg(backend_path);
         command.args(&backend_invocation.args);
-        command.process_group(0);
         command.env("MAKEVN_BIN_PATH", current_exe);
         command.env("MAKEVN_INSTALL_ROOT", install_root);
         command.env("MAKEVN_FRONTEND", "rust");
@@ -830,6 +857,7 @@ fn dispatch_backend_invocations(
         command.env("MAKEVN_VERSION", makevn_version());
 
         let run_result = if use_frontend_loader {
+            command.process_group(0);
             command.stdout(process::Stdio::null());
             command.env("MAKEVN_FRONTEND_OWNS_LOADER", "1");
             if let Some(df) = detail_file.as_ref() {
@@ -3010,6 +3038,7 @@ fn command_help(command: &str) -> Option<(&'static str, &'static str, &'static [
         "verify-it" => maven_command_help("verify-it", "Run integration-test-only verification.", true),
         "verify-it-coverage" => maven_command_help("verify-it-coverage", "Run integration-test-only verification with coverage.", true),
         "verify" => maven_command_help("verify", "Run full combined verification.", true),
+        "verify-changes-preview" => Some(("makevn [--repo PATH] verify-changes-preview", "Preview changed production modules or modified tests without running Maven.", &[])),
         "verify-changes" => maven_command_help("verify-changes", "Verify changed production modules or modified tests.", true),
         "coverage" => Some(("makevn [--repo PATH] coverage [--threshold PCT]", "Check the latest aggregate coverage report.", &["--threshold  Required coverage percentage"])),
         "coverage-changes" => Some(("makevn [--repo PATH] coverage-changes [--threshold PCT] [--overall-threshold PCT] [--verbose]", "Check incremental and per-module coverage.", &["--threshold          Per-module coverage percentage", "--overall-threshold  Overall coverage percentage", "--verbose            Print detailed coverage output"])),
@@ -3151,6 +3180,7 @@ fn print_help(with_header: bool) {
         "  makevn [--repo PATH] [--compact] verify-it-coverage [--tail] [--clean-generated-contract-targets] [-- EXTRA_MAVEN_ARGS...]"
     );
     println!("  makevn [--repo PATH] [--compact] verify [--tail] [--clean-generated-contract-targets] [-- EXTRA_MAVEN_ARGS...]");
+    println!("  makevn [--repo PATH] verify-changes-preview");
     println!("  makevn [--repo PATH] [--compact] verify-changes [--tail] [--clean-generated-contract-targets] [-- EXTRA_MAVEN_ARGS...]");
     println!("  makevn [--repo PATH] coverage [--threshold PCT]");
     println!("  makevn [--repo PATH] coverage-changes [--threshold PCT] [--overall-threshold PCT] [--verbose]");
@@ -3198,6 +3228,7 @@ fn print_help(with_header: bool) {
     println!("  makevn verify-ut");
     println!("  makevn verify-ut-coverage");
     println!("  makevn verify-it");
+    println!("  makevn verify-changes-preview");
     println!("  makevn verify-changes");
     println!("  makevn coverage");
     println!("  makevn coverage-changes");
@@ -3954,6 +3985,7 @@ mod tests {
             "verify-it",
             "verify-it-coverage",
             "verify",
+            "verify-changes-preview",
             "verify-changes",
             "coverage",
             "coverage-changes",
@@ -4399,5 +4431,31 @@ mod tests {
     fn handles_help_command_in_frontend() {
         let action = parse_invocation(vec![OsString::from("help")]).unwrap();
         assert_eq!(action, Action::PrintHelp { with_header: true });
+    }
+
+    #[test]
+    fn rejects_git_exec_command() {
+        let error = parse_invocation(vec![
+            OsString::from("exec"),
+            OsString::from("--"),
+            OsString::from("git"),
+            OsString::from("status"),
+        ])
+        .unwrap_err();
+        assert_eq!(
+            error,
+            "makevn exec only supports Maven, Java, or repo-local executable commands; use native agent shell tools for git"
+        );
+    }
+
+    #[test]
+    fn accepts_repo_local_exec_command() {
+        let action = parse_invocation(vec![
+            OsString::from("exec"),
+            OsString::from("--"),
+            OsString::from("./script.sh"),
+        ])
+        .unwrap();
+        assert!(matches!(action, Action::DispatchToBackend(_)));
     }
 }

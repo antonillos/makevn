@@ -65,12 +65,14 @@ makevn doctor
 Changed-code verification without a full coverage gate:
 
 ```bash
+makevn verify-changes-preview
 makevn verify-changes
 ```
 
 Changed-code coverage after a coverage-producing run:
 
 ```bash
+makevn verify-changes-preview
 makevn verify-changes
 makevn coverage-changes
 ```
@@ -107,19 +109,25 @@ makevn clean verify
 ```
 
 Test/verify in repositories with code-generation plugins (Avro, OpenAPI,
-Protobuf, maven-dependency-plugin unpack). Proactively detect these by scanning
-`pom.xml` for the plugin artifact IDs. If present, add
-`--clean-generated-contract-targets` to prevent stale-generated-source errors:
+Protobuf, maven-dependency-plugin unpack). If `test` fails with stale
+generated source errors (e.g., `cannot find symbol`, `duplicate class`
+referencing `generated-sources`), a hint will be displayed. Run clean with
+the flag to fix:
 
 ```bash
-makevn test --clean-generated-contract-targets --name MyTest
-makevn verify --clean-generated-contract-targets
+makevn clean --clean-generated-contract-targets
+makevn test --name MyTest
 ```
 
-For ongoing protection in such repositories, set in `.makevn/config`:
+MCP equivalent:
 
-```bash
-MAKEVN_CLEAN_GENERATED_CONTRACT_TARGETS=true
+```json
+{
+  "tool": "clean",
+  "arguments": {
+    "clean-generated-contract-targets": true
+  }
+}
 ```
 
 If `coverage` or `coverage-changes` fails with `JaCoCo report contains no
@@ -172,6 +180,7 @@ MCP equivalents for OpenCode agents:
 | `makevn verify-it` | `makevn_verify_it` |
 | `makevn verify-it-coverage` | `makevn_verify_it_coverage` |
 | `makevn verify` | `makevn_verify` |
+| `makevn verify-changes-preview` | `makevn_verify_changes_preview` |
 | `makevn verify-changes` | `makevn_verify_changes` |
 | `makevn pr-verify` | `makevn_pr_verify` |
 | `makevn coverage` | `makevn_coverage` |
@@ -208,12 +217,21 @@ for repeated test runs after a successful compile or previous test execution whe
 sources have not changed. Fast mode skips compilation and can fail before Maven
 has enough compiled test/module state to resolve selected classes.
 
-**Stale generated sources**: if a repository uses code-generation plugins
-(`avro-maven-plugin`, `openapi-generator-maven-plugin`, `protobuf-maven-plugin`,
-`maven-dependency-plugin` with an `unpack` goal), pass `clean-generated-contract-targets: true`
-to `makevn_test` / `makevn_verify` / `makevn_verify-changes` to auto-clean stale
-generated sources before running. Proactively scan the POM for these plugins
-and use the flag if any is found.
+**Stale generated sources**: if `makevn_test` fails with compilation errors
+referencing `generated-sources` (e.g., `cannot find symbol`, `duplicate class`),
+a hint will be displayed. Run `makevn_clean` with `clean-generated-contract-targets: true`
+to clean stale generated sources:
+
+```json
+{
+  "tool": "clean",
+  "arguments": {
+    "clean-generated-contract-targets": true
+  }
+}
+```
+
+Then re-run the test.
 
 Karate workflows are optional. Agents should first use `makevn doctor` to confirm
 that `Karate .tool-versions` and `Docker e2e compose file` are detected. When they
@@ -288,6 +306,10 @@ repository environment.
 argument only when the default is inappropriate, and do not use it for
 interactive commands.
 
+`makevn exec` is intentionally narrow: it only accepts `mvn`, `mvnw`, `java`,
+or repo-local executable paths such as `./script.sh`. It rejects `git`, `gh`,
+Docker commands, shell wrappers like `sh -c`/`bash -lc`, and Python helpers.
+
 ## Generic Workflow
 
 1. Load the `makevn` skill in the agent environment.
@@ -351,9 +373,10 @@ follow this runbook for changed-code verification:
 
 1. `makevn_doctor` on the target repository.
 2. `makevn_init` if doctor reports missing, stale, or uninitialized makevn state.
-3. `makevn_verify_changes` for changed modules or changed tests.
-4. `makevn_coverage_changes` after a coverage-producing run.
-5. Report the makevn failure excerpt or gate result directly.
+3. `makevn_verify_changes_preview` to surface the affected modules/tests quickly.
+4. `makevn_verify_changes` for changed modules or changed tests.
+5. `makevn_coverage_changes` after a coverage-producing run.
+6. Report the makevn failure excerpt or gate result directly.
 
 Agents should not second-guess this sequence by switching to raw `mvn`, adding
 manual `-pl` or `-am` flags, or invoking repository-local helper scripts. Module
@@ -405,6 +428,66 @@ Inside Codex, the intended flow is the same terminal contract:
 6. avoid IDE-specific instructions unless the user explicitly asks for them
 
 Codex-specific repo work should still use normal engineering hygiene: keep edits scoped, verify with concrete commands, and leave the installed `libexec/makevn/` runtime as the source of behavior instead of calling target-repository helper scripts.
+
+## Subagent Workflows
+
+These workflows orchestrate multiple makevn commands for common scenarios. Each workflow can be executed either via `composite_run`/`parallel_run` (MCP tools, low context cost ~1k tokens) or via a subagent Task (higher context cost ~34k tokens, but visible step-by-step in TUI).
+
+### Context cost guidance
+
+| Execution method | Context cost | TUI visibility | Use when |
+|---|---|---|---|
+| `composite_run` (MCP) | ~1k tokens | Single tool call | Deterministic sequences, no decisions needed |
+| `parallel_run` (MCP) | ~1k tokens | Single tool call | Independent commands in parallel |
+| Subagent Task | ~34k tokens | Per-step visible | Workflow needs analysis or branching logic |
+
+**Rule of thumb**: Prefer `composite_run` for deterministic command sequences. Use subagent Tasks only when the workflow needs decisions (classify, branch, retry).
+
+### Available workflows
+
+See `skills/makevn/SKILL.md` for detailed workflow definitions:
+
+| Workflow | Execution | Use case |
+|---|---|---|
+| `boot-verify-coverage` | `composite_run` | Docker + clean compile verify + coverage |
+| `changes-validator` | `composite_run` | PR review: verify changed modules + coverage |
+| `multi-test-runner` | `composite_run` | Multiple tests with consolidated results |
+| `karate-runner` | `composite_run` | Full Karate E2E lifecycle |
+| `adaptive-test` | Subagent Task | Auto-detect UT/IT, needs decision-making |
+| `parallel-verify` | `parallel_run` | UT and IT in parallel |
+
+### MCP examples
+
+```json
+// Boot verify + coverage (deterministic):
+{
+  "tool": "composite_run",
+  "args": {
+    "steps": [
+      {"tool": "docker_up"},
+      {"tool": "docker_ps_required", "args": {"wait-seconds": 30}},
+      {"tool": "clean"},
+      {"tool": "compile"},
+      {"tool": "verify"},
+      {"tool": "coverage_changes"}
+    ],
+    "fail-fast": true
+  }
+}
+
+// Parallel UT + IT (independent):
+{
+  "tool": "parallel_run",
+  "args": {
+    "steps": [
+      {"tool": "verify_ut_coverage"},
+      {"tool": "verify_it_coverage"}
+    ]
+  }
+}
+```
+
+Note: `composite_run` and `parallel_run` execute as a single MCP tool call, so individual step progress is not visible in the TUI. Use subagent Tasks when step-by-step visibility is desired and the workflow needs decision-making.
 
 See also:
 

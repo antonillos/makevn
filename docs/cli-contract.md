@@ -125,13 +125,14 @@ makevn compile-tests [-- EXTRA_MAVEN_ARGS...]
 makevn validate [-- EXTRA_MAVEN_ARGS...]
 makevn package [-- EXTRA_MAVEN_ARGS...]
 makevn build [-- EXTRA_MAVEN_ARGS...]
-makevn clean [-- EXTRA_MAVEN_ARGS...]
-makevn verify-ut [--clean-generated-contract-targets] [-- EXTRA_MAVEN_ARGS...]
-makevn verify-ut-coverage [--clean-generated-contract-targets] [-- EXTRA_MAVEN_ARGS...]
-makevn verify-it [--clean-generated-contract-targets] [-- EXTRA_MAVEN_ARGS...]
-makevn verify-it-coverage [--clean-generated-contract-targets] [-- EXTRA_MAVEN_ARGS...]
-makevn verify [--clean-generated-contract-targets] [-- EXTRA_MAVEN_ARGS...]
-makevn verify-changes [--clean-generated-contract-targets] [-- EXTRA_MAVEN_ARGS...]
+makevn clean [--clean-generated-contract-targets] [-- EXTRA_MAVEN_ARGS...]
+makevn verify-ut [-- EXTRA_MAVEN_ARGS...]
+makevn verify-ut-coverage [-- EXTRA_MAVEN_ARGS...]
+makevn verify-it [-- EXTRA_MAVEN_ARGS...]
+makevn verify-it-coverage [-- EXTRA_MAVEN_ARGS...]
+makevn verify [-- EXTRA_MAVEN_ARGS...]
+makevn verify-changes-preview
+makevn verify-changes [-- EXTRA_MAVEN_ARGS...]
 makevn pr-verify [-- EXTRA_MAVEN_ARGS...]
 ```
 
@@ -164,6 +165,8 @@ makevn coverage-changes [--threshold PCT] [--overall-threshold PCT] [--verbose]
 
 `coverage-changes` requires an existing JaCoCo aggregate report. If the aggregate module has already been built but the HTML report is missing, the backend may run `jacoco:report-aggregate` for the detected aggregate module before analysis. The command compares changed Java production code against the detected parent branch and uses the internal coverage runtime packaged under `libexec/makevn/`. It reports line-level incremental coverage, changed-code coverage grouped by JaCoCo module, top offending changed classes, and overall project coverage. `--threshold` applies to incremental coverage and changed-module instruction coverage, `--overall-threshold` applies to the aggregate JaCoCo CSV gate, and `--verbose` includes per-class detail plus ignored class paths.
 
+`verify-changes-preview` computes and prints the affected modules, classes, tests, and selected verification strategy without running Maven. It writes a short-lived preflight snapshot under `.makevn/` so an immediate follow-up `verify-changes` call can reuse the same affected-scope calculation.
+
 `verify-changes` owns its repository-aware command construction in the backend and keeps an internal compatibility runtime script packaged at `libexec/makevn/compat/verify_changes.sh` for parity and future consolidation. It must not call or depend on a target repository's `scripts/make/*` files.
 
 These commands may also be chained sequentially in one invocation:
@@ -192,7 +195,7 @@ Verification intent:
 ### Test Command
 
 ```bash
-makevn test [--name TEST]... [--fast] [--clean-generated-contract-targets] [-- EXTRA_MAVEN_ARGS...]
+makevn test [--name TEST]... [--fast] [-- EXTRA_MAVEN_ARGS...]
 ```
 
 Rules:
@@ -202,10 +205,17 @@ Rules:
 - `--name FooTest,BarTest` selects multiple tests sequentially
 - repeated `--name` flags are allowed
 - `--fast` requires at least one selected test
-- `--clean-generated-contract-targets` cleans stale generated sources from
-  code-generation plugins (Avro, OpenAPI, Protobuf, etc.) before running.
-  Also controlled by `MAKEVN_CLEAN_GENERATED_CONTRACT_TARGETS` in
-  `.makevn/config` (default: auto-detect based on POM plugins).
+- If test fails with stale generated sources errors, a hint is displayed
+  suggesting `makevn clean --clean-generated-contract-targets`
+
+### Clean Command
+
+```bash
+makevn clean [--clean-generated-contract-targets] [-- EXTRA_MAVEN_ARGS...]
+```
+
+- `--clean-generated-contract-targets` also removes stale generated sources from
+  code-generation plugins (Avro, OpenAPI, Protobuf, etc.) after `mvn clean`.
 
 ### Command Execution
 
@@ -217,6 +227,8 @@ makevn run
 Rules:
 
 - `exec` requires `--` before the delegated command
+- `exec` only accepts `mvn`, `mvnw`, `java`, or repo-local executable paths such as `./script.sh`
+- `exec` must not be used for `git`, `gh`, Docker, shell wrappers, or Python helpers
 - `run` executes the configured repository run command
 
 ### Docker Helpers

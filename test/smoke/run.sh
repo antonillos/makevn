@@ -625,6 +625,98 @@ PY
   assert_not_contains "${output_file}" "Health URL ["
 }
 
+test_doctor_compose_prompt_does_not_chain_local_containers_prompt() {
+  local repo="${TMP_ROOT}/doctor-compose-local-containers-pty"
+  local output_file="${TMP_ROOT}/doctor-compose-local-containers-pty.out"
+
+  mkdir -p "${repo}/.github/workflows" "${repo}/compose-a" "${repo}/compose-b"
+  cat > "${repo}/pom.xml" <<'EOF'
+<project>
+  <dependencies>
+    <dependency>
+      <groupId>org.testcontainers</groupId>
+      <artifactId>testcontainers</artifactId>
+    </dependency>
+  </dependencies>
+</project>
+EOF
+  cat > "${repo}/.github/workflows/integration.yml" <<'EOF'
+jobs:
+  integration:
+    steps:
+      - run: mvn -B verify -DskipUTs
+EOF
+  printf 'services: {}\n' > "${repo}/compose-a/docker-compose.yml"
+  printf 'services: {}\n' > "${repo}/compose-b/docker-compose.yml"
+
+  ${CLI} --repo "${repo}" init >/dev/null
+
+  python3 - "${CLI}" "${repo}" "${output_file}" <<'PY'
+import os
+import pty
+import select
+import signal
+import sys
+import time
+
+cli, repo, output_file = sys.argv[1:4]
+cmd = [cli, '--repo', repo, 'doctor']
+
+pid, fd = pty.fork()
+if pid == 0:
+    os.execv(cmd[0], cmd)
+
+output = bytearray()
+sent_choice = False
+status = None
+start = time.time()
+
+while True:
+    readable, _, _ = select.select([fd], [], [], 0.1)
+    if fd in readable:
+        try:
+            chunk = os.read(fd, 4096)
+        except OSError:
+            break
+        if not chunk:
+            break
+        output.extend(chunk)
+        if not sent_choice and b'Enter number [1-2]:' in output:
+            os.write(fd, b'1\n')
+            sent_choice = True
+
+    try:
+        waited = os.waitpid(pid, os.WNOHANG)
+    except ChildProcessError:
+        break
+    if waited != (0, 0):
+        status = waited[1]
+        break
+    if time.time() - start > 5:
+        os.kill(pid, signal.SIGTERM)
+        time.sleep(0.2)
+        try:
+            os.kill(pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        status = 124 << 8
+        break
+
+if status is None:
+    status = os.waitpid(pid, 0)[1]
+
+with open(output_file, 'wb') as fh:
+    fh.write(output)
+
+raise SystemExit(os.waitstatus_to_exitcode(status))
+PY
+
+  assert_contains "${output_file}" "Saved to .makevn/config (MAKEVN_COMPOSE_FILE)."
+  assert_contains "${output_file}" "Docker compose file:"
+  assert_contains "${output_file}" "docker-compose.yml"
+  assert_not_contains "${output_file}" "Use LOCAL_CONTAINERS=TRUE by default"
+}
+
 test_doctor_shows_progress_in_tty() {
   local repo="${TMP_ROOT}/doctor-progress"
   local output_file="${TMP_ROOT}/doctor-progress.out"
@@ -744,10 +836,29 @@ EOF
 printf 'openjdk version "17.0.9" 2024-01-01\n' >&2
 EOF
   chmod +x "${java17_home}/bin/java"
+  cat > "${repo}/print-java-home.sh" <<'EOF'
+#!/usr/bin/env bash
+printf '%s\n' "${JAVA_HOME}"
+EOF
+  chmod +x "${repo}/print-java-home.sh"
 
-  JAVA_HOME= MAKEVN_JDK_CANDIDATE_BASES="${fake_home_root}/.sdkman/candidates/java" HOME="${fake_home_root}" ${CLI} --repo "${repo}" exec -- bash -lc 'printf "%s\n" "${JAVA_HOME}"' > "${repo}/exec.out"
+  JAVA_HOME= MAKEVN_JDK_CANDIDATE_BASES="${fake_home_root}/.sdkman/candidates/java" HOME="${fake_home_root}" ${CLI} --repo "${repo}" exec -- ./print-java-home.sh > "${repo}/exec.out"
 
   assert_contains "${repo}/exec.out" "${java17_home}"
+}
+
+test_exec_rejects_git_and_shell_commands() {
+  local repo="${TMP_ROOT}/exec-rejects-non-java"
+  local output=""
+
+  mkdir -p "${repo}"
+  printf '<project/>\n' > "${repo}/pom.xml"
+
+  output="$(${CLI} --repo "${repo}" exec -- git status 2>&1 || true)"
+  [[ "${output}" == *"makevn exec only supports Maven, Java, or repo-local executable commands"* ]] || fail "expected git to be rejected by makevn exec"
+
+  output="$(${CLI} --repo "${repo}" exec -- bash -lc 'printf test' 2>&1 || true)"
+  [[ "${output}" == *"makevn exec only supports Maven, Java, or repo-local executable commands"* ]] || fail "expected shell wrappers to be rejected by makevn exec"
 }
 
 test_run_app_bg_disabled_without_executable_app() {
@@ -988,6 +1099,7 @@ test_mcp_tool_listing() {
   assert_contains "${output_file}" '"name":"docker_ps_required"'
   assert_contains "${output_file}" '"name":"make_install"'
   assert_contains "${output_file}" '"name":"verify_ut_coverage"'
+  assert_contains "${output_file}" '"name":"verify_changes_preview"'
   assert_contains "${output_file}" '"name":"jdk_list"'
 }
 
@@ -1489,6 +1601,11 @@ MAKEVN_CHECKSTYLE_GOAL=""
 EOF
   local build_output
   local package_output
+  cat > "${repo}/capture-java-home.sh" <<'EOF'
+#!/usr/bin/env bash
+printf '%s' "$JAVA_HOME" > exec-java-home.txt
+EOF
+  chmod +x "${repo}/capture-java-home.sh"
   PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" make install >/dev/null
   build_output="$(PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" build)"
   PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" test-compile >/dev/null
@@ -1505,7 +1622,7 @@ EOF
   make_output="$(PATH="${repo}/fake-bin:${PATH}" make -f .makevn/makevn.mk -C "${repo}" vn-test NAME=UserRepositoryTest FAST=true)"
   PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" test --name UserFlowIT >/dev/null
   PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" verify >/dev/null
-  PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" exec -- bash -lc 'printf "%s" "$JAVA_HOME" > exec-java-home.txt' >/dev/null
+  PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" exec -- ./capture-java-home.sh >/dev/null
   PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" run >/dev/null
   [[ "${build_output}" == *"[ok] "* ]] || fail "expected build output to include success summary"
   [[ "${package_output}" == *"[ok] "* ]] || fail "expected vn-package output to include success summary"
@@ -3043,6 +3160,58 @@ EOF
   ${CLI} --repo "${repo}" uninstall >/dev/null
 }
 
+test_verify_changes_preview_command() {
+  local repo="${TMP_ROOT}/verify-changes-preview"
+  local java_home
+  local output
+
+  mkdir -p "${repo}/module-a/src/test/java/com/example"
+  printf '<project/>\n' > "${repo}/pom.xml"
+  java_home="$(detect_java_home)"
+
+  cat > "${repo}/module-a/src/test/java/com/example/ChangedTest.java" <<'EOF'
+package com.example;
+
+class ChangedTest {}
+EOF
+
+  git init --initial-branch=main "${repo}" >/dev/null
+  git -C "${repo}" add .
+  git -C "${repo}" -c user.name='Smoke Test' -c user.email='smoke@example.com' commit -m 'init' >/dev/null
+  printf '// local change\n' >> "${repo}/module-a/src/test/java/com/example/ChangedTest.java"
+
+  ${CLI} --repo "${repo}" init >/dev/null
+  cat > "${repo}/mvnw" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+printf 'ARGS=%s\n' "$*" >> .mvnw.log
+printf 'JAVA_HOME=%s\n' "${JAVA_HOME:-}" >> .mvnw.log
+EOF
+  chmod +x "${repo}/mvnw"
+  cat > "${repo}/.makevn/config" <<EOF
+MAKEVN_JAVA_HOME="${java_home}"
+MAKEVN_CODE_JAVA_HOME=""
+MAKEVN_KARATE_JAVA_HOME=""
+MAKEVN_CODE_TOOL_VERSIONS=""
+MAKEVN_KARATE_TOOL_VERSIONS=""
+MAKEVN_RUN_CMD=""
+EOF
+
+  output="$(${CLI} --repo "${repo}" verify-changes-preview)"
+
+  [[ "${output}" == *"strategy: run selected tests only"* ]] || fail "expected preview output to describe selected-test strategy"
+  [[ "${output}" == *"tests: com.example.ChangedTest"* ]] || fail "expected preview output to include selected tests"
+  [[ -f "${repo}/.makevn/verify-changes-plan.env" ]] || fail "expected preview to persist a verify-changes plan"
+  [[ ! -f "${repo}/.mvnw.log" ]] || fail "preview must not invoke Maven"
+
+  ${CLI} --repo "${repo}" verify-changes >/dev/null
+
+  [[ ! -f "${repo}/.makevn/verify-changes-plan.env" ]] || fail "expected verify-changes to clear the cached preview plan"
+  assert_matches "${repo}/.mvnw.log" '^ARGS=-nsu -f .*/pom\.xml verify -Djacoco\.skip=false -DskipUTs=false -Dtest=com\.example\.ChangedTest -Dit\.test=com\.example\.ChangedTest -Dfailsafe\.failIfNoSpecifiedTests=false -Dsurefire\.failIfNoSpecifiedTests=false -Dawaitility\.defaultPollInterval=200ms -Dawaitility\.defaultTimeout=2m -Dmaven\.build\.cache\.enabled=false$'
+
+  ${CLI} --repo "${repo}" uninstall >/dev/null
+}
+
 test_verify_changes_nested_maven_base_strips_git_prefix() {
   local repo="${TMP_ROOT}/verify-changes-nested-maven-base"
   local code_repo="${repo}/code"
@@ -3767,9 +3936,11 @@ main() {
   test_doctor_does_not_invent_health_check
   test_doctor_detects_actuator_health_check
   test_doctor_local_containers_prompt_does_not_chain_health_prompt
+  test_doctor_compose_prompt_does_not_chain_local_containers_prompt
   test_doctor_shows_progress_in_tty
   test_doctor_reports_compatible_newer_java_homes
   test_exec_uses_compatible_newer_java_home
+  test_exec_rejects_git_and_shell_commands
   test_run_app_bg_disabled_without_executable_app
   test_standalone_mode
   test_strict_commands_require_git_root
@@ -3808,6 +3979,7 @@ main() {
   test_verify_it_prefers_integration_workflow_when_available
   test_verify_respects_local_containers_config
   test_verify_leaves_local_containers_unset_without_repo_signal
+  test_verify_changes_preview_command
   test_verify_changes_command
   test_verify_changes_nested_maven_base_strips_git_prefix
   test_coverage_changes_command

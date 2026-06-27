@@ -16,9 +16,9 @@ on:
         description: Exact version to prepare, without v prefix (optional)
         required: false
       base_branch:
-        description: Branch to open the release PR against
+        description: Branch to release from and open the release PR against
         required: true
-        default: develop
+        default: main
 
 permissions:
   contents: write
@@ -26,16 +26,27 @@ permissions:
 
 env:
   CARGO_TERM_COLOR: always
+  CARGO_HTTP_MULTIPLEXING: "false"
+  CARGO_NET_RETRY: "10"
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
   prepare:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           ref: ${{ inputs.base_branch }}
           fetch-depth: 0
+      - name: Validate release base
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${{ inputs.base_branch }}" != "main" ]]; then
+            printf 'Error: releases must be prepared from main. Merge develop into main first, then run Prepare Release with base_branch=main.\n' >&2
+            exit 1
+          fi
+          git fetch origin "${{ inputs.base_branch }}"
       - name: Install Rust
         shell: bash
         run: rustup toolchain install stable --profile minimal
@@ -99,9 +110,13 @@ jobs:
         run: |
           set -euo pipefail
           branch="release/${{ steps.version.outputs.tag }}"
+          release_files="$(mktemp -d)"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git checkout -b "${branch}"
+          cp rust/dispatcher/Cargo.toml rust/dispatcher/Cargo.lock "${release_files}/"
+          git checkout -B "${branch}" "origin/${{ inputs.base_branch }}"
+          cp "${release_files}/Cargo.toml" rust/dispatcher/Cargo.toml
+          cp "${release_files}/Cargo.lock" rust/dispatcher/Cargo.lock
           git add rust/dispatcher/Cargo.toml rust/dispatcher/Cargo.lock
           git commit -m "release: bump to ${{ steps.version.outputs.next }}"
           git push --force-with-lease origin "${branch}"
