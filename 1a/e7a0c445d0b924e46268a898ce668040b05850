@@ -1,0 +1,27 @@
+libexec/makevn/commands/doctor.sh
+  s_6e55f5c2878c13::t_c08ed52fe5de49 47-49
+libexec/makevn/common/doctor_snapshot.sh
+  s_6e55f5c2878c13::t_3fe72a5db5e82b 73,76-77,236-238,248-250,260-272,408,482
+libexec/makevn/common/java_maven.sh
+  s_6e55f5c2878c13::t_62c171b1912d71 20-32
+libexec/makevn/jdk/manager.sh
+  s_6e55f5c2878c13::t_c57cf8e22175c0 311-316
+test/smoke/run.sh
+  s_6e55f5c2878c13::t_bf9d7a91aab553 850-896,3990-3991
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.4",
+  "base_commit_sha": "1ae7a0c445d0b924e46268a898ce668040b05850",
+  "prompts": {},
+  "sessions": {
+    "s_6e55f5c2878c13": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f1cd3-9de9-71b3-820d-91f8d1b1d116",
+        "model": "unknown"
+      },
+      "human_author": "antonillos <305277+antonillos@users.noreply.github.com>"
+    }
+  }
+}
