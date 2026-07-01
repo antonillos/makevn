@@ -70,8 +70,11 @@ makevn_collect_doctor_snapshot() {
   local code_tool_versions=""
   local karate_tool_versions=""
   local code_java_version=""
+  local code_tool_versions_java_version=""
   local app_runnable="no"
   local code_java_home=""
+  local code_exact_java_home=""
+  local code_java_home_recommendation=""
   local compatible_code_java_homes=""
   local karate_java_home=""
   local code_java_version_line=""
@@ -230,6 +233,9 @@ makevn_collect_doctor_snapshot() {
 
   maven_base_path="$(makevn_detect_maven_base_path "${repo_root}" || true)"
   code_tool_versions="$(makevn_detect_code_tool_versions "${repo_root}" "${maven_base_path}" || true)"
+  if [[ -n "${code_tool_versions}" ]]; then
+    code_tool_versions_java_version="$(makevn_tool_versions_java_major "${code_tool_versions}" || true)"
+  fi
   karate_tool_versions="$(makevn_detect_karate_tool_versions "${repo_root}" || true)"
   code_java_version="${MAKEVN_DETECTED_CODE_JAVA_VERSION:-}"
   if [[ -z "${code_java_version}" ]]; then
@@ -238,6 +244,9 @@ makevn_collect_doctor_snapshot() {
   fi
   if [[ -z "${code_java_version}" ]]; then
     code_java_version="$(makevn_detect_java_version_from_pom "${maven_base_path}" || true)"
+  fi
+  if [[ -z "${code_java_version}" ]]; then
+    code_java_version="${code_tool_versions_java_version}"
   fi
   if [[ "${app_runnable}" != "yes" ]]; then
     makevn_load_profile "${repo_root}"
@@ -248,7 +257,19 @@ makevn_collect_doctor_snapshot() {
   fi
   makevn_doctor_progress "Resolving Java homes"
   code_java_home="$(MAKEVN_RESOLVE_COMPATIBLE_JAVA_FIRST=1 makevn_effective_java_home "${repo_root}" code "${maven_base_path}" || true)"
-  if [[ -z "${code_java_home}" && -n "${code_java_version}" ]]; then
+  if [[ -n "${code_tool_versions_java_version}" ]]; then
+    code_exact_java_home="$(makevn_resolve_java_version_home "${code_tool_versions_java_version}" || true)"
+    if [[ -z "${code_exact_java_home}" ]]; then
+      compatible_code_java_homes="$(makevn_compatible_java_homes_csv "${code_tool_versions_java_version}" || true)"
+      if [[ -n "${code_java_home}" ]]; then
+        code_java_home_recommendation="No exact JDK ${code_tool_versions_java_version} detected from .tool-versions; using compatible newer JDK ${code_java_home}. To pin it, set MAKEVN_CODE_JAVA_HOME=\"${code_java_home}\" in .makevn/config."
+      elif [[ -n "${compatible_code_java_homes}" ]]; then
+        code_java_home_recommendation="No exact JDK ${code_tool_versions_java_version} detected from .tool-versions. Compatible newer local JDKs: ${compatible_code_java_homes}. Set MAKEVN_CODE_JAVA_HOME in .makevn/config after choosing one."
+      else
+        code_java_home_recommendation="No exact or compatible JDK ${code_tool_versions_java_version}+ detected from .tool-versions. Install a matching JDK or set MAKEVN_CODE_JAVA_HOME in .makevn/config."
+      fi
+    fi
+  elif [[ -z "${code_java_home}" && -n "${code_java_version}" ]]; then
     compatible_code_java_homes="$(makevn_compatible_java_homes_csv "${code_java_version}" || true)"
   fi
   karate_java_home="$(makevn_effective_java_home "${repo_root}" karate "${maven_base_path}" || true)"
@@ -384,6 +405,7 @@ makevn_collect_doctor_snapshot() {
   MAKEVN_DOCTOR_VERIFY_PROFILE="${verify_profile}"
   MAKEVN_DOCTOR_CODE_JAVA_HOME="${code_java_home:-unresolved}"
   MAKEVN_DOCTOR_COMPATIBLE_CODE_JAVA_HOMES="${compatible_code_java_homes:-none}"
+  MAKEVN_DOCTOR_CODE_JAVA_HOME_RECOMMENDATION="${code_java_home_recommendation}"
   MAKEVN_DOCTOR_CODE_JAVA_VERSION_LINE="${code_java_version_line}"
   MAKEVN_DOCTOR_KARATE_JAVA_HOME="${karate_java_home:-unresolved}"
   MAKEVN_DOCTOR_KARATE_JAVA_VERSION_LINE="${karate_java_version_line}"
@@ -457,6 +479,7 @@ makevn_print_doctor_json() {
   printf '    "verify_profile": "%s",\n' "$(makevn_json_escape "${MAKEVN_DOCTOR_VERIFY_PROFILE}")"
   printf '    "resolved_code_java_home": "%s",\n' "$(makevn_json_escape "${MAKEVN_DOCTOR_CODE_JAVA_HOME}")"
   printf '    "compatible_code_java_homes": "%s",\n' "$(makevn_json_escape "${MAKEVN_DOCTOR_COMPATIBLE_CODE_JAVA_HOMES}")"
+  printf '    "code_java_home_recommendation": "%s",\n' "$(makevn_json_escape "${MAKEVN_DOCTOR_CODE_JAVA_HOME_RECOMMENDATION}")"
   printf '    "resolved_code_java_version": "%s",\n' "$(makevn_json_escape "${MAKEVN_DOCTOR_CODE_JAVA_VERSION_LINE}")"
   printf '    "resolved_karate_java_home": "%s",\n' "$(makevn_json_escape "${MAKEVN_DOCTOR_KARATE_JAVA_HOME}")"
   printf '    "resolved_karate_java_version": "%s",\n' "$(makevn_json_escape "${MAKEVN_DOCTOR_KARATE_JAVA_VERSION_LINE}")"

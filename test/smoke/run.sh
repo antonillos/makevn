@@ -847,6 +847,53 @@ EOF
   assert_contains "${repo}/exec.out" "${java17_home}"
 }
 
+test_doctor_reports_compatible_newer_tool_versions_java_home() {
+  local repo="${TMP_ROOT}/doctor-compatible-tool-versions-java"
+  local fake_home_root="${TMP_ROOT}/fake-doctor-tool-versions-home"
+  local java21_home="${fake_home_root}/.sdkman/candidates/java/21.0.3-tem"
+  local output=""
+
+  mkdir -p "${repo}" "${java21_home}/bin"
+  printf '<project/>\n' > "${repo}/pom.xml"
+  printf 'ivm-java zulu-17.0.9\n' > "${repo}/.tool-versions"
+  cat > "${java21_home}/bin/java" <<'EOF'
+#!/usr/bin/env bash
+printf 'openjdk version "21.0.3" 2024-01-01\n' >&2
+EOF
+  chmod +x "${java21_home}/bin/java"
+
+  output="$(JAVA_HOME= MAKEVN_JDK_CANDIDATE_BASES="${fake_home_root}/.sdkman/candidates/java" HOME="${fake_home_root}" ${CLI} --repo "${repo}" doctor)"
+
+  [[ "${output}" == *"Resolved code JAVA_HOME: ${java21_home}"* ]] || fail "doctor should resolve to the compatible newer .tool-versions JDK"
+  [[ "${output}" == *"Compatible code JAVA_HOMEs: ${java21_home}"* ]] || fail "doctor should list compatible newer .tool-versions JDKs"
+  [[ "${output}" == *"Code JDK recommendation: No exact JDK 17 detected from .tool-versions; using compatible newer JDK ${java21_home}"* ]] || fail "doctor should explain the compatible .tool-versions JDK fallback"
+  [[ "${output}" == *"MAKEVN_CODE_JAVA_HOME=\"${java21_home}\""* ]] || fail "doctor should suggest pinning the compatible JDK"
+}
+
+test_exec_uses_compatible_newer_tool_versions_java_home() {
+  local repo="${TMP_ROOT}/exec-compatible-tool-versions-java"
+  local fake_home_root="${TMP_ROOT}/fake-exec-tool-versions-home"
+  local java21_home="${fake_home_root}/.sdkman/candidates/java/21.0.3-tem"
+
+  mkdir -p "${repo}" "${java21_home}/bin"
+  printf '<project/>\n' > "${repo}/pom.xml"
+  printf 'ivm-java zulu-17.0.9\n' > "${repo}/.tool-versions"
+  cat > "${java21_home}/bin/java" <<'EOF'
+#!/usr/bin/env bash
+printf 'openjdk version "21.0.3" 2024-01-01\n' >&2
+EOF
+  chmod +x "${java21_home}/bin/java"
+  cat > "${repo}/print-java-home.sh" <<'EOF'
+#!/usr/bin/env bash
+printf '%s\n' "${JAVA_HOME}"
+EOF
+  chmod +x "${repo}/print-java-home.sh"
+
+  JAVA_HOME= MAKEVN_JDK_CANDIDATE_BASES="${fake_home_root}/.sdkman/candidates/java" HOME="${fake_home_root}" ${CLI} --repo "${repo}" exec -- ./print-java-home.sh > "${repo}/exec.out"
+
+  assert_contains "${repo}/exec.out" "${java21_home}"
+}
+
 test_exec_rejects_git_and_shell_commands() {
   local repo="${TMP_ROOT}/exec-rejects-non-java"
   local output=""
@@ -3940,6 +3987,8 @@ main() {
   test_doctor_shows_progress_in_tty
   test_doctor_reports_compatible_newer_java_homes
   test_exec_uses_compatible_newer_java_home
+  test_doctor_reports_compatible_newer_tool_versions_java_home
+  test_exec_uses_compatible_newer_tool_versions_java_home
   test_exec_rejects_git_and_shell_commands
   test_run_app_bg_disabled_without_executable_app
   test_standalone_mode
