@@ -37,20 +37,24 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git checkout -B "${branch}" origin/develop
 
-          sync_files="$(mktemp)"
-          git diff --name-only -z origin/develop..origin/main > "${sync_files}"
-          if [[ ! -s "${sync_files}" ]]; then
+          if ! merge_output="$(git merge --no-edit origin/main 2>&1)"; then
+            {
+              printf '## Main could not be synced automatically\n\n'
+              printf 'Merging `origin/main` into `origin/develop` produced conflicts. Resolve them manually on a branch from `develop`, merge that branch into `develop`, then retry the release PR.\n\n'
+              printf '```text\n'
+              printf '%s\n' "${merge_output}"
+              printf '```\n'
+            } >> "${GITHUB_STEP_SUMMARY}"
+            printf '%s\n' "${merge_output}" >&2
+            exit 1
+          fi
+
+          if git diff --quiet origin/develop HEAD; then
             printf 'needed=false\n' >> "${GITHUB_OUTPUT}"
             printf 'Develop differs from main only by commit history. Nothing to sync.\n' >> "${GITHUB_STEP_SUMMARY}"
             exit 0
           fi
 
-          while IFS= read -r -d '' path; do
-            git checkout origin/main -- "${path}"
-          done < "${sync_files}"
-
-          xargs -0 git add -- < "${sync_files}"
-          git commit -m "chore: sync main into develop"
           git push --force-with-lease origin "${branch}"
 
           printf 'needed=true\n' >> "${GITHUB_OUTPUT}"
