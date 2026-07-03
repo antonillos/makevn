@@ -17,6 +17,19 @@ makevn_resolve_tool_versions_home() {
   bash "${jdk_manager}" resolve-tool-versions "${tool_versions_file}" 2>/dev/null
 }
 
+makevn_tool_versions_java_major() {
+  local tool_versions_file="$1"
+  local configured_jdk=""
+  local major=""
+
+  [[ -f "${tool_versions_file}" ]] || return 1
+  configured_jdk="$(awk '$1 == "ivm-java" { print $2; exit }' "${tool_versions_file}")"
+  [[ -n "${configured_jdk}" ]] || return 1
+  major="$(printf '%s\n' "${configured_jdk}" | sed -E 's/.*-([0-9]+)(\..*)?$/\1/')"
+  [[ "${major}" =~ ^[0-9]+$ ]] || return 1
+  printf '%s\n' "${major}"
+}
+
 makevn_resolve_java_version_home() {
   local java_version="$1"
   local jdk_manager

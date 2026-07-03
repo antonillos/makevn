@@ -44,6 +44,9 @@ print_doctor() {
   makevn_print_item "Verify profile" "${MAKEVN_DOCTOR_VERIFY_PROFILE}"
   makevn_print_item "Resolved code JAVA_HOME" "${MAKEVN_DOCTOR_CODE_JAVA_HOME}"
   makevn_print_item "Compatible code JAVA_HOMEs" "${MAKEVN_DOCTOR_COMPATIBLE_CODE_JAVA_HOMES}"
+  if [[ -n "${MAKEVN_DOCTOR_CODE_JAVA_HOME_RECOMMENDATION}" ]]; then
+    makevn_print_item "Code JDK recommendation" "${MAKEVN_DOCTOR_CODE_JAVA_HOME_RECOMMENDATION}"
+  fi
   if [[ -n "${MAKEVN_DOCTOR_CODE_JAVA_VERSION_LINE}" ]]; then
     printf '  %s\n' "$(makevn_dim "${MAKEVN_DOCTOR_CODE_JAVA_VERSION_LINE}")"
   fi

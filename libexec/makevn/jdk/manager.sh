@@ -308,9 +308,12 @@ resolve_tool_versions_home() {
   JDK_VERSION="${resolved_major}"
   JDK_HOME_ARG=""
   if ! resolved_home="$(resolve_jdk_home)"; then
-    JDK_VERSION="${previous_jdk_version}"
-    JDK_HOME_ARG="${previous_jdk_home_arg}"
-    return 1
+    resolved_home="$(resolve_compatible_version_home "${resolved_major}" || true)"
+    if [[ -z "${resolved_home}" ]]; then
+      JDK_VERSION="${previous_jdk_version}"
+      JDK_HOME_ARG="${previous_jdk_home_arg}"
+      return 1
+    fi
   fi
   JDK_VERSION="${previous_jdk_version}"
   JDK_HOME_ARG="${previous_jdk_home_arg}"
