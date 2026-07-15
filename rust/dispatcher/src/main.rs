@@ -85,6 +85,18 @@ fn main() {
         process::exit(exit_code);
     }
 
+    if let Action::InstallOpenCodeAgent = action {
+        match install_opencode_agent() {
+            Ok(path) => {
+                println!("makevn MCP installed for OpenCode");
+                println!("  Config: {}", path.display());
+                println!("  Restart OpenCode to load the makevn MCP tools.");
+                return;
+            }
+            Err(message) => exit_with_error(message),
+        }
+    }
+
     let current_exe = match env::current_exe() {
         Ok(path) => path,
         Err(error) => exit_with_error(format!("failed to resolve current executable: {error}")),
@@ -109,6 +121,7 @@ fn main() {
         Action::PrintHelp { .. } => unreachable!(),
         Action::PrintCommandHelp { .. } => unreachable!(),
         Action::RunMcpServer => unreachable!(),
+        Action::InstallOpenCodeAgent => unreachable!(),
     };
 
     let exit_code = match dispatch_backend_invocations(
@@ -134,6 +147,7 @@ enum Action {
     PrintCommandHelp { command: String },
     DispatchToBackend(Vec<BackendInvocation>),
     RunMcpServer,
+    InstallOpenCodeAgent,
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -246,6 +260,25 @@ enum CommandValidation {
 }
 
 fn parse_invocation(args: Vec<OsString>) -> Result<Action, String> {
+    if args.first() == Some(&OsString::from("agent")) {
+        return match args.as_slice() {
+            [agent, install, client]
+                if agent == "agent" && install == "install" && client == "opencode" =>
+            {
+                Ok(Action::InstallOpenCodeAgent)
+            }
+            [agent, help]
+                if agent == "agent"
+                    && matches!(help.to_string_lossy().as_ref(), "--help" | "-h") =>
+            {
+                Ok(Action::PrintCommandHelp {
+                    command: String::from("agent"),
+                })
+            }
+            _ => Err(String::from("Usage: makevn agent install opencode")),
+        };
+    }
+
     let mut index = 0;
     let mut repo_override: Option<OsString> = None;
     let mut global_tail = false;
@@ -314,6 +347,192 @@ fn parse_invocation(args: Vec<OsString>) -> Result<Action, String> {
         global_compact,
     )?;
     Ok(Action::DispatchToBackend(backend_invocations))
+}
+
+fn install_opencode_agent() -> Result<PathBuf, String> {
+    let config_root = env::var_os("XDG_CONFIG_HOME")
+        .map(PathBuf::from)
+        .or_else(|| env::var_os("HOME").map(|home| PathBuf::from(home).join(".config")))
+        .ok_or_else(|| String::from("HOME is not set; cannot locate OpenCode configuration"))?;
+    let global_dir = config_root.join("opencode");
+    let repo_root = resolve_repo_root(None)?;
+    let local_configs = detect_local_opencode_configs(&repo_root);
+    if !local_configs.is_empty() {
+        println!("Found local OpenCode configurations:");
+        for config in &local_configs {
+            println!("  {}", config.display());
+        }
+        if io::stdin().is_terminal() {
+            println!("Where should makevn be installed?");
+            for (index, config) in local_configs.iter().enumerate() {
+                println!("  {}) Local config ({})", index + 1, config.display());
+            }
+            println!("  {}) Global config", local_configs.len() + 1);
+            print!("Select [1]: ");
+            io::stdout()
+                .flush()
+                .map_err(|error| format!("failed to write prompt: {error}"))?;
+            let mut selection = String::new();
+            io::stdin()
+                .read_line(&mut selection)
+                .map_err(|error| format!("failed to read selection: {error}"))?;
+            let selected = if selection.trim().is_empty() {
+                1
+            } else {
+                selection
+                    .trim()
+                    .parse::<usize>()
+                    .map_err(|_| String::from("Invalid selection"))?
+            };
+            if let Some(local_config) = selected
+                .checked_sub(1)
+                .and_then(|index| local_configs.get(index))
+            {
+                return install_opencode_agent_config(local_config);
+            }
+            if selected == local_configs.len() + 1 {
+                return install_opencode_agent_at(&global_dir);
+            }
+            return Err(format!(
+                "Invalid selection; choose a number from 1 to {}",
+                local_configs.len() + 1
+            ));
+        }
+    }
+    install_opencode_agent_at(&global_dir)
+}
+
+fn install_opencode_agent_at(opencode_dir: &Path) -> Result<PathBuf, String> {
+    fs::create_dir_all(opencode_dir).map_err(|error| {
+        format!(
+            "failed to create OpenCode config directory {}: {error}",
+            opencode_dir.display()
+        )
+    })?;
+
+    let jsonc_path = opencode_dir.join("opencode.jsonc");
+    let json_path = opencode_dir.join("opencode.json");
+    let config_path = if jsonc_path.is_file() {
+        jsonc_path
+    } else {
+        json_path
+    };
+    install_opencode_agent_config(&config_path)
+}
+
+fn detect_local_opencode_configs(repo_root: &Path) -> Vec<PathBuf> {
+    let opencode_dir = repo_root.join(".opencode");
+    [
+        opencode_dir.join("opencode.jsonc"),
+        opencode_dir.join("opencode.json"),
+        opencode_dir.join("config.jsonc"),
+        opencode_dir.join("config.json"),
+    ]
+    .into_iter()
+    .filter(|path| path.is_file())
+    .collect()
+}
+
+fn install_opencode_agent_config(config_path: &Path) -> Result<PathBuf, String> {
+    if let Some(parent) = config_path.parent() {
+        fs::create_dir_all(parent).map_err(|error| {
+            format!(
+                "failed to create OpenCode config directory {}: {error}",
+                parent.display()
+            )
+        })?;
+    }
+    let original = if config_path.is_file() {
+        fs::read_to_string(config_path)
+            .map_err(|error| format!("failed to read {}: {error}", config_path.display()))?
+    } else {
+        String::from("{}")
+    };
+    let mut config: serde_json::Value = serde_json::from_str(&original)
+        .or_else(|_| serde_json::from_str(&strip_jsonc_comments(&original)))
+        .map_err(|error| format!("failed to parse {}: {error}", config_path.display()))?;
+    let original_config = config.clone();
+    let root = config.as_object_mut().ok_or_else(|| {
+        format!(
+            "OpenCode config must be a JSON object: {}",
+            config_path.display()
+        )
+    })?;
+    let mcp = root
+        .entry("mcp")
+        .or_insert_with(|| serde_json::Value::Object(serde_json::Map::new()))
+        .as_object_mut()
+        .ok_or_else(|| String::from("OpenCode config field 'mcp' must be a JSON object"))?;
+    mcp.insert(
+        String::from("makevn"),
+        serde_json::json!({
+            "type": "local",
+            "command": ["makevn-mcp"],
+            "enabled": true,
+            "timeout": 900000
+        }),
+    );
+    if config == original_config {
+        return Ok(config_path.to_path_buf());
+    }
+    let updated = serde_json::to_string_pretty(&config)
+        .map_err(|error| format!("failed to serialize OpenCode config: {error}"))?;
+
+    if config_path.is_file() {
+        let backup_path = PathBuf::from(format!("{}.makevn.bak", config_path.display()));
+        fs::copy(config_path, &backup_path)
+            .map_err(|error| format!("failed to back up {}: {error}", config_path.display()))?;
+    }
+    fs::write(config_path, format!("{updated}\n"))
+        .map_err(|error| format!("failed to write {}: {error}", config_path.display()))?;
+    let written = fs::read_to_string(config_path)
+        .map_err(|error| format!("failed to verify {}: {error}", config_path.display()))?;
+    serde_json::from_str::<serde_json::Value>(&written)
+        .map_err(|error| format!("written OpenCode config is invalid: {error}"))?;
+    Ok(config_path.to_path_buf())
+}
+
+fn strip_jsonc_comments(input: &str) -> String {
+    let mut output = String::with_capacity(input.len());
+    let bytes = input.as_bytes();
+    let mut index = 0;
+    while index < bytes.len() {
+        if bytes[index] == b'"' {
+            output.push('"');
+            index += 1;
+            while index < bytes.len() {
+                let character = bytes[index] as char;
+                output.push(character);
+                if character == '\\' && index + 1 < bytes.len() {
+                    index += 1;
+                    output.push(bytes[index] as char);
+                } else if character == '"' {
+                    index += 1;
+                    break;
+                }
+                index += 1;
+            }
+            continue;
+        }
+        if bytes[index] == b'/' && index + 1 < bytes.len() && bytes[index + 1] == b'/' {
+            index += 2;
+            while index < bytes.len() && bytes[index] != b'\n' {
+                index += 1;
+            }
+            continue;
+        }
+        if bytes[index] == b'/' && index + 1 < bytes.len() && bytes[index + 1] == b'*' {
+            index += 2;
+            while index + 1 < bytes.len() && !(bytes[index] == b'*' && bytes[index + 1] == b'/') {
+                index += 1;
+            }
+            index = (index + 2).min(bytes.len());
+            continue;
+        }
+        output.push(bytes[index] as char);
+        index += 1;
+    }
+    output
 }
 
 fn parse_mcp_invocation(args: Vec<OsString>) -> Result<McpAction, String> {
@@ -3018,6 +3237,7 @@ fn print_command_help(command: &str) {
 fn command_help(command: &str) -> Option<(&'static str, &'static str, &'static [&'static str])> {
     match command {
         "help" => Some(("makevn help", "Print the full makevn help.", &[])),
+        "agent" => Some(("makevn agent install opencode", "Install the makevn MCP server in the global OpenCode configuration.", &[])),
         "doctor" => Some(("makevn [--repo PATH] doctor", "Inspect repository setup and makevn configuration.", &[])),
         "init" => Some(("makevn [--repo PATH] init [--dry-run] [--force]", "Initialize .makevn configuration for the repository.", &["--dry-run  Show what would change without writing files", "--force    Refresh existing generated files"])),
         "make" => Some(("makevn [--repo PATH] make install|uninstall [--dry-run]", "Install or remove optional vn-* Make targets.", &["--dry-run  Show what would change without writing files"])),
@@ -3154,6 +3374,7 @@ fn print_help(with_header: bool) {
     println!("'makevn' commands over editor-specific instructions.");
     println!();
     println!("Usage:");
+    println!("  makevn agent install opencode");
     println!("  makevn [--repo PATH] doctor");
     println!("  makevn [--repo PATH] init [--dry-run] [--force]");
     println!("  makevn [--repo PATH] refresh [--dry-run]");
@@ -3279,10 +3500,11 @@ impl fmt::Display for Lossy<'_> {
 mod tests {
     use super::{
         command_help, command_supports_frontend_loader, dashboard_hint, dim_text,
-        format_resource_sample, insert_backend_option, install_root, install_root_with_override,
-        parse_invocation, parse_mcp_invocation, read_backend_metadata, spinner_hint,
-        spinner_kitt_frame, split_command_segments, strip_frontend_tail_flag, tail_status_lines,
-        Action, BackendInvocation, BackendMetadata, CommandSummary, McpAction, ResourceHistory,
+        format_resource_sample, insert_backend_option, install_opencode_agent_at, install_root,
+        detect_local_opencode_configs, install_root_with_override, parse_invocation,
+        parse_mcp_invocation, read_backend_metadata, spinner_hint, spinner_kitt_frame,
+        split_command_segments, strip_frontend_tail_flag, tail_status_lines, Action,
+        BackendInvocation, BackendMetadata, CommandSummary, McpAction, ResourceHistory,
         ResourceSample,
     };
     use std::env;
@@ -3398,6 +3620,82 @@ mod tests {
     fn parses_version_without_backend_dispatch() {
         let action = parse_invocation(vec![OsString::from("--version")]).unwrap();
         assert_eq!(action, Action::PrintVersion);
+    }
+
+    #[test]
+    fn parses_opencode_agent_install_without_backend_dispatch() {
+        let action = parse_invocation(vec![
+            OsString::from("agent"),
+            OsString::from("install"),
+            OsString::from("opencode"),
+        ])
+        .unwrap();
+        assert_eq!(action, Action::InstallOpenCodeAgent);
+    }
+
+    #[test]
+    fn installs_opencode_agent_idempotently_and_preserves_other_entries() {
+        let unique_suffix = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let work_dir = env::temp_dir().join(format!(
+            "makevn-opencode-agent-test-{}-{unique_suffix}",
+            process::id()
+        ));
+        fs::create_dir_all(&work_dir).unwrap();
+        let config_path = work_dir.join("opencode.jsonc");
+        fs::write(
+            &config_path,
+            "{\n  // existing config\n  \"theme\": \"dark\",\n  \"mcp\": {\"other\": {\"enabled\": true}}\n}\n",
+        )
+        .unwrap();
+
+        assert_eq!(install_opencode_agent_at(&work_dir).unwrap(), config_path);
+        let backup = fs::read_to_string(work_dir.join("opencode.jsonc.makevn.bak")).unwrap();
+        assert_eq!(install_opencode_agent_at(&work_dir).unwrap(), config_path);
+
+        let config: serde_json::Value =
+            serde_json::from_str(&fs::read_to_string(&config_path).unwrap()).unwrap();
+        assert_eq!(config["theme"], "dark");
+        assert_eq!(config["mcp"]["other"]["enabled"], true);
+        assert_eq!(
+            config["mcp"]["makevn"]["command"],
+            serde_json::json!(["makevn-mcp"])
+        );
+        assert_eq!(config["mcp"]["makevn"]["timeout"], 900000);
+        assert!(work_dir.join("opencode.jsonc.makevn.bak").is_file());
+        assert!(backup.contains("// existing config"));
+        assert_eq!(
+            fs::read_to_string(work_dir.join("opencode.jsonc.makevn.bak")).unwrap(),
+            backup
+        );
+
+        fs::remove_dir_all(work_dir).unwrap();
+    }
+
+    #[test]
+    fn detects_all_existing_project_opencode_configs() {
+        let unique_suffix = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let work_dir = env::temp_dir().join(format!(
+            "makevn-local-opencode-test-{}-{unique_suffix}",
+            process::id()
+        ));
+        let local_config = work_dir.join(".opencode/opencode.jsonc");
+        let local_json_config = work_dir.join(".opencode/opencode.json");
+        fs::create_dir_all(local_config.parent().unwrap()).unwrap();
+        fs::write(&local_config, "{}\n").unwrap();
+        fs::write(&local_json_config, "{}\n").unwrap();
+
+        assert_eq!(
+            detect_local_opencode_configs(&work_dir),
+            vec![local_config, local_json_config]
+        );
+
+        fs::remove_dir_all(work_dir).unwrap();
     }
 
     #[test]

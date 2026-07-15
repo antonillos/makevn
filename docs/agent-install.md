@@ -95,6 +95,19 @@ command -v makevn-mcp
 
 ## OpenCode
 
+Install the global MCP entry automatically:
+
+```bash
+makevn agent install opencode
+```
+
+When the current Git repository contains OpenCode configurations under
+`.opencode/`, the interactive command lists every detected local JSON or JSONC
+file separately, followed by the global configuration. The first local JSONC
+file is the default choice. The command is idempotent, preserves other
+configuration entries, and creates a backup before changing an existing
+configuration. Restart OpenCode after installation.
+
 OpenCode configuration files:
 
 - Global JSON: `~/.config/opencode/opencode.json`
