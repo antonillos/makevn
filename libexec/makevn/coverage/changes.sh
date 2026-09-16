@@ -115,6 +115,30 @@ $changed_paths
 EOF
 }
 
+first_parent_added_line_numbers() {
+  local file="$1"
+  local parent_branch="${BASE_REF%...HEAD}"
+  local line=""
+  local sha=""
+  local -a changed_lines=()
+  declare -A first_parent_commits=()
+  declare -A blamed_commits=()
+
+  while IFS= read -r sha; do
+    [ -n "$sha" ] && first_parent_commits["$sha"]=1
+  done < <(git rev-list --first-parent "${parent_branch}..HEAD" 2>/dev/null || true)
+  while IFS=$'\t' read -r line sha; do
+    [ -n "$line" ] && blamed_commits["$line"]="$sha"
+  done < <(git blame --first-parent --line-porcelain HEAD -- "$file" 2>/dev/null | awk '
+    /^[0-9a-f]{40} / { sha = $1; line = $3 }
+    /^\t/ { print line "\t" sha; line++ }
+  ')
+  while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    [ -n "${first_parent_commits[${blamed_commits[$line]:-}]:-}" ] && printf '%s\n' "$line"
+  done < <(extract_added_line_numbers "$file" "$BASE_REF")
+}
+
 # Detect changed production Java files and deduplicate
 # Use the same logic as verify-changes: combine base diff + local modifications
 CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "HEAD")
@@ -155,7 +179,11 @@ if [ -z "$CHANGED_PROD_FILES" ] && [ -z "$CHANGED_TEST_FILES" ]; then
     echo "ℹ  No uncommitted changes detected. Checking recent commits for test additions..." 1>&2
     # Look for test files added in recent commits ONLY if they're ahead of parent branch
     # This ensures we only detect actual new tests in this branch
-    RECENT_TEST_FILES=$(git log --oneline "${BASE_REF%...HEAD}"..HEAD --name-only --diff-filter=A -- "$BASE_PATH_TEST_GLOB" 2>/dev/null | grep "/src/test/java/" | sort -u || true)
+    if [ "$FIRST_PARENT_ONLY" = true ] || [ "$FIRST_PARENT_ONLY" = 1 ]; then
+      RECENT_TEST_FILES=$(git log --first-parent --oneline "${BASE_REF%...HEAD}"..HEAD --name-only --diff-filter=A -- "$BASE_PATH_TEST_GLOB" 2>/dev/null | grep "/src/test/java/" | sort -u || true)
+    else
+      RECENT_TEST_FILES=$(git log --oneline "${BASE_REF%...HEAD}"..HEAD --name-only --diff-filter=A -- "$BASE_PATH_TEST_GLOB" 2>/dev/null | grep "/src/test/java/" | sort -u || true)
+    fi
     if [ -n "$RECENT_TEST_FILES" ]; then
       CHANGED_TEST_FILES="$RECENT_TEST_FILES"
       echo "ℹ  Found recently added test files, analyzing their coverage impact..." 1>&2
@@ -318,8 +346,13 @@ while IFS= read -r FILE; do
     DIFF_OUTPUT=$(git diff HEAD -- "$FILE" | grep "^+" | grep -v "^+++" | wc -l | xargs)
     CHANGED_LINES=$(extract_added_line_numbers "$FILE" HEAD || true)
   elif [ "$BASE_REF" != "HEAD" ]; then
-    DIFF_OUTPUT=$(git diff "$BASE_REF" -- "$FILE" | grep "^+" | grep -v "^+++" | wc -l | xargs)
-    CHANGED_LINES=$(extract_added_line_numbers "$FILE" "$BASE_REF" || true)
+    if [ "$FIRST_PARENT_ONLY" = true ] || [ "$FIRST_PARENT_ONLY" = 1 ]; then
+      CHANGED_LINES=$(first_parent_added_line_numbers "$FILE" || true)
+      DIFF_OUTPUT=$(printf '%s\n' "$CHANGED_LINES" | sed '/^$/d' | wc -l | xargs)
+    else
+      DIFF_OUTPUT=$(git diff "$BASE_REF" -- "$FILE" | grep "^+" | grep -v "^+++" | wc -l | xargs)
+      CHANGED_LINES=$(extract_added_line_numbers "$FILE" "$BASE_REF" || true)
+    fi
   else
     continue
   fi
