@@ -288,12 +288,14 @@ makevn_run_logged_in_context() {
       set -e
     }
 
-    trap 'cleanup_frontend_loader_interrupt' INT TERM
+    # HUP is delivered when the terminal/session disappears. Without handling
+    # it, the detached logging wrapper can outlive makevn and keep Maven alive.
+    trap 'cleanup_frontend_loader_interrupt' HUP INT TERM
     set +e
     wait "${cmd_pid}"
     exit_code=$?
     set -e
-    trap - INT TERM
+    trap - HUP INT TERM
 
     if [[ "${interrupted_by_frontend}" == true || ${exit_code} -eq 130 ]]; then
       return 130
@@ -310,12 +312,13 @@ makevn_run_logged_in_context() {
     makevn_interrupt_process_tree "${cmd_pid}"
   }
 
-  trap 'cleanup_shell_wait_interrupt' INT TERM
+  # Also clean up when the controlling terminal closes unexpectedly.
+  trap 'cleanup_shell_wait_interrupt' HUP INT TERM
   set +e
   wait "${cmd_pid}"
   exit_code=$?
   set -e
-  trap - INT TERM
+  trap - HUP INT TERM
   end_epoch="$(date +%s)"
   duration_seconds=$((end_epoch - start_epoch))
   duration_display="$(makevn_format_duration "${duration_seconds}")"
@@ -445,12 +448,12 @@ makevn_run_logged() {
       set -e
     }
 
-    trap 'cleanup_frontend_loader_interrupt' INT TERM
+    trap 'cleanup_frontend_loader_interrupt' HUP INT TERM
     set +e
     wait "${cmd_pid}"
     exit_code=$?
     set -e
-    trap - INT TERM
+    trap - HUP INT TERM
 
     if [[ "${interrupted_by_frontend}" == true || ${exit_code} -eq 130 ]]; then
       return 130
@@ -467,12 +470,12 @@ makevn_run_logged() {
     makevn_interrupt_process_tree "${cmd_pid}"
   }
 
-  trap 'cleanup_shell_wait_interrupt' INT TERM
+  trap 'cleanup_shell_wait_interrupt' HUP INT TERM
   set +e
   wait "${cmd_pid}"
   exit_code=$?
   set -e
-  trap - INT TERM
+  trap - HUP INT TERM
   end_epoch="$(date +%s)"
   duration_seconds=$((end_epoch - start_epoch))
   duration_display="$(makevn_format_duration "${duration_seconds}")"
