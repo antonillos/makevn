@@ -37,6 +37,9 @@ jobs:
       - name: Run commit policy tests
         shell: bash
         run: node --test .github/scripts/commit-policy.test.js
+      - name: Run sync workflow tests
+        shell: bash
+        run: node --test .github/scripts/sync-workflow.test.js
       - name: Run smoke tests
         shell: bash
         run: |

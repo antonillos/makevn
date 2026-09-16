@@ -1,6 +1,9 @@
 name: Sync Main To Develop
 
 on:
+  push:
+    branches:
+      - main
   workflow_run:
     workflows:
       - Release
@@ -21,7 +24,10 @@ concurrency:
 
 jobs:
   sync:
-    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    if: >-
+      github.event_name == 'push' ||
+      github.event_name == 'workflow_dispatch' ||
+      github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -81,12 +87,6 @@ jobs:
 
           git merge-base --is-ancestor origin/main HEAD
           git cat-file commit HEAD | grep -q '^gpgsig '
-
-          if git diff --quiet origin/develop HEAD; then
-            printf 'needed=false\n' >> "${GITHUB_OUTPUT}"
-            printf 'Develop differs from main only by commit history. Nothing to sync.\n' >> "${GITHUB_STEP_SUMMARY}"
-            exit 0
-          fi
 
           git push --force-with-lease origin "${branch}"
 
