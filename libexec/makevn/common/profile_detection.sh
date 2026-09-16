@@ -1313,21 +1313,64 @@ makevn_detect_parent_branch_spec() {
   local repo_root="$1"
   local current_branch=""
   local candidate=""
+  local merge_base=""
+  local candidate_distance=""
+  local best_candidate=""
+  local best_distance=""
+  local fallback_candidate=""
+  local fallback_distance=""
+  local -a candidates=()
 
   current_branch="$(git -C "${repo_root}" rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
   case "${current_branch}" in
-    develop|main|HEAD)
+    develop|main|master|HEAD)
       printf '%s\n' HEAD
       return 0
       ;;
   esac
 
-  for candidate in origin/develop develop origin/main main origin/master master; do
-    if git -C "${repo_root}" rev-parse --verify "${candidate}" >/dev/null 2>&1; then
-      printf '%s\n' "${candidate}...HEAD"
-      return 0
+  # A feature branch may start from main, develop, or a release branch.  Do not
+  # use the first branch that happens to exist: in repositories with both main
+  # and develop that made hotfixes compare against develop, potentially making
+  # unrelated develop work look like part of the hotfix.
+  #
+  # Prefer a candidate that is an ancestor of HEAD and is closest to it.  When
+  # the base branch has moved since the branch was created, use the closest
+  # merge-base instead.  This is the best durable Git-only signal of the branch
+  # from which the current work diverged.
+  candidates=(origin/main main origin/develop develop origin/master master)
+  for candidate in "${candidates[@]}"; do
+    git -C "${repo_root}" rev-parse --verify "${candidate}" >/dev/null 2>&1 || continue
+
+    if git -C "${repo_root}" merge-base --is-ancestor "${candidate}" HEAD >/dev/null 2>&1; then
+      candidate_distance="$(git -C "${repo_root}" rev-list --count "${candidate}..HEAD" 2>/dev/null || true)"
+      if [[ "${candidate_distance}" =~ ^[0-9]+$ ]] \
+        && { [[ -z "${best_distance}" ]] || [[ "${candidate_distance}" -lt "${best_distance}" ]]; }; then
+        best_candidate="${candidate}"
+        best_distance="${candidate_distance}"
+      fi
+      continue
+    fi
+
+    merge_base="$(git -C "${repo_root}" merge-base "${candidate}" HEAD 2>/dev/null || true)"
+    [[ -n "${merge_base}" ]] || continue
+    candidate_distance="$(git -C "${repo_root}" rev-list --count "${merge_base}..HEAD" 2>/dev/null || true)"
+    if [[ "${candidate_distance}" =~ ^[0-9]+$ ]] \
+      && { [[ -z "${fallback_distance}" ]] || [[ "${candidate_distance}" -lt "${fallback_distance}" ]]; }; then
+      fallback_candidate="${candidate}"
+      fallback_distance="${candidate_distance}"
     fi
   done
+
+  if [[ -n "${best_candidate}" ]]; then
+    printf '%s\n' "${best_candidate}...HEAD"
+    return 0
+  fi
+
+  if [[ -n "${fallback_candidate}" ]]; then
+    printf '%s\n' "${fallback_candidate}...HEAD"
+    return 0
+  fi
 
   printf '%s\n' HEAD
 }

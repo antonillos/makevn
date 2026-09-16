@@ -3262,6 +3262,44 @@ EOF
   ${CLI} --repo "${repo}" uninstall >/dev/null
 }
 
+test_verify_changes_uses_hotfix_parent_branch() {
+  local repo="${TMP_ROOT}/verify-changes-hotfix-parent"
+  local output
+
+  mkdir -p "${repo}/module-a/src/main/java/com/example"
+  printf '<project/>\n' > "${repo}/pom.xml"
+  printf 'class Baseline {}\n' > "${repo}/module-a/src/main/java/com/example/Baseline.java"
+
+  git init --initial-branch=main "${repo}" >/dev/null
+  git -C "${repo}" add .
+  git -C "${repo}" -c user.name='Smoke Test' -c user.email='smoke@example.com' commit -m 'main baseline' >/dev/null
+
+  git -C "${repo}" checkout -b develop >/dev/null
+  printf 'class DevelopOnly {}\n' > "${repo}/module-a/src/main/java/com/example/DevelopOnly.java"
+  git -C "${repo}" add .
+  git -C "${repo}" -c user.name='Smoke Test' -c user.email='smoke@example.com' commit -m 'develop work' >/dev/null
+
+  git -C "${repo}" checkout main >/dev/null
+  git -C "${repo}" checkout -b hotfix/issue-123 >/dev/null
+  printf 'class HotfixOnly {}\n' > "${repo}/module-a/src/main/java/com/example/HotfixOnly.java"
+  git -C "${repo}" add .
+  git -C "${repo}" -c user.name='Smoke Test' -c user.email='smoke@example.com' commit -m 'hotfix work' >/dev/null
+
+  ${CLI} --repo "${repo}" init >/dev/null
+  output="$(${CLI} --repo "${repo}" verify-changes-preview)"
+
+  [[ "${output}" == *"compare against: main...HEAD"* ]] \
+    || fail "expected a hotfix to compare against main, got: ${output}"
+  [[ "${output}" == *"production files: 1"* ]] \
+    || fail "expected only the hotfix production file, got: ${output}"
+  [[ "${output}" == *"HotfixOnly"* ]] \
+    || fail "expected hotfix class in selection, got: ${output}"
+  [[ "${output}" != *"DevelopOnly"* ]] \
+    || fail "develop-only work must not be selected for a hotfix: ${output}"
+
+  ${CLI} --repo "${repo}" uninstall >/dev/null
+}
+
 test_verify_changes_modules_local_containers() (
   unset LOCAL_CONTAINERS MAKEVN_LOCAL_CONTAINERS
   local repo="${TMP_ROOT}/verify-changes-local-containers"
@@ -4097,6 +4135,7 @@ main() {
   test_verify_respects_local_containers_config
   test_verify_leaves_local_containers_unset_without_repo_signal
   test_verify_changes_preview_command
+  test_verify_changes_uses_hotfix_parent_branch
   test_verify_changes_command
   test_verify_changes_modules_local_containers
   test_verify_changes_nested_maven_base_strips_git_prefix
