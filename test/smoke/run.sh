@@ -3300,6 +3300,49 @@ test_verify_changes_uses_hotfix_parent_branch() {
   ${CLI} --repo "${repo}" uninstall >/dev/null
 }
 
+test_verify_changes_uses_develop_after_it_advances() {
+  local repo="${TMP_ROOT}/verify-changes-develop-parent"
+  local output
+
+  mkdir -p "${repo}/module-a/src/main/java/com/example"
+  printf '<project/>\n' > "${repo}/pom.xml"
+  printf 'class Baseline {}\n' > "${repo}/module-a/src/main/java/com/example/Baseline.java"
+
+  git init --initial-branch=main "${repo}" >/dev/null
+  git -C "${repo}" add .
+  git -C "${repo}" -c user.name='Smoke Test' -c user.email='smoke@example.com' commit -m 'main baseline' >/dev/null
+
+  git -C "${repo}" checkout -b develop >/dev/null
+  printf 'class DevelopBase {}\n' > "${repo}/module-a/src/main/java/com/example/DevelopBase.java"
+  git -C "${repo}" add .
+  git -C "${repo}" -c user.name='Smoke Test' -c user.email='smoke@example.com' commit -m 'develop base' >/dev/null
+
+  git -C "${repo}" checkout -b feature/issue-456
+  printf 'class FeatureOnly {}\n' > "${repo}/module-a/src/main/java/com/example/FeatureOnly.java"
+  git -C "${repo}" add .
+  git -C "${repo}" -c user.name='Smoke Test' -c user.email='smoke@example.com' commit -m 'feature work' >/dev/null
+
+  git -C "${repo}" checkout develop >/dev/null
+  printf 'class DevelopAfterFork {}\n' > "${repo}/module-a/src/main/java/com/example/DevelopAfterFork.java"
+  git -C "${repo}" add .
+  git -C "${repo}" -c user.name='Smoke Test' -c user.email='smoke@example.com' commit -m 'develop after fork' >/dev/null
+  git -C "${repo}" checkout feature/issue-456 >/dev/null
+
+  ${CLI} --repo "${repo}" init >/dev/null
+  output="$(${CLI} --repo "${repo}" verify-changes-preview)"
+
+  [[ "${output}" == *"compare against: develop...HEAD"* ]] \
+    || fail "expected a feature to retain develop as its parent, got: ${output}"
+  [[ "${output}" == *"production files: 1"* ]] \
+    || fail "expected only the feature production file, got: ${output}"
+  [[ "${output}" == *"FeatureOnly"* ]] \
+    || fail "expected feature class in selection, got: ${output}"
+  [[ "${output}" != *"DevelopBase"* && "${output}" != *"DevelopAfterFork"* ]] \
+    || fail "develop work must not be selected for the feature: ${output}"
+
+  ${CLI} --repo "${repo}" uninstall >/dev/null
+}
+
 test_verify_changes_modules_local_containers() (
   unset LOCAL_CONTAINERS MAKEVN_LOCAL_CONTAINERS
   local repo="${TMP_ROOT}/verify-changes-local-containers"
@@ -4136,6 +4179,7 @@ main() {
   test_verify_leaves_local_containers_unset_without_repo_signal
   test_verify_changes_preview_command
   test_verify_changes_uses_hotfix_parent_branch
+  test_verify_changes_uses_develop_after_it_advances
   test_verify_changes_command
   test_verify_changes_modules_local_containers
   test_verify_changes_nested_maven_base_strips_git_prefix
