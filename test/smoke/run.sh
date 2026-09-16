@@ -3259,6 +3259,60 @@ EOF
   ${CLI} --repo "${repo}" uninstall >/dev/null
 }
 
+test_verify_changes_modules_local_containers() (
+  unset LOCAL_CONTAINERS MAKEVN_LOCAL_CONTAINERS
+  local repo="${TMP_ROOT}/verify-changes-local-containers"
+  local java_home
+  local scenario expected
+
+  mkdir -p "${repo}/module-a/src/main/java/com/example"
+  printf '<project/>\n' > "${repo}/pom.xml"
+  printf 'class Changed {}\n' > "${repo}/module-a/src/main/java/com/example/Changed.java"
+  git init --initial-branch=main "${repo}" >/dev/null
+  git -C "${repo}" add .
+  git -C "${repo}" -c user.name='Smoke Test' -c user.email='smoke@example.com' commit -m 'init' >/dev/null
+  printf '// change\n' >> "${repo}/module-a/src/main/java/com/example/Changed.java"
+  ${CLI} --repo "${repo}" doctor >/dev/null
+  ${CLI} --repo "${repo}" init >/dev/null
+  java_home="$(detect_java_home)"
+  printf 'MAKEVN_JAVA_HOME="%s"\n' "${java_home}" > "${repo}/.makevn/config"
+  cat > "${repo}/mvnw" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+printf 'LOCAL_CONTAINERS=%s\n' "${LOCAL_CONTAINERS-unset}" > .mvnw.log
+printf 'ARGS=%s\n' "$*" >> .mvnw.log
+EOF
+  chmod +x "${repo}/mvnw"
+
+  for scenario in profile config override empty_config unset cached_override; do
+    unset LOCAL_CONTAINERS
+    printf 'MAKEVN_JAVA_HOME="%s"\n' "${java_home}" > "${repo}/.makevn/config"
+    printf 'MAKEVN_PROFILE_VERIFY_IT_LOCAL_CONTAINERS=TRUE\n' > "${repo}/.makevn/profile.env"
+    expected=TRUE
+    case "${scenario}" in
+      config)
+        printf 'MAKEVN_LOCAL_CONTAINERS=FALSE\n' >> "${repo}/.makevn/config"
+        expected=FALSE ;;
+      override)
+        export LOCAL_CONTAINERS=FALSE
+        expected=FALSE ;;
+      empty_config)
+        printf 'MAKEVN_LOCAL_CONTAINERS=""\n' >> "${repo}/.makevn/config"
+        expected=unset ;;
+      unset)
+        printf 'MAKEVN_PROFILE_VERIFY_IT_LOCAL_CONTAINERS=""\n' > "${repo}/.makevn/profile.env"
+        expected=unset ;;
+      cached_override)
+        ${CLI} --repo "${repo}" verify-changes-preview >/dev/null
+        export LOCAL_CONTAINERS=FALSE
+        expected=FALSE ;;
+    esac
+    ${CLI} --repo "${repo}" verify-changes >/dev/null
+    assert_contains "${repo}/.mvnw.log" "LOCAL_CONTAINERS=${expected}"
+    assert_contains "${repo}/.mvnw.log" "-pl module-a -am verify"
+  done
+)
+
 test_verify_changes_nested_maven_base_strips_git_prefix() {
   local repo="${TMP_ROOT}/verify-changes-nested-maven-base"
   local code_repo="${repo}/code"
@@ -4030,6 +4084,7 @@ main() {
   test_verify_leaves_local_containers_unset_without_repo_signal
   test_verify_changes_preview_command
   test_verify_changes_command
+  test_verify_changes_modules_local_containers
   test_verify_changes_nested_maven_base_strips_git_prefix
   test_coverage_changes_command
   test_coverage_changes_fails_changed_module_gate
