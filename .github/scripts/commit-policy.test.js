@@ -44,6 +44,10 @@ async function check(commits = [signed()], options = {}) {
         if (options.apiError) throw new Error("PRIVATE_API_PAYLOAD");
         return { data: repositoryCommit(options.object || commits.find((commit) => commit.sha === ref)) };
       } },
+      checks: {
+        create: async () => ({ data: { id: 1 } }),
+        update: async () => ({ data: {} }),
+      },
     },
     paginate: async (endpoint, params) => {
       assert.equal(endpoint, listCommits);
@@ -198,9 +202,9 @@ test("diagnostics contain only SHAs and fixed categories, not message or identit
 
 test("workflow is independent, read-only, unfiltered and does not execute PR code", () => {
   assert.match(workflow, /pull_request_target:\n    branches: \[develop, main\]/);
-  assert.match(workflow, /contents: read\n  pull-requests: read/);
+  assert.match(workflow, /checks: write\n  contents: read\n  pull-requests: read/);
   assert.doesNotMatch(workflow, /githubGeneratedMerge|web-flow/);
-  assert.doesNotMatch(workflow, /paths:|paths-ignore:|needs:|: write|secrets\.|actions\/checkout|run:|tools\/crap/);
+  assert.doesNotMatch(workflow, /paths:|paths-ignore:|needs:|secrets\.|actions\/checkout|run:|tools\/crap/);
   assert.equal((workflow.match(/uses:/g) || []).length, 1);
   assert.doesNotMatch(script, /\$\{\{/);
 });

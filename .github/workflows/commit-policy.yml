@@ -24,6 +24,7 @@ on:
         type: string
 
 permissions:
+  checks: write
   contents: read
   pull-requests: read
 
@@ -53,6 +54,8 @@ jobs:
               return header !== null && (header[1] === undefined || header[1].trim() !== "") &&
                 (lines.length === 1 || lines[1] === "");
             }
+            let validationFailed = true;
+            let dispatchCheckId = null;
             try {
               const fromDispatch = context.eventName === "workflow_dispatch";
               const event = context.payload.pull_request;
@@ -67,6 +70,20 @@ jobs:
                   typeof expectedBaseRef !== "string" || expectedBaseRef.length === 0) {
                 core.setFailed("An explicit pull request revision is required.");
                 return;
+              }
+              if (fromDispatch) {
+                const check = await github.rest.checks.create({
+                  ...context.repo,
+                  name: "Conventional Commits and signatures",
+                  head_sha: expectedHeadSha,
+                  status: "in_progress",
+                  started_at: new Date().toISOString(),
+                  output: {
+                    title: "Commit policy validation",
+                    summary: "Validating the explicit pull request revision.",
+                  },
+                });
+                dispatchCheckId = check.data.id;
               }
               const params = { ...context.repo, pull_number: pullNumber };
               const { data: before } = await github.rest.pulls.get(params);
@@ -122,7 +139,28 @@ jobs:
               }
               await core.summary.addHeading("Commit policy")
                 .addRaw(`Checked ${shas.length} commits; ${failed} failed.\n`).write();
+              validationFailed = failed > 0;
               if (failed) core.setFailed("Commit policy failed; see the commit SHA diagnostics.");
             } catch {
               core.setFailed("Commit metadata or signature verification could not be checked. Try again when available.");
+            } finally {
+              if (dispatchCheckId) {
+                try {
+                  await github.rest.checks.update({
+                    ...context.repo,
+                    check_run_id: dispatchCheckId,
+                    status: "completed",
+                    conclusion: validationFailed ? "failure" : "success",
+                    completed_at: new Date().toISOString(),
+                    output: {
+                      title: "Commit policy validation",
+                      summary: validationFailed
+                        ? "Commit policy validation failed."
+                        : "Commit policy validation passed.",
+                    },
+                  });
+                } catch {
+                  core.warning("Could not finalize the PR-head commit policy check.");
+                }
+              }
             }
