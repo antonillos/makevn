@@ -140,19 +140,4 @@ jobs:
           if [[ -z "${pr_number}" ]]; then
             pr_number="$(gh pr view "${branch}" --repo "${{ github.repository }}" --json number --jq '.number')"
           fi
-          pr_data="$(gh pr view "${pr_number}" --repo "${{ github.repository }}" --json headRefOid,baseRefOid,baseRefName)"
-          head_sha="$(jq -r '.headRefOid' <<< "${pr_data}")"
-          base_sha="$(jq -r '.baseRefOid' <<< "${pr_data}")"
-          base_ref="$(jq -r '.baseRefName' <<< "${pr_data}")"
-          if ! gh workflow run commit-policy.yml \
-            --repo "${{ github.repository }}" \
-            --ref "${branch}" \
-            -f pull_number="${pr_number}" \
-            -f head_sha="${head_sha}" \
-            -f base_sha="${base_sha}" \
-            -f base_ref="${base_ref}"; then
-            printf 'Error: could not dispatch Commit Policy for sync PR #%s.\n' "${pr_number}" >&2
-            exit 1
-          fi
-
           printf 'Sync PR: %s\n' "${pr_url}" >> "${GITHUB_STEP_SUMMARY}"

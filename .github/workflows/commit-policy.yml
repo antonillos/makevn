@@ -4,24 +4,6 @@ on:
   pull_request_target:
     branches: [develop, main]
     types: [opened, synchronize, reopened, edited, ready_for_review]
-  workflow_dispatch:
-    inputs:
-      pull_number:
-        description: Pull request number to validate
-        required: true
-        type: number
-      head_sha:
-        description: Expected pull request head SHA
-        required: true
-        type: string
-      base_sha:
-        description: Expected pull request base SHA
-        required: true
-        type: string
-      base_ref:
-        description: Expected pull request base branch
-        required: true
-        type: string
 
 permissions:
   checks: write
@@ -29,7 +11,7 @@ permissions:
   pull-requests: read
 
 concurrency:
-  group: commit-policy-${{ github.event.pull_request.number || github.event.inputs.pull_number || github.run_id }}
+  group: commit-policy-${{ github.event.pull_request.number || github.run_id }}
   cancel-in-progress: true
 
 jobs:
@@ -55,15 +37,13 @@ jobs:
                 (lines.length === 1 || lines[1] === "");
             }
             let validationFailed = true;
-            let dispatchCheckId = null;
+            let checkId = null;
             try {
-              const fromDispatch = context.eventName === "workflow_dispatch";
               const event = context.payload.pull_request;
-              const inputs = context.payload.inputs || {};
-              const pullNumber = fromDispatch ? Number(inputs.pull_number) : event?.number;
-              const expectedHeadSha = fromDispatch ? inputs.head_sha : event?.head?.sha;
-              const expectedBaseSha = fromDispatch ? inputs.base_sha : event?.base?.sha;
-              const expectedBaseRef = fromDispatch ? inputs.base_ref : event?.base?.ref;
+              const pullNumber = event?.number;
+              const expectedHeadSha = event?.head?.sha;
+              const expectedBaseSha = event?.base?.sha;
+              const expectedBaseRef = event?.base?.ref;
               if (!Number.isInteger(pullNumber) ||
                   !shaPattern.test(expectedHeadSha || "") ||
                   !shaPattern.test(expectedBaseSha || "") ||
@@ -71,21 +51,18 @@ jobs:
                 core.setFailed("An explicit pull request revision is required.");
                 return;
               }
-              const needsExplicitCheck = fromDispatch || context.eventName === "pull_request_target";
-              if (needsExplicitCheck) {
-                const check = await github.rest.checks.create({
-                  ...context.repo,
-                  name: "Conventional Commits and signatures",
-                  head_sha: expectedHeadSha,
-                  status: "in_progress",
-                  started_at: new Date().toISOString(),
-                  output: {
-                    title: "Commit policy validation",
-                    summary: "Validating the explicit pull request revision.",
-                  },
-                });
-                dispatchCheckId = check.data.id;
-              }
+              const check = await github.rest.checks.create({
+                ...context.repo,
+                name: "Conventional Commits and signatures",
+                head_sha: expectedHeadSha,
+                status: "in_progress",
+                started_at: new Date().toISOString(),
+                output: {
+                  title: "Commit policy validation",
+                  summary: "Validating the pull request revision.",
+                },
+              });
+              checkId = check.data.id;
               const params = { ...context.repo, pull_number: pullNumber };
               const { data: before } = await github.rest.pulls.get(params);
               const sameRevision = (pull) => pull.head.sha === expectedHeadSha &&
@@ -145,11 +122,11 @@ jobs:
             } catch {
               core.setFailed("Commit metadata or signature verification could not be checked. Try again when available.");
             } finally {
-              if (dispatchCheckId) {
+              if (checkId) {
                 try {
                   await github.rest.checks.update({
                     ...context.repo,
-                    check_run_id: dispatchCheckId,
+                    check_run_id: checkId,
                     status: "completed",
                     conclusion: validationFailed ? "failure" : "success",
                     completed_at: new Date().toISOString(),
