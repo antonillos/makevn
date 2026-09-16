@@ -1322,6 +1322,7 @@ makevn_detect_parent_branch_spec() {
   local candidate_is_first_parent=""
   local best_is_first_parent=""
   local -a candidates=()
+  local -a release_candidates=()
 
   current_branch="$(git -C "${repo_root}" rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
   case "${current_branch}" in
@@ -1342,6 +1343,10 @@ makevn_detect_parent_branch_spec() {
   # from develop, main is only on a secondary-parent path while develop's merge
   # point remains on HEAD's first-parent history.
   candidates=(origin/main main origin/develop develop origin/master master)
+  while IFS= read -r candidate; do
+    [[ -n "${candidate}" ]] && release_candidates+=("${candidate}")
+  done < <(git -C "${repo_root}" for-each-ref --format='%(refname:short)' refs/remotes/origin/release refs/heads/release 2>/dev/null || true)
+  candidates+=("${release_candidates[@]}")
   first_parent_history="$(git -C "${repo_root}" rev-list --first-parent HEAD 2>/dev/null || true)"
   for candidate in "${candidates[@]}"; do
     git -C "${repo_root}" rev-parse --verify "${candidate}" >/dev/null 2>&1 || continue
