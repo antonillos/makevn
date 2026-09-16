@@ -153,6 +153,7 @@ makevn_first_parent_diff_names() {
   local parent_count=0
   local changed_paths=""
   local path=""
+  local last_relevant_commit=""
 
   # A sync merge can bring unrelated files in through a secondary parent.
   # Walking HEAD's first-parent history keeps verify-changes focused on commits
@@ -173,8 +174,12 @@ makevn_first_parent_diff_names() {
 
   while IFS= read -r path; do
     [[ -n "${path}" ]] || continue
-    # Do not retain a path added and later removed on the feature branch.
-    git -C "${repo_root}" diff --quiet "${parent_spec}" -- "${path}" || printf '%s\n' "${path}"
+    # Compare the base to the latest first-parent commit that changed this path,
+    # rather than HEAD: a later clean merge can change the same path only on its
+    # secondary parent after the feature has reverted its own edit.
+    last_relevant_commit="$(git -C "${repo_root}" log --first-parent --format=%H "${parent_branch}..HEAD" -- "${path}" | head -n 1)"
+    [[ -n "${last_relevant_commit}" ]] || continue
+    git -C "${repo_root}" diff --quiet "${parent_spec}" "${last_relevant_commit}" -- "${path}" || printf '%s\n' "${path}"
   done <<< "${changed_paths}"
 }
 

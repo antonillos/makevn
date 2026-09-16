@@ -121,22 +121,28 @@ first_parent_added_line_numbers() {
   local line=""
   local sha=""
   local first_parent_commits=""
-  local blamed_lines=""
+  local changed_lines_file=""
 
   first_parent_commits="$(git rev-list --first-parent "${parent_branch}..HEAD" 2>/dev/null || true)"
+  changed_lines_file="$(mktemp "${TMPDIR:-/tmp}/makevn-first-parent-lines.XXXXXX")"
+  trap 'rm -f "${changed_lines_file}"' RETURN
+  extract_added_line_numbers "$file" "$BASE_REF" > "${changed_lines_file}"
   # Do not use --first-parent here: Git would attribute clean secondary-parent
   # imports to the merge commit. Normal blame retains their original SHA.
-  blamed_lines="$(git blame --line-porcelain HEAD -- "$file" 2>/dev/null | awk '
+  git blame --line-porcelain HEAD -- "$file" 2>/dev/null | awk -v commits="$first_parent_commits" '
+    BEGIN {
+      count = split(commits, entries, "\n")
+      for (i = 1; i <= count; i++) allowed[entries[i]] = 1
+    }
+    NR == FNR { wanted[$1] = 1; next }
     /^[0-9a-f]{40} / { sha = $1; line = $3 }
-    /^\t/ { print line "\t" sha; line++ }
-  ')"
-  while IFS= read -r line; do
-    [ -n "$line" ] || continue
-    sha="$(awk -F '\t' -v target="$line" '$1 == target { print $2; exit }' <<< "$blamed_lines")"
-    case $'\n'"${first_parent_commits}"$'\n' in
-      *$'\n'"${sha}"$'\n'*) printf '%s\n' "$line" ;;
-    esac
-  done < <(extract_added_line_numbers "$file" "$BASE_REF")
+    /^\t/ {
+      if (wanted[line] && allowed[sha]) print line
+      line++
+    }
+  ' "${changed_lines_file}" -
+  rm -f "${changed_lines_file}"
+  trap - RETURN
 }
 
 # Detect changed production Java files and deduplicate
