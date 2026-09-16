@@ -324,28 +324,41 @@ jobs:
               }
             }
 
-            let readyPull = null;
+            const readyPulls = new Map();
+            let allPullsReady = false;
             while (Date.now() < deadline) {
-              readyPull = (await github.rest.pulls.get({
-                owner,
-                repo,
-                pull_number: pullNumber,
-              })).data;
-              if (readyPull.head.sha !== pull.head.sha) {
-                await comment("⛔ The PR head changed during validation. Run `/merge` again.");
-                core.setFailed("Pull request head changed during validation.");
-                return;
+              allPullsReady = true;
+              for (const target of targetPulls) {
+                const current = (await github.rest.pulls.get({
+                  owner,
+                  repo,
+                  pull_number: target.number,
+                })).data;
+                readyPulls.set(target.number, current);
+                if (current.head.sha !== target.head.sha) {
+                  await comment(
+                    target.number === pullNumber
+                      ? "⛔ The PR head changed during validation. Run `/merge` again."
+                      : `⛔ Stack PR #${target.number} changed during validation. ` +
+                        "Run `/merge` again."
+                  );
+                  core.setFailed(`Stack PR #${target.number} head changed during validation.`);
+                  return;
+                }
+                if (current.mergeable === false) {
+                  await comment(
+                    `⛔ Stack PR #${target.number} developed merge conflicts during validation.`
+                  );
+                  core.setFailed(`Stack PR #${target.number} has merge conflicts.`);
+                  return;
+                }
+                if (current.mergeable_state !== "clean") allPullsReady = false;
               }
-              if (readyPull.mergeable === false) {
-                await comment("⛔ This pull request developed merge conflicts during validation.");
-                core.setFailed("Pull request has merge conflicts.");
-                return;
-              }
-              if (readyPull.mergeable_state === "clean") break;
+              if (allPullsReady) break;
               await sleep(15000);
             }
 
-            if (!readyPull || readyPull.mergeable_state !== "clean") {
+            if (!allPullsReady) {
               await comment(
                 "⏳ Timed out waiting for GitHub branch requirements to become mergeable."
               );
@@ -354,13 +367,7 @@ jobs:
             }
 
             for (const target of targetPulls) {
-              const current = target.number === pullNumber
-                ? readyPull
-                : (await github.rest.pulls.get({
-                    owner,
-                    repo,
-                    pull_number: target.number,
-                  })).data;
+              const current = readyPulls.get(target.number);
               if (current.head.sha !== target.head.sha ||
                   current.base.ref !== target.base.ref ||
                   current.mergeable_state !== "clean") {
@@ -488,7 +495,7 @@ jobs:
               pull_number: pullNumber,
               merge_method: method,
               merge_action: "default",
-              sha: pull.head.sha,
+              expected_head_sha: pull.head.sha,
               ...githubApiRequest,
             };
             if (method === "squash") {
