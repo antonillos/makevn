@@ -1,0 +1,98 @@
+name: Commit Policy
+
+on:
+  pull_request:
+    branches: [develop, main]
+    types: [opened, synchronize, reopened, edited, ready_for_review]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: commit-policy-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  commits:
+    name: Conventional Commits and signatures
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      # API metadata only: no checkout, PR code execution, signing key or CRAP.
+      - name: Validate every PR commit
+        uses: actions/github-script@v9
+        with:
+          script: |
+            const shaPattern = /^[0-9a-f]{40}$/;
+            function conventional(message, isMergeCommit = false) {
+              if (typeof message !== "string") return false;
+              const lines = message.replace(/\r\n/g, "\n").split("\n");
+              const mergeHeader = /^Merge (?:pull request #\d+ from \S+|(?:remote-tracking )?branch \S+(?: into \S+)?)$/i;
+              if (mergeHeader.test(lines[0])) return isMergeCommit && (lines.length === 1 || lines[1] === "");
+              // Types are extensible and case-insensitive; scope and ! are optional.
+              const header = /^[a-z][a-z0-9-]*(?:\(([^()\r\n]+)\))?!?: \S[^\r\n]*$/i.exec(lines[0]);
+              return header !== null && (header[1] === undefined || header[1].trim() !== "") &&
+                (lines.length === 1 || lines[1] === "");
+            }
+            try {
+              const event = context.payload.pull_request;
+              const params = { ...context.repo, pull_number: event.number };
+              const { data: before } = await github.rest.pulls.get(params);
+              const sameRevision = (pull) => pull.head.sha === event.head.sha &&
+                pull.base.sha === event.base.sha && pull.base.ref === event.base.ref;
+              if (!sameRevision(before)) {
+                core.setFailed("PR revision changed; use the check for the current revision.");
+                return;
+              }
+              // GitHub's PR-commits endpoint is capped at 250 even with pagination.
+              if (!Number.isInteger(before.commits) || before.commits < 1 || before.commits > 250) {
+                core.setFailed("Cannot verify the complete commit set (supported range: 1–250).");
+                return;
+              }
+              const commits = await github.paginate(github.rest.pulls.listCommits,
+                { ...params, per_page: 100 });
+              const shas = commits.map((commit) => commit.sha);
+              if (shas.length !== before.commits || new Set(shas).size !== shas.length ||
+                  !shas.every((sha) => typeof sha === "string" && shaPattern.test(sha)) ||
+                  !shas.includes(event.head.sha)) {
+                core.setFailed("Complete commit metadata is unavailable; no passing result can be issued.");
+                return;
+              }
+              let failed = 0;
+              for (const sha of shas) {
+                const { data: commit } = await github.rest.repos.getCommit({
+                  ...context.repo, ref: sha,
+                });
+                if (commit.sha !== sha) throw new Error("Commit mismatch");
+                const message = commit.commit?.message;
+                const isMergeCommit = Array.isArray(commit.parents) && commit.parents.length > 1;
+                const formatOK = conventional(message, isMergeCommit);
+                const verification = commit.commit?.verification;
+                const signature = verification?.signature;
+                // GitHub-created merge commits are unsigned; identify them using
+                // GitHub's trusted committer association, never a commit email.
+                const firstLine = typeof message === "string" ? message.replace(/\r\n/g, "\n").split("\n")[0] : "";
+                const githubGeneratedMerge = isMergeCommit &&
+                  /^Merge pull request #\d+ from \S+$/i.test(firstLine) &&
+                  commit.committer?.login === "web-flow" && commit.committer?.type === "User";
+                const signatureOK = githubGeneratedMerge || (verification?.verified === true &&
+                  verification.reason === "valid" &&
+                  (signature?.startsWith("-----BEGIN SSH SIGNATURE-----") === true ||
+                    signature?.startsWith("-----BEGIN PGP SIGNATURE-----") === true));
+                // Never echo messages, identities, signatures, payloads or API errors.
+                if (!formatOK) core.error(`${sha.slice(0, 12)}: Conventional Commits format required.`);
+                if (!signatureOK) core.error(`${sha.slice(0, 12)}: verified PGP or SSH signature required, except for GitHub-generated merges.`);
+                if (!formatOK || !signatureOK) failed++;
+              }
+              const { data: after } = await github.rest.pulls.get(params);
+              if (!sameRevision(after) || after.commits !== before.commits) {
+                core.setFailed("PR revision changed during validation; results are stale.");
+                return;
+              }
+              await core.summary.addHeading("Commit policy")
+                .addRaw(`Checked ${shas.length} commits; ${failed} failed.\n`).write();
+              if (failed) core.setFailed("Commit policy failed; see the commit SHA diagnostics.");
+            } catch {
+              core.setFailed("Commit metadata or signature verification could not be checked. Try again when available.");
+            }
