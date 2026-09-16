@@ -30,6 +30,7 @@ async function check(commits = [signed()], options = {}) {
     title: options.title || "docs: update guide" };
   const logs = [];
   const requests = [];
+  const checks = [];
   let reads = 0;
   const listCommits = () => { throw new Error("Must paginate"); };
   const github = {
@@ -45,8 +46,8 @@ async function check(commits = [signed()], options = {}) {
         return { data: repositoryCommit(options.object || commits.find((commit) => commit.sha === ref)) };
       } },
       checks: {
-        create: async () => ({ data: { id: 1 } }),
-        update: async () => ({ data: {} }),
+        create: async (request) => { checks.push(["create", request]); return { data: { id: 1 } }; },
+        update: async (request) => { checks.push(["update", request]); return { data: {} }; },
       },
     },
     paginate: async (endpoint, params) => {
@@ -68,9 +69,9 @@ async function check(commits = [signed()], options = {}) {
     ? { inputs: { pull_number: String(expected.number), head_sha: expected.head.sha,
         base_sha: expected.base.sha, base_ref: expected.base.ref } }
     : { pull_request: expected };
-  await run(github, { eventName: options.dispatch ? "workflow_dispatch" : "pull_request",
+  await run(github, { eventName: options.dispatch ? "workflow_dispatch" : (options.target ? "pull_request_target" : "pull_request"),
     repo: { owner: "example", repo: "example" }, payload }, core);
-  return { failed: logs.some(([kind]) => kind === "failed"), logs, requests };
+  return { failed: logs.some(([kind]) => kind === "failed"), logs, requests, checks };
 }
 
 test("accepts conventional headers, custom types, scopes, breaking markers and bodies", async () => {
@@ -94,7 +95,19 @@ test("rejects a non-conventional pull request title", async () => {
 });
 
 test("supports explicit workflow dispatch validation for bot-created pull requests", async () => {
-  assert.equal((await check([signed()], { dispatch: true })).failed, false);
+  const result = await check([signed()], { dispatch: true });
+  assert.equal(result.failed, false);
+  assert.equal(result.checks[0][0], "create");
+  assert.equal(result.checks[0][1].head_sha, sha(1));
+  assert.equal(result.checks[1][0], "update");
+});
+
+test("publishes pull_request_target results on the pull request head", async () => {
+  const result = await check([signed()], { target: true });
+  assert.equal(result.failed, false);
+  assert.equal(result.checks[0][0], "create");
+  assert.equal(result.checks[0][1].head_sha, sha(1));
+  assert.equal(result.checks[1][0], "update");
 });
 
 test("accepts recognized merge headers only for multi-parent commits", async () => {

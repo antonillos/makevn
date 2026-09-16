@@ -71,7 +71,8 @@ jobs:
                 core.setFailed("An explicit pull request revision is required.");
                 return;
               }
-              if (fromDispatch) {
+              const needsExplicitCheck = fromDispatch || context.eventName === "pull_request_target";
+              if (needsExplicitCheck) {
                 const check = await github.rest.checks.create({
                   ...context.repo,
                   name: "Conventional Commits and signatures",
