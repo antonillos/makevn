@@ -3187,6 +3187,7 @@ EOF
 set -euo pipefail
 printf 'ARGS=%s\n' "$*" >> .mvnw.log
 printf 'JAVA_HOME=%s\n' "${JAVA_HOME:-}" >> .mvnw.log
+printf 'LOCAL_CONTAINERS=%s\n' "${LOCAL_CONTAINERS-unset}" >> .mvnw.log
 EOF
   chmod +x "${repo}/mvnw"
   cat > "${repo}/.makevn/config" <<EOF
@@ -3196,6 +3197,7 @@ MAKEVN_KARATE_JAVA_HOME=""
 MAKEVN_CODE_TOOL_VERSIONS=""
 MAKEVN_KARATE_TOOL_VERSIONS=""
 MAKEVN_RUN_CMD=""
+MAKEVN_LOCAL_CONTAINERS="TRUE"
 EOF
 
   output="$(${CLI} --repo "${repo}" verify-changes)"
@@ -3203,6 +3205,7 @@ EOF
   [[ "${output}" == *"[ok] "* ]] || fail "expected verify-changes output to include success summary"
   assert_matches "${repo}/.mvnw.log" '^ARGS=-nsu -f .*/pom\.xml verify -Djacoco\.skip=false -DskipUTs=false -Dtest=com\.example\.ChangedTest -Dit\.test=com\.example\.ChangedTest -Dfailsafe\.failIfNoSpecifiedTests=false -Dsurefire\.failIfNoSpecifiedTests=false -Dawaitility\.defaultPollInterval=200ms -Dawaitility\.defaultTimeout=2m -Dmaven\.build\.cache\.enabled=false$'
   assert_contains "${repo}/.mvnw.log" "JAVA_HOME=${java_home}"
+  assert_contains "${repo}/.mvnw.log" "LOCAL_CONTAINERS=TRUE"
 
   ${CLI} --repo "${repo}" uninstall >/dev/null
 }
@@ -3258,6 +3261,71 @@ EOF
 
   ${CLI} --repo "${repo}" uninstall >/dev/null
 }
+
+test_verify_changes_modules_local_containers() (
+  unset LOCAL_CONTAINERS MAKEVN_LOCAL_CONTAINERS
+  local repo="${TMP_ROOT}/verify-changes-local-containers"
+  local java_home
+  local scenario expected
+
+  mkdir -p "${repo}/module-a/src/main/java/com/example"
+  printf '<project/>\n' > "${repo}/pom.xml"
+  printf 'class Changed {}\n' > "${repo}/module-a/src/main/java/com/example/Changed.java"
+  git init --initial-branch=main "${repo}" >/dev/null
+  git -C "${repo}" add .
+  git -C "${repo}" -c user.name='Smoke Test' -c user.email='smoke@example.com' commit -m 'init' >/dev/null
+  printf '// change\n' >> "${repo}/module-a/src/main/java/com/example/Changed.java"
+  ${CLI} --repo "${repo}" doctor >/dev/null
+  ${CLI} --repo "${repo}" init >/dev/null
+  java_home="$(detect_java_home)"
+  printf 'MAKEVN_JAVA_HOME="%s"\n' "${java_home}" > "${repo}/.makevn/config"
+  cat > "${repo}/mvnw" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+if [[ ${LOCAL_CONTAINERS+x} ]]; then
+  printf 'LOCAL_CONTAINERS=%s\n' "${LOCAL_CONTAINERS}" > .mvnw.log
+else
+  printf 'LOCAL_CONTAINERS=__UNSET__\n' > .mvnw.log
+fi
+printf 'ARGS=%s\n' "$*" >> .mvnw.log
+EOF
+  chmod +x "${repo}/mvnw"
+
+  for scenario in profile config override empty_config empty_override unset cached_override cached_config; do
+    unset LOCAL_CONTAINERS
+    printf 'MAKEVN_JAVA_HOME="%s"\n' "${java_home}" > "${repo}/.makevn/config"
+    printf 'MAKEVN_PROFILE_VERIFY_IT_LOCAL_CONTAINERS=TRUE\n' > "${repo}/.makevn/profile.env"
+    expected=TRUE
+    case "${scenario}" in
+      config)
+        printf 'MAKEVN_LOCAL_CONTAINERS=FALSE\n' >> "${repo}/.makevn/config"
+        expected=FALSE ;;
+      override)
+        export LOCAL_CONTAINERS=FALSE
+        expected=FALSE ;;
+      empty_config)
+        printf 'MAKEVN_LOCAL_CONTAINERS=""\n' >> "${repo}/.makevn/config"
+        expected=__UNSET__ ;;
+      empty_override)
+        export LOCAL_CONTAINERS=""
+        expected="" ;;
+      unset)
+        printf 'MAKEVN_PROFILE_VERIFY_IT_LOCAL_CONTAINERS=""\n' > "${repo}/.makevn/profile.env"
+        expected=__UNSET__ ;;
+      cached_override)
+        ${CLI} --repo "${repo}" verify-changes-preview >/dev/null
+        export LOCAL_CONTAINERS=FALSE
+        expected=FALSE ;;
+      cached_config)
+        ${CLI} --repo "${repo}" verify-changes-preview >/dev/null
+        printf 'MAKEVN_LOCAL_CONTAINERS=FALSE\n' >> "${repo}/.makevn/config"
+        expected=FALSE ;;
+    esac
+    ${CLI} --repo "${repo}" verify-changes >/dev/null
+    assert_contains "${repo}/.mvnw.log" "LOCAL_CONTAINERS=${expected}"
+    assert_contains "${repo}/.mvnw.log" "-pl module-a -am verify"
+  done
+)
 
 test_verify_changes_nested_maven_base_strips_git_prefix() {
   local repo="${TMP_ROOT}/verify-changes-nested-maven-base"
@@ -4030,6 +4098,7 @@ main() {
   test_verify_leaves_local_containers_unset_without_repo_signal
   test_verify_changes_preview_command
   test_verify_changes_command
+  test_verify_changes_modules_local_containers
   test_verify_changes_nested_maven_base_strips_git_prefix
   test_coverage_changes_command
   test_coverage_changes_fails_changed_module_gate

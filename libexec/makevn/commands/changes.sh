@@ -447,6 +447,14 @@ No modified Java files detected. Skipping verify-changes."
     read -r -a prop_flags <<< "${prop_flags_value}"
   fi
 
+  # Runtime environment/config can change after a cached preview plan.
+  MAKEVN_VERIFY_CHANGES_LOCAL_CONTAINERS="$(makevn_effective_local_containers "${repo_root}" "${MAKEVN_PROFILE_VERIFY_IT_LOCAL_CONTAINERS:-}")"
+  if [[ -n "${MAKEVN_VERIFY_CHANGES_LOCAL_CONTAINERS}" ]]; then
+    verify_args=(env "LOCAL_CONTAINERS=${MAKEVN_VERIFY_CHANGES_LOCAL_CONTAINERS}" "${MAKEVN_VERIFY_CHANGES_MAVEN_EXECUTABLE}")
+  else
+    verify_args=("${MAKEVN_VERIFY_CHANGES_MAVEN_EXECUTABLE}")
+  fi
+
   if [[ -n "${MAKEVN_VERIFY_CHANGES_SRC_FILES}" ]]; then
     if [[ -z "${MAKEVN_VERIFY_CHANGES_MODULES}" ]]; then
       makevn_clear_verify_changes_plan "${repo_root}"
@@ -454,7 +462,6 @@ No modified Java files detected. Skipping verify-changes."
       return $?
     fi
 
-    verify_args=("${MAKEVN_VERIFY_CHANGES_MAVEN_EXECUTABLE}")
     if [[ ${#cli_flags[@]} -gt 0 ]]; then
       verify_args+=("${cli_flags[@]}")
     fi
@@ -473,11 +480,6 @@ No modified Java files detected. Skipping verify-changes."
     return ${rc}
   fi
 
-  if [[ -n "${MAKEVN_VERIFY_CHANGES_LOCAL_CONTAINERS}" ]]; then
-    verify_args=(env "LOCAL_CONTAINERS=${MAKEVN_VERIFY_CHANGES_LOCAL_CONTAINERS}" "${MAKEVN_VERIFY_CHANGES_MAVEN_EXECUTABLE}")
-  else
-    verify_args=("${MAKEVN_VERIFY_CHANGES_MAVEN_EXECUTABLE}")
-  fi
   if [[ ${#cli_flags[@]} -gt 0 ]]; then
     verify_args+=("${cli_flags[@]}")
   fi
