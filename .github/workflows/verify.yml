@@ -34,6 +34,18 @@ jobs:
       - name: Run sanitization checks
         shell: bash
         run: bash test/sanitize/run.sh
+      - name: Run commit policy tests
+        shell: bash
+        run: node --test .github/scripts/commit-policy.test.js
+      - name: Run sync workflow tests
+        shell: bash
+        run: node --test .github/scripts/sync-workflow.test.js
+      - name: Run release workflow tests
+        shell: bash
+        run: node --test .github/scripts/release-workflow.test.js
+      - name: Run Smart Merge policy tests
+        shell: bash
+        run: node --test .github/scripts/smart-merge-policy.test.js
       - name: Run smoke tests
         shell: bash
         run: |
