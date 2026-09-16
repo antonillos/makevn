@@ -3372,7 +3372,7 @@ test_verify_changes_preserves_first_parent_after_sync_merge() {
   ${CLI} --repo "${repo}" init >/dev/null
   output="$(${CLI} --repo "${repo}" verify-changes-preview)"
 
-  [[ "${output}" == *"compare against: develop...HEAD" ]] \
+  grep -Fq 'compare against: develop...HEAD' <<< "${output}" \
     || fail "expected the first-parent develop base after sync merge, got: ${output}"
   [[ "${output}" == *"FeatureOnly"* && "${output}" != *"MainSyncOnly"* ]] \
     || fail "merged main work must not be selected for the feature: ${output}"
