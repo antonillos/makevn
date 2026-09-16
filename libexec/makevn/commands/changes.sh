@@ -150,14 +150,32 @@ makevn_first_parent_diff_names() {
   local parent_spec="$2"
   local parent_branch="${parent_spec%...HEAD}"
   local commit=""
+  local parent_count=0
+  local changed_paths=""
+  local path=""
 
   # A sync merge can bring unrelated files in through a secondary parent.
   # Walking HEAD's first-parent history keeps verify-changes focused on commits
   # made on the feature branch itself while retaining the selected base.
-  while IFS= read -r commit; do
-    [[ -n "${commit}" ]] || continue
-    git -C "${repo_root}" diff-tree --no-commit-id --name-only -r "${commit}"
-  done < <(git -C "${repo_root}" rev-list --first-parent --reverse "${parent_branch}..HEAD" 2>/dev/null || true) | LC_ALL=C sort -u
+  changed_paths="$(
+    while IFS= read -r commit; do
+      [[ -n "${commit}" ]] || continue
+      parent_count="$(git -C "${repo_root}" rev-list --parents -n 1 "${commit}" | awk '{print NF - 1}')"
+      if (( parent_count > 1 )); then
+        # Combined diffs retain conflict-resolution changes without importing
+        # paths changed only on a clean secondary-parent merge.
+        git -C "${repo_root}" diff-tree --no-commit-id --name-only -r --cc "${commit}"
+      else
+        git -C "${repo_root}" diff-tree --no-commit-id --name-only -r "${commit}"
+      fi
+    done < <(git -C "${repo_root}" rev-list --first-parent --reverse "${parent_branch}..HEAD" 2>/dev/null || true) | LC_ALL=C sort -u
+  )"
+
+  while IFS= read -r path; do
+    [[ -n "${path}" ]] || continue
+    # Do not retain a path added and later removed on the feature branch.
+    git -C "${repo_root}" diff --quiet "${parent_spec}" -- "${path}" || printf '%s\n' "${path}"
+  done <<< "${changed_paths}"
 }
 
 makevn_collect_verify_changes_scope() {
@@ -631,7 +649,7 @@ cmd_coverage_changes() {
   coverage_output_file="$(mktemp "${TMPDIR:-/tmp}/makevn-coverage-changes.XXXXXX")"
   set +e
   (
-    cd "${git_root}" && BASE_PATH="${maven_base_rel}" COVERAGE_VERBOSE="${verbose}" bash "${coverage_script}" "${report_dir}" "${parent_spec}" "${threshold}" "${overall_threshold}"
+    cd "${git_root}" && BASE_PATH="${maven_base_rel}" COVERAGE_VERBOSE="${verbose}" MAKEVN_COVERAGE_FIRST_PARENT_ONLY=1 bash "${coverage_script}" "${report_dir}" "${parent_spec}" "${threshold}" "${overall_threshold}"
   ) > "${coverage_output_file}" 2>&1
   rc=$?
   set -e

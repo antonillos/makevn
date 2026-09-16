@@ -32,6 +32,7 @@ BASE_REF="${2:-}"
 MIN_COVERAGE_PCT="${3:-90}"
 MIN_OVERALL_COVERAGE_PCT="${4:-90}"
 COVERAGE_VERBOSE="${COVERAGE_VERBOSE:-false}"
+FIRST_PARENT_ONLY="${MAKEVN_COVERAGE_FIRST_PARENT_ONLY:-false}"
 MIN_COVERAGE_DISPLAY="$(printf '%s' "$MIN_COVERAGE_PCT" | sed -E 's/[[:space:]]*\([^)]*\)[[:space:]]*$//; s/%$//; s/^[[:space:]]+|[[:space:]]+$//g')"
 
 if [ -z "$JACOCO_BASE" ] || [ ! -d "$JACOCO_BASE" ]; then
@@ -87,6 +88,33 @@ extract_added_line_numbers() {
   done
 }
 
+first_parent_diff_names() {
+  local parent_branch="${BASE_REF%...HEAD}"
+  local commit=""
+  local parent_count=0
+  local changed_paths=""
+  local path=""
+
+  changed_paths="$(
+    while IFS= read -r commit; do
+      [ -n "$commit" ] || continue
+      parent_count=$(git rev-list --parents -n 1 "$commit" | awk '{print NF - 1}')
+      if [ "$parent_count" -gt 1 ]; then
+        git diff-tree --no-commit-id --name-only -r --cc "$commit"
+      else
+        git diff-tree --no-commit-id --name-only -r "$commit"
+      fi
+    done < <(git rev-list --first-parent --reverse "${parent_branch}..HEAD" 2>/dev/null || true) | sort -u
+  )"
+
+  while IFS= read -r path; do
+    [ -n "$path" ] || continue
+    git diff --quiet "$BASE_REF" -- "$path" || printf '%s\n' "$path"
+  done <<EOF
+$changed_paths
+EOF
+}
+
 # Detect changed production Java files and deduplicate
 # Use the same logic as verify-changes: combine base diff + local modifications
 CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "HEAD")
@@ -101,7 +129,11 @@ else
   if [ "$COVERAGE_VERBOSE" = true ]; then
     echo "ℹ  On feature branch, checking changes vs $BASE_REF + local modifications..." 1>&2
   fi
-  DIFF_NAME_ONLY_BASE=$(git diff --name-only "$BASE_REF" 2>/dev/null || true)
+  if [ "$FIRST_PARENT_ONLY" = true ] || [ "$FIRST_PARENT_ONLY" = 1 ]; then
+    DIFF_NAME_ONLY_BASE=$(first_parent_diff_names)
+  else
+    DIFF_NAME_ONLY_BASE=$(git diff --name-only "$BASE_REF" 2>/dev/null || true)
+  fi
   DIFF_NAME_ONLY_LOCAL=$(git diff --name-only HEAD 2>/dev/null || true)
 
   CHANGED_PROD_FILES_BASE=$(echo "$DIFF_NAME_ONLY_BASE" | grep "^${BASE_PATH_PREFIX}" | grep "/src/main/java/" | grep "\\.java$" || true)
