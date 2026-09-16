@@ -21,18 +21,22 @@ jobs:
       github.event.issue.pull_request &&
       startsWith(github.event.comment.body, '/merge')
     runs-on: ubuntu-latest
+    timeout-minutes: 65
     steps:
       - name: Analyze and merge pull request
-        uses: actions/github-script@v8
+        uses: actions/github-script@v9
         with:
           github-token: ${{ github.token }}
           script: |
             const owner = context.repo.owner;
             const repo = context.repo.repo;
             const pullNumber = context.issue.number;
-            const actor = context.actor;
+            const actor = context.actor.toLowerCase();
             const command = context.payload.comment.body.trim().split(/\s+/);
             const allowedOverrides = new Set(["merge", "squash", "rebase"]);
+            const githubApiRequest = {
+              headers: { "X-GitHub-Api-Version": "2026-03-10" },
+            };
             const requestedMethod = command[1] || "";
             const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -92,6 +96,77 @@ jobs:
               return;
             }
 
+            // The asynchronous endpoint merges every PR in a stack up to the
+            // requested one. Discover that exact set now so every affected PR
+            // receives the same fail-closed validation before one is merged.
+            let stackResponse;
+            try {
+              stackResponse = await github.request(
+                "GET /repos/{owner}/{repo}/stacks",
+                {
+                  owner,
+                  repo,
+                  pull_request: pullNumber,
+                  per_page: 2,
+                  ...githubApiRequest,
+                }
+              );
+            } catch (error) {
+              await comment(
+                "⛔ Could not verify GitHub stack membership, so no merge was attempted. " +
+                "Retry `/merge` after GitHub API access recovers."
+              );
+              core.setFailed(`Could not verify pull request stack: ${error.message}`);
+              return;
+            }
+            if (stackResponse.data.length > 1) {
+              await comment("⛔ GitHub returned multiple stacks for this pull request.");
+              core.setFailed("Ambiguous pull request stack membership.");
+              return;
+            }
+            const stack = stackResponse.data[0];
+            let targetPulls = [pull];
+            if (stack) {
+              const stackIndex = stack.pull_requests.findIndex((item) =>
+                item.number === pullNumber
+              );
+              const stackPull = stack.pull_requests[stackIndex];
+              if (!stackPull || stackPull.head.sha !== pull.head.sha) {
+                await comment(
+                  "⛔ The GitHub stack changed while Smart Merge was starting. " +
+                  "Run `/merge` again."
+                );
+                core.setFailed("Pull request stack changed.");
+                return;
+              }
+
+              const targetItems = stack.pull_requests
+                .slice(0, stackIndex + 1)
+                .filter((item) => !item.merged_at);
+              targetPulls = [];
+              for (const item of targetItems) {
+                const target = item.number === pullNumber
+                  ? pull
+                  : (await github.rest.pulls.get({
+                      owner,
+                      repo,
+                      pull_number: item.number,
+                    })).data;
+                if (target.state !== "open" || target.draft ||
+                    target.head.sha !== item.head.sha) {
+                  await comment(
+                    `⛔ Stack PR #${item.number} is closed, draft, or changed. ` +
+                    "Make every PR ready, then run `/merge` again."
+                  );
+                  core.setFailed(`Stack PR #${item.number} is not ready.`);
+                  return;
+                }
+                targetPulls.push(target);
+              }
+            }
+
+            // Smoke is the stable branch-protection gate for makevn. It validates
+            // the exact head SHA through the complete Verify workflow.
             const requiredChecks = ["smoke"];
             const deadline = Date.now() + 30 * 60 * 1000;
 
@@ -114,28 +189,40 @@ jobs:
               return { jobsByName, invalid };
             }
 
+            async function findSuccessfulVerify(target) {
+              const runs = await github.rest.actions.listWorkflowRuns({
+                owner,
+                repo,
+                workflow_id: "verify.yml",
+                event: "pull_request",
+                branch: target.head.ref,
+                status: "success",
+                per_page: 20,
+              });
+              for (const candidate of runs.data.workflow_runs) {
+                if (candidate.head_sha !== target.head.sha) continue;
+                const candidateJobs = await loadRequiredJobs(candidate.id);
+                if (!candidateJobs.invalid.length) return candidate;
+              }
+              return null;
+            }
+
             // Reuse a complete successful pull_request run only when it belongs
             // to the immutable PR head being validated. This avoids repeating
             // expensive checks without ever mixing jobs from different SHAs or
             // workflow runs.
-            let verifyRun = null;
-            const pullRequestRuns = await github.rest.actions.listWorkflowRuns({
-              owner,
-              repo,
-              workflow_id: "verify.yml",
-              event: "pull_request",
-              branch: pull.head.ref,
-              status: "success",
-              per_page: 20,
-            });
-            for (const candidate of pullRequestRuns.data.workflow_runs) {
-              if (candidate.head_sha !== pull.head.sha) continue;
-              const candidateJobs = await loadRequiredJobs(candidate.id);
-              if (!candidateJobs.invalid.length) {
-                verifyRun = candidate;
-                break;
+            for (const target of targetPulls) {
+              if (target.number === pullNumber) continue;
+              if (!await findSuccessfulVerify(target)) {
+                await comment(
+                  `⛔ Stack PR #${target.number} has no successful Verify run for ` +
+                  `\`${target.head.sha.slice(0, 12)}\`. Run Verify for that PR, then retry \`/merge\`.`
+                );
+                core.setFailed(`Stack PR #${target.number} is not verified.`);
+                return;
               }
             }
+            let verifyRun = await findSuccessfulVerify(pull);
 
             // PRs created by GITHUB_TOKEN do not reliably start a usable
             // pull_request run. Dispatch and track one exact Verify run only
@@ -147,6 +234,7 @@ jobs:
                 repo,
                 workflow_id: "verify.yml",
                 ref: pull.head.ref,
+                request: githubApiRequest,
               });
 
               while (Date.now() < deadline && !verifyRun) {
@@ -233,42 +321,82 @@ jobs:
               return;
             }
 
-            const commits = await github.paginate(github.rest.pulls.listCommits, {
-              owner,
-              repo,
-              pull_number: pullNumber,
-              per_page: 100,
-            });
-            const unverified = commits.filter((commit) =>
-              !commit.commit.verification?.verified
-            );
-            if (unverified.length) {
-              await comment(
-                `⛔ Unverified commits: ${unverified.map((commit) =>
-                  `\`${commit.sha.slice(0, 12)}\``).join(", ")}.`
+            for (const target of targetPulls) {
+              const current = target.number === pullNumber
+                ? readyPull
+                : (await github.rest.pulls.get({
+                    owner,
+                    repo,
+                    pull_number: target.number,
+                  })).data;
+              if (current.head.sha !== target.head.sha ||
+                  current.base.ref !== target.base.ref ||
+                  current.mergeable_state !== "clean") {
+                await comment(
+                  `⛔ Stack PR #${target.number} changed or is no longer mergeable. ` +
+                  "Resolve it, then run `/merge` again."
+                );
+                core.setFailed(`Stack PR #${target.number} is no longer ready.`);
+                return;
+              }
+
+              const commits = await github.paginate(github.rest.pulls.listCommits, {
+                owner,
+                repo,
+                pull_number: target.number,
+                per_page: 100,
+              });
+              const unverified = commits.filter((commit) =>
+                !commit.commit.verification?.verified
               );
-              core.setFailed("Pull request contains unverified commits.");
-              return;
+              if (unverified.length) {
+                await comment(
+                  `⛔ Stack PR #${target.number} has unverified commits: ` +
+                  `${unverified.map((commit) =>
+                    `\`${commit.sha.slice(0, 12)}\``).join(", ")}.`
+                );
+                core.setFailed(`Stack PR #${target.number} contains unverified commits.`);
+                return;
+              }
             }
 
-            const base = pull.base.ref;
+            const base = stack?.base.ref || pull.base.ref;
             const head = pull.head.ref;
-            const title = pull.title.toLowerCase();
             const author = pull.user.login.toLowerCase();
-            const historySync =
-              pull.changed_files === 0 ||
-              head.startsWith("sync/") ||
-              (base === "develop" && head === "main") ||
-              title.includes("sync main into develop");
-            const longLivedPromotion =
-              base === "main" && ["develop", "staging"].includes(head);
-            const dependencyUpdate =
-              author.includes("dependabot") ||
-              author.includes("renovate") ||
-              title.startsWith("chore(deps)");
+            const workflowBot = "github-actions[bot]";
+            const authorIsWorkflowBot = author === workflowBot;
+            const policies = targetPulls.map((target) => {
+              const targetTitle = target.title.toLowerCase();
+              const targetAuthor = target.user.login.toLowerCase();
+              const targetBase = target.base.ref;
+              const targetHead = target.head.ref;
+              return {
+                historySync:
+                  target.changed_files === 0 ||
+                  targetHead.startsWith("sync/") ||
+                  (targetBase === "develop" && targetHead === "main") ||
+                  targetTitle.includes("sync main into develop"),
+                longLivedPromotion:
+                  targetBase === "main" &&
+                  ["develop", "staging"].includes(targetHead),
+                dependencyUpdate:
+                  targetAuthor.includes("dependabot") ||
+                  targetAuthor.includes("renovate") ||
+                  targetTitle.startsWith("chore(deps)"),
+              };
+            });
+            const historySync = policies.some((policy) => policy.historySync);
+            const longLivedPromotion = policies.some((policy) =>
+              policy.longLivedPromotion
+            );
+            const dependencyUpdate = policies.every((policy) =>
+              policy.dependencyUpdate
+            );
 
             let method = "squash";
-            let reason = "focused feature or maintenance change";
+            let reason = targetPulls.length > 1
+              ? `validated stack of ${targetPulls.length} pull requests`
+              : "focused feature or maintenance change";
             if (historySync) {
               method = "merge";
               reason = "history synchronization must preserve ancestry";
@@ -294,18 +422,28 @@ jobs:
             }
 
             // A bot approval lets the authorized command satisfy repositories
-            // that require a review. GitHub may disable bot approvals; in that
-            // case the merge API will leave the PR untouched and explain why.
-            try {
-              await github.rest.pulls.createReview({
-                owner,
-                repo,
-                pull_number: pullNumber,
-                event: "APPROVE",
-                body: `Approved by the smart merge command requested by @${actor}.`,
-              });
-            } catch (error) {
-              core.warning(`Could not submit bot approval: ${error.message}`);
+            // that require a review. Never attempt to approve the actor's own
+            // pull request because GitHub rejects self-approvals. The token
+            // used here authenticates as github-actions[bot], so also skip PRs
+            // authored by that exact workflow identity, but not other bots.
+            if (actor !== author && !authorIsWorkflowBot) {
+              try {
+                await github.rest.pulls.createReview({
+                  owner,
+                  repo,
+                  pull_number: pullNumber,
+                  event: "APPROVE",
+                  body: `Approved by the smart merge command requested by @${actor}.`,
+                });
+              } catch (error) {
+                core.warning(`Could not submit bot approval: ${error.message}`);
+              }
+            } else {
+              core.info(
+                authorIsWorkflowBot
+                  ? `Skipping bot approval because @${author} is the workflow identity.`
+                  : `Skipping bot approval because @${actor} authored the pull request.`
+              );
             }
 
             // Refresh immediately before merging to avoid merging a stale head.
@@ -320,25 +458,121 @@ jobs:
               return;
             }
 
+            for (const target of targetPulls) {
+              const current = target.number === pullNumber
+                ? refreshed
+                : (await github.rest.pulls.get({
+                    owner,
+                    repo,
+                    pull_number: target.number,
+                  })).data;
+              if (current.head.sha !== target.head.sha ||
+                  current.base.ref !== target.base.ref ||
+                  current.state !== "open") {
+                await comment(
+                  `⛔ Stack PR #${target.number} changed immediately before merging. ` +
+                  "Run `/merge` again."
+                );
+                core.setFailed(`Stack PR #${target.number} changed before merge.`);
+                return;
+              }
+            }
+
             const mergeOptions = {
               owner,
               repo,
               pull_number: pullNumber,
               merge_method: method,
+              merge_action: "default",
               sha: pull.head.sha,
+              ...githubApiRequest,
             };
             if (method === "squash") {
               mergeOptions.commit_title = `${pull.title} (#${pullNumber})`;
             }
 
-            const merged = await github.rest.pulls.merge(mergeOptions);
-            if (!merged.data.merged) {
-              await comment(`⛔ GitHub refused the merge: ${merged.data.message}`);
-              core.setFailed(merged.data.message);
+            let mergeRequest;
+            try {
+              mergeRequest = await github.request(
+                "PUT /repos/{owner}/{repo}/pulls/{pull_number}/merge-async",
+                mergeOptions
+              );
+            } catch (error) {
+              if (error.status === 409 && error.response?.data) {
+                mergeRequest = error.response;
+              } else {
+                await comment(
+                  `⛔ GitHub refused the merge: ${error.response?.data?.details?.message || `HTTP ${error.status || "error"}`}. ` +
+                  "Resolve the reported condition, then run `/merge` again."
+                );
+                core.setFailed(`Asynchronous merge request failed: ${error.message}`);
+                return;
+              }
+            }
+
+            let mergeResult = mergeRequest.data;
+            if (mergeRequest.status === 409) {
+              const existing = mergeResult.details || {};
+              if (existing.expected_head_sha !== pull.head.sha ||
+                  existing.merge_method !== method) {
+                await comment(
+                  "⛔ A different asynchronous merge request already exists. " +
+                  "Wait for it to finish, then run `/merge` again."
+                );
+                core.setFailed("Conflicting asynchronous merge request.");
+                return;
+              }
+            }
+
+            let mergeSha = mergeResult.status === "merged"
+              ? mergeResult.details?.sha
+              : null;
+            const mergeUuid = mergeResult.details?.uuid;
+            if (!mergeSha && !mergeUuid) {
+              await comment(
+                `⛔ GitHub refused the merge: ${mergeResult.details?.message || "unknown error"}`
+              );
+              core.setFailed("Asynchronous merge was not accepted.");
               return;
             }
 
-            const mergeSha = merged.data.sha;
+            const mergeDeadline = Date.now() + 30 * 60 * 1000;
+            while (!mergeSha && Date.now() < mergeDeadline) {
+              await sleep(5000);
+              mergeResult = (await github.request(
+                "GET /repos/{owner}/{repo}/pulls/{pull_number}/merge-async/{uuid}",
+                {
+                  owner,
+                  repo,
+                  pull_number: pullNumber,
+                  uuid: mergeUuid,
+                  ...githubApiRequest,
+                }
+              )).data;
+
+              if (mergeResult.status === "merged") {
+                mergeSha = mergeResult.details?.sha;
+              } else if (mergeResult.status === "failed") {
+                await comment(
+                  `⛔ GitHub refused the merge: ${mergeResult.details?.message || "unknown error"}`
+                );
+                core.setFailed("Asynchronous merge failed.");
+                return;
+              } else if (!["pending", "enqueued"].includes(mergeResult.status)) {
+                await comment(
+                  `⛔ GitHub returned an unknown merge status: \`${mergeResult.status}\`.`
+                );
+                core.setFailed("Unknown asynchronous merge status.");
+                return;
+              }
+            }
+
+            if (!mergeSha) {
+              await comment("⏳ Timed out waiting for GitHub to finish the merge.");
+              core.setFailed("Asynchronous merge timed out.");
+              return;
+            }
+
             await sleep(2000);
             const resultCommit = await github.rest.repos.getCommit({
               owner,
@@ -347,23 +581,77 @@ jobs:
             });
             const verification = resultCommit.data.commit.verification;
 
-            const disposable =
-              pull.head.repo?.full_name === `${owner}/${repo}` &&
-              !["main", "develop", "staging"].includes(head);
-            if (disposable) {
+            // Pushes performed with GITHUB_TOKEN do not trigger downstream
+            // push workflows. Explicitly dispatch Release for release PRs so
+            // publishing does not depend on a manual workflow run.
+            const releaseMatch = head.match(/^release\/(v[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?)$/i);
+            if (base === "main" && releaseMatch) {
+              const version = releaseMatch[1];
               try {
-                await github.rest.git.deleteRef({
+                await github.rest.actions.createWorkflowDispatch({
                   owner,
                   repo,
-                  ref: `heads/${head}`,
+                  workflow_id: "release.yml",
+                  ref: "main",
+                  inputs: {
+                    version,
+                    prerelease: version.includes("-") ? "true" : "false",
+                    draft: "false",
+                  },
                 });
+                await comment(`🚀 Release workflow dispatched for \`${version}\`.`);
               } catch (error) {
-                core.warning(`Could not delete ${head}: ${error.message}`);
+                core.warning(`Could not dispatch Release for ${version}: ${error.message}`);
+                await comment(
+                  `⚠️ Merge completed, but Release could not be dispatched for \`${version}\`. ` +
+                  "Run the Release workflow manually."
+                );
+              }
+
+              // A Release dispatched with GITHUB_TOKEN does not reliably emit
+              // workflow_run for the sync workflow. Dispatch it explicitly so
+              // main is always synchronized back into develop after release.
+              try {
+                await github.rest.actions.createWorkflowDispatch({
+                  owner,
+                  repo,
+                  workflow_id: "sync-main-to-develop.yml",
+                  ref: "develop",
+                  request: githubApiRequest,
+                });
+                await comment("🔄 Main-to-develop sync dispatched after the release.");
+              } catch (error) {
+                core.warning(`Could not dispatch Main To Develop sync: ${error.message}`);
+                await comment(
+                  "⚠️ Release was dispatched, but Main To Develop sync could not be dispatched; " +
+                  "run the sync workflow manually."
+                );
               }
             }
 
+            for (const target of targetPulls) {
+              const targetHead = target.head.ref;
+              const disposable =
+                target.head.repo?.full_name === `${owner}/${repo}` &&
+                !["main", "develop", "staging"].includes(targetHead);
+              if (disposable) {
+                try {
+                  await github.rest.git.deleteRef({
+                    owner,
+                    repo,
+                    ref: `heads/${targetHead}`,
+                  });
+                } catch (error) {
+                  core.warning(`Could not delete ${targetHead}: ${error.message}`);
+                }
+              }
+            }
+
+            const mergedScope = targetPulls.length > 1
+              ? `stack ${targetPulls.map((target) => `#${target.number}`).join(" → ")}`
+              : `pull request #${pullNumber}`;
             await comment(
-              `✅ Merged with **${method}** (${reason}).\n\n` +
+              `✅ Merged ${mergedScope} with **${method}** (${reason}).\n\n` +
               `Commit: \`${mergeSha.slice(0, 12)}\`\n` +
               `Signature: ${verification?.verified ? "verified" : "not verified"}`
             );
