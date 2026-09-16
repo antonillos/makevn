@@ -3367,7 +3367,7 @@ test_verify_changes_preserves_first_parent_after_sync_merge() {
   git -C "${repo}" add .
   git -C "${repo}" -c user.name='Smoke Test' -c user.email='smoke@example.com' commit -m 'main sync work' >/dev/null
   git -C "${repo}" checkout feature/issue-789 >/dev/null
-  git -C "${repo}" merge --no-ff main -m 'Merge main into feature' >/dev/null
+  git -C "${repo}" -c user.name='Smoke Test' -c user.email='smoke@example.com' merge --no-ff main -m 'Merge main into feature' >/dev/null
 
   ${CLI} --repo "${repo}" init >/dev/null
   output="$(${CLI} --repo "${repo}" verify-changes-preview)"
