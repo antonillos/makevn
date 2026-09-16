@@ -298,27 +298,30 @@ jobs:
             // A bot approval can be required for protected branches. Submit it
             // before waiting for GitHub to report a clean merge state so that
             // the approval itself can satisfy the branch requirement.
-            const author = pull.user.login.toLowerCase();
             const workflowBot = "github-actions[bot]";
-            const authorIsWorkflowBot = author === workflowBot;
-            if (actor !== author && !authorIsWorkflowBot) {
+            for (const target of targetPulls) {
+              const targetAuthor = target.user.login.toLowerCase();
+              const targetAuthorIsWorkflowBot = targetAuthor === workflowBot;
+              if (actor === targetAuthor || targetAuthorIsWorkflowBot) {
+                core.info(
+                  targetAuthorIsWorkflowBot
+                    ? `Skipping bot approval for PR #${target.number} because @${targetAuthor} is the workflow identity.`
+                    : `Skipping bot approval for PR #${target.number} because @${actor} authored it.`
+                );
+                continue;
+              }
+
               try {
                 await github.rest.pulls.createReview({
                   owner,
                   repo,
-                  pull_number: pullNumber,
+                  pull_number: target.number,
                   event: "APPROVE",
                   body: `Approved by the smart merge command requested by @${actor}.`,
                 });
               } catch (error) {
-                core.warning(`Could not submit bot approval: ${error.message}`);
+                core.warning(`Could not submit bot approval for PR #${target.number}: ${error.message}`);
               }
-            } else {
-              core.info(
-                authorIsWorkflowBot
-                  ? `Skipping bot approval because @${author} is the workflow identity.`
-                  : `Skipping bot approval because @${actor} authored the pull request.`
-              );
             }
 
             let readyPull = null;
