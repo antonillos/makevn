@@ -145,6 +145,21 @@ makevn_load_verify_changes_plan() {
   return 0
 }
 
+makevn_first_parent_diff_names() {
+  local repo_root="$1"
+  local parent_spec="$2"
+  local parent_branch="${parent_spec%...HEAD}"
+  local commit=""
+
+  # A sync merge can bring unrelated files in through a secondary parent.
+  # Walking HEAD's first-parent history keeps verify-changes focused on commits
+  # made on the feature branch itself while retaining the selected base.
+  while IFS= read -r commit; do
+    [[ -n "${commit}" ]] || continue
+    git -C "${repo_root}" diff-tree --no-commit-id --name-only -r "${commit}"
+  done < <(git -C "${repo_root}" rev-list --first-parent --reverse "${parent_branch}..HEAD" 2>/dev/null || true) | LC_ALL=C sort -u
+}
+
 makevn_collect_verify_changes_scope() {
   local repo_root="$1"
   local local_containers=""
@@ -191,7 +206,7 @@ makevn_collect_verify_changes_scope() {
     MAKEVN_VERIFY_CHANGES_SRC_FILES="$(printf '%s\n' "${diff_local}" | grep -E "${path_prefix_regex}.*src/main/java/.*\.java$" || true)"
     MAKEVN_VERIFY_CHANGES_TEST_FILES="$(printf '%s\n' "${diff_local}" | grep -E "${path_prefix_regex}.*src/test/java/.*\.java$" || true)"
   else
-    diff_base="$(git -C "${git_root}" diff --name-only "${MAKEVN_VERIFY_CHANGES_PARENT_SPEC}" || true)"
+    diff_base="$(makevn_first_parent_diff_names "${git_root}" "${MAKEVN_VERIFY_CHANGES_PARENT_SPEC}")"
     diff_local="$(git -C "${git_root}" diff --name-only HEAD || true)"
     MAKEVN_VERIFY_CHANGES_DIFF_LOCAL="${diff_local}"
     MAKEVN_VERIFY_CHANGES_SRC_FILES="$(printf '%s\n%s\n' "${diff_base}" "${diff_local}" | grep -E "${path_prefix_regex}.*src/main/java/.*\.java$" | LC_ALL=C sort -u || true)"
