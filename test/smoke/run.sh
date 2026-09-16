@@ -3291,7 +3291,7 @@ test_verify_changes_uses_hotfix_parent_branch() {
   [[ "${output}" == *"compare against: main...HEAD"* ]] \
     || fail "expected a hotfix to compare against main, got: ${output}"
   [[ "${output}" == *"production files: 1"* ]] \
-    || fail "expected only the hotfix production file, got: ${output}"
+    || fail "expected only the feature production file, got: ${output}"
   [[ "${output}" == *"HotfixOnly"* ]] \
     || fail "expected hotfix class in selection, got: ${output}"
   [[ "${output}" != *"DevelopOnly"* ]] \
@@ -3339,6 +3339,43 @@ test_verify_changes_uses_develop_after_it_advances() {
     || fail "expected feature class in selection, got: ${output}"
   [[ "${output}" != *"DevelopBase"* && "${output}" != *"DevelopAfterFork"* ]] \
     || fail "develop work must not be selected for the feature: ${output}"
+
+  ${CLI} --repo "${repo}" uninstall >/dev/null
+}
+
+test_verify_changes_preserves_first_parent_after_sync_merge() {
+  local repo="${TMP_ROOT}/verify-changes-first-parent-after-sync"
+  local output
+
+  mkdir -p "${repo}/module-a/src/main/java/com/example"
+  printf '<project/>\n' > "${repo}/pom.xml"
+  printf 'class Baseline {}\n' > "${repo}/module-a/src/main/java/com/example/Baseline.java"
+
+  git init --initial-branch=main "${repo}" >/dev/null
+  git -C "${repo}" add .
+  git -C "${repo}" -c user.name='Smoke Test' -c user.email='smoke@example.com' commit -m 'main baseline' >/dev/null
+  git -C "${repo}" checkout -b develop >/dev/null
+  printf 'class DevelopBase {}\n' > "${repo}/module-a/src/main/java/com/example/DevelopBase.java"
+  git -C "${repo}" add .
+  git -C "${repo}" -c user.name='Smoke Test' -c user.email='smoke@example.com' commit -m 'develop base' >/dev/null
+  git -C "${repo}" checkout -b feature/issue-789 >/dev/null
+  printf 'class FeatureOnly {}\n' > "${repo}/module-a/src/main/java/com/example/FeatureOnly.java"
+  git -C "${repo}" add .
+  git -C "${repo}" -c user.name='Smoke Test' -c user.email='smoke@example.com' commit -m 'feature work' >/dev/null
+  git -C "${repo}" checkout main >/dev/null
+  printf 'class MainSyncOnly {}\n' > "${repo}/module-a/src/main/java/com/example/MainSyncOnly.java"
+  git -C "${repo}" add .
+  git -C "${repo}" -c user.name='Smoke Test' -c user.email='smoke@example.com' commit -m 'main sync work' >/dev/null
+  git -C "${repo}" checkout feature/issue-789 >/dev/null
+  git -C "${repo}" merge --no-ff main -m 'Merge main into feature' >/dev/null
+
+  ${CLI} --repo "${repo}" init >/dev/null
+  output="$(${CLI} --repo "${repo}" verify-changes-preview)"
+
+  [[ "${output}" == *"compare against: develop...HEAD" ]] \
+    || fail "expected the first-parent develop base after sync merge, got: ${output}"
+  [[ "${output}" == *"FeatureOnly"* && "${output}" != *"MainSyncOnly"* ]] \
+    || fail "merged main work must not be selected for the feature: ${output}"
 
   ${CLI} --repo "${repo}" uninstall >/dev/null
 }
@@ -4180,6 +4217,7 @@ main() {
   test_verify_changes_preview_command
   test_verify_changes_uses_hotfix_parent_branch
   test_verify_changes_uses_develop_after_it_advances
+  test_verify_changes_preserves_first_parent_after_sync_merge
   test_verify_changes_command
   test_verify_changes_modules_local_containers
   test_verify_changes_nested_maven_base_strips_git_prefix

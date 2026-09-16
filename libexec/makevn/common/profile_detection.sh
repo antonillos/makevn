@@ -1314,11 +1314,11 @@ makevn_detect_parent_branch_spec() {
   local current_branch=""
   local candidate=""
   local merge_base=""
+  local first_parent_base=""
   local candidate_distance=""
   local best_candidate=""
   local best_distance=""
-  local candidate_is_ancestor=""
-  local best_is_ancestor=""
+  local first_parent_commit=""
   local -a candidates=()
 
   current_branch="$(git -C "${repo_root}" rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
@@ -1334,34 +1334,36 @@ makevn_detect_parent_branch_spec() {
   # and develop that made hotfixes compare against develop, potentially making
   # unrelated develop work look like part of the hotfix.
   #
-  # Rank every candidate by the number of commits from its merge point to HEAD.
-  # This still recognizes the original branch after it advances: for example,
-  # a feature forked from develop should keep develop as its base even though
-  # main remains an ancestor.  On equal distances, prefer the direct ancestor
-  # because it is the stronger signal.
+  # Rank every candidate by the number of first-parent commits from its merge
+  # point to HEAD. This keeps a branch merged into the feature from looking like
+  # the original parent: for example, after merging main into a feature forked
+  # from develop, main is only on a secondary-parent path while develop's merge
+  # point remains on HEAD's first-parent history.
   candidates=(origin/main main origin/develop develop origin/master master)
   for candidate in "${candidates[@]}"; do
     git -C "${repo_root}" rev-parse --verify "${candidate}" >/dev/null 2>&1 || continue
 
-    if git -C "${repo_root}" merge-base --is-ancestor "${candidate}" HEAD >/dev/null 2>&1; then
-      candidate_distance="$(git -C "${repo_root}" rev-list --count "${candidate}..HEAD" 2>/dev/null || true)"
-      candidate_is_ancestor=true
-    else
+    first_parent_base=""
+    while IFS= read -r first_parent_commit; do
+      if git -C "${repo_root}" merge-base --is-ancestor "${first_parent_commit}" "${candidate}" >/dev/null 2>&1; then
+        first_parent_base="${first_parent_commit}"
+        break
+      fi
+    done < <(git -C "${repo_root}" rev-list --first-parent HEAD 2>/dev/null || true)
+
+    merge_base="${first_parent_base}"
+    if [[ -z "${merge_base}" ]]; then
       merge_base="$(git -C "${repo_root}" merge-base "${candidate}" HEAD 2>/dev/null || true)"
-      [[ -n "${merge_base}" ]] || continue
-      candidate_distance="$(git -C "${repo_root}" rev-list --count "${merge_base}..HEAD" 2>/dev/null || true)"
-      candidate_is_ancestor=false
     fi
+    [[ -n "${merge_base}" ]] || continue
+    candidate_distance="$(git -C "${repo_root}" rev-list --first-parent --count "${merge_base}..HEAD" 2>/dev/null || true)"
 
     if [[ "${candidate_distance}" =~ ^[0-9]+$ ]] \
       && { [[ -z "${best_distance}" ]] \
         || [[ "${candidate_distance}" -lt "${best_distance}" ]] \
-        || { [[ "${candidate_distance}" -eq "${best_distance}" ]] \
-          && [[ "${candidate_is_ancestor}" == true ]] \
-          && [[ "${best_is_ancestor}" != true ]]; }; }; then
+        || [[ "${candidate_distance}" -eq "${best_distance}" ]]; }; then
       best_candidate="${candidate}"
       best_distance="${candidate_distance}"
-      best_is_ancestor="${candidate_is_ancestor}"
     fi
   done
 
