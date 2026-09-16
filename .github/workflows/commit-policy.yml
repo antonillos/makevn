@@ -4,13 +4,31 @@ on:
   pull_request:
     branches: [develop, main]
     types: [opened, synchronize, reopened, edited, ready_for_review]
+  workflow_dispatch:
+    inputs:
+      pull_number:
+        description: Pull request number to validate
+        required: true
+        type: number
+      head_sha:
+        description: Expected pull request head SHA
+        required: true
+        type: string
+      base_sha:
+        description: Expected pull request base SHA
+        required: true
+        type: string
+      base_ref:
+        description: Expected pull request base branch
+        required: true
+        type: string
 
 permissions:
   contents: read
   pull-requests: read
 
 concurrency:
-  group: commit-policy-${{ github.event.pull_request.number }}
+  group: commit-policy-${{ github.event.pull_request.number || github.event.inputs.pull_number || github.run_id }}
   cancel-in-progress: true
 
 jobs:
@@ -36,11 +54,24 @@ jobs:
                 (lines.length === 1 || lines[1] === "");
             }
             try {
+              const fromDispatch = context.eventName === "workflow_dispatch";
               const event = context.payload.pull_request;
-              const params = { ...context.repo, pull_number: event.number };
+              const inputs = context.payload.inputs || {};
+              const pullNumber = fromDispatch ? Number(inputs.pull_number) : event?.number;
+              const expectedHeadSha = fromDispatch ? inputs.head_sha : event?.head?.sha;
+              const expectedBaseSha = fromDispatch ? inputs.base_sha : event?.base?.sha;
+              const expectedBaseRef = fromDispatch ? inputs.base_ref : event?.base?.ref;
+              if (!Number.isInteger(pullNumber) ||
+                  !shaPattern.test(expectedHeadSha || "") ||
+                  !shaPattern.test(expectedBaseSha || "") ||
+                  typeof expectedBaseRef !== "string" || expectedBaseRef.length === 0) {
+                core.setFailed("An explicit pull request revision is required.");
+                return;
+              }
+              const params = { ...context.repo, pull_number: pullNumber };
               const { data: before } = await github.rest.pulls.get(params);
-              const sameRevision = (pull) => pull.head.sha === event.head.sha &&
-                pull.base.sha === event.base.sha && pull.base.ref === event.base.ref;
+              const sameRevision = (pull) => pull.head.sha === expectedHeadSha &&
+                pull.base.sha === expectedBaseSha && pull.base.ref === expectedBaseRef;
               if (!sameRevision(before)) {
                 core.setFailed("PR revision changed; use the check for the current revision.");
                 return;
@@ -55,11 +86,15 @@ jobs:
               const shas = commits.map((commit) => commit.sha);
               if (shas.length !== before.commits || new Set(shas).size !== shas.length ||
                   !shas.every((sha) => typeof sha === "string" && shaPattern.test(sha)) ||
-                  !shas.includes(event.head.sha)) {
+                  !shas.includes(expectedHeadSha)) {
                 core.setFailed("Complete commit metadata is unavailable; no passing result can be issued.");
                 return;
               }
               let failed = 0;
+              if (!conventional(before.title)) {
+                core.error("Pull request title must follow Conventional Commits format.");
+                failed++;
+              }
               for (const sha of shas) {
                 const { data: commit } = await github.rest.repos.getCommit({
                   ...context.repo, ref: sha,
@@ -80,7 +115,8 @@ jobs:
                 if (!formatOK || !signatureOK) failed++;
               }
               const { data: after } = await github.rest.pulls.get(params);
-              if (!sameRevision(after) || after.commits !== before.commits) {
+              if (!sameRevision(after) || after.commits !== before.commits ||
+                  after.title !== before.title) {
                 core.setFailed("PR revision changed during validation; results are stale.");
                 return;
               }

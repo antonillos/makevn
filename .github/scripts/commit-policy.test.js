@@ -26,7 +26,8 @@ const repositoryCommit = (commit) => ({
 
 async function check(commits = [signed()], options = {}) {
   const expected = { number: 193, head: { sha: commits.at(-1)?.sha || sha(1) },
-    base: { sha: sha(999), ref: "develop" }, commits: commits.length };
+    base: { sha: sha(999), ref: "develop" }, commits: commits.length,
+    title: options.title || "docs: update guide" };
   const logs = [];
   const requests = [];
   let reads = 0;
@@ -59,8 +60,12 @@ async function check(commits = [signed()], options = {}) {
       async write() {},
     },
   };
-  await run(github, { repo: { owner: "example", repo: "example" },
-    payload: { pull_request: expected } }, core);
+  const payload = options.dispatch
+    ? { inputs: { pull_number: String(expected.number), head_sha: expected.head.sha,
+        base_sha: expected.base.sha, base_ref: expected.base.ref } }
+    : { pull_request: expected };
+  await run(github, { eventName: options.dispatch ? "workflow_dispatch" : "pull_request",
+    repo: { owner: "example", repo: "example" }, payload }, core);
   return { failed: logs.some(([kind]) => kind === "failed"), logs, requests };
 }
 
@@ -78,6 +83,14 @@ test("rejects malformed messages including fixup, single-parent merge and missin
     "Merge branch 'develop'", "fix: repair\nbody without separator", "fix: repair\rpayload"]) {
     assert.equal((await check([signed(1, message)])).failed, true);
   }
+});
+
+test("rejects a non-conventional pull request title", async () => {
+  assert.equal((await check([signed()], { title: "Update docs" })).failed, true);
+});
+
+test("supports explicit workflow dispatch validation for bot-created pull requests", async () => {
+  assert.equal((await check([signed()], { dispatch: true })).failed, false);
 });
 
 test("accepts recognized merge headers only for multi-parent commits", async () => {

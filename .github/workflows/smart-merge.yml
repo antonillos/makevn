@@ -499,7 +499,7 @@ jobs:
               ...githubApiRequest,
             };
             if (method === "squash") {
-              mergeOptions.commit_title = `${pull.title} (#${pullNumber})`;
+              mergeOptions.commit_title = pull.title;
             }
 
             let mergeRequest;
