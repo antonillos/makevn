@@ -28,6 +28,12 @@ jobs:
       - name: Build dispatcher
         shell: bash
         run: ./build-rust-dispatcher.sh
+      - name: Run Rust tests
+        shell: bash
+        run: cargo test --manifest-path rust/dispatcher/Cargo.toml --all-targets
+      - name: Run sanitization checks
+        shell: bash
+        run: bash test/sanitize/run.sh
       - name: Run smoke tests
         shell: bash
         run: |
