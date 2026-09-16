@@ -20,6 +20,9 @@ jobs:
     if: >-
       github.event.issue.pull_request &&
       startsWith(github.event.comment.body, '/merge')
+    concurrency:
+      group: smart-merge-${{ github.repository }}-pr-${{ github.event.issue.number }}
+      cancel-in-progress: false
     runs-on: ubuntu-latest
     timeout-minutes: 65
     steps:
@@ -292,6 +295,32 @@ jobs:
             // Wait until GitHub reports that every branch requirement is
             // satisfied instead of attempting the merge while checks are still
             // shown as expected.
+            // A bot approval can be required for protected branches. Submit it
+            // before waiting for GitHub to report a clean merge state so that
+            // the approval itself can satisfy the branch requirement.
+            const author = pull.user.login.toLowerCase();
+            const workflowBot = "github-actions[bot]";
+            const authorIsWorkflowBot = author === workflowBot;
+            if (actor !== author && !authorIsWorkflowBot) {
+              try {
+                await github.rest.pulls.createReview({
+                  owner,
+                  repo,
+                  pull_number: pullNumber,
+                  event: "APPROVE",
+                  body: `Approved by the smart merge command requested by @${actor}.`,
+                });
+              } catch (error) {
+                core.warning(`Could not submit bot approval: ${error.message}`);
+              }
+            } else {
+              core.info(
+                authorIsWorkflowBot
+                  ? `Skipping bot approval because @${author} is the workflow identity.`
+                  : `Skipping bot approval because @${actor} authored the pull request.`
+              );
+            }
+
             let readyPull = null;
             while (Date.now() < deadline) {
               readyPull = (await github.rest.pulls.get({
@@ -362,9 +391,6 @@ jobs:
 
             const base = stack?.base.ref || pull.base.ref;
             const head = pull.head.ref;
-            const author = pull.user.login.toLowerCase();
-            const workflowBot = "github-actions[bot]";
-            const authorIsWorkflowBot = author === workflowBot;
             const policies = targetPulls.map((target) => {
               const targetTitle = target.title.toLowerCase();
               const targetAuthor = target.user.login.toLowerCase();
@@ -419,31 +445,6 @@ jobs:
               }
               method = requestedMethod;
               reason = `explicit override requested by @${actor}`;
-            }
-
-            // A bot approval lets the authorized command satisfy repositories
-            // that require a review. Never attempt to approve the actor's own
-            // pull request because GitHub rejects self-approvals. The token
-            // used here authenticates as github-actions[bot], so also skip PRs
-            // authored by that exact workflow identity, but not other bots.
-            if (actor !== author && !authorIsWorkflowBot) {
-              try {
-                await github.rest.pulls.createReview({
-                  owner,
-                  repo,
-                  pull_number: pullNumber,
-                  event: "APPROVE",
-                  body: `Approved by the smart merge command requested by @${actor}.`,
-                });
-              } catch (error) {
-                core.warning(`Could not submit bot approval: ${error.message}`);
-              }
-            } else {
-              core.info(
-                authorIsWorkflowBot
-                  ? `Skipping bot approval because @${author} is the workflow identity.`
-                  : `Skipping bot approval because @${actor} authored the pull request.`
-              );
             }
 
             // Refresh immediately before merging to avoid merging a stale head.
