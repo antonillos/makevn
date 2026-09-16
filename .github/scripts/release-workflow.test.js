@@ -16,3 +16,8 @@ test("dispatches revision-bound commit policy for release PRs", () => {
   assert.match(workflow, /-f base_sha=/);
   assert.match(workflow, /-f base_ref=/);
 });
+
+test("refreshes the PR number after creating or replacing a release PR", () => {
+  assert.match(workflow, /if \[\[ -z "\$\{pr_number\}" \|\| "\$\{pr_state\}" != "OPEN" \]\]; then/);
+  assert.match(workflow, /pr_number="\$\(gh pr view "\$\{branch\}" .* --json number --jq '\.number'\)"/);
+});
