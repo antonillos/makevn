@@ -1319,6 +1319,9 @@ makevn_detect_parent_branch_spec() {
   local best_candidate=""
   local best_distance=""
   local first_parent_commit=""
+  local candidate_commit=""
+  local candidate_is_first_parent=""
+  local best_is_first_parent=""
   local -a candidates=()
 
   current_branch="$(git -C "${repo_root}" rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
@@ -1342,9 +1345,12 @@ makevn_detect_parent_branch_spec() {
   candidates=(origin/main main origin/develop develop origin/master master)
   for candidate in "${candidates[@]}"; do
     git -C "${repo_root}" rev-parse --verify "${candidate}" >/dev/null 2>&1 || continue
+    candidate_commit="$(git -C "${repo_root}" rev-parse "${candidate}")"
+    candidate_is_first_parent=false
 
     first_parent_base=""
     while IFS= read -r first_parent_commit; do
+      [[ "${first_parent_commit}" == "${candidate_commit}" ]] && candidate_is_first_parent=true
       if git -C "${repo_root}" merge-base --is-ancestor "${first_parent_commit}" "${candidate}" >/dev/null 2>&1; then
         first_parent_base="${first_parent_commit}"
         break
@@ -1361,9 +1367,12 @@ makevn_detect_parent_branch_spec() {
     if [[ "${candidate_distance}" =~ ^[0-9]+$ ]] \
       && { [[ -z "${best_distance}" ]] \
         || [[ "${candidate_distance}" -lt "${best_distance}" ]] \
-        || [[ "${candidate_distance}" -eq "${best_distance}" ]]; }; then
+        || { [[ "${candidate_distance}" -eq "${best_distance}" ]] \
+          && [[ "${candidate_is_first_parent}" == true ]] \
+          && [[ "${best_is_first_parent}" != true ]]; }; }; then
       best_candidate="${candidate}"
       best_distance="${candidate_distance}"
+      best_is_first_parent="${candidate_is_first_parent}"
     fi
   done
 
