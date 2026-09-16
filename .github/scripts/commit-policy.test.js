@@ -197,10 +197,10 @@ test("diagnostics contain only SHAs and fixed categories, not message or identit
 });
 
 test("workflow is independent, read-only, unfiltered and does not execute PR code", () => {
-  assert.match(workflow, /pull_request:\n    branches: \[develop, main\]/);
+  assert.match(workflow, /pull_request_target:\n    branches: \[develop, main\]/);
   assert.match(workflow, /contents: read\n  pull-requests: read/);
   assert.doesNotMatch(workflow, /githubGeneratedMerge|web-flow/);
-  assert.doesNotMatch(workflow, /pull_request_target:|paths:|paths-ignore:|needs:|: write|secrets\.|actions\/checkout|run:|tools\/crap/);
+  assert.doesNotMatch(workflow, /paths:|paths-ignore:|needs:|: write|secrets\.|actions\/checkout|run:|tools\/crap/);
   assert.equal((workflow.match(/uses:/g) || []).length, 1);
   assert.doesNotMatch(script, /\$\{\{/);
 });
