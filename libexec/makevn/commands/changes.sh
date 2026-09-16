@@ -149,11 +149,15 @@ makevn_first_parent_diff_names() {
   local repo_root="$1"
   local parent_spec="$2"
   local parent_branch="${parent_spec%...HEAD}"
+  local parent_merge_base=""
   local commit=""
   local parent_count=0
   local changed_paths=""
   local path=""
   local last_relevant_commit=""
+  local diff_status=0
+
+  parent_merge_base="$(git -C "${repo_root}" merge-base "${parent_branch}" HEAD 2>/dev/null)" || return 1
 
   # A sync merge can bring unrelated files in through a secondary parent.
   # Walking HEAD's first-parent history keeps verify-changes focused on commits
@@ -179,7 +183,17 @@ makevn_first_parent_diff_names() {
     # secondary parent after the feature has reverted its own edit.
     last_relevant_commit="$(git -C "${repo_root}" log --first-parent --format=%H "${parent_branch}..HEAD" -- "${path}" | head -n 1)"
     [[ -n "${last_relevant_commit}" ]] || continue
-    git -C "${repo_root}" diff --quiet "${parent_spec}" "${last_relevant_commit}" -- "${path}" || printf '%s\n' "${path}"
+    # parent_spec is a triple-dot range, which cannot be combined with a third
+    # revision. Resolve its merge-base and compare exactly two revisions.
+    if git -C "${repo_root}" diff --quiet "${parent_merge_base}" "${last_relevant_commit}" -- "${path}"; then
+      continue
+    fi
+    diff_status=$?
+    if (( diff_status == 1 )); then
+      printf '%s\n' "${path}"
+    else
+      return "${diff_status}"
+    fi
   done <<< "${changed_paths}"
 }
 

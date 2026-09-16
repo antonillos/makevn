@@ -1346,7 +1346,8 @@ makevn_detect_parent_branch_spec() {
   while IFS= read -r candidate; do
     [[ -n "${candidate}" ]] && release_candidates+=("${candidate}")
   done < <(git -C "${repo_root}" for-each-ref --format='%(refname:short)' refs/remotes/origin/release refs/heads/release 2>/dev/null || true)
-  candidates+=("${release_candidates[@]}")
+  # Bash 3 treats an empty array expansion as unset under set -u.
+  candidates+=("${release_candidates[@]+${release_candidates[@]}}")
   first_parent_history="$(git -C "${repo_root}" rev-list --first-parent HEAD 2>/dev/null || true)"
   for candidate in "${candidates[@]}"; do
     git -C "${repo_root}" rev-parse --verify "${candidate}" >/dev/null 2>&1 || continue

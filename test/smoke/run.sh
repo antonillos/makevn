@@ -3380,6 +3380,40 @@ test_verify_changes_preserves_first_parent_after_sync_merge() {
   ${CLI} --repo "${repo}" uninstall >/dev/null
 }
 
+test_verify_changes_ignores_reverted_first_parent_paths() {
+  local repo="${TMP_ROOT}/verify-changes-reverted-first-parent-paths"
+  local output
+
+  mkdir -p "${repo}/module-a/src/main/java/com/example"
+  printf '<project/>\n' > "${repo}/pom.xml"
+  printf 'class Baseline {}\n' > "${repo}/module-a/src/main/java/com/example/Baseline.java"
+
+  git init --initial-branch=main "${repo}" >/dev/null
+  git -C "${repo}" add .
+  git -C "${repo}" -c user.name='Smoke Test' -c user.email='smoke@example.com' commit -m 'main baseline' >/dev/null
+  git -C "${repo}" checkout -b develop >/dev/null
+  printf 'class DevelopOnly {}\n' > "${repo}/module-a/src/main/java/com/example/DevelopOnly.java"
+  git -C "${repo}" add .
+  git -C "${repo}" -c user.name='Smoke Test' -c user.email='smoke@example.com' commit -m 'develop work' >/dev/null
+  git -C "${repo}" checkout -b feature/issue-901 >/dev/null
+  printf 'class RevertedFeature {}\n' > "${repo}/module-a/src/main/java/com/example/RevertedFeature.java"
+  git -C "${repo}" add .
+  git -C "${repo}" -c user.name='Smoke Test' -c user.email='smoke@example.com' commit -m 'feature work' >/dev/null
+  git -C "${repo}" -c user.name='Smoke Test' -c user.email='smoke@example.com' revert --no-edit HEAD >/dev/null
+
+  ${CLI} --repo "${repo}" init >/dev/null
+  output="$(${CLI} --repo "${repo}" verify-changes-preview)"
+
+  [[ "${output}" == *"compare against: develop...HEAD"* ]] \
+    || fail "expected develop as the parent, got: ${output}"
+  [[ "${output}" == *"strategy: skip"* ]] \
+    || fail "expected reverted first-parent paths to be excluded, got: ${output}"
+  [[ "${output}" != *"RevertedFeature"* ]] \
+    || fail "reverted feature path must not be selected: ${output}"
+
+  ${CLI} --repo "${repo}" uninstall >/dev/null
+}
+
 test_verify_changes_modules_local_containers() (
   unset LOCAL_CONTAINERS MAKEVN_LOCAL_CONTAINERS
   local repo="${TMP_ROOT}/verify-changes-local-containers"
@@ -4218,6 +4252,7 @@ main() {
   test_verify_changes_uses_hotfix_parent_branch
   test_verify_changes_uses_develop_after_it_advances
   test_verify_changes_preserves_first_parent_after_sync_merge
+  test_verify_changes_ignores_reverted_first_parent_paths
   test_verify_changes_command
   test_verify_changes_modules_local_containers
   test_verify_changes_nested_maven_base_strips_git_prefix
