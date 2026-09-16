@@ -1,9 +1,11 @@
 name: Sync Main To Develop
 
 on:
-  push:
-    branches:
-      - main
+  workflow_run:
+    workflows:
+      - Release
+    types:
+      - completed
   workflow_dispatch:
 
 permissions:
@@ -13,8 +15,13 @@ permissions:
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
+concurrency:
+  group: sync-main-to-develop
+  cancel-in-progress: false
+
 jobs:
   sync:
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -22,6 +29,8 @@ jobs:
           fetch-depth: 0
       - name: Prepare sync branch
         id: sync
+        env:
+          ACTIONS_SIGNING_KEY: ${{ secrets.MAKEVN_ACTIONS_SIGNING_KEY }}
         shell: bash
         run: |
           set -euo pipefail
@@ -33,11 +42,32 @@ jobs:
           fi
 
           branch="sync/main-to-develop"
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          signing_key="${RUNNER_TEMP}/makevn-actions-signing-key"
+          if [[ -z "${ACTIONS_SIGNING_KEY}" ]]; then
+            printf 'Error: MAKEVN_ACTIONS_SIGNING_KEY is not configured.\n' >&2
+            exit 1
+          fi
+          umask 077
+          printf '%s\n' "${ACTIONS_SIGNING_KEY}" > "${signing_key}"
+          cleanup() {
+            rm -f "${signing_key}"
+          }
+          trap cleanup EXIT
+
+          git config user.name "antonillos"
+          git config user.email "305277+antonillos@users.noreply.github.com"
+          git config gpg.format ssh
+          git config user.signingkey "${signing_key}"
+          git config commit.gpgsign true
           git checkout -B "${branch}" origin/develop
 
-          if ! merge_output="$(git merge --no-edit origin/main 2>&1)"; then
+          if ! merge_output="$(git merge \
+            --no-ff \
+            --gpg-sign \
+            --strategy=ort \
+            --strategy-option=ours \
+            --message "chore: sync main into develop" \
+            origin/main 2>&1)"; then
             {
               printf '## Main could not be synced automatically\n\n'
               printf 'Merging `origin/main` into `origin/develop` produced conflicts. Resolve them manually on a branch from `develop`, merge that branch into `develop`, then retry the release PR.\n\n'
@@ -48,6 +78,9 @@ jobs:
             printf '%s\n' "${merge_output}" >&2
             exit 1
           fi
+
+          git merge-base --is-ancestor origin/main HEAD
+          git cat-file commit HEAD | grep -q '^gpgsig '
 
           if git diff --quiet origin/develop HEAD; then
             printf 'needed=false\n' >> "${GITHUB_OUTPUT}"
@@ -68,7 +101,7 @@ jobs:
           set -euo pipefail
           branch="${{ steps.sync.outputs.branch }}"
           title="chore: sync main into develop"
-          body="Sync main back into develop after release."
+          body="Merge main back into develop after release so both branches share history. Non-conflicting changes from both branches are retained; overlapping lines keep the newer develop version."
           pr_url=""
           pr_number=""
 

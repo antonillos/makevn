@@ -87,7 +87,7 @@ test("accepts recognized merge headers only for multi-parent commits", async () 
   assert.equal((await check([signed(1, "Merge branch 'feature' into develop")])).failed, true);
 });
 
-test("exempts only GitHub-generated merge commits from signature validation", async () => {
+test("requires signatures for all merge commits", async () => {
   const merge = signed(1, "Merge branch 'feature' into develop");
   merge.parents = [{ sha: sha(2) }, { sha: sha(3) }];
   merge.committer = { login: "web-flow", type: "User" };
@@ -98,13 +98,18 @@ test("exempts only GitHub-generated merge commits from signature validation", as
   githubMerge.parents = [{ sha: sha(2) }, { sha: sha(3) }];
   githubMerge.committer = { login: "web-flow", type: "User" };
   githubMerge.verification = undefined;
-  assert.equal((await check([githubMerge])).failed, false);
+  assert.equal((await check([githubMerge])).failed, true);
 
   const forged = signed(1, "Merge pull request #42 from example/feature");
   forged.parents = [{ sha: sha(2) }, { sha: sha(3) }];
   forged.committer = { login: "attacker", type: "User", email: "noreply@github.com" };
   forged.verification = undefined;
   assert.equal((await check([forged])).failed, true);
+
+  const signedGithubMerge = signed(1, "Merge pull request #42 from example/feature");
+  signedGithubMerge.parents = [{ sha: sha(2) }, { sha: sha(3) }];
+  signedGithubMerge.committer = { login: "web-flow", type: "User" };
+  assert.equal((await check([signedGithubMerge])).failed, false);
 });
 
 test("requires verified PGP or SSH signatures, not Signed-off-by or signature presence", async () => {
@@ -181,6 +186,7 @@ test("diagnostics contain only SHAs and fixed categories, not message or identit
 test("workflow is independent, read-only, unfiltered and does not execute PR code", () => {
   assert.match(workflow, /pull_request:\n    branches: \[develop, main\]/);
   assert.match(workflow, /contents: read\n  pull-requests: read/);
+  assert.doesNotMatch(workflow, /githubGeneratedMerge|web-flow/);
   assert.doesNotMatch(workflow, /pull_request_target:|paths:|paths-ignore:|needs:|: write|secrets\.|actions\/checkout|run:|tools\/crap/);
   assert.equal((workflow.match(/uses:/g) || []).length, 1);
   assert.doesNotMatch(script, /\$\{\{/);
