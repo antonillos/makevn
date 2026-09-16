@@ -120,22 +120,22 @@ first_parent_added_line_numbers() {
   local parent_branch="${BASE_REF%...HEAD}"
   local line=""
   local sha=""
-  local -a changed_lines=()
-  declare -A first_parent_commits=()
-  declare -A blamed_commits=()
+  local first_parent_commits=""
+  local blamed_lines=""
 
-  while IFS= read -r sha; do
-    [ -n "$sha" ] && first_parent_commits["$sha"]=1
-  done < <(git rev-list --first-parent "${parent_branch}..HEAD" 2>/dev/null || true)
-  while IFS=$'\t' read -r line sha; do
-    [ -n "$line" ] && blamed_commits["$line"]="$sha"
-  done < <(git blame --first-parent --line-porcelain HEAD -- "$file" 2>/dev/null | awk '
+  first_parent_commits="$(git rev-list --first-parent "${parent_branch}..HEAD" 2>/dev/null || true)"
+  # Do not use --first-parent here: Git would attribute clean secondary-parent
+  # imports to the merge commit. Normal blame retains their original SHA.
+  blamed_lines="$(git blame --line-porcelain HEAD -- "$file" 2>/dev/null | awk '
     /^[0-9a-f]{40} / { sha = $1; line = $3 }
     /^\t/ { print line "\t" sha; line++ }
-  ')
+  ')"
   while IFS= read -r line; do
     [ -n "$line" ] || continue
-    [ -n "${first_parent_commits[${blamed_commits[$line]:-}]:-}" ] && printf '%s\n' "$line"
+    sha="$(awk -F '\t' -v target="$line" '$1 == target { print $2; exit }' <<< "$blamed_lines")"
+    case $'\n'"${first_parent_commits}"$'\n' in
+      *$'\n'"${sha}"$'\n'*) printf '%s\n' "$line" ;;
+    esac
   done < <(extract_added_line_numbers "$file" "$BASE_REF")
 }
 
