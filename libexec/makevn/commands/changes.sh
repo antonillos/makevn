@@ -152,7 +152,13 @@ makevn_first_parent_diff_names() {
   local parent_merge_base=""
   local commit=""
   local parent_count=0
+  local path=""
   local index_file=""
+  local virtual_paths=""
+  local fallback_entries=""
+  local fallback_paths=""
+  local fallback_base=""
+  local diff_status=0
 
   parent_merge_base="$(git -C "${repo_root}" merge-base "${parent_branch}" HEAD 2>/dev/null)" || return 1
   index_file="$(mktemp "${TMPDIR:-/tmp}/makevn-first-parent-index.XXXXXX")" || return 1
@@ -162,25 +168,52 @@ makevn_first_parent_diff_names() {
     return 1
   fi
 
-  # Replay only non-merge first-parent patches onto the selected base. A clean
-  # sync merge has no feature-owned patch, so its secondary-parent changes
-  # never enter the virtual index. Zero-context patches also let a later
-  # feature revert cancel an earlier edit despite unrelated sync content.
+  # Replay normal first-parent changes onto a virtual base. Clean sync merges
+  # are excluded, but their resolution-only paths and later edits whose
+  # preimage requires sync content are tracked against their real base tree.
   while IFS= read -r commit; do
     [[ -n "${commit}" ]] || continue
     parent_count="$(git -C "${repo_root}" rev-list --parents -n 1 "${commit}" | awk '{print NF - 1}')"
-    (( parent_count == 1 )) || continue
-    if ! git -C "${repo_root}" diff-tree --no-commit-id -p -r -U0 "${commit}" \
-      | GIT_INDEX_FILE="${index_file}" git -C "${repo_root}" apply --cached --unidiff-zero --whitespace=nowarn; then
-      rm -f "${index_file}"
-      return 1
+    if (( parent_count > 1 )); then
+      while IFS= read -r path; do
+        [[ -n "${path}" ]] || continue
+        fallback_entries+="${path}"$'\t'"${commit}^1"$'\n'
+      done < <(git -C "${repo_root}" diff-tree --no-commit-id --name-only -r --cc "${commit}")
+      continue
     fi
+
+    while IFS= read -r path; do
+      [[ -n "${path}" ]] || continue
+      if ! git -C "${repo_root}" diff-tree --no-commit-id -p -r -U0 "${commit}" -- "${path}" \
+        | GIT_INDEX_FILE="${index_file}" git -C "${repo_root}" apply --cached --unidiff-zero --whitespace=nowarn 2>/dev/null; then
+        fallback_entries+="${path}"$'\t'"${commit}^"$'\n'
+      fi
+    done < <(git -C "${repo_root}" diff-tree --no-commit-id --name-only -r "${commit}")
   done < <(git -C "${repo_root}" rev-list --first-parent --reverse "${parent_branch}..HEAD" 2>/dev/null || true)
 
-  GIT_INDEX_FILE="${index_file}" git -C "${repo_root}" diff-index --cached --name-only "${parent_merge_base}"
-  local status=$?
+  virtual_paths="$(GIT_INDEX_FILE="${index_file}" git -C "${repo_root}" diff-index --cached --name-only "${parent_merge_base}")" || {
+    rm -f "${index_file}"
+    return 1
+  }
   rm -f "${index_file}"
-  return "${status}"
+
+  while IFS=$'\t' read -r path fallback_base; do
+    [[ -n "${path}" && -n "${fallback_base}" ]] || continue
+    if git -C "${repo_root}" diff --quiet "${fallback_base}" HEAD -- "${path}"; then
+      diff_status=0
+    else
+      diff_status=$?
+    fi
+    if (( diff_status == 0 )); then
+      continue
+    elif (( diff_status == 1 )); then
+      fallback_paths+="${path}"$'\n'
+    else
+      return "${diff_status}"
+    fi
+  done <<< "${fallback_entries}"
+
+  printf '%s\n%s\n' "${virtual_paths}" "${fallback_paths}" | LC_ALL=C sort -u | sed '/^$/d'
 }
 
 makevn_collect_verify_changes_scope() {

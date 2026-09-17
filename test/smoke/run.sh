@@ -3414,6 +3414,79 @@ test_verify_changes_ignores_reverted_first_parent_paths() {
   ${CLI} --repo "${repo}" uninstall >/dev/null
 }
 
+test_verify_changes_keeps_post_merge_first_parent_edits() {
+  local repo="${TMP_ROOT}/verify-changes-post-merge-edits"
+  local output
+
+  mkdir -p "${repo}/module-a/src/main/java/com/example"
+  printf '<project/>\n' > "${repo}/pom.xml"
+  printf 'class Baseline {}\n' > "${repo}/module-a/src/main/java/com/example/Baseline.java"
+
+  git init --initial-branch=main "${repo}" >/dev/null
+  git -C "${repo}" add .
+  git -C "${repo}" -c user.name='Smoke Test' -c user.email='smoke@example.com' commit -m 'main baseline' >/dev/null
+  git -C "${repo}" checkout -b develop >/dev/null
+  printf 'class DevelopOnly {}\n' > "${repo}/module-a/src/main/java/com/example/DevelopOnly.java"
+  git -C "${repo}" add .
+  git -C "${repo}" -c user.name='Smoke Test' -c user.email='smoke@example.com' commit -m 'develop work' >/dev/null
+  git -C "${repo}" checkout -b feature/issue-903 >/dev/null
+  git -C "${repo}" checkout main >/dev/null
+  printf 'class Imported {}\n' > "${repo}/module-a/src/main/java/com/example/Imported.java"
+  git -C "${repo}" add .
+  git -C "${repo}" -c user.name='Smoke Test' -c user.email='smoke@example.com' commit -m 'main import' >/dev/null
+  git -C "${repo}" checkout feature/issue-903 >/dev/null
+  git -C "${repo}" -c user.name='Smoke Test' -c user.email='smoke@example.com' merge --no-ff main -m 'Merge main into feature' >/dev/null
+  printf '// feature edit\n' >> "${repo}/module-a/src/main/java/com/example/Imported.java"
+  git -C "${repo}" add .
+  git -C "${repo}" -c user.name='Smoke Test' -c user.email='smoke@example.com' commit -m 'feature edits import' >/dev/null
+
+  ${CLI} --repo "${repo}" init >/dev/null
+  output="$(${CLI} --repo "${repo}" verify-changes-preview)"
+
+  [[ "${output}" == *"production files: 1"* && "${output}" == *"Imported"* ]] \
+    || fail "expected post-merge first-parent edit to be selected, got: ${output}"
+
+  ${CLI} --repo "${repo}" uninstall >/dev/null
+}
+
+test_verify_changes_keeps_merge_resolution_paths() {
+  local repo="${TMP_ROOT}/verify-changes-merge-resolution"
+  local output
+
+  mkdir -p "${repo}/module-a/src/main/java/com/example"
+  printf '<project/>\n' > "${repo}/pom.xml"
+  printf 'class Shared { int value() { return 0; } }\n' > "${repo}/module-a/src/main/java/com/example/Shared.java"
+
+  git init --initial-branch=main "${repo}" >/dev/null
+  git -C "${repo}" add .
+  git -C "${repo}" -c user.name='Smoke Test' -c user.email='smoke@example.com' commit -m 'main baseline' >/dev/null
+  git -C "${repo}" checkout -b develop >/dev/null
+  printf 'class DevelopOnly {}\n' > "${repo}/module-a/src/main/java/com/example/DevelopOnly.java"
+  git -C "${repo}" add .
+  git -C "${repo}" -c user.name='Smoke Test' -c user.email='smoke@example.com' commit -m 'develop work' >/dev/null
+  git -C "${repo}" checkout -b feature/issue-904 >/dev/null
+  perl -0pi -e 's/return 0/return 1/' "${repo}/module-a/src/main/java/com/example/Shared.java"
+  git -C "${repo}" add .
+  git -C "${repo}" -c user.name='Smoke Test' -c user.email='smoke@example.com' commit -m 'feature work' >/dev/null
+  git -C "${repo}" checkout main >/dev/null
+  perl -0pi -e 's/return 0/return 2/' "${repo}/module-a/src/main/java/com/example/Shared.java"
+  git -C "${repo}" add .
+  git -C "${repo}" -c user.name='Smoke Test' -c user.email='smoke@example.com' commit -m 'main work' >/dev/null
+  git -C "${repo}" checkout feature/issue-904 >/dev/null
+  git -C "${repo}" merge --no-ff main -m 'Merge main into feature' >/dev/null 2>&1 || true
+  printf 'class Shared { int value() { return 3; } }\n' > "${repo}/module-a/src/main/java/com/example/Shared.java"
+  git -C "${repo}" add .
+  git -C "${repo}" -c user.name='Smoke Test' -c user.email='smoke@example.com' commit -m 'Resolve merge' >/dev/null
+
+  ${CLI} --repo "${repo}" init >/dev/null
+  output="$(${CLI} --repo "${repo}" verify-changes-preview)"
+
+  [[ "${output}" == *"production files: 1"* && "${output}" == *"Shared"* ]] \
+    || fail "expected merge resolution path to be selected, got: ${output}"
+
+  ${CLI} --repo "${repo}" uninstall >/dev/null
+}
+
 test_verify_changes_modules_local_containers() (
   unset LOCAL_CONTAINERS MAKEVN_LOCAL_CONTAINERS
   local repo="${TMP_ROOT}/verify-changes-local-containers"
@@ -4298,6 +4371,8 @@ main() {
   test_verify_changes_uses_develop_after_it_advances
   test_verify_changes_preserves_first_parent_after_sync_merge
   test_verify_changes_ignores_reverted_first_parent_paths
+  test_verify_changes_keeps_post_merge_first_parent_edits
+  test_verify_changes_keeps_merge_resolution_paths
   test_verify_changes_command
   test_verify_changes_modules_local_containers
   test_verify_changes_nested_maven_base_strips_git_prefix
