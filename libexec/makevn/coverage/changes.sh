@@ -99,9 +99,12 @@ first_parent_diff_names() {
   local fallback_entries=""
   local fallback_paths=""
   local fallback_base=""
+  local replay_base=""
+  local auto_tree=""
   local diff_status=0
 
   parent_merge_base="$(git merge-base "${parent_branch}" HEAD 2>/dev/null)" || return 1
+  replay_base="${parent_merge_base}"
   index_file="$(mktemp "${TMPDIR:-/tmp}/makevn-first-parent-index.XXXXXX")" || return 1
   rm -f "${index_file}"
   if ! GIT_INDEX_FILE="${index_file}" git read-tree "${parent_merge_base}"; then
@@ -116,10 +119,16 @@ first_parent_diff_names() {
     [ -n "$commit" ] || continue
     parent_count=$(git rev-list --parents -n 1 "$commit" | awk '{print NF - 1}')
     if [ "$parent_count" -gt 1 ]; then
+      auto_tree="$(git merge-tree --write-tree "${commit}^1" "${commit}^2" 2>/dev/null | head -n 1 || true)"
+      fallback_base="${auto_tree:-${commit}^1}"
       while IFS= read -r path; do
         [ -n "$path" ] || continue
-        fallback_entries="${fallback_entries}${path}"$'\t'"${commit}^1"$'\n'
+        if [ -n "$auto_tree" ] && git diff --quiet "$auto_tree" "$commit" -- "$path"; then
+          continue
+        fi
+        fallback_entries="${fallback_entries}${path}"$'\t'"${fallback_base}"$'\n'
       done < <(git diff-tree --no-commit-id --name-only -r --cc "$commit")
+      replay_base="${commit}"
       continue
     fi
 
@@ -127,7 +136,7 @@ first_parent_diff_names() {
       [ -n "$path" ] || continue
       if ! git diff-tree --no-commit-id -p -r -U0 "$commit" -- "$path" \
         | GIT_INDEX_FILE="${index_file}" git apply --cached --unidiff-zero --whitespace=nowarn 2>/dev/null; then
-        fallback_entries="${fallback_entries}${path}"$'\t'"${commit}^"$'\n'
+        fallback_entries="${fallback_entries}${path}"$'\t'"${replay_base:-${commit}^}"$'\n'
       fi
     done < <(git diff-tree --no-commit-id --name-only -r "$commit")
   done < <(git rev-list --first-parent --reverse "${parent_branch}..HEAD" 2>/dev/null || true)
@@ -179,7 +188,7 @@ first_parent_added_line_numbers() {
       for (i = 1; i <= count; i++) allowed[entries[i]] = 1
     }
     NR == FNR { wanted[$1] = 1; next }
-    /^[0-9a-f]{40} / { sha = $1; line = $3 }
+    /^[0-9a-f]+ / { sha = $1; line = $3 }
     /^\t/ {
       if (wanted[line] && allowed[sha]) print line
       line++

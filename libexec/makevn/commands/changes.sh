@@ -158,9 +158,12 @@ makevn_first_parent_diff_names() {
   local fallback_entries=""
   local fallback_paths=""
   local fallback_base=""
+  local replay_base=""
+  local auto_tree=""
   local diff_status=0
 
   parent_merge_base="$(git -C "${repo_root}" merge-base "${parent_branch}" HEAD 2>/dev/null)" || return 1
+  replay_base="${parent_merge_base}"
   index_file="$(mktemp "${TMPDIR:-/tmp}/makevn-first-parent-index.XXXXXX")" || return 1
   rm -f "${index_file}"
   if ! GIT_INDEX_FILE="${index_file}" git -C "${repo_root}" read-tree "${parent_merge_base}"; then
@@ -175,10 +178,16 @@ makevn_first_parent_diff_names() {
     [[ -n "${commit}" ]] || continue
     parent_count="$(git -C "${repo_root}" rev-list --parents -n 1 "${commit}" | awk '{print NF - 1}')"
     if (( parent_count > 1 )); then
+      auto_tree="$(git -C "${repo_root}" merge-tree --write-tree "${commit}^1" "${commit}^2" 2>/dev/null | head -n 1 || true)"
+      fallback_base="${auto_tree:-${commit}^1}"
       while IFS= read -r path; do
         [[ -n "${path}" ]] || continue
-        fallback_entries+="${path}"$'\t'"${commit}^1"$'\n'
+        if [[ -n "${auto_tree}" ]] && git -C "${repo_root}" diff --quiet "${auto_tree}" "${commit}" -- "${path}"; then
+          continue
+        fi
+        fallback_entries+="${path}"$'\t'"${fallback_base}"$'\n'
       done < <(git -C "${repo_root}" diff-tree --no-commit-id --name-only -r --cc "${commit}")
+      replay_base="${commit}"
       continue
     fi
 
@@ -186,7 +195,7 @@ makevn_first_parent_diff_names() {
       [[ -n "${path}" ]] || continue
       if ! git -C "${repo_root}" diff-tree --no-commit-id -p -r -U0 "${commit}" -- "${path}" \
         | GIT_INDEX_FILE="${index_file}" git -C "${repo_root}" apply --cached --unidiff-zero --whitespace=nowarn 2>/dev/null; then
-        fallback_entries+="${path}"$'\t'"${commit}^"$'\n'
+        fallback_entries+="${path}"$'\t'"${replay_base:-${commit}^}"$'\n'
       fi
     done < <(git -C "${repo_root}" diff-tree --no-commit-id --name-only -r "${commit}")
   done < <(git -C "${repo_root}" rev-list --first-parent --reverse "${parent_branch}..HEAD" 2>/dev/null || true)

@@ -3671,7 +3671,7 @@ makevn,com.example,Changed,0,10,0,0,0,1,0,1,0,1
 EOF
   printf '<html></html>\n' > "${repo}/jacoco-report-aggregate/target/site/jacoco-aggregate/index.html"
 
-  git init --initial-branch=main "${repo}" >/dev/null
+  git init --initial-branch=main --object-format=sha256 "${repo}" >/dev/null
   git -C "${repo}" add .
   git -C "${repo}" -c user.name='Smoke Test' -c user.email='smoke@example.com' commit -m 'init' >/dev/null
   perl -0pi -e 's/return 0;/return 1;/' "${repo}/module-a/src/main/java/com/example/Changed.java"
