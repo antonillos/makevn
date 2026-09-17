@@ -3526,6 +3526,7 @@ EOF
 test_coverage_changes_ignores_reverted_first_parent_paths() {
   local repo="${TMP_ROOT}/coverage-changes-reverted-first-parent-paths"
   local output
+  local verify_output
   local coverage_script="${ROOT_DIR}/libexec/makevn/coverage/changes.sh"
 
   mkdir -p "${repo}/module-a/src/main/java/com/example"
@@ -3557,8 +3558,12 @@ EOF
   git -C "${repo}" checkout feature/issue-902 >/dev/null
   git -C "${repo}" -c user.name='Smoke Test' -c user.email='smoke@example.com' merge --no-ff main -m 'Merge main into feature' >/dev/null
 
+  ${CLI} --repo "${repo}" init >/dev/null
+  verify_output="$(${CLI} --repo "${repo}" verify-changes-preview)"
   output="$(cd "${repo}" && BASE_PATH=. MAKEVN_COVERAGE_FIRST_PARENT_ONLY=1 bash "${coverage_script}" jacoco-report-aggregate/target/site/jacoco-aggregate develop...HEAD 90 2>&1)"
 
+  [[ "${verify_output}" == *"strategy: skip"* ]] \
+    || fail "expected reverted first-parent path to be excluded from verify-changes, got: ${verify_output}"
   [[ "${output}" == *"No modified production Java files"* ]] \
     || fail "expected reverted first-parent path to be excluded from coverage, got: ${output}"
 }

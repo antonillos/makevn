@@ -145,28 +145,6 @@ makevn_load_verify_changes_plan() {
   return 0
 }
 
-makevn_first_parent_last_path_commit() {
-  local repo_root="$1"
-  local parent_branch="$2"
-  local path="$3"
-  local commit=""
-  local parent_count=0
-
-  while IFS= read -r commit; do
-    [[ -n "${commit}" ]] || continue
-    parent_count="$(git -C "${repo_root}" rev-list --parents -n 1 "${commit}" | awk '{print NF - 1}')"
-    if (( parent_count > 1 )); then
-      if git -C "${repo_root}" diff-tree --no-commit-id --name-only -r --cc "${commit}" | grep -Fxq -- "${path}"; then
-        printf '%s\n' "${commit}"
-        return 0
-      fi
-    elif git -C "${repo_root}" diff-tree --no-commit-id --name-only -r "${commit}" | grep -Fxq -- "${path}"; then
-      printf '%s\n' "${commit}"
-      return 0
-    fi
-  done < <(git -C "${repo_root}" rev-list --first-parent "${parent_branch}..HEAD" 2>/dev/null || true)
-}
-
 makevn_first_parent_diff_names() {
   local repo_root="$1"
   local parent_spec="$2"
@@ -174,52 +152,35 @@ makevn_first_parent_diff_names() {
   local parent_merge_base=""
   local commit=""
   local parent_count=0
-  local changed_paths=""
-  local path=""
-  local last_relevant_commit=""
-  local diff_status=0
+  local index_file=""
 
   parent_merge_base="$(git -C "${repo_root}" merge-base "${parent_branch}" HEAD 2>/dev/null)" || return 1
+  index_file="$(mktemp "${TMPDIR:-/tmp}/makevn-first-parent-index.XXXXXX")" || return 1
+  rm -f "${index_file}"
+  if ! GIT_INDEX_FILE="${index_file}" git -C "${repo_root}" read-tree "${parent_merge_base}"; then
+    rm -f "${index_file}"
+    return 1
+  fi
 
-  # A sync merge can bring unrelated files in through a secondary parent.
-  # Walking HEAD's first-parent history keeps verify-changes focused on commits
-  # made on the feature branch itself while retaining the selected base.
-  changed_paths="$(
-    while IFS= read -r commit; do
-      [[ -n "${commit}" ]] || continue
-      parent_count="$(git -C "${repo_root}" rev-list --parents -n 1 "${commit}" | awk '{print NF - 1}')"
-      if (( parent_count > 1 )); then
-        # Combined diffs retain conflict-resolution changes without importing
-        # paths changed only on a clean secondary-parent merge.
-        git -C "${repo_root}" diff-tree --no-commit-id --name-only -r --cc "${commit}"
-      else
-        git -C "${repo_root}" diff-tree --no-commit-id --name-only -r "${commit}"
-      fi
-    done < <(git -C "${repo_root}" rev-list --first-parent --reverse "${parent_branch}..HEAD" 2>/dev/null || true) | LC_ALL=C sort -u
-  )"
+  # Replay only non-merge first-parent patches onto the selected base. A clean
+  # sync merge has no feature-owned patch, so its secondary-parent changes
+  # never enter the virtual index. Zero-context patches also let a later
+  # feature revert cancel an earlier edit despite unrelated sync content.
+  while IFS= read -r commit; do
+    [[ -n "${commit}" ]] || continue
+    parent_count="$(git -C "${repo_root}" rev-list --parents -n 1 "${commit}" | awk '{print NF - 1}')"
+    (( parent_count == 1 )) || continue
+    if ! git -C "${repo_root}" diff-tree --no-commit-id -p -r -U0 "${commit}" \
+      | GIT_INDEX_FILE="${index_file}" git -C "${repo_root}" apply --cached --unidiff-zero --whitespace=nowarn; then
+      rm -f "${index_file}"
+      return 1
+    fi
+  done < <(git -C "${repo_root}" rev-list --first-parent --reverse "${parent_branch}..HEAD" 2>/dev/null || true)
 
-  while IFS= read -r path; do
-    [[ -n "${path}" ]] || continue
-    # Compare the base to the latest first-parent commit that changed this path,
-    # rather than HEAD: a later clean merge can change the same path only on its
-    # secondary parent after the feature has reverted its own edit.
-    last_relevant_commit="$(makevn_first_parent_last_path_commit "${repo_root}" "${parent_branch}" "${path}")"
-    [[ -n "${last_relevant_commit}" ]] || continue
-    # parent_spec is a triple-dot range, which cannot be combined with a third
-    # revision. Resolve its merge-base and compare exactly two revisions.
-    if git -C "${repo_root}" diff --quiet "${parent_merge_base}" "${last_relevant_commit}" -- "${path}"; then
-      diff_status=0
-    else
-      diff_status=$?
-    fi
-    if (( diff_status == 0 )); then
-      continue
-    elif (( diff_status == 1 )); then
-      printf '%s\n' "${path}"
-    else
-      return "${diff_status}"
-    fi
-  done <<< "${changed_paths}"
+  GIT_INDEX_FILE="${index_file}" git -C "${repo_root}" diff-index --cached --name-only "${parent_merge_base}"
+  local status=$?
+  rm -f "${index_file}"
+  return "${status}"
 }
 
 makevn_collect_verify_changes_scope() {

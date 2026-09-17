@@ -88,70 +88,40 @@ extract_added_line_numbers() {
   done
 }
 
-first_parent_last_path_commit() {
-  local parent_branch="$1"
-  local path="$2"
-  local commit=""
-  local parent_count=0
-
-  while IFS= read -r commit; do
-    [ -n "$commit" ] || continue
-    parent_count=$(git rev-list --parents -n 1 "$commit" | awk '{print NF - 1}')
-    if [ "$parent_count" -gt 1 ]; then
-      if git diff-tree --no-commit-id --name-only -r --cc "$commit" | grep -Fxq -- "$path"; then
-        printf '%s\n' "$commit"
-        return 0
-      fi
-    elif git diff-tree --no-commit-id --name-only -r "$commit" | grep -Fxq -- "$path"; then
-      printf '%s\n' "$commit"
-      return 0
-    fi
-  done < <(git rev-list --first-parent "${parent_branch}..HEAD" 2>/dev/null || true)
-}
-
 first_parent_diff_names() {
   local parent_branch="${BASE_REF%...HEAD}"
   local parent_merge_base=""
   local commit=""
   local parent_count=0
-  local changed_paths=""
-  local path=""
-  local last_relevant_commit=""
-  local diff_status=0
+  local index_file=""
 
   parent_merge_base="$(git merge-base "${parent_branch}" HEAD 2>/dev/null)" || return 1
+  index_file="$(mktemp "${TMPDIR:-/tmp}/makevn-first-parent-index.XXXXXX")" || return 1
+  rm -f "${index_file}"
+  if ! GIT_INDEX_FILE="${index_file}" git read-tree "${parent_merge_base}"; then
+    rm -f "${index_file}"
+    return 1
+  fi
 
-  changed_paths="$(
-    while IFS= read -r commit; do
-      [ -n "$commit" ] || continue
-      parent_count=$(git rev-list --parents -n 1 "$commit" | awk '{print NF - 1}')
-      if [ "$parent_count" -gt 1 ]; then
-        git diff-tree --no-commit-id --name-only -r --cc "$commit"
-      else
-        git diff-tree --no-commit-id --name-only -r "$commit"
-      fi
-    done < <(git rev-list --first-parent --reverse "${parent_branch}..HEAD" 2>/dev/null || true) | sort -u
-  )"
+  # Replay only non-merge first-parent patches onto the selected base. A clean
+  # sync merge has no feature-owned patch, so its secondary-parent changes
+  # never enter the virtual index. Zero-context patches also let a later
+  # feature revert cancel an earlier edit despite unrelated sync content.
+  while IFS= read -r commit; do
+    [ -n "$commit" ] || continue
+    parent_count=$(git rev-list --parents -n 1 "$commit" | awk '{print NF - 1}')
+    [ "$parent_count" -eq 1 ] || continue
+    if ! git diff-tree --no-commit-id -p -r -U0 "$commit" \
+      | GIT_INDEX_FILE="${index_file}" git apply --cached --unidiff-zero --whitespace=nowarn; then
+      rm -f "${index_file}"
+      return 1
+    fi
+  done < <(git rev-list --first-parent --reverse "${parent_branch}..HEAD" 2>/dev/null || true)
 
-  while IFS= read -r path; do
-    [ -n "$path" ] || continue
-    # Compare against the last first-parent edit, not final HEAD: a clean
-    # secondary-parent merge can otherwise reintroduce a reverted path.
-    last_relevant_commit="$(first_parent_last_path_commit "${parent_branch}" "$path")"
-    [ -n "$last_relevant_commit" ] || continue
-    if git diff --quiet "$parent_merge_base" "$last_relevant_commit" -- "$path"; then
-      diff_status=0
-    else
-      diff_status=$?
-    fi
-    if [ "$diff_status" -eq 1 ]; then
-      printf '%s\n' "$path"
-    elif [ "$diff_status" -ne 0 ]; then
-      return "$diff_status"
-    fi
-  done <<EOF
-$changed_paths
-EOF
+  GIT_INDEX_FILE="${index_file}" git diff-index --cached --name-only "${parent_merge_base}"
+  local status=$?
+  rm -f "${index_file}"
+  return "$status"
 }
 
 first_parent_added_line_numbers() {
