@@ -7,14 +7,12 @@ const { resolve } = require("node:path");
 
 const workflow = readFileSync(resolve(__dirname, "../workflows/prepare-release.yml"), "utf8");
 
-test("dispatches revision-bound commit policy for release PRs", () => {
-  assert.match(workflow, /permissions:\n  actions: write/);
-  assert.match(workflow, /gh workflow run commit-policy\.yml/);
-  assert.match(workflow, /--ref "\$\{branch\}"/);
-  assert.match(workflow, /-f pull_number=/);
-  assert.match(workflow, /-f head_sha=/);
-  assert.match(workflow, /-f base_sha=/);
-  assert.match(workflow, /-f base_ref=/);
+test("relies on the automatic commit-policy trigger for release PRs", () => {
+  assert.doesNotMatch(workflow, /gh workflow run commit-policy\.yml/);
+  assert.doesNotMatch(workflow, /-f pull_number=/);
+  assert.doesNotMatch(workflow, /-f head_sha=/);
+  assert.doesNotMatch(workflow, /-f base_sha=/);
+  assert.doesNotMatch(workflow, /-f base_ref=/);
 });
 
 test("refreshes the PR number after creating or replacing a release PR", () => {

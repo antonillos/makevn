@@ -13,9 +13,8 @@ test("syncs every main push and successful release completion", () => {
   assert.match(workflow, /workflow_run:\n    workflows:\n      - Release/);
   assert.match(workflow, /github\.event_name == 'push'/);
   assert.match(workflow, /github\.event\.workflow_run\.conclusion == 'success'/);
-  assert.match(workflow, /gh workflow run commit-policy\.yml/);
-  assert.match(workflow, /--ref "\$\{branch\}"/);
-  assert.match(workflow, /-f pull_number=/);
+  assert.doesNotMatch(workflow, /gh workflow run commit-policy\.yml/);
+  assert.doesNotMatch(workflow, /-f pull_number=/);
 });
 
 test("creates and pushes a signed merge even when the tree is unchanged", () => {
