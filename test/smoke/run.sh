@@ -3249,6 +3249,7 @@ EOF
 
   output="$(${CLI} --repo "${repo}" verify-changes-preview)"
 
+  [[ "${output}" == *"Calculating parent branch..."* ]] || fail "expected preview output to report parent branch detection"
   [[ "${output}" == *"strategy: run selected tests only"* ]] || fail "expected preview output to describe selected-test strategy"
   [[ "${output}" == *"tests: com.example.ChangedTest"* ]] || fail "expected preview output to include selected tests"
   [[ -f "${repo}/.makevn/verify-changes-plan.env" ]] || fail "expected preview to persist a verify-changes plan"

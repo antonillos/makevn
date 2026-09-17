@@ -287,6 +287,7 @@ makevn_collect_verify_changes_scope() {
     strip_prefix="${maven_git_rel}/"
   fi
 
+  makevn_print_detail_line "Calculating parent branch..."
   MAKEVN_VERIFY_CHANGES_PARENT_SPEC="$(makevn_detect_parent_branch_spec "${repo_root}")"
   if [[ "${MAKEVN_VERIFY_CHANGES_PARENT_SPEC}" == "HEAD" ]]; then
     diff_local="$(git -C "${git_root}" diff --name-only HEAD || true)"
@@ -711,6 +712,7 @@ cmd_coverage_changes() {
 
   makevn_require_jacoco_csv_classes "${report_dir}/jacoco.csv"
 
+  makevn_print_detail_line "Calculating parent branch..."
   parent_spec="$(makevn_detect_parent_branch_spec "${repo_root}")"
 
   coverage_script="$(makevn_internal_make_script_path coverage/changes.sh || true)"
