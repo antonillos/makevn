@@ -1350,6 +1350,7 @@ makevn_detect_parent_branch_spec() {
   candidates+=("${release_candidates[@]+${release_candidates[@]}}")
   first_parent_history="$(git -C "${repo_root}" rev-list --first-parent HEAD 2>/dev/null || true)"
   for candidate in "${candidates[@]}"; do
+    [[ "${candidate}" != "${current_branch}" ]] || continue
     git -C "${repo_root}" rev-parse --verify "${candidate}" >/dev/null 2>&1 || continue
     candidate_commit="$(git -C "${repo_root}" rev-parse "${candidate}")"
     candidate_is_first_parent=false

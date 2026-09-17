@@ -3262,6 +3262,33 @@ EOF
   ${CLI} --repo "${repo}" uninstall >/dev/null
 }
 
+test_verify_changes_excludes_checked_out_release_candidate() {
+  local repo="${TMP_ROOT}/verify-changes-release-candidate"
+  local output
+
+  mkdir -p "${repo}/module-a/src/main/java/com/example"
+  printf '<project/>\n' > "${repo}/pom.xml"
+  printf 'class Baseline {}\n' > "${repo}/module-a/src/main/java/com/example/Baseline.java"
+
+  git init --initial-branch=main "${repo}" >/dev/null
+  git -C "${repo}" add .
+  git -C "${repo}" -c user.name='Smoke Test' -c user.email='smoke@example.com' commit -m 'main baseline' >/dev/null
+  git -C "${repo}" checkout -b release/1.0 >/dev/null
+  printf 'class ReleaseOnly {}\n' > "${repo}/module-a/src/main/java/com/example/ReleaseOnly.java"
+  git -C "${repo}" add .
+  git -C "${repo}" -c user.name='Smoke Test' -c user.email='smoke@example.com' commit -m 'release work' >/dev/null
+
+  ${CLI} --repo "${repo}" init >/dev/null
+  output="$(${CLI} --repo "${repo}" verify-changes-preview)"
+
+  [[ "${output}" == *"compare against: main...HEAD"* ]] \
+    || fail "expected checked-out release branch to use main as its parent, got: ${output}"
+  [[ "${output}" == *"production files: 1"* && "${output}" == *"ReleaseOnly"* ]] \
+    || fail "expected committed release changes to be selected, got: ${output}"
+
+  ${CLI} --repo "${repo}" uninstall >/dev/null
+}
+
 test_verify_changes_uses_hotfix_parent_branch() {
   local repo="${TMP_ROOT}/verify-changes-hotfix-parent"
   local output
@@ -4382,6 +4409,7 @@ main() {
   test_verify_respects_local_containers_config
   test_verify_leaves_local_containers_unset_without_repo_signal
   test_verify_changes_preview_command
+  test_verify_changes_excludes_checked_out_release_candidate
   test_verify_changes_uses_hotfix_parent_branch
   test_verify_changes_uses_develop_after_it_advances
   test_verify_changes_preserves_first_parent_after_sync_merge
