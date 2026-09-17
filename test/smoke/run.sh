@@ -3601,6 +3601,7 @@ test_coverage_changes_ignores_reverted_first_parent_paths() {
   local output
   local verify_output
   local coverage_script="${ROOT_DIR}/libexec/makevn/coverage/changes.sh"
+  local feature_commit=""
 
   mkdir -p "${repo}/module-a/src/main/java/com/example"
   mkdir -p "${repo}/jacoco-report-aggregate/target/site/jacoco-aggregate"
@@ -3608,7 +3609,10 @@ test_coverage_changes_ignores_reverted_first_parent_paths() {
   cat > "${repo}/module-a/src/main/java/com/example/Shared.java" <<'EOF'
 package com.example;
 
-class Shared {}
+// baseline
+class Shared {
+  int value() { return 0; }
+}
 EOF
   printf '<html></html>\n' > "${repo}/jacoco-report-aggregate/target/site/jacoco-aggregate/index.html"
 
@@ -3623,13 +3627,24 @@ EOF
   printf '\nclass RevertedFeature {}\n' >> "${repo}/module-a/src/main/java/com/example/Shared.java"
   git -C "${repo}" add .
   git -C "${repo}" -c user.name='Smoke Test' -c user.email='smoke@example.com' commit -m 'feature work' >/dev/null
-  git -C "${repo}" -c user.name='Smoke Test' -c user.email='smoke@example.com' revert --no-edit HEAD >/dev/null
+  feature_commit="$(git -C "${repo}" rev-parse HEAD)"
   git -C "${repo}" checkout main >/dev/null
-  perl -0pi -e 's#class Shared \{\}#class Shared { // secondary#' "${repo}/module-a/src/main/java/com/example/Shared.java"
+  perl -0pi -e 's#// baseline#// secondary-one#' "${repo}/module-a/src/main/java/com/example/Shared.java"
   git -C "${repo}" add .
-  git -C "${repo}" -c user.name='Smoke Test' -c user.email='smoke@example.com' commit -m 'main secondary work' >/dev/null
+  git -C "${repo}" -c user.name='Smoke Test' -c user.email='smoke@example.com' commit -m 'main secondary work one' >/dev/null
   git -C "${repo}" checkout feature/issue-902 >/dev/null
-  git -C "${repo}" -c user.name='Smoke Test' -c user.email='smoke@example.com' merge --no-ff main -m 'Merge main into feature' >/dev/null
+  git -C "${repo}" -c user.name='Smoke Test' -c user.email='smoke@example.com' merge --no-ff main -m 'Merge main into feature one' >/dev/null
+  git -C "${repo}" checkout main >/dev/null
+  perl -0pi -e 's#class Shared \{#// secondary-two\nclass Shared {#' "${repo}/module-a/src/main/java/com/example/Shared.java"
+  git -C "${repo}" add .
+  git -C "${repo}" -c user.name='Smoke Test' -c user.email='smoke@example.com' commit -m 'main secondary work two' >/dev/null
+  git -C "${repo}" checkout feature/issue-902 >/dev/null
+  git -C "${repo}" -c user.name='Smoke Test' -c user.email='smoke@example.com' merge --no-ff main -m 'Merge main into feature two' >/dev/null
+  if ! git -C "${repo}" -c user.name='Smoke Test' -c user.email='smoke@example.com' revert --no-edit "${feature_commit}" >/dev/null 2>&1; then
+    printf 'class Shared { // secondary-one\n// secondary two\n' > "${repo}/module-a/src/main/java/com/example/Shared.java"
+    git -C "${repo}" add .
+    git -C "${repo}" -c user.name='Smoke Test' -c user.email='smoke@example.com' commit -m 'revert feature work' >/dev/null
+  fi
 
   ${CLI} --repo "${repo}" init >/dev/null
   verify_output="$(${CLI} --repo "${repo}" verify-changes-preview)"

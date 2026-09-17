@@ -88,6 +88,32 @@ extract_added_line_numbers() {
   done
 }
 
+collapse_fallback_entries() {
+  local entries="$1"
+  local latest=""
+  local path=""
+  local base=""
+  local old_path=""
+  local old_base=""
+  local retained=""
+
+  while IFS=$'\t' read -r path base; do
+    [ -n "$path" ] && [ -n "$base" ] || continue
+    retained=""
+    while IFS=$'\t' read -r old_path old_base; do
+      [ -n "$old_path" ] && [ "$old_path" != "$path" ] || continue
+      retained="${retained}${old_path}"$'\t'"${old_base}"$'\n'
+    done <<EOF
+$latest
+EOF
+    latest="${retained}${path}"$'\t'"${base}"$'\n'
+  done <<EOF
+$entries
+EOF
+
+  printf '%s' "$latest"
+}
+
 first_parent_diff_names() {
   local parent_branch="${BASE_REF%...HEAD}"
   local parent_merge_base=""
@@ -146,6 +172,7 @@ first_parent_diff_names() {
     return 1
   }
   rm -f "${index_file}"
+  fallback_entries="$(collapse_fallback_entries "$fallback_entries")"
 
   while IFS=$'\t' read -r path fallback_base; do
     [ -n "$path" ] && [ -n "$fallback_base" ] || continue

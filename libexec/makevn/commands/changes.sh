@@ -145,6 +145,28 @@ makevn_load_verify_changes_plan() {
   return 0
 }
 
+makevn_collapse_fallback_entries() {
+  local entries="$1"
+  local latest=""
+  local path=""
+  local base=""
+  local old_path=""
+  local old_base=""
+  local retained=""
+
+  while IFS=$'\t' read -r path base; do
+    [[ -n "${path}" && -n "${base}" ]] || continue
+    retained=""
+    while IFS=$'\t' read -r old_path old_base; do
+      [[ -n "${old_path}" && "${old_path}" != "${path}" ]] || continue
+      retained+="${old_path}"$'\t'"${old_base}"$'\n'
+    done <<< "${latest}"
+    latest="${retained}${path}"$'\t'"${base}"$'\n'
+  done <<< "${entries}"
+
+  printf '%s' "${latest}"
+}
+
 makevn_first_parent_diff_names() {
   local repo_root="$1"
   local parent_spec="$2"
@@ -205,6 +227,7 @@ makevn_first_parent_diff_names() {
     return 1
   }
   rm -f "${index_file}"
+  fallback_entries="$(makevn_collapse_fallback_entries "${fallback_entries}")"
 
   while IFS=$'\t' read -r path fallback_base; do
     [[ -n "${path}" && -n "${fallback_base}" ]] || continue
