@@ -32,6 +32,7 @@ BASE_REF="${2:-}"
 MIN_COVERAGE_PCT="${3:-90}"
 MIN_OVERALL_COVERAGE_PCT="${4:-90}"
 COVERAGE_VERBOSE="${COVERAGE_VERBOSE:-false}"
+FIRST_PARENT_ONLY="${MAKEVN_COVERAGE_FIRST_PARENT_ONLY:-false}"
 MIN_COVERAGE_DISPLAY="$(printf '%s' "$MIN_COVERAGE_PCT" | sed -E 's/[[:space:]]*\([^)]*\)[[:space:]]*$//; s/%$//; s/^[[:space:]]+|[[:space:]]+$//g')"
 
 if [ -z "$JACOCO_BASE" ] || [ ! -d "$JACOCO_BASE" ]; then
@@ -87,6 +88,143 @@ extract_added_line_numbers() {
   done
 }
 
+collapse_fallback_entries() {
+  local entries="$1"
+  local latest=""
+  local path=""
+  local base=""
+  local old_path=""
+  local old_base=""
+  local retained=""
+
+  while IFS=$'\t' read -r path base; do
+    [ -n "$path" ] && [ -n "$base" ] || continue
+    retained=""
+    while IFS=$'\t' read -r old_path old_base; do
+      [ -n "$old_path" ] && [ "$old_path" != "$path" ] || continue
+      retained="${retained}${old_path}"$'\t'"${old_base}"$'\n'
+    done <<EOF
+$latest
+EOF
+    latest="${retained}${path}"$'\t'"${base}"$'\n'
+  done <<EOF
+$entries
+EOF
+
+  printf '%s' "$latest"
+}
+
+first_parent_diff_names() {
+  local parent_branch="${BASE_REF%...HEAD}"
+  local parent_merge_base=""
+  local commit=""
+  local parent_count=0
+  local path=""
+  local index_file=""
+  local virtual_paths=""
+  local fallback_entries=""
+  local fallback_paths=""
+  local fallback_base=""
+  local replay_base=""
+  local auto_tree=""
+  local diff_status=0
+
+  parent_merge_base="$(git merge-base "${parent_branch}" HEAD 2>/dev/null)" || return 1
+  replay_base="${parent_merge_base}"
+  index_file="$(mktemp "${TMPDIR:-/tmp}/makevn-first-parent-index.XXXXXX")" || return 1
+  rm -f "${index_file}"
+  if ! GIT_INDEX_FILE="${index_file}" git read-tree "${parent_merge_base}"; then
+    rm -f "${index_file}"
+    return 1
+  fi
+
+  # Replay normal first-parent changes onto a virtual base. Clean sync merges
+  # are excluded, but their resolution-only paths and later edits whose
+  # preimage requires sync content are tracked against their real base tree.
+  while IFS= read -r commit; do
+    [ -n "$commit" ] || continue
+    parent_count=$(git rev-list --parents -n 1 "$commit" | awk '{print NF - 1}')
+    if [ "$parent_count" -gt 1 ]; then
+      auto_tree="$(git merge-tree --write-tree "${commit}^1" "${commit}^2" 2>/dev/null | head -n 1 || true)"
+      fallback_base="${auto_tree:-${commit}^1}"
+      while IFS= read -r path; do
+        [ -n "$path" ] || continue
+        if [ -n "$auto_tree" ] && git diff --quiet "$auto_tree" "$commit" -- "$path"; then
+          continue
+        fi
+        fallback_entries="${fallback_entries}${path}"$'\t'"${fallback_base}"$'\n'
+      done < <(git diff-tree --no-commit-id --name-only -r --cc "$commit")
+      replay_base="${commit}"
+      continue
+    fi
+
+    while IFS= read -r path; do
+      [ -n "$path" ] || continue
+      if ! git diff-tree --no-commit-id -p -r -U0 "$commit" -- "$path" \
+        | GIT_INDEX_FILE="${index_file}" git apply --cached --unidiff-zero --whitespace=nowarn 2>/dev/null; then
+        fallback_entries="${fallback_entries}${path}"$'\t'"${replay_base:-${commit}^}"$'\n'
+      fi
+    done < <(git diff-tree --no-commit-id --name-only -r "$commit")
+  done < <(git rev-list --first-parent --reverse "${parent_branch}..HEAD" 2>/dev/null || true)
+
+  virtual_paths="$(GIT_INDEX_FILE="${index_file}" git diff-index --cached --name-only "${parent_merge_base}")" || {
+    rm -f "${index_file}"
+    return 1
+  }
+  rm -f "${index_file}"
+  fallback_entries="$(collapse_fallback_entries "$fallback_entries")"
+
+  while IFS=$'\t' read -r path fallback_base; do
+    [ -n "$path" ] && [ -n "$fallback_base" ] || continue
+    if git diff --quiet "$fallback_base" HEAD -- "$path"; then
+      diff_status=0
+    else
+      diff_status=$?
+    fi
+    if [ "$diff_status" -eq 0 ]; then
+      continue
+    elif [ "$diff_status" -eq 1 ]; then
+      fallback_paths="${fallback_paths}${path}"$'\n'
+    else
+      return "$diff_status"
+    fi
+  done <<EOF
+$fallback_entries
+EOF
+
+  printf '%s\n%s\n' "$virtual_paths" "$fallback_paths" | LC_ALL=C sort -u | sed '/^$/d'
+}
+
+first_parent_added_line_numbers() {
+  local file="$1"
+  local parent_branch="${BASE_REF%...HEAD}"
+  local line=""
+  local sha=""
+  local first_parent_commits=""
+  local changed_lines_file=""
+
+  first_parent_commits="$(git rev-list --first-parent "${parent_branch}..HEAD" 2>/dev/null || true)"
+  changed_lines_file="$(mktemp "${TMPDIR:-/tmp}/makevn-first-parent-lines.XXXXXX")"
+  trap 'rm -f "${changed_lines_file}"' RETURN
+  extract_added_line_numbers "$file" "$BASE_REF" > "${changed_lines_file}"
+  # Do not use --first-parent here: Git would attribute clean secondary-parent
+  # imports to the merge commit. Normal blame retains their original SHA.
+  git blame --line-porcelain HEAD -- "$file" 2>/dev/null | awk -v commits="$first_parent_commits" '
+    BEGIN {
+      count = split(commits, entries, "\n")
+      for (i = 1; i <= count; i++) allowed[entries[i]] = 1
+    }
+    NR == FNR { wanted[$1] = 1; next }
+    /^[0-9a-f]+ / { sha = $1; line = $3 }
+    /^\t/ {
+      if (wanted[line] && allowed[sha]) print line
+      line++
+    }
+  ' "${changed_lines_file}" -
+  rm -f "${changed_lines_file}"
+  trap - RETURN
+}
+
 # Detect changed production Java files and deduplicate
 # Use the same logic as verify-changes: combine base diff + local modifications
 CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "HEAD")
@@ -101,7 +239,11 @@ else
   if [ "$COVERAGE_VERBOSE" = true ]; then
     echo "ℹ  On feature branch, checking changes vs $BASE_REF + local modifications..." 1>&2
   fi
-  DIFF_NAME_ONLY_BASE=$(git diff --name-only "$BASE_REF" 2>/dev/null || true)
+  if [ "$FIRST_PARENT_ONLY" = true ] || [ "$FIRST_PARENT_ONLY" = 1 ]; then
+    DIFF_NAME_ONLY_BASE=$(first_parent_diff_names)
+  else
+    DIFF_NAME_ONLY_BASE=$(git diff --name-only "$BASE_REF" 2>/dev/null || true)
+  fi
   DIFF_NAME_ONLY_LOCAL=$(git diff --name-only HEAD 2>/dev/null || true)
 
   CHANGED_PROD_FILES_BASE=$(echo "$DIFF_NAME_ONLY_BASE" | grep "^${BASE_PATH_PREFIX}" | grep "/src/main/java/" | grep "\\.java$" || true)
@@ -123,7 +265,11 @@ if [ -z "$CHANGED_PROD_FILES" ] && [ -z "$CHANGED_TEST_FILES" ]; then
     echo "ℹ  No uncommitted changes detected. Checking recent commits for test additions..." 1>&2
     # Look for test files added in recent commits ONLY if they're ahead of parent branch
     # This ensures we only detect actual new tests in this branch
-    RECENT_TEST_FILES=$(git log --oneline "${BASE_REF%...HEAD}"..HEAD --name-only --diff-filter=A -- "$BASE_PATH_TEST_GLOB" 2>/dev/null | grep "/src/test/java/" | sort -u || true)
+    if [ "$FIRST_PARENT_ONLY" = true ] || [ "$FIRST_PARENT_ONLY" = 1 ]; then
+      RECENT_TEST_FILES=$(git log --first-parent --oneline "${BASE_REF%...HEAD}"..HEAD --name-only --diff-filter=A -- "$BASE_PATH_TEST_GLOB" 2>/dev/null | grep "/src/test/java/" | sort -u || true)
+    else
+      RECENT_TEST_FILES=$(git log --oneline "${BASE_REF%...HEAD}"..HEAD --name-only --diff-filter=A -- "$BASE_PATH_TEST_GLOB" 2>/dev/null | grep "/src/test/java/" | sort -u || true)
+    fi
     if [ -n "$RECENT_TEST_FILES" ]; then
       CHANGED_TEST_FILES="$RECENT_TEST_FILES"
       echo "ℹ  Found recently added test files, analyzing their coverage impact..." 1>&2
@@ -286,8 +432,13 @@ while IFS= read -r FILE; do
     DIFF_OUTPUT=$(git diff HEAD -- "$FILE" | grep "^+" | grep -v "^+++" | wc -l | xargs)
     CHANGED_LINES=$(extract_added_line_numbers "$FILE" HEAD || true)
   elif [ "$BASE_REF" != "HEAD" ]; then
-    DIFF_OUTPUT=$(git diff "$BASE_REF" -- "$FILE" | grep "^+" | grep -v "^+++" | wc -l | xargs)
-    CHANGED_LINES=$(extract_added_line_numbers "$FILE" "$BASE_REF" || true)
+    if [ "$FIRST_PARENT_ONLY" = true ] || [ "$FIRST_PARENT_ONLY" = 1 ]; then
+      CHANGED_LINES=$(first_parent_added_line_numbers "$FILE" || true)
+      DIFF_OUTPUT=$(printf '%s\n' "$CHANGED_LINES" | sed '/^$/d' | wc -l | xargs)
+    else
+      DIFF_OUTPUT=$(git diff "$BASE_REF" -- "$FILE" | grep "^+" | grep -v "^+++" | wc -l | xargs)
+      CHANGED_LINES=$(extract_added_line_numbers "$FILE" "$BASE_REF" || true)
+    fi
   else
     continue
   fi
