@@ -1230,6 +1230,7 @@ fn run_backend_with_loader(
     detail_file: Option<&BackendDetailFile>,
 ) -> Result<BackendRunResult, String> {
     let started_at = Instant::now();
+    let fallback_metadata = fallback_backend_metadata(fallback_title);
     let mut child = command.spawn().map_err(|error| {
         format!(
             "failed to launch backend {}: {error}",
@@ -1490,30 +1491,23 @@ fn run_backend_with_loader(
         }
 
         if let Some(renderer) = renderer.as_mut() {
-            match metadata.as_ref() {
-                Some(m) if !tail_active => {
-                    let hint = renderer.current_dashboard_hint();
-                    renderer
-                        .render_dashboard(
-                            child.id(),
-                            global_started_at.elapsed(),
-                            completed_summaries,
-                            &current_detail_lines,
-                            m,
-                            &hint,
-                        )
-                        .map_err(|error| format!("failed to render loader: {error}"))?
-                }
-                _ => {
-                    let hint = renderer.current_spinner_hint();
-                    if completed_summaries.is_empty() {
-                        renderer
-                            .render_frame_with_hint(child.id(), &hint)
-                            .map_err(|error| format!("failed to render loader: {error}"))?;
-                    } else {
-                        thread::sleep(Duration::from_millis(50));
-                    }
-                }
+            if !tail_active {
+                let hint = renderer.current_dashboard_hint();
+                renderer
+                    .render_dashboard(
+                        child.id(),
+                        global_started_at.elapsed(),
+                        completed_summaries,
+                        &current_detail_lines,
+                        metadata.as_ref().unwrap_or(&fallback_metadata),
+                        &hint,
+                    )
+                    .map_err(|error| format!("failed to render loader: {error}"))?;
+            } else {
+                let hint = renderer.current_spinner_hint();
+                renderer
+                    .render_frame_with_hint(child.id(), &hint)
+                    .map_err(|error| format!("failed to render loader: {error}"))?;
             }
         } else {
             thread::sleep(Duration::from_millis(100));
@@ -1555,6 +1549,19 @@ fn run_backend_with_loader(
         metadata.as_ref(),
         fallback_title,
     ))
+}
+
+fn fallback_backend_metadata(title: &str) -> BackendMetadata {
+    BackendMetadata {
+        command: title.to_owned(),
+        repo: String::new(),
+        cwd: String::new(),
+        log_path: String::new(),
+        relative_log_path: String::new(),
+        command_display: format!("makevn {title}"),
+        title: title.to_owned(),
+        context: None,
+    }
 }
 
 fn read_backend_metadata(metadata_path: &Path) -> Result<Option<BackendMetadata>, String> {
@@ -4668,6 +4675,18 @@ mod tests {
         assert_eq!(
             super::running_command_line(&metadata),
             ":: makevn verify | .makevn/logs/verify.log"
+        );
+    }
+
+    #[test]
+    fn fallback_backend_metadata_keeps_the_dashboard_visible_before_logging_starts() {
+        let metadata = super::fallback_backend_metadata("verify-changes");
+
+        assert_eq!(metadata.title, "verify-changes");
+        assert!(metadata.relative_log_path.is_empty());
+        assert_eq!(
+            super::running_command_line(&metadata),
+            "-> makevn verify-changes"
         );
     }
 
