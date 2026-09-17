@@ -88,12 +88,38 @@ extract_added_line_numbers() {
   done
 }
 
+first_parent_last_path_commit() {
+  local parent_branch="$1"
+  local path="$2"
+  local commit=""
+  local parent_count=0
+
+  while IFS= read -r commit; do
+    [ -n "$commit" ] || continue
+    parent_count=$(git rev-list --parents -n 1 "$commit" | awk '{print NF - 1}')
+    if [ "$parent_count" -gt 1 ]; then
+      if git diff-tree --no-commit-id --name-only -r --cc "$commit" | grep -Fxq -- "$path"; then
+        printf '%s\n' "$commit"
+        return 0
+      fi
+    elif git diff-tree --no-commit-id --name-only -r "$commit" | grep -Fxq -- "$path"; then
+      printf '%s\n' "$commit"
+      return 0
+    fi
+  done < <(git rev-list --first-parent "${parent_branch}..HEAD" 2>/dev/null || true)
+}
+
 first_parent_diff_names() {
   local parent_branch="${BASE_REF%...HEAD}"
+  local parent_merge_base=""
   local commit=""
   local parent_count=0
   local changed_paths=""
   local path=""
+  local last_relevant_commit=""
+  local diff_status=0
+
+  parent_merge_base="$(git merge-base "${parent_branch}" HEAD 2>/dev/null)" || return 1
 
   changed_paths="$(
     while IFS= read -r commit; do
@@ -109,7 +135,20 @@ first_parent_diff_names() {
 
   while IFS= read -r path; do
     [ -n "$path" ] || continue
-    git diff --quiet "$BASE_REF" -- "$path" || printf '%s\n' "$path"
+    # Compare against the last first-parent edit, not final HEAD: a clean
+    # secondary-parent merge can otherwise reintroduce a reverted path.
+    last_relevant_commit="$(first_parent_last_path_commit "${parent_branch}" "$path")"
+    [ -n "$last_relevant_commit" ] || continue
+    if git diff --quiet "$parent_merge_base" "$last_relevant_commit" -- "$path"; then
+      diff_status=0
+    else
+      diff_status=$?
+    fi
+    if [ "$diff_status" -eq 1 ]; then
+      printf '%s\n' "$path"
+    elif [ "$diff_status" -ne 0 ]; then
+      return "$diff_status"
+    fi
   done <<EOF
 $changed_paths
 EOF

@@ -145,6 +145,28 @@ makevn_load_verify_changes_plan() {
   return 0
 }
 
+makevn_first_parent_last_path_commit() {
+  local repo_root="$1"
+  local parent_branch="$2"
+  local path="$3"
+  local commit=""
+  local parent_count=0
+
+  while IFS= read -r commit; do
+    [[ -n "${commit}" ]] || continue
+    parent_count="$(git -C "${repo_root}" rev-list --parents -n 1 "${commit}" | awk '{print NF - 1}')"
+    if (( parent_count > 1 )); then
+      if git -C "${repo_root}" diff-tree --no-commit-id --name-only -r --cc "${commit}" | grep -Fxq -- "${path}"; then
+        printf '%s\n' "${commit}"
+        return 0
+      fi
+    elif git -C "${repo_root}" diff-tree --no-commit-id --name-only -r "${commit}" | grep -Fxq -- "${path}"; then
+      printf '%s\n' "${commit}"
+      return 0
+    fi
+  done < <(git -C "${repo_root}" rev-list --first-parent "${parent_branch}..HEAD" 2>/dev/null || true)
+}
+
 makevn_first_parent_diff_names() {
   local repo_root="$1"
   local parent_spec="$2"
@@ -181,7 +203,7 @@ makevn_first_parent_diff_names() {
     # Compare the base to the latest first-parent commit that changed this path,
     # rather than HEAD: a later clean merge can change the same path only on its
     # secondary parent after the feature has reverted its own edit.
-    last_relevant_commit="$(git -C "${repo_root}" log --first-parent --format=%H "${parent_branch}..HEAD" -- "${path}" | head -n 1)"
+    last_relevant_commit="$(makevn_first_parent_last_path_commit "${repo_root}" "${parent_branch}" "${path}")"
     [[ -n "${last_relevant_commit}" ]] || continue
     # parent_spec is a triple-dot range, which cannot be combined with a third
     # revision. Resolve its merge-base and compare exactly two revisions.

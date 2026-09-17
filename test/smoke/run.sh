@@ -3523,6 +3523,46 @@ EOF
   ${CLI} --repo "${repo}" uninstall >/dev/null
 }
 
+test_coverage_changes_ignores_reverted_first_parent_paths() {
+  local repo="${TMP_ROOT}/coverage-changes-reverted-first-parent-paths"
+  local output
+  local coverage_script="${ROOT_DIR}/libexec/makevn/coverage/changes.sh"
+
+  mkdir -p "${repo}/module-a/src/main/java/com/example"
+  mkdir -p "${repo}/jacoco-report-aggregate/target/site/jacoco-aggregate"
+  printf '<project/>\n' > "${repo}/pom.xml"
+  cat > "${repo}/module-a/src/main/java/com/example/Shared.java" <<'EOF'
+package com.example;
+
+class Shared {}
+EOF
+  printf '<html></html>\n' > "${repo}/jacoco-report-aggregate/target/site/jacoco-aggregate/index.html"
+
+  git init --initial-branch=main "${repo}" >/dev/null
+  git -C "${repo}" add .
+  git -C "${repo}" -c user.name='Smoke Test' -c user.email='smoke@example.com' commit -m 'main baseline' >/dev/null
+  git -C "${repo}" checkout -b develop >/dev/null
+  printf 'class DevelopOnly {}\n' > "${repo}/module-a/src/main/java/com/example/DevelopOnly.java"
+  git -C "${repo}" add .
+  git -C "${repo}" -c user.name='Smoke Test' -c user.email='smoke@example.com' commit -m 'develop work' >/dev/null
+  git -C "${repo}" checkout -b feature/issue-902 >/dev/null
+  printf '\nclass RevertedFeature {}\n' >> "${repo}/module-a/src/main/java/com/example/Shared.java"
+  git -C "${repo}" add .
+  git -C "${repo}" -c user.name='Smoke Test' -c user.email='smoke@example.com' commit -m 'feature work' >/dev/null
+  git -C "${repo}" -c user.name='Smoke Test' -c user.email='smoke@example.com' revert --no-edit HEAD >/dev/null
+  git -C "${repo}" checkout main >/dev/null
+  perl -0pi -e 's#class Shared \{\}#class Shared { // secondary#' "${repo}/module-a/src/main/java/com/example/Shared.java"
+  git -C "${repo}" add .
+  git -C "${repo}" -c user.name='Smoke Test' -c user.email='smoke@example.com' commit -m 'main secondary work' >/dev/null
+  git -C "${repo}" checkout feature/issue-902 >/dev/null
+  git -C "${repo}" -c user.name='Smoke Test' -c user.email='smoke@example.com' merge --no-ff main -m 'Merge main into feature' >/dev/null
+
+  output="$(cd "${repo}" && BASE_PATH=. MAKEVN_COVERAGE_FIRST_PARENT_ONLY=1 bash "${coverage_script}" jacoco-report-aggregate/target/site/jacoco-aggregate develop...HEAD 90 2>&1)"
+
+  [[ "${output}" == *"No modified production Java files"* ]] \
+    || fail "expected reverted first-parent path to be excluded from coverage, got: ${output}"
+}
+
 test_coverage_changes_command() {
   local repo="${TMP_ROOT}/coverage-changes"
   local output
@@ -4256,6 +4296,7 @@ main() {
   test_verify_changes_command
   test_verify_changes_modules_local_containers
   test_verify_changes_nested_maven_base_strips_git_prefix
+  test_coverage_changes_ignores_reverted_first_parent_paths
   test_coverage_changes_command
   test_coverage_changes_fails_changed_module_gate
   test_coverage_changes_fails_empty_jacoco_report
