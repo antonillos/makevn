@@ -186,10 +186,13 @@ makevn_first_parent_diff_names() {
     # parent_spec is a triple-dot range, which cannot be combined with a third
     # revision. Resolve its merge-base and compare exactly two revisions.
     if git -C "${repo_root}" diff --quiet "${parent_merge_base}" "${last_relevant_commit}" -- "${path}"; then
-      continue
+      diff_status=0
+    else
+      diff_status=$?
     fi
-    diff_status=$?
-    if (( diff_status == 1 )); then
+    if (( diff_status == 0 )); then
+      continue
+    elif (( diff_status == 1 )); then
       printf '%s\n' "${path}"
     else
       return "${diff_status}"
