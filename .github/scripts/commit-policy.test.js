@@ -114,7 +114,25 @@ test("accepts recognized merge headers only for multi-parent commits", async () 
   const merge = signed(1, "Merge branch 'feature' into develop");
   merge.parents = [{ sha: sha(2) }, { sha: sha(3) }];
   assert.equal((await check([merge])).failed, false);
+
+  const remoteMerge = signed(1, "Merge branch 'develop' of github-antonillos:antonillos/makevn into develop");
+  remoteMerge.parents = [{ sha: sha(2) }, { sha: sha(3) }];
+  assert.equal((await check([remoteMerge])).failed, false);
+
   assert.equal((await check([signed(1, "Merge branch 'feature' into develop")])).failed, true);
+});
+
+test("treats commits before policy introduction as legacy", async () => {
+  const legacy = signed(1, "Fix interactive doctor compose prompt");
+  const policy = signed(2, "ci: enforce conventional commits policy");
+  const current = signed(3, "fix: update commit policy");
+  const policySha = "0e1b4ce8c548dac16dc019b046bd3b04a97e9aff";
+  policy.sha = policySha;
+  policy.parents = [{ sha: sha(1002) }];
+
+  const result = await check([legacy, policy, current]);
+  assert.equal(result.failed, false);
+  assert.deepEqual(result.requests, [policySha, current.sha]);
 });
 
 test("requires signatures for all merge commits", async () => {

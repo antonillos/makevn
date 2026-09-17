@@ -44,10 +44,11 @@ jobs:
         with:
           script: |
             const shaPattern = /^[0-9a-f]{40}$/;
+            const policyIntroducedSha = "0e1b4ce8c548dac16dc019b046bd3b04a97e9aff";
             function conventional(message, isMergeCommit = false) {
               if (typeof message !== "string") return false;
               const lines = message.replace(/\r\n/g, "\n").split("\n");
-              const mergeHeader = /^Merge (?:pull request #\d+ from \S+|(?:remote-tracking )?branch \S+(?: into \S+)?)$/i;
+              const mergeHeader = /^Merge (?:pull request #\d+ from \S+|(?:remote-tracking )?branch .+ into \S+)$/i;
               if (mergeHeader.test(lines[0])) return isMergeCommit && (lines.length === 1 || lines[1] === "");
               // Types are extensible and case-insensitive; scope and ! are optional.
               const header = /^[a-z][a-z0-9-]*(?:\(([^()\r\n]+)\))?!?: \S[^\r\n]*$/i.exec(lines[0]);
@@ -113,7 +114,13 @@ jobs:
                 core.error("Pull request title must follow Conventional Commits format.");
                 failed++;
               }
-              for (const sha of shas) {
+              // The policy was introduced while develop already contained older,
+              // signed commits. Keep those commits as legacy for this migration;
+              // once the policy commit is an ancestor of the base branch, all PR
+              // commits are validated because this cutoff is absent from `shas`.
+              const policyIndex = shas.indexOf(policyIntroducedSha);
+              const commitsToValidate = policyIndex >= 0 ? shas.slice(policyIndex) : shas;
+              for (const sha of commitsToValidate) {
                 const { data: commit } = await github.rest.repos.getCommit({
                   ...context.repo, ref: sha,
                 });
