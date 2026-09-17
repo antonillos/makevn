@@ -94,12 +94,9 @@ test("rejects a non-conventional pull request title", async () => {
   assert.equal((await check([signed()], { title: "Update docs" })).failed, true);
 });
 
-test("supports explicit workflow dispatch validation for bot-created pull requests", async () => {
-  const result = await check([signed()], { dispatch: true });
-  assert.equal(result.failed, false);
-  assert.equal(result.checks[0][0], "create");
-  assert.equal(result.checks[0][1].head_sha, sha(1));
-  assert.equal(result.checks[1][0], "update");
+test("uses only the pull_request_target trigger", () => {
+  assert.match(workflow, /^\s*pull_request_target:/m);
+  assert.doesNotMatch(workflow, /^\s*workflow_dispatch:/m);
 });
 
 test("publishes pull_request_target results on the pull request head", async () => {
