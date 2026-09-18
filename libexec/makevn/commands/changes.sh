@@ -145,6 +145,109 @@ makevn_load_verify_changes_plan() {
   return 0
 }
 
+makevn_collapse_fallback_entries() {
+  local entries="$1"
+  local latest=""
+  local path=""
+  local base=""
+  local old_path=""
+  local old_base=""
+  local retained=""
+
+  while IFS=$'\t' read -r path base; do
+    [[ -n "${path}" && -n "${base}" ]] || continue
+    retained=""
+    while IFS=$'\t' read -r old_path old_base; do
+      [[ -n "${old_path}" && "${old_path}" != "${path}" ]] || continue
+      retained+="${old_path}"$'\t'"${old_base}"$'\n'
+    done <<< "${latest}"
+    latest="${retained}${path}"$'\t'"${base}"$'\n'
+  done <<< "${entries}"
+
+  printf '%s' "${latest}"
+}
+
+makevn_first_parent_diff_names() {
+  local repo_root="$1"
+  local parent_spec="$2"
+  local parent_branch="${parent_spec%...HEAD}"
+  local parent_merge_base=""
+  local commit=""
+  local parent_count=0
+  local path=""
+  local index_file=""
+  local virtual_paths=""
+  local fallback_entries=""
+  local fallback_paths=""
+  local fallback_base=""
+  local replay_base=""
+  local auto_tree=""
+  local diff_status=0
+
+  parent_merge_base="$(git -C "${repo_root}" merge-base "${parent_branch}" HEAD 2>/dev/null)" || return 1
+  replay_base="${parent_merge_base}"
+  index_file="$(mktemp "${TMPDIR:-/tmp}/makevn-first-parent-index.XXXXXX")" || return 1
+  rm -f "${index_file}"
+  if ! GIT_INDEX_FILE="${index_file}" git -C "${repo_root}" read-tree "${parent_merge_base}"; then
+    rm -f "${index_file}"
+    return 1
+  fi
+
+  # Replay normal first-parent changes onto a virtual base. Clean sync merges
+  # are excluded, but their resolution-only paths and later edits whose
+  # preimage requires sync content are tracked against their real base tree.
+  while IFS= read -r commit; do
+    [[ -n "${commit}" ]] || continue
+    parent_count="$(git -C "${repo_root}" rev-list --parents -n 1 "${commit}" | awk '{print NF - 1}')"
+    if (( parent_count > 1 )); then
+      auto_tree="$(git -C "${repo_root}" merge-tree --write-tree "${commit}^1" "${commit}^2" 2>/dev/null | head -n 1 || true)"
+      fallback_base="${auto_tree:-${commit}^1}"
+      while IFS= read -r path; do
+        [[ -n "${path}" ]] || continue
+        if [[ -n "${auto_tree}" ]] && git -C "${repo_root}" diff --quiet "${auto_tree}" "${commit}" -- "${path}"; then
+          continue
+        fi
+        fallback_entries+="${path}"$'\t'"${fallback_base}"$'\n'
+      done < <(git -C "${repo_root}" diff-tree --no-commit-id --name-only -r --cc "${commit}")
+      replay_base="${commit}"
+      continue
+    fi
+
+    while IFS= read -r path; do
+      [[ -n "${path}" ]] || continue
+      if ! git -C "${repo_root}" diff-tree --no-commit-id -p -r -U0 "${commit}" -- "${path}" \
+        | GIT_INDEX_FILE="${index_file}" git -C "${repo_root}" apply --cached --unidiff-zero --whitespace=nowarn 2>/dev/null; then
+        fallback_entries+="${path}"$'\t'"${replay_base:-${commit}^}"$'\n'
+      fi
+    done < <(git -C "${repo_root}" diff-tree --no-commit-id --name-only -r "${commit}")
+  done < <(git -C "${repo_root}" rev-list --first-parent --reverse "${parent_branch}..HEAD" 2>/dev/null || true)
+
+  virtual_paths="$(GIT_INDEX_FILE="${index_file}" git -C "${repo_root}" diff-index --cached --name-only "${parent_merge_base}")" || {
+    rm -f "${index_file}"
+    return 1
+  }
+  rm -f "${index_file}"
+  fallback_entries="$(makevn_collapse_fallback_entries "${fallback_entries}")"
+
+  while IFS=$'\t' read -r path fallback_base; do
+    [[ -n "${path}" && -n "${fallback_base}" ]] || continue
+    if git -C "${repo_root}" diff --quiet "${fallback_base}" HEAD -- "${path}"; then
+      diff_status=0
+    else
+      diff_status=$?
+    fi
+    if (( diff_status == 0 )); then
+      continue
+    elif (( diff_status == 1 )); then
+      fallback_paths+="${path}"$'\n'
+    else
+      return "${diff_status}"
+    fi
+  done <<< "${fallback_entries}"
+
+  printf '%s\n%s\n' "${virtual_paths}" "${fallback_paths}" | LC_ALL=C sort -u | sed '/^$/d'
+}
+
 makevn_collect_verify_changes_scope() {
   local repo_root="$1"
   local local_containers=""
@@ -191,7 +294,7 @@ makevn_collect_verify_changes_scope() {
     MAKEVN_VERIFY_CHANGES_SRC_FILES="$(printf '%s\n' "${diff_local}" | grep -E "${path_prefix_regex}.*src/main/java/.*\.java$" || true)"
     MAKEVN_VERIFY_CHANGES_TEST_FILES="$(printf '%s\n' "${diff_local}" | grep -E "${path_prefix_regex}.*src/test/java/.*\.java$" || true)"
   else
-    diff_base="$(git -C "${git_root}" diff --name-only "${MAKEVN_VERIFY_CHANGES_PARENT_SPEC}" || true)"
+    diff_base="$(makevn_first_parent_diff_names "${git_root}" "${MAKEVN_VERIFY_CHANGES_PARENT_SPEC}")"
     diff_local="$(git -C "${git_root}" diff --name-only HEAD || true)"
     MAKEVN_VERIFY_CHANGES_DIFF_LOCAL="${diff_local}"
     MAKEVN_VERIFY_CHANGES_SRC_FILES="$(printf '%s\n%s\n' "${diff_base}" "${diff_local}" | grep -E "${path_prefix_regex}.*src/main/java/.*\.java$" | LC_ALL=C sort -u || true)"
@@ -447,6 +550,14 @@ No modified Java files detected. Skipping verify-changes."
     read -r -a prop_flags <<< "${prop_flags_value}"
   fi
 
+  # Runtime environment/config can change after a cached preview plan.
+  MAKEVN_VERIFY_CHANGES_LOCAL_CONTAINERS="$(makevn_effective_local_containers "${repo_root}" "${MAKEVN_PROFILE_VERIFY_IT_LOCAL_CONTAINERS:-}")"
+  if [[ -n "${MAKEVN_VERIFY_CHANGES_LOCAL_CONTAINERS}" ]]; then
+    verify_args=(env "LOCAL_CONTAINERS=${MAKEVN_VERIFY_CHANGES_LOCAL_CONTAINERS}" "${MAKEVN_VERIFY_CHANGES_MAVEN_EXECUTABLE}")
+  else
+    verify_args=("${MAKEVN_VERIFY_CHANGES_MAVEN_EXECUTABLE}")
+  fi
+
   if [[ -n "${MAKEVN_VERIFY_CHANGES_SRC_FILES}" ]]; then
     if [[ -z "${MAKEVN_VERIFY_CHANGES_MODULES}" ]]; then
       makevn_clear_verify_changes_plan "${repo_root}"
@@ -454,7 +565,6 @@ No modified Java files detected. Skipping verify-changes."
       return $?
     fi
 
-    verify_args=("${MAKEVN_VERIFY_CHANGES_MAVEN_EXECUTABLE}")
     if [[ ${#cli_flags[@]} -gt 0 ]]; then
       verify_args+=("${cli_flags[@]}")
     fi
@@ -473,11 +583,6 @@ No modified Java files detected. Skipping verify-changes."
     return ${rc}
   fi
 
-  if [[ -n "${MAKEVN_VERIFY_CHANGES_LOCAL_CONTAINERS}" ]]; then
-    verify_args=(env "LOCAL_CONTAINERS=${MAKEVN_VERIFY_CHANGES_LOCAL_CONTAINERS}" "${MAKEVN_VERIFY_CHANGES_MAVEN_EXECUTABLE}")
-  else
-    verify_args=("${MAKEVN_VERIFY_CHANGES_MAVEN_EXECUTABLE}")
-  fi
   if [[ ${#cli_flags[@]} -gt 0 ]]; then
     verify_args+=("${cli_flags[@]}")
   fi
@@ -614,7 +719,7 @@ cmd_coverage_changes() {
   coverage_output_file="$(mktemp "${TMPDIR:-/tmp}/makevn-coverage-changes.XXXXXX")"
   set +e
   (
-    cd "${git_root}" && BASE_PATH="${maven_base_rel}" COVERAGE_VERBOSE="${verbose}" bash "${coverage_script}" "${report_dir}" "${parent_spec}" "${threshold}" "${overall_threshold}"
+    cd "${git_root}" && BASE_PATH="${maven_base_rel}" COVERAGE_VERBOSE="${verbose}" MAKEVN_COVERAGE_FIRST_PARENT_ONLY=1 bash "${coverage_script}" "${report_dir}" "${parent_spec}" "${threshold}" "${overall_threshold}"
   ) > "${coverage_output_file}" 2>&1
   rc=$?
   set -e

@@ -21,6 +21,7 @@ on:
         default: main
 
 permissions:
+  actions: write
   contents: write
   pull-requests: write
 
@@ -106,19 +107,38 @@ jobs:
         shell: bash
         run: bash test/smoke/run.sh
       - name: Create release branch
+        env:
+          ACTIONS_SIGNING_KEY: ${{ secrets.MAKEVN_ACTIONS_SIGNING_KEY }}
         shell: bash
         run: |
           set -euo pipefail
           branch="release/${{ steps.version.outputs.tag }}"
           release_files="$(mktemp -d)"
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          signing_key="${RUNNER_TEMP}/makevn-actions-signing-key"
+          if [[ -z "${ACTIONS_SIGNING_KEY}" ]]; then
+            printf 'Error: MAKEVN_ACTIONS_SIGNING_KEY is not configured.\n' >&2
+            exit 1
+          fi
+          umask 077
+          printf '%s\n' "${ACTIONS_SIGNING_KEY}" > "${signing_key}"
+          cleanup() {
+            rm -f "${signing_key}"
+            rm -rf "${release_files}"
+          }
+          trap cleanup EXIT
+
+          git config user.name "antonillos"
+          git config user.email "305277+antonillos@users.noreply.github.com"
+          git config gpg.format ssh
+          git config user.signingkey "${signing_key}"
+          git config commit.gpgsign true
           cp rust/dispatcher/Cargo.toml rust/dispatcher/Cargo.lock "${release_files}/"
           git checkout -B "${branch}" "origin/${{ inputs.base_branch }}"
           cp "${release_files}/Cargo.toml" rust/dispatcher/Cargo.toml
           cp "${release_files}/Cargo.lock" rust/dispatcher/Cargo.lock
           git add rust/dispatcher/Cargo.toml rust/dispatcher/Cargo.lock
-          git commit -m "release: bump to ${{ steps.version.outputs.next }}"
+          git commit --gpg-sign -m "release: bump to ${{ steps.version.outputs.next }}"
+          git cat-file commit HEAD | grep -q '^gpgsig '
           git push --force-with-lease origin "${branch}"
       - name: Open release PR
         env:
@@ -127,34 +147,83 @@ jobs:
         run: |
           set -euo pipefail
           branch="release/${{ steps.version.outputs.tag }}"
+          title="release: bump to ${{ steps.version.outputs.next }}"
+          body="Prepare ${{ steps.version.outputs.tag }}."
           pr_url=""
-          if gh pr view "${branch}" --repo "${{ github.repository }}" >/dev/null 2>&1; then
-            pr_url="$(gh pr view "${branch}" --repo "${{ github.repository }}" --json url --jq .url)"
-            gh pr edit "${branch}" \
+          pr_number=""
+          pr_state=""
+          create_error_file="$(mktemp)"
+
+          pr_number="$(gh pr list \
+            --repo "${{ github.repository }}" \
+            --head "${branch}" \
+            --base "${{ inputs.base_branch }}" \
+            --state all \
+            --json number \
+            --jq '.[0].number // empty')"
+
+          if [[ -n "${pr_number}" ]]; then
+            pr_state="$(gh pr view "${pr_number}" --repo "${{ github.repository }}" --json state --jq '.state')"
+            if [[ "${pr_state}" == "OPEN" ]]; then
+              echo "Updating existing open PR #${pr_number}"
+              gh pr edit "${pr_number}" \
               --repo "${{ github.repository }}" \
-              --title "release: bump to ${{ steps.version.outputs.next }}" \
-              --body "Prepare ${{ steps.version.outputs.tag }}."
-          else
+              --title "${title}" \
+              --body "${body}"
+              pr_url="$(gh pr view "${pr_number}" --repo "${{ github.repository }}" --json url --jq '.url')"
+            else
+              echo "Found ${pr_state,,} PR #${pr_number}, creating a new release PR"
+            fi
+          fi
+
+          if [[ -z "${pr_url}" ]]; then
+            echo "No existing open PR found, creating new one"
             if ! pr_url="$(gh pr create \
               --repo "${{ github.repository }}" \
               --base "${{ inputs.base_branch }}" \
               --head "${branch}" \
-              --title "release: bump to ${{ steps.version.outputs.next }}" \
-              --body "Prepare ${{ steps.version.outputs.tag }}.")"; then
+              --title "${title}" \
+              --body "${body}" 2>"${create_error_file}")"; then
               {
                 printf '## Release PR not created automatically\n\n'
-                printf 'The release branch was pushed successfully, but this repository does not allow GitHub Actions to create pull requests.\n\n'
+                if [[ -s "${create_error_file}" ]]; then
+                  printf 'GitHub CLI error:\n\n'
+                  printf '```\n'
+                  cat "${create_error_file}"
+                  printf '```\n\n'
+                fi
                 printf 'Create it manually with:\n\n'
                 printf '```bash\n'
                 printf 'gh pr create --repo %s --base %s --head %s --title %q --body %q\n' \
                   "${{ github.repository }}" \
                   "${{ inputs.base_branch }}" \
                   "${branch}" \
-                  "release: bump to ${{ steps.version.outputs.next }}" \
-                  "Prepare ${{ steps.version.outputs.tag }}."
+                  "${title}" \
+                  "${body}"
                 printf '```\n'
               } >> "${GITHUB_STEP_SUMMARY}"
               exit 0
             fi
           fi
-          printf 'Release PR: %s\n' "${pr_url}" >> "${GITHUB_STEP_SUMMARY}"
+          if [[ -n "${pr_url}" ]]; then
+            if [[ -z "${pr_number}" || "${pr_state}" != "OPEN" ]]; then
+              pr_number="$(gh pr view "${branch}" --repo "${{ github.repository }}" --json number --jq '.number')"
+            fi
+            pr_data="$(gh pr view "${pr_number}" --repo "${{ github.repository }}" --json headRefOid,baseRefOid,baseRefName)"
+            head_sha="$(jq -r '.headRefOid' <<< "${pr_data}")"
+            base_sha="$(jq -r '.baseRefOid' <<< "${pr_data}")"
+            base_ref="$(jq -r '.baseRefName' <<< "${pr_data}")"
+            if ! gh workflow run commit-policy.yml \
+              --repo "${{ github.repository }}" \
+              --ref "${branch}" \
+              -f pull_number="${pr_number}" \
+              -f head_sha="${head_sha}" \
+              -f base_sha="${base_sha}" \
+              -f base_ref="${base_ref}"; then
+              printf 'Error: could not dispatch Commit Policy for release PR #%s.\n' "${pr_number}" >&2
+              exit 1
+            fi
+            printf 'Release PR: %s\n' "${pr_url}" >> "${GITHUB_STEP_SUMMARY}"
+          else
+            echo "Release PR URL could not be determined"
+          fi

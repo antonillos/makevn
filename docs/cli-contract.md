@@ -102,6 +102,15 @@ Global option rules:
 
 ## Public Commands
 
+### Agent Integration
+
+```bash
+makevn agent install opencode
+```
+
+This frontend-owned command installs or updates the global `makevn` MCP entry
+in OpenCode without requiring a Maven repository.
+
 ### Repository Analysis And Integration
 
 ```bash

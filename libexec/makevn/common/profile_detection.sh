@@ -1313,21 +1313,71 @@ makevn_detect_parent_branch_spec() {
   local repo_root="$1"
   local current_branch=""
   local candidate=""
+  local merge_base=""
+  local candidate_distance=""
+  local best_candidate=""
+  local best_distance=""
+  local first_parent_history=""
+  local candidate_commit=""
+  local candidate_is_first_parent=""
+  local best_is_first_parent=""
+  local -a candidates=()
+  local -a release_candidates=()
 
   current_branch="$(git -C "${repo_root}" rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
   case "${current_branch}" in
-    develop|main|HEAD)
+    develop|main|master|HEAD)
       printf '%s\n' HEAD
       return 0
       ;;
   esac
 
-  for candidate in origin/develop develop origin/main main origin/master master; do
-    if git -C "${repo_root}" rev-parse --verify "${candidate}" >/dev/null 2>&1; then
-      printf '%s\n' "${candidate}...HEAD"
-      return 0
+  # A feature branch may start from main, develop, or a release branch.  Do not
+  # use the first branch that happens to exist: in repositories with both main
+  # and develop that made hotfixes compare against develop, potentially making
+  # unrelated develop work look like part of the hotfix.
+  #
+  # Rank every candidate by the number of first-parent commits from its merge
+  # point to HEAD. This keeps a branch merged into the feature from looking like
+  # the original parent: for example, after merging main into a feature forked
+  # from develop, main is only on a secondary-parent path while develop's merge
+  # point remains on HEAD's first-parent history.
+  candidates=(origin/main main origin/develop develop origin/master master)
+  while IFS= read -r candidate; do
+    [[ -n "${candidate}" ]] && release_candidates+=("${candidate}")
+  done < <(git -C "${repo_root}" for-each-ref --format='%(refname:short)' refs/remotes/origin/release refs/heads/release 2>/dev/null || true)
+  # Bash 3 treats an empty array expansion as unset under set -u.
+  candidates+=("${release_candidates[@]+${release_candidates[@]}}")
+  first_parent_history="$(git -C "${repo_root}" rev-list --first-parent HEAD 2>/dev/null || true)"
+  for candidate in "${candidates[@]}"; do
+    [[ "${candidate}" != "${current_branch}" ]] || continue
+    git -C "${repo_root}" rev-parse --verify "${candidate}" >/dev/null 2>&1 || continue
+    candidate_commit="$(git -C "${repo_root}" rev-parse "${candidate}")"
+    candidate_is_first_parent=false
+
+    case $'\n'"${first_parent_history}"$'\n' in
+      *$'\n'"${candidate_commit}"$'\n'*) candidate_is_first_parent=true ;;
+    esac
+    merge_base="$(git -C "${repo_root}" merge-base "${candidate}" HEAD 2>/dev/null || true)"
+    [[ -n "${merge_base}" ]] || continue
+    candidate_distance="$(git -C "${repo_root}" rev-list --first-parent --count "${merge_base}..HEAD" 2>/dev/null || true)"
+
+    if [[ "${candidate_distance}" =~ ^[0-9]+$ ]] \
+      && { [[ -z "${best_distance}" ]] \
+        || [[ "${candidate_distance}" -lt "${best_distance}" ]] \
+        || { [[ "${candidate_distance}" -eq "${best_distance}" ]] \
+          && [[ "${candidate_is_first_parent}" == true ]] \
+          && [[ "${best_is_first_parent}" != true ]]; }; }; then
+      best_candidate="${candidate}"
+      best_distance="${candidate_distance}"
+      best_is_first_parent="${candidate_is_first_parent}"
     fi
   done
+
+  if [[ -n "${best_candidate}" ]]; then
+    printf '%s\n' "${best_candidate}...HEAD"
+    return 0
+  fi
 
   printf '%s\n' HEAD
 }

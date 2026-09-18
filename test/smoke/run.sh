@@ -3187,6 +3187,7 @@ EOF
 set -euo pipefail
 printf 'ARGS=%s\n' "$*" >> .mvnw.log
 printf 'JAVA_HOME=%s\n' "${JAVA_HOME:-}" >> .mvnw.log
+printf 'LOCAL_CONTAINERS=%s\n' "${LOCAL_CONTAINERS-unset}" >> .mvnw.log
 EOF
   chmod +x "${repo}/mvnw"
   cat > "${repo}/.makevn/config" <<EOF
@@ -3196,6 +3197,7 @@ MAKEVN_KARATE_JAVA_HOME=""
 MAKEVN_CODE_TOOL_VERSIONS=""
 MAKEVN_KARATE_TOOL_VERSIONS=""
 MAKEVN_RUN_CMD=""
+MAKEVN_LOCAL_CONTAINERS="TRUE"
 EOF
 
   output="$(${CLI} --repo "${repo}" verify-changes)"
@@ -3203,6 +3205,7 @@ EOF
   [[ "${output}" == *"[ok] "* ]] || fail "expected verify-changes output to include success summary"
   assert_matches "${repo}/.mvnw.log" '^ARGS=-nsu -f .*/pom\.xml verify -Djacoco\.skip=false -DskipUTs=false -Dtest=com\.example\.ChangedTest -Dit\.test=com\.example\.ChangedTest -Dfailsafe\.failIfNoSpecifiedTests=false -Dsurefire\.failIfNoSpecifiedTests=false -Dawaitility\.defaultPollInterval=200ms -Dawaitility\.defaultTimeout=2m -Dmaven\.build\.cache\.enabled=false$'
   assert_contains "${repo}/.mvnw.log" "JAVA_HOME=${java_home}"
+  assert_contains "${repo}/.mvnw.log" "LOCAL_CONTAINERS=TRUE"
 
   ${CLI} --repo "${repo}" uninstall >/dev/null
 }
@@ -3259,6 +3262,323 @@ EOF
   ${CLI} --repo "${repo}" uninstall >/dev/null
 }
 
+test_verify_changes_excludes_checked_out_release_candidate() {
+  local repo="${TMP_ROOT}/verify-changes-release-candidate"
+  local output
+
+  mkdir -p "${repo}/module-a/src/main/java/com/example"
+  printf '<project/>\n' > "${repo}/pom.xml"
+  printf 'class Baseline {}\n' > "${repo}/module-a/src/main/java/com/example/Baseline.java"
+
+  git init --initial-branch=main "${repo}" >/dev/null
+  git -C "${repo}" add .
+  git -C "${repo}" -c user.name='Smoke Test' -c user.email='smoke@example.com' commit -m 'main baseline' >/dev/null
+  git -C "${repo}" checkout -b release/1.0 >/dev/null
+  printf 'class ReleaseOnly {}\n' > "${repo}/module-a/src/main/java/com/example/ReleaseOnly.java"
+  git -C "${repo}" add .
+  git -C "${repo}" -c user.name='Smoke Test' -c user.email='smoke@example.com' commit -m 'release work' >/dev/null
+
+  ${CLI} --repo "${repo}" init >/dev/null
+  output="$(${CLI} --repo "${repo}" verify-changes-preview)"
+
+  [[ "${output}" == *"compare against: main...HEAD"* ]] \
+    || fail "expected checked-out release branch to use main as its parent, got: ${output}"
+  [[ "${output}" == *"production files: 1"* && "${output}" == *"ReleaseOnly"* ]] \
+    || fail "expected committed release changes to be selected, got: ${output}"
+
+  ${CLI} --repo "${repo}" uninstall >/dev/null
+}
+
+test_verify_changes_uses_hotfix_parent_branch() {
+  local repo="${TMP_ROOT}/verify-changes-hotfix-parent"
+  local output
+
+  mkdir -p "${repo}/module-a/src/main/java/com/example"
+  printf '<project/>\n' > "${repo}/pom.xml"
+  printf 'class Baseline {}\n' > "${repo}/module-a/src/main/java/com/example/Baseline.java"
+
+  git init --initial-branch=main "${repo}" >/dev/null
+  git -C "${repo}" add .
+  git -C "${repo}" -c user.name='Smoke Test' -c user.email='smoke@example.com' commit -m 'main baseline' >/dev/null
+
+  git -C "${repo}" checkout -b develop >/dev/null
+  printf 'class DevelopOnly {}\n' > "${repo}/module-a/src/main/java/com/example/DevelopOnly.java"
+  git -C "${repo}" add .
+  git -C "${repo}" -c user.name='Smoke Test' -c user.email='smoke@example.com' commit -m 'develop work' >/dev/null
+
+  git -C "${repo}" checkout main >/dev/null
+  git -C "${repo}" checkout -b hotfix/issue-123 >/dev/null
+  printf 'class HotfixOnly {}\n' > "${repo}/module-a/src/main/java/com/example/HotfixOnly.java"
+  git -C "${repo}" add .
+  git -C "${repo}" -c user.name='Smoke Test' -c user.email='smoke@example.com' commit -m 'hotfix work' >/dev/null
+
+  ${CLI} --repo "${repo}" init >/dev/null
+  output="$(${CLI} --repo "${repo}" verify-changes-preview)"
+
+  [[ "${output}" == *"compare against: main...HEAD"* ]] \
+    || fail "expected a hotfix to compare against main, got: ${output}"
+  [[ "${output}" == *"production files: 1"* ]] \
+    || fail "expected only the feature production file, got: ${output}"
+  [[ "${output}" == *"HotfixOnly"* ]] \
+    || fail "expected hotfix class in selection, got: ${output}"
+  [[ "${output}" != *"DevelopOnly"* ]] \
+    || fail "develop-only work must not be selected for a hotfix: ${output}"
+
+  ${CLI} --repo "${repo}" uninstall >/dev/null
+}
+
+test_verify_changes_uses_develop_after_it_advances() {
+  local repo="${TMP_ROOT}/verify-changes-develop-parent"
+  local output
+
+  mkdir -p "${repo}/module-a/src/main/java/com/example"
+  printf '<project/>\n' > "${repo}/pom.xml"
+  printf 'class Baseline {}\n' > "${repo}/module-a/src/main/java/com/example/Baseline.java"
+
+  git init --initial-branch=main "${repo}" >/dev/null
+  git -C "${repo}" add .
+  git -C "${repo}" -c user.name='Smoke Test' -c user.email='smoke@example.com' commit -m 'main baseline' >/dev/null
+
+  git -C "${repo}" checkout -b develop >/dev/null
+  printf 'class DevelopBase {}\n' > "${repo}/module-a/src/main/java/com/example/DevelopBase.java"
+  git -C "${repo}" add .
+  git -C "${repo}" -c user.name='Smoke Test' -c user.email='smoke@example.com' commit -m 'develop base' >/dev/null
+
+  git -C "${repo}" checkout -b feature/issue-456
+  printf 'class FeatureOnly {}\n' > "${repo}/module-a/src/main/java/com/example/FeatureOnly.java"
+  git -C "${repo}" add .
+  git -C "${repo}" -c user.name='Smoke Test' -c user.email='smoke@example.com' commit -m 'feature work' >/dev/null
+
+  git -C "${repo}" checkout develop >/dev/null
+  printf 'class DevelopAfterFork {}\n' > "${repo}/module-a/src/main/java/com/example/DevelopAfterFork.java"
+  git -C "${repo}" add .
+  git -C "${repo}" -c user.name='Smoke Test' -c user.email='smoke@example.com' commit -m 'develop after fork' >/dev/null
+  git -C "${repo}" checkout feature/issue-456 >/dev/null
+
+  ${CLI} --repo "${repo}" init >/dev/null
+  output="$(${CLI} --repo "${repo}" verify-changes-preview)"
+
+  [[ "${output}" == *"compare against: develop...HEAD"* ]] \
+    || fail "expected a feature to retain develop as its parent, got: ${output}"
+  [[ "${output}" == *"production files: 1"* ]] \
+    || fail "expected only the feature production file, got: ${output}"
+  [[ "${output}" == *"FeatureOnly"* ]] \
+    || fail "expected feature class in selection, got: ${output}"
+  [[ "${output}" != *"DevelopBase"* && "${output}" != *"DevelopAfterFork"* ]] \
+    || fail "develop work must not be selected for the feature: ${output}"
+
+  ${CLI} --repo "${repo}" uninstall >/dev/null
+}
+
+test_verify_changes_preserves_first_parent_after_sync_merge() {
+  local repo="${TMP_ROOT}/verify-changes-first-parent-after-sync"
+  local output
+
+  mkdir -p "${repo}/module-a/src/main/java/com/example"
+  printf '<project/>\n' > "${repo}/pom.xml"
+  printf 'class Baseline {}\n' > "${repo}/module-a/src/main/java/com/example/Baseline.java"
+
+  git init --initial-branch=main "${repo}" >/dev/null
+  git -C "${repo}" add .
+  git -C "${repo}" -c user.name='Smoke Test' -c user.email='smoke@example.com' commit -m 'main baseline' >/dev/null
+  git -C "${repo}" checkout -b develop >/dev/null
+  printf 'class DevelopBase {}\n' > "${repo}/module-a/src/main/java/com/example/DevelopBase.java"
+  git -C "${repo}" add .
+  git -C "${repo}" -c user.name='Smoke Test' -c user.email='smoke@example.com' commit -m 'develop base' >/dev/null
+  git -C "${repo}" checkout -b feature/issue-789 >/dev/null
+  printf 'class FeatureOnly {}\n' > "${repo}/module-a/src/main/java/com/example/FeatureOnly.java"
+  git -C "${repo}" add .
+  git -C "${repo}" -c user.name='Smoke Test' -c user.email='smoke@example.com' commit -m 'feature work' >/dev/null
+  git -C "${repo}" checkout main >/dev/null
+  printf 'class MainSyncOnly {}\n' > "${repo}/module-a/src/main/java/com/example/MainSyncOnly.java"
+  git -C "${repo}" add .
+  git -C "${repo}" -c user.name='Smoke Test' -c user.email='smoke@example.com' commit -m 'main sync work' >/dev/null
+  git -C "${repo}" checkout feature/issue-789 >/dev/null
+  git -C "${repo}" -c user.name='Smoke Test' -c user.email='smoke@example.com' merge --no-ff main -m 'Merge main into feature' >/dev/null
+
+  ${CLI} --repo "${repo}" init >/dev/null
+  output="$(${CLI} --repo "${repo}" verify-changes-preview)"
+
+  grep -Fq 'compare against: develop...HEAD' <<< "${output}" \
+    || fail "expected the first-parent develop base after sync merge, got: ${output}"
+  [[ "${output}" == *"FeatureOnly"* && "${output}" != *"MainSyncOnly"* ]] \
+    || fail "merged main work must not be selected for the feature: ${output}"
+
+  ${CLI} --repo "${repo}" uninstall >/dev/null
+}
+
+test_verify_changes_ignores_reverted_first_parent_paths() {
+  local repo="${TMP_ROOT}/verify-changes-reverted-first-parent-paths"
+  local output
+
+  mkdir -p "${repo}/module-a/src/main/java/com/example"
+  printf '<project/>\n' > "${repo}/pom.xml"
+  printf 'class Baseline {}\n' > "${repo}/module-a/src/main/java/com/example/Baseline.java"
+
+  git init --initial-branch=main "${repo}" >/dev/null
+  git -C "${repo}" add .
+  git -C "${repo}" -c user.name='Smoke Test' -c user.email='smoke@example.com' commit -m 'main baseline' >/dev/null
+  git -C "${repo}" checkout -b develop >/dev/null
+  printf 'class DevelopOnly {}\n' > "${repo}/module-a/src/main/java/com/example/DevelopOnly.java"
+  git -C "${repo}" add .
+  git -C "${repo}" -c user.name='Smoke Test' -c user.email='smoke@example.com' commit -m 'develop work' >/dev/null
+  git -C "${repo}" checkout -b feature/issue-901 >/dev/null
+  printf 'class RevertedFeature {}\n' > "${repo}/module-a/src/main/java/com/example/RevertedFeature.java"
+  git -C "${repo}" add .
+  git -C "${repo}" -c user.name='Smoke Test' -c user.email='smoke@example.com' commit -m 'feature work' >/dev/null
+  git -C "${repo}" -c user.name='Smoke Test' -c user.email='smoke@example.com' revert --no-edit HEAD >/dev/null
+
+  ${CLI} --repo "${repo}" init >/dev/null
+  output="$(${CLI} --repo "${repo}" verify-changes-preview)"
+
+  [[ "${output}" == *"compare against: develop...HEAD"* ]] \
+    || fail "expected develop as the parent, got: ${output}"
+  [[ "${output}" == *"strategy: skip"* ]] \
+    || fail "expected reverted first-parent paths to be excluded, got: ${output}"
+  [[ "${output}" != *"RevertedFeature"* ]] \
+    || fail "reverted feature path must not be selected: ${output}"
+
+  ${CLI} --repo "${repo}" uninstall >/dev/null
+}
+
+test_verify_changes_keeps_post_merge_first_parent_edits() {
+  local repo="${TMP_ROOT}/verify-changes-post-merge-edits"
+  local output
+
+  mkdir -p "${repo}/module-a/src/main/java/com/example"
+  printf '<project/>\n' > "${repo}/pom.xml"
+  printf 'class Baseline {}\n' > "${repo}/module-a/src/main/java/com/example/Baseline.java"
+
+  git init --initial-branch=main "${repo}" >/dev/null
+  git -C "${repo}" add .
+  git -C "${repo}" -c user.name='Smoke Test' -c user.email='smoke@example.com' commit -m 'main baseline' >/dev/null
+  git -C "${repo}" checkout -b develop >/dev/null
+  printf 'class DevelopOnly {}\n' > "${repo}/module-a/src/main/java/com/example/DevelopOnly.java"
+  git -C "${repo}" add .
+  git -C "${repo}" -c user.name='Smoke Test' -c user.email='smoke@example.com' commit -m 'develop work' >/dev/null
+  git -C "${repo}" checkout -b feature/issue-903 >/dev/null
+  git -C "${repo}" checkout main >/dev/null
+  printf 'class Imported {}\n' > "${repo}/module-a/src/main/java/com/example/Imported.java"
+  git -C "${repo}" add .
+  git -C "${repo}" -c user.name='Smoke Test' -c user.email='smoke@example.com' commit -m 'main import' >/dev/null
+  git -C "${repo}" checkout feature/issue-903 >/dev/null
+  git -C "${repo}" -c user.name='Smoke Test' -c user.email='smoke@example.com' merge --no-ff main -m 'Merge main into feature' >/dev/null
+  printf '// feature edit\n' >> "${repo}/module-a/src/main/java/com/example/Imported.java"
+  git -C "${repo}" add .
+  git -C "${repo}" -c user.name='Smoke Test' -c user.email='smoke@example.com' commit -m 'feature edits import' >/dev/null
+
+  ${CLI} --repo "${repo}" init >/dev/null
+  output="$(${CLI} --repo "${repo}" verify-changes-preview)"
+
+  [[ "${output}" == *"production files: 1"* && "${output}" == *"Imported"* ]] \
+    || fail "expected post-merge first-parent edit to be selected, got: ${output}"
+
+  ${CLI} --repo "${repo}" uninstall >/dev/null
+}
+
+test_verify_changes_keeps_merge_resolution_paths() {
+  local repo="${TMP_ROOT}/verify-changes-merge-resolution"
+  local output
+
+  mkdir -p "${repo}/module-a/src/main/java/com/example"
+  printf '<project/>\n' > "${repo}/pom.xml"
+  printf 'class Shared { int value() { return 0; } }\n' > "${repo}/module-a/src/main/java/com/example/Shared.java"
+
+  git init --initial-branch=main "${repo}" >/dev/null
+  git -C "${repo}" add .
+  git -C "${repo}" -c user.name='Smoke Test' -c user.email='smoke@example.com' commit -m 'main baseline' >/dev/null
+  git -C "${repo}" checkout -b develop >/dev/null
+  printf 'class DevelopOnly {}\n' > "${repo}/module-a/src/main/java/com/example/DevelopOnly.java"
+  git -C "${repo}" add .
+  git -C "${repo}" -c user.name='Smoke Test' -c user.email='smoke@example.com' commit -m 'develop work' >/dev/null
+  git -C "${repo}" checkout -b feature/issue-904 >/dev/null
+  perl -0pi -e 's/return 0/return 1/' "${repo}/module-a/src/main/java/com/example/Shared.java"
+  git -C "${repo}" add .
+  git -C "${repo}" -c user.name='Smoke Test' -c user.email='smoke@example.com' commit -m 'feature work' >/dev/null
+  git -C "${repo}" checkout main >/dev/null
+  perl -0pi -e 's/return 0/return 2/' "${repo}/module-a/src/main/java/com/example/Shared.java"
+  git -C "${repo}" add .
+  git -C "${repo}" -c user.name='Smoke Test' -c user.email='smoke@example.com' commit -m 'main work' >/dev/null
+  git -C "${repo}" checkout feature/issue-904 >/dev/null
+  git -C "${repo}" merge --no-ff main -m 'Merge main into feature' >/dev/null 2>&1 || true
+  printf 'class Shared { int value() { return 3; } }\n' > "${repo}/module-a/src/main/java/com/example/Shared.java"
+  git -C "${repo}" add .
+  git -C "${repo}" -c user.name='Smoke Test' -c user.email='smoke@example.com' commit -m 'Resolve merge' >/dev/null
+
+  ${CLI} --repo "${repo}" init >/dev/null
+  output="$(${CLI} --repo "${repo}" verify-changes-preview)"
+
+  [[ "${output}" == *"production files: 1"* && "${output}" == *"Shared"* ]] \
+    || fail "expected merge resolution path to be selected, got: ${output}"
+
+  ${CLI} --repo "${repo}" uninstall >/dev/null
+}
+
+test_verify_changes_modules_local_containers() (
+  unset LOCAL_CONTAINERS MAKEVN_LOCAL_CONTAINERS
+  local repo="${TMP_ROOT}/verify-changes-local-containers"
+  local java_home
+  local scenario expected
+
+  mkdir -p "${repo}/module-a/src/main/java/com/example"
+  printf '<project/>\n' > "${repo}/pom.xml"
+  printf 'class Changed {}\n' > "${repo}/module-a/src/main/java/com/example/Changed.java"
+  git init --initial-branch=main "${repo}" >/dev/null
+  git -C "${repo}" add .
+  git -C "${repo}" -c user.name='Smoke Test' -c user.email='smoke@example.com' commit -m 'init' >/dev/null
+  printf '// change\n' >> "${repo}/module-a/src/main/java/com/example/Changed.java"
+  ${CLI} --repo "${repo}" doctor >/dev/null
+  ${CLI} --repo "${repo}" init >/dev/null
+  java_home="$(detect_java_home)"
+  printf 'MAKEVN_JAVA_HOME="%s"\n' "${java_home}" > "${repo}/.makevn/config"
+  cat > "${repo}/mvnw" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+if [[ ${LOCAL_CONTAINERS+x} ]]; then
+  printf 'LOCAL_CONTAINERS=%s\n' "${LOCAL_CONTAINERS}" > .mvnw.log
+else
+  printf 'LOCAL_CONTAINERS=__UNSET__\n' > .mvnw.log
+fi
+printf 'ARGS=%s\n' "$*" >> .mvnw.log
+EOF
+  chmod +x "${repo}/mvnw"
+
+  for scenario in profile config override empty_config empty_override unset cached_override cached_config; do
+    unset LOCAL_CONTAINERS
+    printf 'MAKEVN_JAVA_HOME="%s"\n' "${java_home}" > "${repo}/.makevn/config"
+    printf 'MAKEVN_PROFILE_VERIFY_IT_LOCAL_CONTAINERS=TRUE\n' > "${repo}/.makevn/profile.env"
+    expected=TRUE
+    case "${scenario}" in
+      config)
+        printf 'MAKEVN_LOCAL_CONTAINERS=FALSE\n' >> "${repo}/.makevn/config"
+        expected=FALSE ;;
+      override)
+        export LOCAL_CONTAINERS=FALSE
+        expected=FALSE ;;
+      empty_config)
+        printf 'MAKEVN_LOCAL_CONTAINERS=""\n' >> "${repo}/.makevn/config"
+        expected=__UNSET__ ;;
+      empty_override)
+        export LOCAL_CONTAINERS=""
+        expected="" ;;
+      unset)
+        printf 'MAKEVN_PROFILE_VERIFY_IT_LOCAL_CONTAINERS=""\n' > "${repo}/.makevn/profile.env"
+        expected=__UNSET__ ;;
+      cached_override)
+        ${CLI} --repo "${repo}" verify-changes-preview >/dev/null
+        export LOCAL_CONTAINERS=FALSE
+        expected=FALSE ;;
+      cached_config)
+        ${CLI} --repo "${repo}" verify-changes-preview >/dev/null
+        printf 'MAKEVN_LOCAL_CONTAINERS=FALSE\n' >> "${repo}/.makevn/config"
+        expected=FALSE ;;
+    esac
+    ${CLI} --repo "${repo}" verify-changes >/dev/null
+    assert_contains "${repo}/.mvnw.log" "LOCAL_CONTAINERS=${expected}"
+    assert_contains "${repo}/.mvnw.log" "-pl module-a -am verify"
+  done
+)
+
 test_verify_changes_nested_maven_base_strips_git_prefix() {
   local repo="${TMP_ROOT}/verify-changes-nested-maven-base"
   local code_repo="${repo}/code"
@@ -3303,6 +3623,66 @@ EOF
   ${CLI} --repo "${repo}" uninstall >/dev/null
 }
 
+test_coverage_changes_ignores_reverted_first_parent_paths() {
+  local repo="${TMP_ROOT}/coverage-changes-reverted-first-parent-paths"
+  local output
+  local verify_output
+  local coverage_script="${ROOT_DIR}/libexec/makevn/coverage/changes.sh"
+  local feature_commit=""
+
+  mkdir -p "${repo}/module-a/src/main/java/com/example"
+  mkdir -p "${repo}/jacoco-report-aggregate/target/site/jacoco-aggregate"
+  printf '<project/>\n' > "${repo}/pom.xml"
+  cat > "${repo}/module-a/src/main/java/com/example/Shared.java" <<'EOF'
+package com.example;
+
+// baseline
+class Shared {
+  int value() { return 0; }
+}
+EOF
+  printf '<html></html>\n' > "${repo}/jacoco-report-aggregate/target/site/jacoco-aggregate/index.html"
+
+  git init --initial-branch=main "${repo}" >/dev/null
+  git -C "${repo}" add .
+  git -C "${repo}" -c user.name='Smoke Test' -c user.email='smoke@example.com' commit -m 'main baseline' >/dev/null
+  git -C "${repo}" checkout -b develop >/dev/null
+  printf 'class DevelopOnly {}\n' > "${repo}/module-a/src/main/java/com/example/DevelopOnly.java"
+  git -C "${repo}" add .
+  git -C "${repo}" -c user.name='Smoke Test' -c user.email='smoke@example.com' commit -m 'develop work' >/dev/null
+  git -C "${repo}" checkout -b feature/issue-902 >/dev/null
+  printf '\nclass RevertedFeature {}\n' >> "${repo}/module-a/src/main/java/com/example/Shared.java"
+  git -C "${repo}" add .
+  git -C "${repo}" -c user.name='Smoke Test' -c user.email='smoke@example.com' commit -m 'feature work' >/dev/null
+  feature_commit="$(git -C "${repo}" rev-parse HEAD)"
+  git -C "${repo}" checkout main >/dev/null
+  perl -0pi -e 's#// baseline#// secondary-one#' "${repo}/module-a/src/main/java/com/example/Shared.java"
+  git -C "${repo}" add .
+  git -C "${repo}" -c user.name='Smoke Test' -c user.email='smoke@example.com' commit -m 'main secondary work one' >/dev/null
+  git -C "${repo}" checkout feature/issue-902 >/dev/null
+  git -C "${repo}" -c user.name='Smoke Test' -c user.email='smoke@example.com' merge --no-ff main -m 'Merge main into feature one' >/dev/null
+  git -C "${repo}" checkout main >/dev/null
+  perl -0pi -e 's#class Shared \{#// secondary-two\nclass Shared {#' "${repo}/module-a/src/main/java/com/example/Shared.java"
+  git -C "${repo}" add .
+  git -C "${repo}" -c user.name='Smoke Test' -c user.email='smoke@example.com' commit -m 'main secondary work two' >/dev/null
+  git -C "${repo}" checkout feature/issue-902 >/dev/null
+  git -C "${repo}" -c user.name='Smoke Test' -c user.email='smoke@example.com' merge --no-ff main -m 'Merge main into feature two' >/dev/null
+  if ! git -C "${repo}" -c user.name='Smoke Test' -c user.email='smoke@example.com' revert --no-edit "${feature_commit}" >/dev/null 2>&1; then
+    printf 'class Shared { // secondary-one\n// secondary two\n' > "${repo}/module-a/src/main/java/com/example/Shared.java"
+    git -C "${repo}" add .
+    git -C "${repo}" -c user.name='Smoke Test' -c user.email='smoke@example.com' commit -m 'revert feature work' >/dev/null
+  fi
+
+  ${CLI} --repo "${repo}" init >/dev/null
+  verify_output="$(${CLI} --repo "${repo}" verify-changes-preview)"
+  output="$(cd "${repo}" && BASE_PATH=. MAKEVN_COVERAGE_FIRST_PARENT_ONLY=1 bash "${coverage_script}" jacoco-report-aggregate/target/site/jacoco-aggregate develop...HEAD 90 2>&1)"
+
+  [[ "${verify_output}" == *"strategy: skip"* ]] \
+    || fail "expected reverted first-parent path to be excluded from verify-changes, got: ${verify_output}"
+  [[ "${output}" == *"No modified production Java files"* ]] \
+    || fail "expected reverted first-parent path to be excluded from coverage, got: ${output}"
+}
+
 test_coverage_changes_command() {
   local repo="${TMP_ROOT}/coverage-changes"
   local output
@@ -3333,7 +3713,7 @@ makevn,com.example,Changed,0,10,0,0,0,1,0,1,0,1
 EOF
   printf '<html></html>\n' > "${repo}/jacoco-report-aggregate/target/site/jacoco-aggregate/index.html"
 
-  git init --initial-branch=main "${repo}" >/dev/null
+  git init --initial-branch=main --object-format=sha256 "${repo}" >/dev/null
   git -C "${repo}" add .
   git -C "${repo}" -c user.name='Smoke Test' -c user.email='smoke@example.com' commit -m 'init' >/dev/null
   perl -0pi -e 's/return 0;/return 1;/' "${repo}/module-a/src/main/java/com/example/Changed.java"
@@ -4029,8 +4409,17 @@ main() {
   test_verify_respects_local_containers_config
   test_verify_leaves_local_containers_unset_without_repo_signal
   test_verify_changes_preview_command
+  test_verify_changes_excludes_checked_out_release_candidate
+  test_verify_changes_uses_hotfix_parent_branch
+  test_verify_changes_uses_develop_after_it_advances
+  test_verify_changes_preserves_first_parent_after_sync_merge
+  test_verify_changes_ignores_reverted_first_parent_paths
+  test_verify_changes_keeps_post_merge_first_parent_edits
+  test_verify_changes_keeps_merge_resolution_paths
   test_verify_changes_command
+  test_verify_changes_modules_local_containers
   test_verify_changes_nested_maven_base_strips_git_prefix
+  test_coverage_changes_ignores_reverted_first_parent_paths
   test_coverage_changes_command
   test_coverage_changes_fails_changed_module_gate
   test_coverage_changes_fails_empty_jacoco_report
