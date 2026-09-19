@@ -39,6 +39,19 @@ You can run it from the GitHub Actions UI or with `gh`:
 gh workflow run release.yml -f version=v0.1.0-test.1 -f target_ref=main -f prerelease=true -f draft=false
 ```
 
+### Release PR flow
+
+`prepare-release.yml` creates a signed `release/vX.Y.Z` branch and opens the
+release PR against `main`. If the repository setting that allows GitHub Actions
+to create pull requests is disabled, the workflow uses the optional
+`MAKEVN_RELEASE_TOKEN` secret for `gh pr create` and the related commit-policy
+dispatch. Without that secret, it leaves the branch in place and prints the
+manual `gh pr create` command in the run summary.
+
+After the release PR is merged by `smart-merge.yml`, the merge workflow
+explicitly dispatches `release.yml`; it does not rely on a push made with
+`GITHUB_TOKEN` to trigger a downstream workflow.
+
 ## Homebrew
 
 The tap `antonillos/homebrew-tap` has been created with the formula at
