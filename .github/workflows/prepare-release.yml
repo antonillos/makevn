@@ -23,7 +23,6 @@ on:
 permissions:
   actions: write
   contents: write
-  pull-requests: write
 
 env:
   CARGO_TERM_COLOR: always
@@ -140,16 +139,24 @@ jobs:
           git commit --gpg-sign -m "release: bump to ${{ steps.version.outputs.next }}"
           git cat-file commit HEAD | grep -q '^gpgsig '
           git push --force-with-lease origin "${branch}"
+      - name: Generate release app token
+        id: release-app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ vars.MAKEVN_RELEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.MAKEVN_RELEASE_APP_PRIVATE_KEY }}
+          permission-contents: read
+          permission-pull-requests: write
       - name: Open release PR
         env:
           # Use a separate identity for the PR author. Smart Merge runs as
           # github-actions[bot] and cannot approve a PR authored by itself.
-          GH_TOKEN: ${{ secrets.MAKEVN_RELEASE_TOKEN }}
+          GH_TOKEN: ${{ steps.release-app-token.outputs.token }}
         shell: bash
         run: |
           set -euo pipefail
           if [[ -z "${GH_TOKEN}" ]]; then
-            printf 'Error: MAKEVN_RELEASE_TOKEN is required to create release PRs.\n' >&2
+            printf 'Error: the release GitHub App token could not be generated.\n' >&2
             exit 1
           fi
           branch="release/${{ steps.version.outputs.tag }}"
@@ -221,7 +228,7 @@ jobs:
                   "${body}"
                 printf '```\n'
               } >> "${GITHUB_STEP_SUMMARY}"
-              exit 0
+              exit 1
             fi
           fi
           if [[ -n "${pr_url}" ]]; then

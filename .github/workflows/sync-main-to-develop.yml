@@ -14,7 +14,6 @@ on:
 permissions:
   actions: write
   contents: write
-  pull-requests: write
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
@@ -93,17 +92,26 @@ jobs:
 
           printf 'needed=true\n' >> "${GITHUB_OUTPUT}"
           printf 'branch=%s\n' "${branch}" >> "${GITHUB_OUTPUT}"
+      - name: Generate release app token
+        if: steps.sync.outputs.needed == 'true'
+        id: release-app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ vars.MAKEVN_RELEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.MAKEVN_RELEASE_APP_PRIVATE_KEY }}
+          permission-contents: read
+          permission-pull-requests: write
       - name: Open sync PR
         if: steps.sync.outputs.needed == 'true'
         env:
           # Use a separate identity for the PR author. Smart Merge runs as
           # github-actions[bot] and cannot approve a PR authored by itself.
-          GH_TOKEN: ${{ secrets.MAKEVN_RELEASE_TOKEN }}
+          GH_TOKEN: ${{ steps.release-app-token.outputs.token }}
         shell: bash
         run: |
           set -euo pipefail
           if [[ -z "${GH_TOKEN}" ]]; then
-            printf 'Error: MAKEVN_RELEASE_TOKEN is required to create sync PRs.\n' >&2
+            printf 'Error: the release GitHub App token could not be generated.\n' >&2
             exit 1
           fi
           branch="${{ steps.sync.outputs.branch }}"
@@ -153,7 +161,7 @@ jobs:
                   "${{ github.repository }}" "${branch}" "${title}" "${body}"
                 printf '```\n'
               } >> "${GITHUB_STEP_SUMMARY}"
-              exit 0
+              exit 1
             fi
           fi
 
