@@ -9,7 +9,8 @@ const workflow = readFileSync(resolve(__dirname, "../workflows/prepare-release.y
 
 test("dispatches revision-bound commit policy for release PRs", () => {
   assert.match(workflow, /permissions:\n  actions: write/);
-  assert.match(workflow, /GH_TOKEN: \$\{\{ secrets\.MAKEVN_RELEASE_TOKEN \|\| github\.token \}\}/);
+  assert.match(workflow, /GH_TOKEN: \$\{\{ secrets\.MAKEVN_RELEASE_TOKEN \}\}/);
+  assert.match(workflow, /GH_TOKEN="\$\{\{ github\.token \}\}" gh workflow run commit-policy\.yml/);
   assert.match(workflow, /gh workflow run commit-policy\.yml/);
   assert.match(workflow, /--ref "\$\{branch\}"/);
   assert.match(workflow, /-f pull_number=/);
@@ -21,4 +22,11 @@ test("dispatches revision-bound commit policy for release PRs", () => {
 test("refreshes the PR number after creating or replacing a release PR", () => {
   assert.match(workflow, /if \[\[ -z "\$\{pr_number\}" \|\| "\$\{pr_state\}" != "OPEN" \]\]; then/);
   assert.match(workflow, /pr_number="\$\(gh pr view "\$\{branch\}" .* --json number --jq '\.number'\)"/);
+});
+
+test("replaces an existing workflow-authored release PR", () => {
+  assert.match(workflow, /--json number,state,author/);
+  assert.match(workflow, /pr_author="\$\(jq -r '\.author\.login \/\/ empty'/);
+  assert.match(workflow, /"\$\{pr_state\}" == "OPEN" && "\$\{pr_author\}" == "github-actions\[bot\]"/);
+  assert.match(workflow, /gh pr close "\$\{pr_number\}"/);
 });

@@ -295,18 +295,17 @@ jobs:
             // Wait until GitHub reports that every branch requirement is
             // satisfied instead of attempting the merge while checks are still
             // shown as expected.
-            // A bot approval can be required for protected branches. Submit it
-            // before waiting for GitHub to report a clean merge state so that
-            // the approval itself can satisfy the branch requirement.
+            // A bot approval can be required for protected branches. The
+            // reviewer identity is github-actions[bot], not the user who wrote
+            // /merge, so it can approve that user's PR. Only skip a PR authored
+            // by the workflow identity itself.
             const workflowBot = "github-actions[bot]";
             for (const target of targetPulls) {
               const targetAuthor = target.user.login.toLowerCase();
               const targetAuthorIsWorkflowBot = targetAuthor === workflowBot;
-              if (actor === targetAuthor || targetAuthorIsWorkflowBot) {
+              if (targetAuthorIsWorkflowBot) {
                 core.info(
-                  targetAuthorIsWorkflowBot
-                    ? `Skipping bot approval for PR #${target.number} because @${targetAuthor} is the workflow identity.`
-                    : `Skipping bot approval for PR #${target.number} because @${actor} authored it.`
+                  `Skipping bot approval for PR #${target.number} because @${targetAuthor} is the workflow identity.`
                 );
                 continue;
               }

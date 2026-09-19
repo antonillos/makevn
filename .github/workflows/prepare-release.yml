@@ -142,37 +142,53 @@ jobs:
           git push --force-with-lease origin "${branch}"
       - name: Open release PR
         env:
-          # GitHub can disable PR creation for GITHUB_TOKEN at repository level.
-          # Use the repository release token when present, while retaining the
-          # built-in token as a documented/manual-fallback path.
-          GH_TOKEN: ${{ secrets.MAKEVN_RELEASE_TOKEN || github.token }}
+          # Use a separate identity for the PR author. Smart Merge runs as
+          # github-actions[bot] and cannot approve a PR authored by itself.
+          GH_TOKEN: ${{ secrets.MAKEVN_RELEASE_TOKEN }}
         shell: bash
         run: |
           set -euo pipefail
+          if [[ -z "${GH_TOKEN}" ]]; then
+            printf 'Error: MAKEVN_RELEASE_TOKEN is required to create release PRs.\n' >&2
+            exit 1
+          fi
           branch="release/${{ steps.version.outputs.tag }}"
           title="release: bump to ${{ steps.version.outputs.next }}"
           body="Prepare ${{ steps.version.outputs.tag }}."
           pr_url=""
           pr_number=""
           pr_state=""
+          pr_author=""
           create_error_file="$(mktemp)"
 
-          pr_number="$(gh pr list \
+          pr_data="$(gh pr list \
             --repo "${{ github.repository }}" \
             --head "${branch}" \
             --base "${{ inputs.base_branch }}" \
             --state all \
-            --json number \
-            --jq '.[0].number // empty')"
+            --json number,state,author \
+            --jq '.[0] // empty')"
+
+          if [[ -n "${pr_data}" ]]; then
+            pr_number="$(jq -r '.number' <<< "${pr_data}")"
+            pr_state="$(jq -r '.state' <<< "${pr_data}")"
+            pr_author="$(jq -r '.author.login // empty' <<< "${pr_data}")"
+          fi
 
           if [[ -n "${pr_number}" ]]; then
-            pr_state="$(gh pr view "${pr_number}" --repo "${{ github.repository }}" --json state --jq '.state')"
-            if [[ "${pr_state}" == "OPEN" ]]; then
+            if [[ "${pr_state}" == "OPEN" && "${pr_author}" == "github-actions[bot]" ]]; then
+              echo "Replacing existing workflow-authored release PR #${pr_number}"
+              gh pr close "${pr_number}" \
+                --repo "${{ github.repository }}" \
+                --comment "Replacing this workflow-authored PR so the release identity can be approved by Smart Merge."
+              pr_number=""
+              pr_state=""
+            elif [[ "${pr_state}" == "OPEN" ]]; then
               echo "Updating existing open PR #${pr_number}"
               gh pr edit "${pr_number}" \
-              --repo "${{ github.repository }}" \
-              --title "${title}" \
-              --body "${body}"
+                --repo "${{ github.repository }}" \
+                --title "${title}" \
+                --body "${body}"
               pr_url="$(gh pr view "${pr_number}" --repo "${{ github.repository }}" --json url --jq '.url')"
             else
               echo "Found ${pr_state,,} PR #${pr_number}, creating a new release PR"
@@ -216,7 +232,7 @@ jobs:
             head_sha="$(jq -r '.headRefOid' <<< "${pr_data}")"
             base_sha="$(jq -r '.baseRefOid' <<< "${pr_data}")"
             base_ref="$(jq -r '.baseRefName' <<< "${pr_data}")"
-            if ! gh workflow run commit-policy.yml \
+            if ! GH_TOKEN="${{ github.token }}" gh workflow run commit-policy.yml \
               --repo "${{ github.repository }}" \
               --ref "${branch}" \
               -f pull_number="${pr_number}" \
