@@ -21,7 +21,6 @@ on:
         default: main
 
 permissions:
-  actions: write
   contents: write
 
 env:
@@ -232,23 +231,6 @@ jobs:
             fi
           fi
           if [[ -n "${pr_url}" ]]; then
-            if [[ -z "${pr_number}" || "${pr_state}" != "OPEN" ]]; then
-              pr_number="$(gh pr view "${branch}" --repo "${{ github.repository }}" --json number --jq '.number')"
-            fi
-            pr_data="$(gh pr view "${pr_number}" --repo "${{ github.repository }}" --json headRefOid,baseRefOid,baseRefName)"
-            head_sha="$(jq -r '.headRefOid' <<< "${pr_data}")"
-            base_sha="$(jq -r '.baseRefOid' <<< "${pr_data}")"
-            base_ref="$(jq -r '.baseRefName' <<< "${pr_data}")"
-            if ! GH_TOKEN="${{ github.token }}" gh workflow run commit-policy.yml \
-              --repo "${{ github.repository }}" \
-              --ref "${branch}" \
-              -f pull_number="${pr_number}" \
-              -f head_sha="${head_sha}" \
-              -f base_sha="${base_sha}" \
-              -f base_ref="${base_ref}"; then
-              printf 'Error: could not dispatch Commit Policy for release PR #%s.\n' "${pr_number}" >&2
-              exit 1
-            fi
             printf 'Release PR: %s\n' "${pr_url}" >> "${GITHUB_STEP_SUMMARY}"
           else
             echo "Release PR URL could not be determined"

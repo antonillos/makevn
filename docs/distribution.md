@@ -50,8 +50,10 @@ this repository with `Contents: Read and write` and
 `Pull requests: Read and write`; all other repository permissions can remain
 disabled. Each generated token is restricted further to `Contents: Read` and
 `Pull requests: Write`, and is scoped to the current repository. The built-in
-`GITHUB_TOKEN` remains responsible for pushing the prepared branch and
-dispatching the commit-policy workflow.
+`GITHUB_TOKEN` remains responsible only for pushing the prepared branch. PRs
+opened by the GitHub App trigger `commit-policy.yml` through
+`pull_request_target`; the release workflows do not dispatch a second policy
+run.
 This is intentional: `smart-merge.yml` runs as `github-actions[bot]`, which
 cannot approve a PR authored by itself. The existing `MAKEVN_RELEASE_TOKEN`
 personal token remains limited to publishing the Homebrew and asdf repositories;

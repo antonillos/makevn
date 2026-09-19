@@ -8,21 +8,17 @@ const { resolve } = require("node:path");
 const workflow = readFileSync(resolve(__dirname, "../workflows/sync-main-to-develop.yml"), "utf8");
 
 test("syncs every main push and successful release completion", () => {
-  assert.match(workflow, /actions: write/);
   assert.match(workflow, /uses: actions\/create-github-app-token@v3/);
   assert.match(workflow, /client-id: \$\{\{ vars\.MAKEVN_RELEASE_APP_CLIENT_ID \}\}/);
   assert.match(workflow, /private-key: \$\{\{ secrets\.MAKEVN_RELEASE_APP_PRIVATE_KEY \}\}/);
   assert.match(workflow, /permission-contents: read/);
   assert.match(workflow, /permission-pull-requests: write/);
   assert.match(workflow, /GH_TOKEN: \$\{\{ steps\.release-app-token\.outputs\.token \}\}/);
-  assert.match(workflow, /GH_TOKEN="\$\{\{ github\.token \}\}" gh workflow run commit-policy\.yml/);
   assert.match(workflow, /push:\n    branches:\n      - main/);
   assert.match(workflow, /workflow_run:\n    workflows:\n      - Release/);
   assert.match(workflow, /github\.event_name == 'push'/);
   assert.match(workflow, /github\.event\.workflow_run\.conclusion == 'success'/);
-  assert.match(workflow, /gh workflow run commit-policy\.yml/);
-  assert.match(workflow, /--ref "\$\{branch\}"/);
-  assert.match(workflow, /-f pull_number=/);
+  assert.doesNotMatch(workflow, /gh workflow run commit-policy\.yml/);
 });
 
 test("fails when the sync PR cannot be created", () => {
