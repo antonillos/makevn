@@ -16,10 +16,12 @@ test("uses a least-privilege GitHub App token for release PRs", () => {
   assert.match(workflow, /permission-contents: write/);
   assert.match(workflow, /permission-pull-requests: write/);
   assert.match(workflow, /GH_TOKEN: \$\{\{ steps\.release-app-token\.outputs\.token \}\}/);
-  assert.match(workflow, /token: \$\{\{ steps\.release-app-token\.outputs\.token \}\}/);
+  assert.match(workflow, /persist-credentials: false/);
+  assert.match(workflow, /gh auth setup-git\n\s+git push --force-with-lease/);
   assert.ok(
-    workflow.indexOf("id: release-app-token") < workflow.indexOf("uses: actions/checkout@v7"),
-    "the App token must authenticate checkout and branch pushes",
+    workflow.indexOf("Run smoke tests") < workflow.indexOf("id: release-app-token") &&
+      workflow.indexOf("id: release-app-token") < workflow.indexOf("Create release branch"),
+    "the App token must be minted after validation and before the branch push",
   );
   assert.doesNotMatch(workflow, /gh workflow run commit-policy\.yml/);
 });

@@ -54,7 +54,8 @@ token authenticates both the branch push and PR creation so GitHub emits the
 normal `synchronize` and `opened` events. PRs opened by the App trigger
 `commit-policy.yml` through
 `pull_request_target`; the release workflows do not dispatch a second policy
-run.
+run. `prepare-release.yml` mints this token only after the build and smoke tests,
+keeping the one-hour installation token fresh for the push and PR operations.
 This is intentional: `smart-merge.yml` runs as `github-actions[bot]`, which
 cannot approve a PR authored by itself. The existing `MAKEVN_RELEASE_TOKEN`
 personal token remains limited to publishing the Homebrew and asdf repositories;

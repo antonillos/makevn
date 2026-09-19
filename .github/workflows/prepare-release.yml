@@ -33,19 +33,11 @@ jobs:
   prepare:
     runs-on: ubuntu-latest
     steps:
-      - name: Generate release app token
-        id: release-app-token
-        uses: actions/create-github-app-token@v3
-        with:
-          client-id: ${{ vars.MAKEVN_RELEASE_APP_CLIENT_ID }}
-          private-key: ${{ secrets.MAKEVN_RELEASE_APP_PRIVATE_KEY }}
-          permission-contents: write
-          permission-pull-requests: write
       - uses: actions/checkout@v7
         with:
           ref: ${{ inputs.base_branch }}
           fetch-depth: 0
-          token: ${{ steps.release-app-token.outputs.token }}
+          persist-credentials: false
       - name: Validate release base
         shell: bash
         run: |
@@ -113,9 +105,18 @@ jobs:
       - name: Run smoke tests
         shell: bash
         run: bash test/smoke/run.sh
+      - name: Generate release app token
+        id: release-app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ vars.MAKEVN_RELEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.MAKEVN_RELEASE_APP_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
       - name: Create release branch
         env:
           ACTIONS_SIGNING_KEY: ${{ secrets.MAKEVN_ACTIONS_SIGNING_KEY }}
+          GH_TOKEN: ${{ steps.release-app-token.outputs.token }}
         shell: bash
         run: |
           set -euo pipefail
@@ -146,6 +147,7 @@ jobs:
           git add rust/dispatcher/Cargo.toml rust/dispatcher/Cargo.lock
           git commit --gpg-sign -m "release: bump to ${{ steps.version.outputs.next }}"
           git cat-file commit HEAD | grep -q '^gpgsig '
+          gh auth setup-git
           git push --force-with-lease origin "${branch}"
       - name: Open release PR
         env:
