@@ -8,6 +8,8 @@ const { resolve } = require("node:path");
 const workflow = readFileSync(resolve(__dirname, "../workflows/sync-main-to-develop.yml"), "utf8");
 
 test("syncs every main push and successful release completion", () => {
+  assert.match(workflow, /permissions:\n  contents: read/);
+  assert.doesNotMatch(workflow, /permissions:[\s\S]*?actions: write/);
   assert.match(workflow, /uses: actions\/create-github-app-token@v3/);
   assert.match(workflow, /client-id: \$\{\{ vars\.MAKEVN_RELEASE_APP_CLIENT_ID \}\}/);
   assert.match(workflow, /private-key: \$\{\{ secrets\.MAKEVN_RELEASE_APP_PRIVATE_KEY \}\}/);

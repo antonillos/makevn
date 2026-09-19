@@ -63,6 +63,12 @@ it is not used to create repository PRs. The repository must also enable
 **Settings → Actions → General → Workflow permissions** so Smart Merge can
 submit its approval.
 
+The supported release path merges `develop` into `main` before preparing a
+release. Consequently, the generated release and back-sync commits do not
+introduce workflow-file changes and the App does not need the broader
+`Workflows: Write` permission. Workflow changes must continue to enter through
+`develop`.
+
 After the release PR is merged by `smart-merge.yml`, the merge workflow
 explicitly dispatches `release.yml`; it does not rely on a push made with
 `GITHUB_TOKEN` to trigger a downstream workflow.
