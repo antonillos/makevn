@@ -42,13 +42,21 @@ gh workflow run release.yml -f version=v0.1.0-test.1 -f target_ref=main -f prere
 ### Release PR flow
 
 `prepare-release.yml` creates a signed `release/vX.Y.Z` branch and opens the
-release PR against `main` with the separate `MAKEVN_RELEASE_TOKEN` identity.
+release PR against `main` with the separate `makevn-release` GitHub App identity.
+The workflows generate a short-lived installation token from the
+`MAKEVN_RELEASE_APP_CLIENT_ID` Actions variable and the
+`MAKEVN_RELEASE_APP_PRIVATE_KEY` Actions secret. The App must be installed on
+this repository with `Contents: Read and write` and
+`Pull requests: Read and write`; all other repository permissions can remain
+disabled. Each generated token is restricted further to `Contents: Read` and
+`Pull requests: Write`, and is scoped to the current repository. The built-in
+`GITHUB_TOKEN` remains responsible for pushing the prepared branch and
+dispatching the commit-policy workflow.
 This is intentional: `smart-merge.yml` runs as `github-actions[bot]`, which
-cannot approve a PR authored by itself. The token needs `Pull requests: Read and
-write` on `makevn`; its `Contents: Read and write` access is also used to
-publish the Homebrew and asdf repositories. The commit-policy dispatch itself
-uses the workflow's `GITHUB_TOKEN`, not the personal token. The repository must
-also enable **Allow GitHub Actions to create and approve pull requests** under
+cannot approve a PR authored by itself. The existing `MAKEVN_RELEASE_TOKEN`
+personal token remains limited to publishing the Homebrew and asdf repositories;
+it is not used to create repository PRs. The repository must also enable
+**Allow GitHub Actions to create and approve pull requests** under
 **Settings → Actions → General → Workflow permissions** so Smart Merge can
 submit its approval.
 
