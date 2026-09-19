@@ -23,3 +23,10 @@ test("refreshes the PR number after creating or replacing a release PR", () => {
   assert.match(workflow, /if \[\[ -z "\$\{pr_number\}" \|\| "\$\{pr_state\}" != "OPEN" \]\]; then/);
   assert.match(workflow, /pr_number="\$\(gh pr view "\$\{branch\}" .* --json number --jq '\.number'\)"/);
 });
+
+test("replaces an existing workflow-authored release PR", () => {
+  assert.match(workflow, /--json number,state,author/);
+  assert.match(workflow, /pr_author="\$\(jq -r '\.author\.login \/\/ empty'/);
+  assert.match(workflow, /"\$\{pr_state\}" == "OPEN" && "\$\{pr_author\}" == "github-actions\[bot\]"/);
+  assert.match(workflow, /gh pr close "\$\{pr_number\}"/);
+});

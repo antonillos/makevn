@@ -158,24 +158,37 @@ jobs:
           pr_url=""
           pr_number=""
           pr_state=""
+          pr_author=""
           create_error_file="$(mktemp)"
 
-          pr_number="$(gh pr list \
+          pr_data="$(gh pr list \
             --repo "${{ github.repository }}" \
             --head "${branch}" \
             --base "${{ inputs.base_branch }}" \
             --state all \
-            --json number \
-            --jq '.[0].number // empty')"
+            --json number,state,author \
+            --jq '.[0] // empty')"
+
+          if [[ -n "${pr_data}" ]]; then
+            pr_number="$(jq -r '.number' <<< "${pr_data}")"
+            pr_state="$(jq -r '.state' <<< "${pr_data}")"
+            pr_author="$(jq -r '.author.login // empty' <<< "${pr_data}")"
+          fi
 
           if [[ -n "${pr_number}" ]]; then
-            pr_state="$(gh pr view "${pr_number}" --repo "${{ github.repository }}" --json state --jq '.state')"
-            if [[ "${pr_state}" == "OPEN" ]]; then
+            if [[ "${pr_state}" == "OPEN" && "${pr_author}" == "github-actions[bot]" ]]; then
+              echo "Replacing existing workflow-authored release PR #${pr_number}"
+              gh pr close "${pr_number}" \
+                --repo "${{ github.repository }}" \
+                --comment "Replacing this workflow-authored PR so the release identity can be approved by Smart Merge."
+              pr_number=""
+              pr_state=""
+            elif [[ "${pr_state}" == "OPEN" ]]; then
               echo "Updating existing open PR #${pr_number}"
               gh pr edit "${pr_number}" \
-              --repo "${{ github.repository }}" \
-              --title "${title}" \
-              --body "${body}"
+                --repo "${{ github.repository }}" \
+                --title "${title}" \
+                --body "${body}"
               pr_url="$(gh pr view "${pr_number}" --repo "${{ github.repository }}" --json url --jq '.url')"
             else
               echo "Found ${pr_state,,} PR #${pr_number}, creating a new release PR"

@@ -47,7 +47,10 @@ This is intentional: `smart-merge.yml` runs as `github-actions[bot]`, which
 cannot approve a PR authored by itself. The token needs `Pull requests: Read and
 write` on `makevn`; its `Contents: Read and write` access is also used to
 publish the Homebrew and asdf repositories. The commit-policy dispatch itself
-uses the workflow's `GITHUB_TOKEN`, not the personal token.
+uses the workflow's `GITHUB_TOKEN`, not the personal token. The repository must
+also enable **Allow GitHub Actions to create and approve pull requests** under
+**Settings → Actions → General → Workflow permissions** so Smart Merge can
+submit its approval.
 
 After the release PR is merged by `smart-merge.yml`, the merge workflow
 explicitly dispatches `release.yml`; it does not rely on a push made with
