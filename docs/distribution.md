@@ -42,11 +42,15 @@ gh workflow run release.yml -f version=v0.1.0-test.1 -f target_ref=main -f prere
 ### Release PR flow
 
 `prepare-release.yml` creates a signed `release/vX.Y.Z` branch and opens the
-release PR against `main`. If the repository setting that allows GitHub Actions
-to create pull requests is disabled, the workflow uses the optional
-`MAKEVN_RELEASE_TOKEN` secret for `gh pr create` and the related commit-policy
-dispatch. Without that secret, it leaves the branch in place and prints the
-manual `gh pr create` command in the run summary.
+release PR against `main` with the separate `MAKEVN_RELEASE_TOKEN` identity.
+This is intentional: `smart-merge.yml` runs as `github-actions[bot]`, which
+cannot approve a PR authored by itself. The token needs `Pull requests: Read and
+write` on `makevn`; its `Contents: Read and write` access is also used to
+publish the Homebrew and asdf repositories. The commit-policy dispatch itself
+uses the workflow's `GITHUB_TOKEN`, not the personal token. The repository must
+also enable **Allow GitHub Actions to create and approve pull requests** under
+**Settings → Actions → General → Workflow permissions** so Smart Merge can
+submit its approval.
 
 After the release PR is merged by `smart-merge.yml`, the merge workflow
 explicitly dispatches `release.yml`; it does not rely on a push made with
