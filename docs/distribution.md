@@ -48,10 +48,14 @@ The workflows generate a short-lived installation token from the
 `MAKEVN_RELEASE_APP_PRIVATE_KEY` Actions secret. The App must be installed on
 this repository with `Contents: Read and write` and
 `Pull requests: Read and write`; all other repository permissions can remain
-disabled. Each generated token is restricted further to `Contents: Read` and
-`Pull requests: Write`, and is scoped to the current repository. The built-in
-`GITHUB_TOKEN` remains responsible for pushing the prepared branch and
-dispatching the commit-policy workflow.
+disabled. Each generated token is restricted to `Contents: Write` and
+`Pull requests: Write`, and is scoped to the current repository. The GitHub App
+token authenticates both the branch push and PR creation so GitHub emits the
+normal `synchronize` and `opened` events. PRs opened by the App trigger
+`commit-policy.yml` through
+`pull_request_target`; the release workflows do not dispatch a second policy
+run. `prepare-release.yml` mints this token only after the build and smoke tests,
+keeping the one-hour installation token fresh for the push and PR operations.
 This is intentional: `smart-merge.yml` runs as `github-actions[bot]`, which
 cannot approve a PR authored by itself. The existing `MAKEVN_RELEASE_TOKEN`
 personal token remains limited to publishing the Homebrew and asdf repositories;
@@ -59,6 +63,12 @@ it is not used to create repository PRs. The repository must also enable
 **Allow GitHub Actions to create and approve pull requests** under
 **Settings → Actions → General → Workflow permissions** so Smart Merge can
 submit its approval.
+
+The supported release path merges `develop` into `main` before preparing a
+release. Consequently, the generated release and back-sync commits do not
+introduce workflow-file changes and the App does not need the broader
+`Workflows: Write` permission. Workflow changes must continue to enter through
+`develop`.
 
 After the release PR is merged by `smart-merge.yml`, the merge workflow
 explicitly dispatches `release.yml`; it does not rely on a push made with
