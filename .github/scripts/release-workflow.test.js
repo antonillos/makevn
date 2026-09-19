@@ -27,8 +27,12 @@ test("fails when the release PR cannot be created", () => {
 });
 
 test("replaces an existing workflow-authored release PR", () => {
-  assert.match(workflow, /--json number,state,author/);
+  assert.match(workflow, /--json number,state,author,title,body/);
   assert.match(workflow, /pr_author="\$\(jq -r '\.author\.login \/\/ empty'/);
   assert.match(workflow, /"\$\{pr_state\}" == "OPEN" && "\$\{pr_author\}" == "github-actions\[bot\]"/);
   assert.match(workflow, /gh pr close "\$\{pr_number\}"/);
+});
+
+test("does not emit a redundant edited event for unchanged release PR metadata", () => {
+  assert.match(workflow, /if \[\[ "\$\{pr_title\}" != "\$\{title\}" \|\| "\$\{pr_body\}" != "\$\{body\}" \]\]; then/);
 });

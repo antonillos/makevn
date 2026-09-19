@@ -39,8 +39,12 @@ test("creates and pushes a signed merge even when the tree is unchanged", () => 
 });
 
 test("replaces an existing workflow-authored sync PR", () => {
-  assert.match(workflow, /--json number,author/);
+  assert.match(workflow, /--json number,author,title,body/);
   assert.match(workflow, /pr_author="\$\(jq -r '\.author\.login \/\/ empty'/);
   assert.match(workflow, /if \[\[ "\$\{pr_author\}" == "github-actions\[bot\]" \]\]; then/);
   assert.match(workflow, /gh pr close "\$\{pr_number\}"/);
+});
+
+test("does not emit a redundant edited event for unchanged sync PR metadata", () => {
+  assert.match(workflow, /if \[\[ "\$\{pr_title\}" != "\$\{title\}" \|\| "\$\{pr_body\}" != "\$\{body\}" \]\]; then/);
 });

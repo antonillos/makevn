@@ -119,18 +119,22 @@ jobs:
           pr_url=""
           pr_number=""
           pr_author=""
+          pr_title=""
+          pr_body=""
 
           pr_data="$(gh pr list \
             --repo "${{ github.repository }}" \
             --head "${branch}" \
             --base develop \
             --state open \
-            --json number,author \
+            --json number,author,title,body \
             --jq '.[0] // empty')"
 
           if [[ -n "${pr_data}" ]]; then
             pr_number="$(jq -r '.number' <<< "${pr_data}")"
             pr_author="$(jq -r '.author.login // empty' <<< "${pr_data}")"
+            pr_title="$(jq -r '.title' <<< "${pr_data}")"
+            pr_body="$(jq -r '.body // ""' <<< "${pr_data}")"
           fi
 
           if [[ "${pr_author}" == "github-actions[bot]" ]]; then
@@ -141,7 +145,11 @@ jobs:
             pr_number=""
           elif [[ -n "${pr_number}" ]]; then
             pr_url="$(gh pr view "${pr_number}" --repo "${{ github.repository }}" --json url --jq .url)"
-            gh pr edit "${pr_number}" --repo "${{ github.repository }}" --title "${title}" --body "${body}"
+            if [[ "${pr_title}" != "${title}" || "${pr_body}" != "${body}" ]]; then
+              gh pr edit "${pr_number}" --repo "${{ github.repository }}" --title "${title}" --body "${body}"
+            else
+              echo "Existing open PR #${pr_number} already has the expected metadata"
+            fi
           fi
 
           if [[ -z "${pr_number}" ]]; then
