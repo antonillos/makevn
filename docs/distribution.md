@@ -48,10 +48,11 @@ The workflows generate a short-lived installation token from the
 `MAKEVN_RELEASE_APP_PRIVATE_KEY` Actions secret. The App must be installed on
 this repository with `Contents: Read and write` and
 `Pull requests: Read and write`; all other repository permissions can remain
-disabled. Each generated token is restricted further to `Contents: Read` and
-`Pull requests: Write`, and is scoped to the current repository. The built-in
-`GITHUB_TOKEN` remains responsible only for pushing the prepared branch. PRs
-opened by the GitHub App trigger `commit-policy.yml` through
+disabled. Each generated token is restricted to `Contents: Write` and
+`Pull requests: Write`, and is scoped to the current repository. The GitHub App
+token authenticates both the branch push and PR creation so GitHub emits the
+normal `synchronize` and `opened` events. PRs opened by the App trigger
+`commit-policy.yml` through
 `pull_request_target`; the release workflows do not dispatch a second policy
 run.
 This is intentional: `smart-merge.yml` runs as `github-actions[bot]`, which

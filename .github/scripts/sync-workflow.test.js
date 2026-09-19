@@ -11,9 +11,14 @@ test("syncs every main push and successful release completion", () => {
   assert.match(workflow, /uses: actions\/create-github-app-token@v3/);
   assert.match(workflow, /client-id: \$\{\{ vars\.MAKEVN_RELEASE_APP_CLIENT_ID \}\}/);
   assert.match(workflow, /private-key: \$\{\{ secrets\.MAKEVN_RELEASE_APP_PRIVATE_KEY \}\}/);
-  assert.match(workflow, /permission-contents: read/);
+  assert.match(workflow, /permission-contents: write/);
   assert.match(workflow, /permission-pull-requests: write/);
   assert.match(workflow, /GH_TOKEN: \$\{\{ steps\.release-app-token\.outputs\.token \}\}/);
+  assert.match(workflow, /token: \$\{\{ steps\.release-app-token\.outputs\.token \}\}/);
+  assert.ok(
+    workflow.indexOf("id: release-app-token") < workflow.indexOf("uses: actions/checkout@v7"),
+    "the App token must authenticate checkout and branch pushes",
+  );
   assert.match(workflow, /push:\n    branches:\n      - main/);
   assert.match(workflow, /workflow_run:\n    workflows:\n      - Release/);
   assert.match(workflow, /github\.event_name == 'push'/);
