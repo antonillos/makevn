@@ -142,12 +142,16 @@ jobs:
           git push --force-with-lease origin "${branch}"
       - name: Open release PR
         env:
-          # PR creation is performed with the least-privileged workflow token.
-          # The repository must allow Actions to create and approve pull requests.
-          GH_TOKEN: ${{ github.token }}
+          # Use a separate identity for the PR author. Smart Merge runs as
+          # github-actions[bot] and cannot approve a PR authored by itself.
+          GH_TOKEN: ${{ secrets.MAKEVN_RELEASE_TOKEN }}
         shell: bash
         run: |
           set -euo pipefail
+          if [[ -z "${GH_TOKEN}" ]]; then
+            printf 'Error: MAKEVN_RELEASE_TOKEN is required to create release PRs.\n' >&2
+            exit 1
+          fi
           branch="release/${{ steps.version.outputs.tag }}"
           title="release: bump to ${{ steps.version.outputs.next }}"
           body="Prepare ${{ steps.version.outputs.tag }}."
@@ -215,7 +219,7 @@ jobs:
             head_sha="$(jq -r '.headRefOid' <<< "${pr_data}")"
             base_sha="$(jq -r '.baseRefOid' <<< "${pr_data}")"
             base_ref="$(jq -r '.baseRefName' <<< "${pr_data}")"
-            if ! gh workflow run commit-policy.yml \
+            if ! GH_TOKEN="${{ github.token }}" gh workflow run commit-policy.yml \
               --repo "${{ github.repository }}" \
               --ref "${branch}" \
               -f pull_number="${pr_number}" \

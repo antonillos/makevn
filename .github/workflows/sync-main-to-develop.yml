@@ -96,12 +96,16 @@ jobs:
       - name: Open sync PR
         if: steps.sync.outputs.needed == 'true'
         env:
-          # PR creation is performed with the least-privileged workflow token.
-          # The repository must allow Actions to create and approve pull requests.
-          GH_TOKEN: ${{ github.token }}
+          # Use a separate identity for the PR author. Smart Merge runs as
+          # github-actions[bot] and cannot approve a PR authored by itself.
+          GH_TOKEN: ${{ secrets.MAKEVN_RELEASE_TOKEN }}
         shell: bash
         run: |
           set -euo pipefail
+          if [[ -z "${GH_TOKEN}" ]]; then
+            printf 'Error: MAKEVN_RELEASE_TOKEN is required to create sync PRs.\n' >&2
+            exit 1
+          fi
           branch="${{ steps.sync.outputs.branch }}"
           title="chore: sync main into develop"
           body="Merge main back into develop after release so both branches share history. Non-conflicting changes from both branches are retained; overlapping lines keep the newer develop version."
@@ -146,7 +150,7 @@ jobs:
           head_sha="$(jq -r '.headRefOid' <<< "${pr_data}")"
           base_sha="$(jq -r '.baseRefOid' <<< "${pr_data}")"
           base_ref="$(jq -r '.baseRefName' <<< "${pr_data}")"
-          if ! gh workflow run commit-policy.yml \
+          if ! GH_TOKEN="${{ github.token }}" gh workflow run commit-policy.yml \
             --repo "${{ github.repository }}" \
             --ref "${branch}" \
             -f pull_number="${pr_number}" \
