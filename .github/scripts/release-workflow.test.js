@@ -9,7 +9,7 @@ const workflow = readFileSync(resolve(__dirname, "../workflows/prepare-release.y
 
 test("dispatches revision-bound commit policy for release PRs", () => {
   assert.match(workflow, /permissions:\n  actions: write/);
-  assert.match(workflow, /GH_TOKEN: \$\{\{ secrets\.MAKEVN_RELEASE_TOKEN \|\| github\.token \}\}/);
+  assert.match(workflow, /GH_TOKEN: \$\{\{ github\.token \}\}/);
   assert.match(workflow, /gh workflow run commit-policy\.yml/);
   assert.match(workflow, /--ref "\$\{branch\}"/);
   assert.match(workflow, /-f pull_number=/);

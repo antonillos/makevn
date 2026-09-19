@@ -142,10 +142,9 @@ jobs:
           git push --force-with-lease origin "${branch}"
       - name: Open release PR
         env:
-          # GitHub can disable PR creation for GITHUB_TOKEN at repository level.
-          # Use the repository release token when present, while retaining the
-          # built-in token as a documented/manual-fallback path.
-          GH_TOKEN: ${{ secrets.MAKEVN_RELEASE_TOKEN || github.token }}
+          # PR creation is performed with the least-privileged workflow token.
+          # The repository must allow Actions to create and approve pull requests.
+          GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           set -euo pipefail

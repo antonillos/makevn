@@ -96,9 +96,9 @@ jobs:
       - name: Open sync PR
         if: steps.sync.outputs.needed == 'true'
         env:
-          # Keep the post-release sync from hitting the same repository policy
-          # that can forbid GITHUB_TOKEN from creating pull requests.
-          GH_TOKEN: ${{ secrets.MAKEVN_RELEASE_TOKEN || github.token }}
+          # PR creation is performed with the least-privileged workflow token.
+          # The repository must allow Actions to create and approve pull requests.
+          GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           set -euo pipefail

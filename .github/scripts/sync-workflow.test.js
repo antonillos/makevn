@@ -9,7 +9,7 @@ const workflow = readFileSync(resolve(__dirname, "../workflows/sync-main-to-deve
 
 test("syncs every main push and successful release completion", () => {
   assert.match(workflow, /actions: write/);
-  assert.match(workflow, /GH_TOKEN: \$\{\{ secrets\.MAKEVN_RELEASE_TOKEN \|\| github\.token \}\}/);
+  assert.match(workflow, /GH_TOKEN: \$\{\{ github\.token \}\}/);
   assert.match(workflow, /push:\n    branches:\n      - main/);
   assert.match(workflow, /workflow_run:\n    workflows:\n      - Release/);
   assert.match(workflow, /github\.event_name == 'push'/);
