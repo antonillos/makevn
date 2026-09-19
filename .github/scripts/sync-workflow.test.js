@@ -27,3 +27,10 @@ test("creates and pushes a signed merge even when the tree is unchanged", () => 
   assert.match(workflow, /git push --force-with-lease origin/);
   assert.doesNotMatch(workflow, /git diff --quiet origin\/develop HEAD/);
 });
+
+test("replaces an existing workflow-authored sync PR", () => {
+  assert.match(workflow, /--json number,author/);
+  assert.match(workflow, /pr_author="\$\(jq -r '\.author\.login \/\/ empty'/);
+  assert.match(workflow, /if \[\[ "\$\{pr_author\}" == "github-actions\[bot\]" \]\]; then/);
+  assert.match(workflow, /gh pr close "\$\{pr_number\}"/);
+});

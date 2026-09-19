@@ -111,19 +111,33 @@ jobs:
           body="Merge main back into develop after release so both branches share history. Non-conflicting changes from both branches are retained; overlapping lines keep the newer develop version."
           pr_url=""
           pr_number=""
+          pr_author=""
 
-          pr_number="$(gh pr list \
+          pr_data="$(gh pr list \
             --repo "${{ github.repository }}" \
             --head "${branch}" \
             --base develop \
             --state open \
-            --json number \
-            --jq '.[0].number // empty')"
+            --json number,author \
+            --jq '.[0] // empty')"
 
-          if [[ -n "${pr_number}" ]]; then
+          if [[ -n "${pr_data}" ]]; then
+            pr_number="$(jq -r '.number' <<< "${pr_data}")"
+            pr_author="$(jq -r '.author.login // empty' <<< "${pr_data}")"
+          fi
+
+          if [[ "${pr_author}" == "github-actions[bot]" ]]; then
+            echo "Replacing existing workflow-authored sync PR #${pr_number}"
+            gh pr close "${pr_number}" \
+              --repo "${{ github.repository }}" \
+              --comment "Replacing this workflow-authored PR so the release identity can be approved by Smart Merge."
+            pr_number=""
+          elif [[ -n "${pr_number}" ]]; then
             pr_url="$(gh pr view "${pr_number}" --repo "${{ github.repository }}" --json url --jq .url)"
             gh pr edit "${pr_number}" --repo "${{ github.repository }}" --title "${title}" --body "${body}"
-          else
+          fi
+
+          if [[ -z "${pr_number}" ]]; then
             if ! pr_url="$(gh pr create \
               --repo "${{ github.repository }}" \
               --base develop \
