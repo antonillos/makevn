@@ -53,6 +53,9 @@ jobs:
       - name: Run Smart Merge policy tests
         shell: bash
         run: node --test .github/scripts/smart-merge-policy.test.js
+      - name: Run workflow security tests
+        shell: bash
+        run: node --test .github/scripts/workflow-security.test.js
       - name: Run smoke tests
         shell: bash
         run: |
