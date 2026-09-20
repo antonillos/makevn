@@ -10,7 +10,7 @@ const workflow = readFileSync(resolve(__dirname, "../workflows/prepare-release.y
 test("uses a least-privilege GitHub App token for release PRs", () => {
   assert.match(workflow, /permissions:\n  contents: read/);
   assert.doesNotMatch(workflow, /permissions:[\s\S]*?actions: write/);
-  assert.match(workflow, /uses: actions\/create-github-app-token@v3/);
+  assert.match(workflow, /uses: actions\/create-github-app-token@[0-9a-f]{40}/);
   assert.match(workflow, /client-id: \$\{\{ vars\.MAKEVN_RELEASE_APP_CLIENT_ID \}\}/);
   assert.match(workflow, /private-key: \$\{\{ secrets\.MAKEVN_RELEASE_APP_PRIVATE_KEY \}\}/);
   assert.match(workflow, /permission-contents: write/);
