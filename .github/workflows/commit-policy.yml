@@ -40,7 +40,7 @@ jobs:
     steps:
       # API metadata only: no checkout, PR code execution, signing key or CRAP.
       - name: Validate every PR commit
-        uses: actions/github-script@v9
+        uses: actions/github-script@d746ffe35508b1917358783b479e04febd2b8f71 # v9.0.0
         with:
           script: |
             const shaPattern = /^[0-9a-f]{40}$/;

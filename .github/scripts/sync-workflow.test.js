@@ -10,7 +10,7 @@ const workflow = readFileSync(resolve(__dirname, "../workflows/sync-main-to-deve
 test("syncs every main push and successful release completion", () => {
   assert.match(workflow, /permissions:\n  contents: read/);
   assert.doesNotMatch(workflow, /permissions:[\s\S]*?actions: write/);
-  assert.match(workflow, /uses: actions\/create-github-app-token@v3/);
+  assert.match(workflow, /uses: actions\/create-github-app-token@[0-9a-f]{40}/);
   assert.match(workflow, /client-id: \$\{\{ vars\.MAKEVN_RELEASE_APP_CLIENT_ID \}\}/);
   assert.match(workflow, /private-key: \$\{\{ secrets\.MAKEVN_RELEASE_APP_PRIVATE_KEY \}\}/);
   assert.match(workflow, /permission-contents: write/);
@@ -18,7 +18,7 @@ test("syncs every main push and successful release completion", () => {
   assert.match(workflow, /GH_TOKEN: \$\{\{ steps\.release-app-token\.outputs\.token \}\}/);
   assert.match(workflow, /token: \$\{\{ steps\.release-app-token\.outputs\.token \}\}/);
   assert.ok(
-    workflow.indexOf("id: release-app-token") < workflow.indexOf("uses: actions/checkout@v7"),
+    workflow.indexOf("id: release-app-token") < workflow.indexOf("uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"),
     "the App token must authenticate checkout and branch pushes",
   );
   assert.match(workflow, /push:\n    branches:\n      - main/);
