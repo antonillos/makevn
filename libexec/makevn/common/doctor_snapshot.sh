@@ -280,7 +280,7 @@ makevn_collect_doctor_snapshot() {
   if [[ -n "${maven_base_path}" ]]; then
     detected_jacoco_report_layout="$(makevn_jacoco_report_layout "${maven_base_path}" || true)"
     detected_jacoco_report_dir="$(makevn_jacoco_report_dir "${maven_base_path}" || true)"
-    detected_jacoco_xml_count="$(find "${maven_base_path}" -path '*/target/site/jacoco*/jacoco.xml' -type f 2>/dev/null | wc -l | tr -d '[:space:]')"
+    detected_jacoco_xml_count="$(find "${maven_base_path}" -path '*/target/*' -name 'jacoco.xml' -type f 2>/dev/null | wc -l | tr -d '[:space:]')"
   fi
 
   makevn_load_config "${repo_root}"

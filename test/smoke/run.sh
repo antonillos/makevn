@@ -375,6 +375,18 @@ assert data['suggested_next_step']['note'] == 'no automatic recommendation: Mave
 PY
 }
 
+test_doctor_counts_custom_jacoco_xml_path() {
+  local repo="${TMP_ROOT}/doctor-custom-jacoco"
+  local output=""
+
+  mkdir -p "${repo}/target/coverage"
+  printf '<project/>\n' > "${repo}/pom.xml"
+  printf '<report/>\n' > "${repo}/target/coverage/jacoco.xml"
+
+  output="$(${CLI} --repo "${repo}" doctor)"
+  [[ "${output}" == *"JaCoCo XML reports: 1"* ]] || fail "doctor should count custom target/**/jacoco.xml reports"
+}
+
 test_doctor_resolves_java_version_from_pom() {
   local repo="${TMP_ROOT}/doctor-pom-java-version"
   local fake_java_home="${repo}/fake-java-home"
@@ -4614,6 +4626,7 @@ EOF
 main() {
   test_doctor_unsupported
   test_backend_doctor_json
+  test_doctor_counts_custom_jacoco_xml_path
   test_doctor_resolves_java_version_from_pom
   test_doctor_resolves_java_version_from_pom_property_reference
   test_doctor_resolves_java_version_from_compiler_plugin_source
