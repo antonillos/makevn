@@ -58,6 +58,17 @@ def main():
     if not entries:
         print("Error: CRAP report contains no measured Java methods.", file=sys.stderr)
         return 2
+    seen_methods = set()
+    for entry in entries:
+        identity = (entry["file"], entry["line"], entry["symbol"])
+        if identity in seen_methods:
+            print(
+                f"Error: overlapping JaCoCo reports contain duplicate Java method {entry['symbol']} "
+                f"at {entry['file']}:{entry['line']}; use a merged report or pass --jacoco-xml.",
+                file=sys.stderr,
+            )
+            return 2
+        seen_methods.add(identity)
     missing_coverage = sum(entry["crap"] is None for entry in entries)
     if missing_coverage:
         print(

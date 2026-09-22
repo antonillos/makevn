@@ -37,7 +37,7 @@ def coverage_files(payload):
 
 def function_end(lines, start, bash):
     for end in range(start, len(lines) + 1):
-        if not lines[end - 1].lstrip().startswith("}"):
+        if "}" not in lines[end - 1]:
             continue
         result = subprocess.run(
             [bash, "-n"],

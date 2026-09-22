@@ -98,6 +98,20 @@ class CrapReportTests(unittest.TestCase):
             self.assertEqual(result.returncode, 2)
             self.assertIn("1 Java method(s) without coverage", result.stderr)
 
+    def test_java_report_rejects_overlapping_jacoco_methods(self):
+        with tempfile.TemporaryDirectory() as directory:
+            tmp = Path(directory)
+            method = {"file": "Example.java", "line": 8, "class": "Example", "method": "risk", "complexity": 3, "coverage_percent": 50, "crap": 4.125}
+            for name in ("unit", "integration"):
+                (tmp / f"{name}.json").write_text(json.dumps({"entries": [method]}))
+            result = subprocess.run(
+                ["python3", str(JAVA_REPORTER), "--input", str(tmp / "unit.json"), "--input", str(tmp / "integration.json"), "--output-dir", str(tmp / "out"), "--max-warnings", "0"],
+                text=True, capture_output=True, check=False,
+            )
+            self.assertEqual(result.returncode, 2)
+            self.assertIn("overlapping JaCoCo reports", result.stderr)
+            self.assertFalse((tmp / "out/report.json").exists())
+
     def test_shell_report_uses_lexical_function_ranges(self):
         with tempfile.TemporaryDirectory() as directory:
             tmp = Path(directory)
@@ -145,6 +159,29 @@ class CrapReportTests(unittest.TestCase):
             self.assertEqual(entries["last"]["end_line"], 3)
             self.assertEqual(entries["last"]["coverage"], 0.0)
             self.assertEqual(entries["<main>"]["coverage"], 100.0)
+
+    def test_shell_report_accepts_inline_closing_braces(self):
+        with tempfile.TemporaryDirectory() as directory:
+            tmp = Path(directory)
+            source = tmp / "fixture.sh"
+            source.write_text("inline() { printf x; }\ntrailing() {\n  printf y; }\n")
+            complexity = tmp / "shell.csv"
+            complexity.write_text(
+                "file,func,lineno,lloc,ccn,lines,comment,blank\n"
+                '"fixture.sh","inline",1,1,2,0,0,0\n'
+                '"fixture.sh","trailing",2,1,2,0,0,0\n'
+            )
+            coverage = tmp / "coverage.json"
+            coverage.write_text(json.dumps({"smoke": {"coverage": {str(source): {"lines": [1, 1, 1]}}}}))
+            output = tmp / "report.json"
+            result = subprocess.run(
+                ["python3", str(SHELL_REPORTER), "--root", str(tmp), "--complexity", str(complexity), "--coverage", str(coverage), "--output", str(output)],
+                text=True, capture_output=True, check=False,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            entries = {entry["function"]: entry for entry in json.loads(output.read_text())["entries"]}
+            self.assertEqual(entries["inline"]["end_line"], 1)
+            self.assertEqual(entries["trailing"]["end_line"], 3)
 
 
 if __name__ == "__main__":

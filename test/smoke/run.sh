@@ -4498,11 +4498,13 @@ if [[ "\${1:-}" == "-version" ]]; then
   exit 0
 fi
 printf '%s\n' "\$*" >> "${repo}/java.log"
-cat <<'JSON'
+suffix=""
+[[ "\$*" != *"/module-b/"* ]] || suffix="B"
+cat <<JSON
 {
   "entries": [
-    {"file":"src/main/java/example/High.java","line":5,"end_line":9,"class":"High","method":"risk","complexity":4,"coverage_percent":50,"crap":9.0,"status":"measured"},
-    {"file":"src/main/java/example/Low.java","line":2,"end_line":3,"class":"Low","method":"safe","complexity":2,"coverage_percent":100,"crap":2.0,"status":"measured"}
+    {"file":"src/main/java/example/High\${suffix}.java","line":5,"end_line":9,"class":"High\${suffix}","method":"risk","complexity":4,"coverage_percent":50,"crap":9.0,"status":"measured"},
+    {"file":"src/main/java/example/Low\${suffix}.java","line":2,"end_line":3,"class":"Low\${suffix}","method":"safe","complexity":2,"coverage_percent":100,"crap":2.0,"status":"measured"}
   ],
   "summary": {"methods":2}
 }
@@ -4639,6 +4641,21 @@ EOF
   assert_file_exists "${cache}/makevn/crap4java/0.1.0/crap4java-0.1.0.jar"
 }
 
+test_crap_install_analyzer_requires_cache_home() {
+  local repo="${TMP_ROOT}/crap-no-cache-home"
+  local output=""
+  local rc=0
+
+  mkdir -p "${repo}/.git"
+  set +e
+  output="$(env -u HOME -u XDG_CACHE_HOME ${CLI} --repo "${repo}" crap install-analyzer 2>&1)"
+  rc=$?
+  set -e
+  [[ ${rc} -eq 2 ]] || fail "expected missing cache home to exit 2, got ${rc}"
+  [[ "${output}" == *"HOME or XDG_CACHE_HOME is required"* ]] \
+    || fail "expected missing cache home error"
+}
+
 main() {
   test_doctor_unsupported
   test_backend_doctor_json
@@ -4727,6 +4744,7 @@ main() {
   test_crap_command_prefers_aggregate_jacoco
   test_crap_command_fails_closed_without_analyzer
   test_crap_install_analyzer_verifies_pinned_download
+  test_crap_install_analyzer_requires_cache_home
   test_verify_rejects_skip_flags
   test_verify_split_commands_reject_wrong_skip_flags
   test_sequential_commands

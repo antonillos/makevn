@@ -6,7 +6,10 @@ MAKEVN_CRAP4JAVA_SHA256="b996434078d560d52a058e3d9ffb0d07a9469ecdc57c8b4fa241fa7
 MAKEVN_CRAP4JAVA_URL="https://github.com/antonillos/crap4java/releases/download/v${MAKEVN_CRAP4JAVA_VERSION}/crap4java-${MAKEVN_CRAP4JAVA_VERSION}.jar"
 
 makevn_crap_cache_jar() {
-  local cache_root="${XDG_CACHE_HOME:-${HOME:-}/.cache}"
+  local cache_root="${XDG_CACHE_HOME:-}"
+  if [[ -z "${cache_root}" && -n "${HOME:-}" ]]; then
+    cache_root="${HOME}/.cache"
+  fi
   [[ -n "${cache_root}" ]] || return 1
   printf '%s/makevn/crap4java/%s/crap4java-%s.jar\n' \
     "${cache_root}" "${MAKEVN_CRAP4JAVA_VERSION}" "${MAKEVN_CRAP4JAVA_VERSION}"
