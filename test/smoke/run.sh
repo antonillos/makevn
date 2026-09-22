@@ -1141,6 +1141,22 @@ test_installer() {
   "${prefix}/bin/makevn" --help >/dev/null
 }
 
+test_runtime_archive_includes_crap_reporter() {
+  local dist_dir="${TMP_ROOT}/runtime-archive"
+  local archive="${dist_dir}/makevn-v0.0.0-smoke.tar.gz"
+  local bin_dir="${dist_dir}/bin-source"
+
+  mkdir -p "${bin_dir}"
+  printf '#!/usr/bin/env bash\nexit 0\n' > "${bin_dir}/makevn"
+  printf '#!/usr/bin/env bash\nexit 0\n' > "${bin_dir}/makevn-mcp"
+  chmod +x "${bin_dir}/makevn" "${bin_dir}/makevn-mcp"
+
+  MAKEVN_BIN_DIR="${bin_dir}" bash "${ROOT_DIR}/packaging/release/build-runtime-archive.sh" \
+    v0.0.0 smoke "${dist_dir}" >/dev/null
+  tar -tzf "${archive}" | grep -Fxq 'makevn-0.0.0-smoke/libexec/makevn/crap/report.py' \
+    || fail "runtime archive should include CRAP reporter"
+}
+
 test_mcp_tool_listing() {
   local prefix="${TMP_ROOT}/mcp-install-prefix"
   local output_file="${TMP_ROOT}/mcp-tools.jsonl"
@@ -4650,6 +4666,7 @@ main() {
   test_make_install_existing_makefile
   test_make_install_without_makefile
   test_installer
+  test_runtime_archive_includes_crap_reporter
   test_init_does_not_touch_existing_makefile
   test_profile_refresh
   test_interactive_pid_output
