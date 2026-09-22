@@ -237,7 +237,7 @@ cmd_verify_ut_coverage() {
   local rc=0
 
   maven_base_path="$(makevn_detect_maven_base_path "${repo_root}" || true)"
-  [[ -z "${maven_base_path}" ]] && return 0
+  [[ -n "${maven_base_path}" ]] || makevn_die "No Maven project detected in ${repo_root}"
   makevn_remove_jacoco_xml_reports "${maven_base_path}"
   if cmd_verify_ut "${repo_root}" "${@:2}"; then
     rc=0
@@ -267,7 +267,7 @@ cmd_verify_it_coverage() {
   local rc=0
 
   maven_base_path="$(makevn_detect_maven_base_path "${repo_root}" || true)"
-  [[ -z "${maven_base_path}" ]] && return 0
+  [[ -n "${maven_base_path}" ]] || makevn_die "No Maven project detected in ${repo_root}"
   makevn_remove_jacoco_xml_reports "${maven_base_path}"
   if cmd_verify_it "${repo_root}" "${@:2}"; then
     rc=0

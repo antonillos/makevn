@@ -4131,6 +4131,27 @@ EOF
   [[ "${output}" == *"without generating a JaCoCo XML report"* ]] || fail "expected missing JaCoCo XML explanation"
 }
 
+test_verify_coverage_fails_without_maven_project() {
+  local repo="${TMP_ROOT}/verify-coverage-no-maven"
+  local command=""
+  local output=""
+  local rc=0
+
+  mkdir -p "${repo}"
+  git init --initial-branch=main "${repo}" >/dev/null
+
+  for command in verify-ut-coverage verify-it-coverage; do
+    set +e
+    output="$(${CLI} --repo "${repo}" "${command}" 2>&1)"
+    rc=$?
+    set -e
+
+    [[ ${rc} -ne 0 ]] || fail "expected ${command} without Maven to fail"
+    [[ "${output}" == *"No Maven project detected"* ]] \
+      || fail "expected ${command} to explain that no Maven project was detected"
+  done
+}
+
 test_verify_rejects_skip_flags() {
   local repo="${TMP_ROOT}/verify-rejects-skip-flags"
   local output=""
@@ -4623,6 +4644,7 @@ main() {
   test_coverage_uses_detected_activation_profile
   test_coverage_fails_early_without_jacoco_strategy
   test_verify_coverage_fails_when_maven_produces_no_report
+  test_verify_coverage_fails_without_maven_project
   test_crap_command_uses_existing_jacoco_and_writes_reports
   test_crap_command_gate_and_explicit_xml
   test_crap_command_uses_maven_root_for_custom_xml_path

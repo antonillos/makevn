@@ -8,6 +8,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 REPORTER = ROOT / "tools/crap/report.py"
+JAVA_REPORTER = ROOT / "libexec/makevn/crap/report.py"
 
 
 class CrapReportTests(unittest.TestCase):
@@ -46,6 +47,36 @@ class CrapReportTests(unittest.TestCase):
     def test_missing_coverage_is_infrastructure_error(self):
         result, _ = self.run_report(rust_crap=None)
         self.assertEqual(result.returncode, 2)
+
+    def test_java_report_rejects_partially_missing_coverage(self):
+        with tempfile.TemporaryDirectory() as directory:
+            tmp = Path(directory)
+            payload = {
+                "entries": [
+                    {"file": "Measured.java", "method": "measured", "crap": 2.0},
+                    {"file": "Missing.java", "method": "missing", "crap": None},
+                ]
+            }
+            source = tmp / "java.json"
+            source.write_text(json.dumps(payload))
+            result = subprocess.run(
+                [
+                    "python3",
+                    str(JAVA_REPORTER),
+                    "--input",
+                    str(source),
+                    "--output-dir",
+                    str(tmp / "out"),
+                    "--max-warnings",
+                    "0",
+                ],
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+
+            self.assertEqual(result.returncode, 2)
+            self.assertIn("1 Java method(s) without coverage", result.stderr)
 
 
 if __name__ == "__main__":

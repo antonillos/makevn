@@ -55,8 +55,15 @@ def main():
     except (OSError, json.JSONDecodeError, ValueError) as exc:
         print(f"Error: invalid crap4java report: {exc}", file=sys.stderr)
         return 2
-    if not entries or not any(entry["crap"] is not None for entry in entries):
+    if not entries:
         print("Error: CRAP report contains no measured Java methods.", file=sys.stderr)
+        return 2
+    missing_coverage = sum(entry["crap"] is None for entry in entries)
+    if missing_coverage:
+        print(
+            f"Error: CRAP report contains {missing_coverage} Java method(s) without coverage.",
+            file=sys.stderr,
+        )
         return 2
     entries.sort(key=lambda entry: (-(entry["crap"] if entry["crap"] is not None else -1), entry["file"], entry["line"], entry["symbol"]))
     warnings = [entry for entry in entries if entry["crap"] is not None and entry["crap"] > args.threshold]
@@ -68,7 +75,7 @@ def main():
         "formula": "CC^2 * (1 - coverage)^3 + CC",
         "threshold": args.threshold,
         "entries": entries,
-        "diagnostics": {"java_methods": len(entries), "missing_coverage": sum(entry["crap"] is None for entry in entries)},
+        "diagnostics": {"java_methods": len(entries), "missing_coverage": missing_coverage},
         "gate": gate,
     }
     out = Path(args.output_dir)
