@@ -168,9 +168,9 @@ jobs:
               }
             }
 
-            // Smoke is the stable branch-protection gate for makevn. It validates
-            // the exact head SHA through the complete Verify workflow.
-            const requiredChecks = ["smoke"];
+            // Smoke and CRAP are the stable branch-protection gates for makevn.
+            // Together they validate the exact head SHA through Verify.
+            const requiredChecks = ["smoke", "crap"];
             const deadline = Date.now() + 30 * 60 * 1000;
 
             async function loadRequiredJobs(runId) {

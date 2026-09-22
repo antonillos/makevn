@@ -57,18 +57,40 @@ jobs:
       - name: Run workflow security tests
         shell: bash
         run: node --test .github/scripts/workflow-security.test.js
-      - name: Run CRAP workflow tests
-        shell: bash
-        run: node --test .github/scripts/crap-workflow.test.js
-      - name: Run CRAP reporter tests
-        shell: bash
-        run: python3 -m unittest tools.crap.test_report
       - name: Run smoke tests
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p "${RUNNER_TEMP}/makevn-smoke"
           MAKEVN_KEEP_SMOKE_TMP=1 TMPDIR="${RUNNER_TEMP}/makevn-smoke" bash test/smoke/run.sh
+      - name: Upload smoke artifacts
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: smoke-artifacts
+          path: ${{ runner.temp }}/makevn-smoke
+          if-no-files-found: ignore
+
+  crap:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Install Rust
+        shell: bash
+        run: rustup toolchain install stable --profile minimal
+      - name: Build dispatcher
+        shell: bash
+        run: ./build-rust-dispatcher.sh
+      - name: Run CRAP workflow tests
+        shell: bash
+        run: node --test .github/scripts/crap-workflow.test.js
+      - name: Run CRAP reporter tests
+        shell: bash
+        run: python3 -m unittest tools.crap.test_report
       - uses: ruby/setup-ruby@a0102e0972be65f351c307e2d64b9314a57c8073 # v1.324.0
         with:
           ruby-version: '3.3'
@@ -109,17 +131,10 @@ jobs:
           name: crap-reports
           path: target/crap
           if-no-files-found: error
-      - name: Upload smoke artifacts
-        if: failure()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: smoke-artifacts
-          path: ${{ runner.temp }}/makevn-smoke
-          if-no-files-found: ignore
 
   publish-crap-badge:
     if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/develop')
-    needs: smoke
+    needs: crap
     runs-on: ubuntu-latest
     permissions:
       contents: read

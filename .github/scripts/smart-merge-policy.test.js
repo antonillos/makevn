@@ -17,3 +17,7 @@ test("workflow identity approves maintainer-authored PRs", () => {
   assert.doesNotMatch(workflow, /actor === targetAuthor \|\| targetAuthorIsWorkflowBot/);
   assert.match(workflow, /github\.rest\.pulls\.createReview/);
 });
+
+test("Smart Merge requires both smoke and CRAP gates", () => {
+  assert.match(workflow, /const requiredChecks = \["smoke", "crap"\];/);
+});

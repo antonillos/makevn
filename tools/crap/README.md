@@ -1,6 +1,7 @@
 # Internal CRAP ratchet
 
-The required `smoke` job gates authored production Rust and Bash independently.
+The required `crap` job gates authored production Rust and Bash independently,
+separate from the `smoke` job.
 Generated JavaScript and JavaScript tests are deliberately excluded; add a third
 language baseline if authored production JavaScript is introduced.
 

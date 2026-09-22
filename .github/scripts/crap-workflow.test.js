@@ -9,14 +9,18 @@ const workflow = readFileSync(resolve(__dirname, "../workflows/verify.yml"), "ut
 const readme = readFileSync(resolve(__dirname, "../../README.md"), "utf8");
 
 test("CRAP reports are uploaded even when the ratchet fails", () => {
-  assert.match(workflow, /name: Upload CRAP reports\n\s+if: always\(\)/);
-  assert.match(workflow, /tools\/crap\/run\.sh/);
-  assert.match(workflow, /--base-baseline/);
+  const smoke = workflow.slice(workflow.indexOf("  smoke:"), workflow.indexOf("  crap:"));
+  const crap = workflow.slice(workflow.indexOf("  crap:"), workflow.indexOf("  publish-crap-badge:"));
+
+  assert.doesNotMatch(smoke, /Run CRAP|tools\/crap\/run\.sh|Install CRAP analysis tools/);
+  assert.match(crap, /name: Upload CRAP reports\n\s+if: always\(\)/);
+  assert.match(crap, /tools\/crap\/run\.sh/);
+  assert.match(crap, /--base-baseline/);
 });
 
 test("badge publication is limited to successful develop pushes or manual runs", () => {
   assert.match(workflow, /publish-crap-badge:[\s\S]*github\.event_name == 'workflow_dispatch'[\s\S]*refs\/heads\/develop/);
-  assert.match(workflow, /needs: smoke/);
+  assert.match(workflow, /needs: crap/);
   assert.match(workflow, /pages: write/);
   assert.match(workflow, /id-token: write/);
   assert.match(workflow, /cp crap-reports\/badge\.json pages\/crap-badge\.json/);
