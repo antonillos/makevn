@@ -1,0 +1,235 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+MAKEVN_CRAP4JAVA_VERSION="0.1.0"
+MAKEVN_CRAP4JAVA_SHA256="b996434078d560d52a058e3d9ffb0d07a9469ecdc57c8b4fa241fa70252bf68e"
+MAKEVN_CRAP4JAVA_URL="https://github.com/antonillos/crap4java/releases/download/v${MAKEVN_CRAP4JAVA_VERSION}/crap4java-${MAKEVN_CRAP4JAVA_VERSION}.jar"
+
+makevn_crap_cache_jar() {
+  local cache_root="${XDG_CACHE_HOME:-${HOME:-}/.cache}"
+  [[ -n "${cache_root}" ]] || return 1
+  printf '%s/makevn/crap4java/%s/crap4java-%s.jar\n' \
+    "${cache_root}" "${MAKEVN_CRAP4JAVA_VERSION}" "${MAKEVN_CRAP4JAVA_VERSION}"
+}
+
+makevn_crap_sha256() {
+  local path="$1"
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "${path}" | awk '{print $1}'
+  elif command -v shasum >/dev/null 2>&1; then
+    shasum -a 256 "${path}" | awk '{print $1}'
+  else
+    return 1
+  fi
+}
+
+makevn_crap_install_analyzer() {
+  local jar_path=""
+  local tmp_path=""
+  local actual_sha=""
+
+  command -v curl >/dev/null 2>&1 || {
+    printf 'Error: curl is required to install crap4java.\n' >&2
+    return 2
+  }
+  jar_path="$(makevn_crap_cache_jar || true)"
+  [[ -n "${jar_path}" ]] || {
+    printf 'Error: HOME or XDG_CACHE_HOME is required to install crap4java.\n' >&2
+    return 2
+  }
+  mkdir -p "$(dirname "${jar_path}")"
+  tmp_path="${jar_path}.tmp.$$"
+  trap 'rm -f "${tmp_path}"' RETURN
+  printf 'Downloading crap4java v%s from %s\n' "${MAKEVN_CRAP4JAVA_VERSION}" "${MAKEVN_CRAP4JAVA_URL}"
+  if ! curl -fsSL "${MAKEVN_CRAP4JAVA_URL}" -o "${tmp_path}"; then
+    printf 'Error: failed to download crap4java v%s.\n' "${MAKEVN_CRAP4JAVA_VERSION}" >&2
+    return 2
+  fi
+  actual_sha="$(makevn_crap_sha256 "${tmp_path}" || true)"
+  [[ -n "${actual_sha}" ]] || {
+    printf 'Error: sha256sum or shasum is required to verify crap4java.\n' >&2
+    return 2
+  }
+  if [[ "${actual_sha}" != "${MAKEVN_CRAP4JAVA_SHA256}" ]]; then
+    printf 'Error: crap4java checksum mismatch (expected %s, got %s).\n' \
+      "${MAKEVN_CRAP4JAVA_SHA256}" "${actual_sha}" >&2
+    return 2
+  fi
+  mv "${tmp_path}" "${jar_path}"
+  trap - RETURN
+  printf 'Installed crap4java: %s\n' "${jar_path}"
+}
+
+makevn_crap_validate_number() {
+  python3 - "$1" <<'PY'
+import math, sys
+try:
+    value = float(sys.argv[1])
+except ValueError:
+    raise SystemExit(1)
+raise SystemExit(0 if math.isfinite(value) and value >= 0 else 1)
+PY
+}
+
+makevn_crap_validate_count() {
+  [[ "$1" =~ ^[0-9]+$ ]]
+}
+
+makevn_crap_module_root_for_xml() {
+  local maven_base_path="$1"
+  local xml_path="$2"
+  local prefix="${xml_path%%/target/site/*}"
+  if [[ "${xml_path}" == */jacoco-aggregate/jacoco.xml ]]; then
+    printf '%s\n' "${maven_base_path}"
+  else
+    printf '%s\n' "${prefix}"
+  fi
+}
+
+cmd_crap() {
+  local repo_root="$1"
+  local external_jar="${MAKEVN_CRAP4JAVA_JAR:-}"
+  local maven_base_path=""
+  local explicit_xml=""
+  local threshold=""
+  local max_warnings=""
+  local analyzer_jar=""
+  local cached_jar=""
+  local java_home=""
+  local java_bin=""
+  local report_dir="${repo_root}/.makevn/reports/crap"
+  local raw_dir="${report_dir}/raw"
+  local reporter="${MAKEVN_LIBEXEC_DIR}/crap/report.py"
+  local xml_path=""
+  local module_root=""
+  local raw_log=""
+  local raw_json=""
+  local rc=0
+  local -a xml_reports=()
+  local -a report_args=()
+
+  shift
+  if [[ "${1:-}" == "install-analyzer" ]]; then
+    shift
+    [[ $# -eq 0 ]] || {
+      printf 'Error: crap install-analyzer does not accept extra arguments.\n' >&2
+      return 2
+    }
+    makevn_crap_install_analyzer
+    return $?
+  fi
+
+  makevn_load_config "${repo_root}"
+  threshold="${MAKEVN_CRAP_THRESHOLD:-8}"
+  max_warnings="${MAKEVN_CRAP_MAX_WARNINGS:-}"
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --jacoco-xml)
+        [[ $# -ge 2 ]] || { printf 'Error: Missing value for --jacoco-xml\n' >&2; return 2; }
+        explicit_xml="$2"
+        shift 2
+        ;;
+      --threshold)
+        [[ $# -ge 2 ]] || { printf 'Error: Missing value for --threshold\n' >&2; return 2; }
+        threshold="$2"
+        shift 2
+        ;;
+      --max-warnings)
+        [[ $# -ge 2 ]] || { printf 'Error: Missing value for --max-warnings\n' >&2; return 2; }
+        max_warnings="$2"
+        shift 2
+        ;;
+      *)
+        printf 'Error: Unknown crap option: %s\n' "$1" >&2
+        return 2
+        ;;
+    esac
+  done
+
+  command -v python3 >/dev/null 2>&1 || { printf 'Error: python3 is required by makevn crap.\n' >&2; return 2; }
+  makevn_crap_validate_number "${threshold}" || { printf 'Error: --threshold must be a finite non-negative number.\n' >&2; return 2; }
+  if [[ -n "${max_warnings}" ]]; then
+    makevn_crap_validate_count "${max_warnings}" || { printf 'Error: --max-warnings must be a non-negative integer.\n' >&2; return 2; }
+  fi
+
+  maven_base_path="$(makevn_detect_maven_base_path "${repo_root}" || true)"
+  [[ -n "${maven_base_path}" ]] || { printf 'Error: No Maven project detected in %s.\n' "${repo_root}" >&2; return 2; }
+
+  cached_jar="$(makevn_crap_cache_jar || true)"
+  if [[ -n "${external_jar}" ]]; then
+    analyzer_jar="${external_jar}"
+  elif [[ -n "${MAKEVN_CRAP4JAVA_JAR:-}" ]]; then
+    analyzer_jar="${MAKEVN_CRAP4JAVA_JAR}"
+  elif [[ -n "${cached_jar}" && -f "${cached_jar}" ]]; then
+    analyzer_jar="${cached_jar}"
+  fi
+  if [[ -z "${analyzer_jar}" || ! -f "${analyzer_jar}" ]]; then
+    printf 'Error: crap4java is not installed. Set MAKEVN_CRAP4JAVA_JAR or run `makevn crap install-analyzer`.\n' >&2
+    return 2
+  fi
+
+  if [[ -n "${explicit_xml}" ]]; then
+    [[ "${explicit_xml}" = /* ]] || explicit_xml="${repo_root}/${explicit_xml}"
+    [[ -f "${explicit_xml}" ]] || { printf 'Error: JaCoCo XML not found: %s\n' "${explicit_xml}" >&2; return 2; }
+    xml_reports=("${explicit_xml}")
+  else
+    while IFS= read -r xml_path; do
+      [[ -n "${xml_path}" ]] && xml_reports+=("${xml_path}")
+    done < <(find "${maven_base_path}" -path '*/target/site/jacoco*/jacoco.xml' -type f -print 2>/dev/null | LC_ALL=C sort)
+    if printf '%s\n' "${xml_reports[@]:-}" | grep -q '/jacoco-aggregate/jacoco.xml$'; then
+      while IFS= read -r xml_path; do
+        [[ -n "${xml_path}" ]] && { xml_reports=("${xml_path}"); break; }
+      done < <(printf '%s\n' "${xml_reports[@]}" | grep '/jacoco-aggregate/jacoco.xml$')
+    fi
+  fi
+  [[ ${#xml_reports[@]} -gt 0 ]] || {
+    printf 'Error: No JaCoCo XML report found. Run `makevn verify-ut-coverage` or pass --jacoco-xml.\n' >&2
+    return 2
+  }
+
+  java_home="$(makevn_effective_java_home "${repo_root}" code "${maven_base_path}" || true)"
+  if [[ -n "${java_home}" && -x "${java_home}/bin/java" ]]; then
+    java_bin="${java_home}/bin/java"
+  elif command -v java >/dev/null 2>&1; then
+    java_bin="$(command -v java)"
+  else
+    printf 'Error: Java is required to run crap4java.\n' >&2
+    return 2
+  fi
+  [[ -f "${reporter}" ]] || { printf 'Error: Internal CRAP reporter not found: %s\n' "${reporter}" >&2; return 2; }
+
+  mkdir -p "${raw_dir}"
+  rm -f "${report_dir}/report.json" "${report_dir}/report.md" "${report_dir}/report.sarif" "${report_dir}/summary.txt"
+  rm -f "${raw_dir}"/*.json "${raw_dir}"/*.log 2>/dev/null || true
+  report_args=(--output-dir "${report_dir}" --threshold "${threshold}")
+  [[ -z "${max_warnings}" ]] || report_args+=(--max-warnings "${max_warnings}")
+
+  local report_index=0
+  for xml_path in "${xml_reports[@]}"; do
+    module_root="$(makevn_crap_module_root_for_xml "${maven_base_path}" "${xml_path}")"
+    report_index=$((report_index + 1))
+    raw_log="${raw_dir}/report-${report_index}.log"
+    raw_json="${raw_log%.log}.json"
+    set +e
+    "${java_bin}" -jar "${analyzer_jar}" \
+      --format json --jacoco-xml "${xml_path}" --report-only --threshold "${threshold}" \
+      "${module_root}" >"${raw_json}" 2>"${raw_log}"
+    rc=$?
+    set -e
+    if [[ ${rc} -ne 0 ]]; then
+      tail -n 40 "${raw_log}" >&2 || true
+      printf 'Error: crap4java analysis failed for %s (exit %s).\n' "${module_root}" "${rc}" >&2
+      return 2
+    fi
+    [[ -s "${raw_json}" ]] || { printf 'Error: crap4java produced no JSON for %s.\n' "${module_root}" >&2; return 2; }
+    report_args+=(--input "${raw_json}")
+  done
+
+  set +e
+  python3 "${reporter}" "${report_args[@]}"
+  rc=$?
+  set -e
+  [[ -f "${report_dir}/summary.txt" ]] && cat "${report_dir}/summary.txt"
+  printf 'Artifacts: %s\n' "${report_dir}"
+  return ${rc}
+}

@@ -1,0 +1,93 @@
+#!/usr/bin/env python3
+import argparse
+import json
+import math
+import sys
+from pathlib import Path
+
+
+def arguments():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--input", action="append", required=True)
+    parser.add_argument("--output-dir", required=True)
+    parser.add_argument("--threshold", type=float, default=8.0)
+    parser.add_argument("--max-warnings", type=int)
+    return parser.parse_args()
+
+
+def normalize(entry, threshold):
+    class_name = entry.get("class") or ""
+    method = entry.get("method") or entry.get("function") or "<unknown>"
+    symbol = f"{class_name}#{method}" if class_name else method
+    line = entry.get("line", 1)
+    end_line = entry.get("end_line") or line
+    crap = entry.get("crap")
+    return {
+        "language": "java",
+        "file": entry.get("file", ""),
+        "line": line,
+        "end_line": end_line,
+        "range": {"start_line": line, "end_line": end_line},
+        "symbol": symbol,
+        "complexity": entry.get("complexity", entry.get("cyclomatic")),
+        "coverage_percent": entry.get("coverage_percent", entry.get("coverage")),
+        "crap": crap,
+        "status": entry.get("status", "measured" if crap is not None else "missing-coverage"),
+        "recommendation": "reduce complexity or add focused tests" if crap is not None and crap > threshold else "none",
+    }
+
+
+def score(value):
+    return "N/A" if value is None else f"{value:.2f}"
+
+
+def main():
+    args = arguments()
+    if not math.isfinite(args.threshold) or args.threshold < 0 or args.max_warnings is not None and args.max_warnings < 0:
+        return 2
+    entries = []
+    try:
+        for source in args.input:
+            payload = json.loads(Path(source).read_text())
+            if not isinstance(payload.get("entries"), list):
+                raise ValueError(f"missing entries array: {source}")
+            entries.extend(normalize(entry, args.threshold) for entry in payload["entries"])
+    except (OSError, json.JSONDecodeError, ValueError) as exc:
+        print(f"Error: invalid crap4java report: {exc}", file=sys.stderr)
+        return 2
+    if not entries or not any(entry["crap"] is not None for entry in entries):
+        print("Error: CRAP report contains no measured Java methods.", file=sys.stderr)
+        return 2
+    entries.sort(key=lambda entry: (-(entry["crap"] if entry["crap"] is not None else -1), entry["file"], entry["line"], entry["symbol"]))
+    warnings = [entry for entry in entries if entry["crap"] is not None and entry["crap"] > args.threshold]
+    gate = {"mode": "report-only", "warnings": len(warnings), "status": "reported"}
+    if args.max_warnings is not None:
+        gate = {"mode": "ratchet", "max_warnings": args.max_warnings, "warnings": len(warnings), "status": "passed" if len(warnings) <= args.max_warnings else "failed"}
+    report = {
+        "schema": "https://github.com/antonillos/makevn/crap-report-v1.json",
+        "formula": "CC^2 * (1 - coverage)^3 + CC",
+        "threshold": args.threshold,
+        "entries": entries,
+        "diagnostics": {"java_methods": len(entries), "missing_coverage": sum(entry["crap"] is None for entry in entries)},
+        "gate": gate,
+    }
+    out = Path(args.output_dir)
+    out.mkdir(parents=True, exist_ok=True)
+    (out / "report.json").write_text(json.dumps(report, indent=2) + "\n")
+    lines = ["# CRAP Report", "", f"**Status:** {gate['status'].upper()}", f"**Threshold:** CRAP > {args.threshold:g}", "", "| Location | Symbol | CRAP | CC | Coverage |", "|---|---|---:|---:|---:|"]
+    for entry in warnings[:25]:
+        coverage = "N/A" if entry["coverage_percent"] is None else f"{entry['coverage_percent']:.2f}%"
+        lines.append(f"| `{entry['file']}:{entry['line']}` | {entry['symbol'].replace('|', chr(92) + '|')} | {score(entry['crap'])} | {score(entry['complexity'])} | {coverage} |")
+    if not warnings:
+        lines.append("| — | No findings exceed the threshold | — | — | — |")
+    (out / "report.md").write_text("\n".join(lines) + "\n")
+    sarif_results = [{"ruleId": "CRAP", "level": "warning", "message": {"text": f"{entry['symbol']} CRAP={score(entry['crap'])}, CC={score(entry['complexity'])}."}, "locations": [{"physicalLocation": {"artifactLocation": {"uri": entry["file"]}, "region": {"startLine": entry["line"]}}}]} for entry in warnings]
+    sarif = {"version": "2.1.0", "$schema": "https://json.schemastore.org/sarif-2.1.0.json", "runs": [{"tool": {"driver": {"name": "makevn-crap", "informationUri": "https://github.com/antonillos/crap4java"}}, "results": sarif_results}]}
+    (out / "report.sarif").write_text(json.dumps(sarif, indent=2) + "\n")
+    summary = ["CRAP report completed", f"Gate: {gate['status'].upper()}" + (f" ({len(warnings)}/{args.max_warnings} warnings)" if args.max_warnings is not None else " (no warning-count limit configured)"), f"Methods: {len(entries)}", f"Warnings: {len(warnings)}", f"Missing coverage: {report['diagnostics']['missing_coverage']}"]
+    (out / "summary.txt").write_text("\n".join(summary) + "\n")
+    return 1 if gate["status"] == "failed" else 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

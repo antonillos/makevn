@@ -211,18 +211,28 @@ cmd_verify_ut() {
   fi
 }
 
+makevn_require_jacoco_xml_report() {
+  local maven_base_path="$1"
+  local jacoco_xml_count=""
+
+  jacoco_xml_count="$(find "${maven_base_path}" -path '*/target/site/jacoco*/jacoco.xml' -type f -print 2>/dev/null | wc -l | tr -d '[:space:]')"
+  if [[ ! "${jacoco_xml_count}" =~ ^[1-9][0-9]*$ ]]; then
+    makevn_die "coverage verification completed without generating a JaCoCo XML report. Configure jacoco-maven-plugin (or its coverage profile); -Djacoco.skip=false alone does not generate coverage."
+  fi
+}
+
 cmd_verify_ut_coverage() {
   local repo_root="$1"
   local maven_base_path=""
-  local maven_base_rel=""
   local rc=0
 
   cmd_verify_ut "${repo_root}" "${@:2}"
   rc=$?
-  if [[ ${rc} -eq 0 ]]; then
-    maven_base_path="$(makevn_detect_maven_base_path "${repo_root}" || true)"
-    [[ -n "${maven_base_path}" ]] && makevn_print_jacoco_report_hint "${maven_base_path}"
-  fi
+  [[ ${rc} -eq 0 ]] || return ${rc}
+  maven_base_path="$(makevn_detect_maven_base_path "${repo_root}" || true)"
+  [[ -z "${maven_base_path}" ]] && return 0
+  makevn_require_jacoco_xml_report "${maven_base_path}"
+  makevn_print_jacoco_report_hint "${maven_base_path}"
   return ${rc}
 }
 
@@ -244,10 +254,11 @@ cmd_verify_it_coverage() {
 
   cmd_verify_it "${repo_root}" "${@:2}"
   rc=$?
-  if [[ ${rc} -eq 0 ]]; then
-    maven_base_path="$(makevn_detect_maven_base_path "${repo_root}" || true)"
-    [[ -n "${maven_base_path}" ]] && makevn_print_jacoco_report_hint "${maven_base_path}"
-  fi
+  [[ ${rc} -eq 0 ]] || return ${rc}
+  maven_base_path="$(makevn_detect_maven_base_path "${repo_root}" || true)"
+  [[ -z "${maven_base_path}" ]] && return 0
+  makevn_require_jacoco_xml_report "${maven_base_path}"
+  makevn_print_jacoco_report_hint "${maven_base_path}"
   return ${rc}
 }
 
