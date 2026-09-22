@@ -13,16 +13,25 @@ SHELL_REPORTER = ROOT / "tools/crap/shell_report.py"
 
 
 class CrapReportTests(unittest.TestCase):
-    def run_report(self, rust_crap=9, shell_crap=7, limits=(1, 0), base_limits=None):
+    def run_report(
+        self,
+        rust_crap=9,
+        shell_crap=7,
+        limits=(1, 0),
+        base_limits=None,
+        threshold=8,
+        base_threshold=None,
+        effective_threshold=8,
+    ):
         with tempfile.TemporaryDirectory() as directory:
             tmp = Path(directory)
             for language, crap in (("rust", rust_crap), ("shell", shell_crap)):
                 (tmp / f"{language}.json").write_text(json.dumps({"entries": [{"file": f"src.{language}", "line": 1, "function": "main", "cyclomatic": 2, "coverage": 50, "crap": crap}]}))
-            baseline = {"max_warnings": {"rust": limits[0], "shell": limits[1], "total": sum(limits)}}
+            baseline = {"threshold": threshold, "max_warnings": {"rust": limits[0], "shell": limits[1], "total": sum(limits)}}
             (tmp / "baseline.json").write_text(json.dumps(baseline))
-            args = ["python3", str(REPORTER), "--rust", str(tmp / "rust.json"), "--shell", str(tmp / "shell.json"), "--baseline", str(tmp / "baseline.json"), "--output-dir", str(tmp / "out")]
+            args = ["python3", str(REPORTER), "--rust", str(tmp / "rust.json"), "--shell", str(tmp / "shell.json"), "--baseline", str(tmp / "baseline.json"), "--output-dir", str(tmp / "out"), "--threshold", str(effective_threshold)]
             if base_limits:
-                (tmp / "base.json").write_text(json.dumps({"max_warnings": {"rust": base_limits[0], "shell": base_limits[1], "total": sum(base_limits)}}))
+                (tmp / "base.json").write_text(json.dumps({"threshold": threshold if base_threshold is None else base_threshold, "max_warnings": {"rust": base_limits[0], "shell": base_limits[1], "total": sum(base_limits)}}))
                 args += ["--base-baseline", str(tmp / "base.json")]
             result = subprocess.run(args, text=True, capture_output=True, check=False)
             report = json.loads((tmp / "out/report.json").read_text()) if (tmp / "out/report.json").exists() else None
@@ -42,6 +51,16 @@ class CrapReportTests(unittest.TestCase):
         result, _ = self.run_report(limits=(0, 0), base_limits=(1, 0))
         self.assertEqual(result.returncode, 1)  # valid reduction, current warning now breaks it
         result, report = self.run_report(limits=(2, 0), base_limits=(1, 0))
+        self.assertEqual(result.returncode, 2)
+        self.assertIsNone(report)
+
+    def test_threshold_may_decrease_but_never_increase_or_diverge(self):
+        result, _ = self.run_report(base_limits=(1, 0), threshold=7, base_threshold=8, effective_threshold=7)
+        self.assertEqual(result.returncode, 0)
+        result, report = self.run_report(base_limits=(1, 0), threshold=9, base_threshold=8, effective_threshold=9)
+        self.assertEqual(result.returncode, 2)
+        self.assertIsNone(report)
+        result, report = self.run_report(effective_threshold=9)
         self.assertEqual(result.returncode, 2)
         self.assertIsNone(report)
 

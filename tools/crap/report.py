@@ -59,6 +59,15 @@ def main():
                 raise ValueError(f"{name} report contains no entries")
         limits = baseline["max_warnings"]
         old_limits = base_baseline["max_warnings"]
+        threshold = baseline["threshold"]
+        old_threshold = base_baseline["threshold"]
+        for value, name in ((threshold, "baseline threshold"), (old_threshold, "base-branch threshold")):
+            if isinstance(value, bool) or not isinstance(value, (int, float)) or value < 0:
+                raise ValueError(f"invalid {name}")
+        if threshold > old_threshold:
+            raise ValueError(f"CRAP threshold cannot increase ({old_threshold:g} -> {threshold:g})")
+        if args.threshold != threshold:
+            raise ValueError(f"effective threshold {args.threshold:g} must match baseline threshold {threshold:g}")
         for language in ("rust", "shell"):
             if not isinstance(limits[language], int) or limits[language] < 0:
                 raise ValueError(f"invalid {language} baseline")
