@@ -16,10 +16,12 @@ test("CRAP reports are uploaded even when the ratchet fails", () => {
   assert.match(crap, /name: Upload CRAP reports\n\s+if: always\(\)/);
   assert.match(crap, /tools\/crap\/run\.sh/);
   assert.match(crap, /--base-baseline/);
+  assert.match(workflow, /base_ref:[\s\S]*CRAP_BASE_REF:/);
+  assert.match(crap, /\[\[ -f "\$\{RUNNER_TEMP\}\/crap-base-baseline\.json" \]\]/);
 });
 
 test("badge publication is limited to successful develop pushes or manual runs", () => {
-  assert.match(workflow, /publish-crap-badge:[\s\S]*github\.event_name == 'workflow_dispatch'[\s\S]*refs\/heads\/develop/);
+  assert.match(workflow, /publish-crap-badge:[\s\S]*github\.event_name == 'workflow_dispatch' && inputs\.publish_badge[\s\S]*refs\/heads\/develop/);
   assert.match(workflow, /needs: crap/);
   assert.match(workflow, /pages: write/);
   assert.match(workflow, /id-token: write/);

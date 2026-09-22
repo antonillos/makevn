@@ -237,6 +237,10 @@ jobs:
                 repo,
                 workflow_id: "verify.yml",
                 ref: pull.head.ref,
+                inputs: {
+                  base_ref: pull.base.ref,
+                  publish_badge: "false",
+                },
                 request: githubApiRequest,
               });
 

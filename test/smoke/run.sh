@@ -4538,6 +4538,21 @@ test_crap_command_uses_maven_root_for_custom_xml_path() {
     || fail "expected custom JaCoCo XML to use the Maven project directory as analyzer root"
 }
 
+test_crap_command_discovers_custom_xml_path() {
+  local repo="${TMP_ROOT}/crap-discover-custom-xml"
+
+  setup_crap_fixture "${repo}"
+  rm -f "${repo}/module-a/target/site/jacoco/jacoco.xml" "${repo}/module-b/target/site/jacoco/jacoco.xml"
+  mkdir -p "${repo}/target/coverage"
+  printf '<report name="custom"/>\n' > "${repo}/target/coverage/jacoco.xml"
+  ${CLI} --repo "${repo}" crap >/dev/null
+
+  [[ "$(wc -l < "${repo}/java.log" | tr -d '[:space:]')" == "1" ]] \
+    || fail "expected one discovered custom JaCoCo XML invocation"
+  grep -q -- '/target/coverage/jacoco.xml' "${repo}/java.log" \
+    || fail "expected custom JaCoCo XML discovery"
+}
+
 test_crap_command_prefers_aggregate_jacoco() {
   local repo="${TMP_ROOT}/crap-aggregate"
 
@@ -4678,6 +4693,7 @@ main() {
   test_crap_command_uses_existing_jacoco_and_writes_reports
   test_crap_command_gate_and_explicit_xml
   test_crap_command_uses_maven_root_for_custom_xml_path
+  test_crap_command_discovers_custom_xml_path
   test_crap_command_prefers_aggregate_jacoco
   test_crap_command_fails_closed_without_analyzer
   test_crap_install_analyzer_verifies_pinned_download

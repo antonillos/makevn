@@ -177,7 +177,7 @@ cmd_crap() {
   else
     while IFS= read -r xml_path; do
       [[ -n "${xml_path}" ]] && xml_reports+=("${xml_path}")
-    done < <(find "${maven_base_path}" -path '*/target/site/jacoco*/jacoco.xml' -type f -print 2>/dev/null | LC_ALL=C sort)
+    done < <(find "${maven_base_path}" -path '*/target/*' -name 'jacoco.xml' -type f -print 2>/dev/null | LC_ALL=C sort)
     if printf '%s\n' "${xml_reports[@]:-}" | grep -q '/jacoco-aggregate/jacoco.xml$'; then
       while IFS= read -r xml_path; do
         [[ -n "${xml_path}" ]] && { xml_reports=("${xml_path}"); break; }

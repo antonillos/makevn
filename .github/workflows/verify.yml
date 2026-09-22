@@ -9,6 +9,16 @@ on:
     branches:
       - develop
   workflow_dispatch:
+    inputs:
+      base_ref:
+        description: Base branch used to enforce the CRAP baseline ratchet
+        required: false
+        type: string
+      publish_badge:
+        description: Publish the CRAP badge after a successful manual run
+        required: false
+        default: true
+        type: boolean
 
 permissions:
   contents: read
@@ -107,10 +117,12 @@ jobs:
           echo "1aab5caf551811a506f11e569a1c4cf00ddd960d9212428531efb075f45d0a5d  ${RUNNER_TEMP}/shellmetrics" | sha256sum --check
           chmod +x "${RUNNER_TEMP}/shellmetrics"
       - name: Prepare base CRAP baseline
-        if: github.event_name == 'pull_request'
+        if: github.event_name == 'pull_request' || (github.event_name == 'workflow_dispatch' && inputs.base_ref != '')
         shell: bash
+        env:
+          CRAP_BASE_REF: ${{ github.event_name == 'pull_request' && github.base_ref || inputs.base_ref }}
         run: |
-          if ! git show "origin/${{ github.base_ref }}:tools/crap/baseline.json" > "${RUNNER_TEMP}/crap-base-baseline.json"; then
+          if ! git show "origin/${CRAP_BASE_REF}:tools/crap/baseline.json" > "${RUNNER_TEMP}/crap-base-baseline.json"; then
             cp tools/crap/baseline.json "${RUNNER_TEMP}/crap-base-baseline.json"
           fi
       - name: Run CRAP ratchet
@@ -120,7 +132,7 @@ jobs:
         run: |
           set -euo pipefail
           args=()
-          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+          if [[ -f "${RUNNER_TEMP}/crap-base-baseline.json" ]]; then
             args+=(--base-baseline "${RUNNER_TEMP}/crap-base-baseline.json")
           fi
           tools/crap/run.sh "${args[@]}"
@@ -133,7 +145,7 @@ jobs:
           if-no-files-found: error
 
   publish-crap-badge:
-    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/develop')
+    if: (github.event_name == 'workflow_dispatch' && inputs.publish_badge) || (github.event_name == 'push' && github.ref == 'refs/heads/develop')
     needs: crap
     runs-on: ubuntu-latest
     permissions:
