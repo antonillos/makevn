@@ -183,6 +183,29 @@ class CrapReportTests(unittest.TestCase):
             self.assertEqual(entries["inline"]["end_line"], 1)
             self.assertEqual(entries["trailing"]["end_line"], 3)
 
+    def test_shell_report_treats_function_only_main_as_covered(self):
+        with tempfile.TemporaryDirectory() as directory:
+            tmp = Path(directory)
+            source = tmp / "fixture.sh"
+            source.write_text("only() { printf x; }\n")
+            complexity = tmp / "shell.csv"
+            complexity.write_text(
+                "file,func,lineno,lloc,ccn,lines,comment,blank\n"
+                '"fixture.sh","only",1,1,1,0,0,0\n'
+                '"fixture.sh","<main>",0,0,1,0,0,0\n'
+            )
+            coverage = tmp / "coverage.json"
+            coverage.write_text(json.dumps({"smoke": {"coverage": {str(source): {"lines": [1]}}}}))
+            output = tmp / "report.json"
+            result = subprocess.run(
+                ["python3", str(SHELL_REPORTER), "--root", str(tmp), "--complexity", str(complexity), "--coverage", str(coverage), "--output", str(output)],
+                text=True, capture_output=True, check=False,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            entries = {entry["function"]: entry for entry in json.loads(output.read_text())["entries"]}
+            self.assertEqual(entries["<main>"]["coverage"], 100.0)
+            self.assertEqual(entries["<main>"]["crap"], 1.0)
+
 
 if __name__ == "__main__":
     unittest.main()

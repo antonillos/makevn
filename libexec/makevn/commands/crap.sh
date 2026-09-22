@@ -109,9 +109,12 @@ cmd_crap() {
   local module_root=""
   local raw_log=""
   local raw_json=""
+  local source_dir=""
+  local source_file=""
   local rc=0
   local -a xml_reports=()
   local -a report_args=()
+  local -a java_sources=()
 
   shift
   if [[ "${1:-}" == "install-analyzer" ]]; then
@@ -212,21 +215,41 @@ cmd_crap() {
   local report_index=0
   for xml_path in "${xml_reports[@]}"; do
     module_root="$(makevn_crap_module_root_for_xml "${maven_base_path}" "${xml_path}")"
+    java_sources=()
+    if [[ "${xml_path}" == */jacoco-aggregate/jacoco.xml || "${module_root}" == "${maven_base_path}" ]]; then
+      while IFS= read -r source_dir; do
+        while IFS= read -r source_file; do
+          java_sources+=("${source_file}")
+        done < <(find "${source_dir}" -type f -name '*.java' -print | LC_ALL=C sort)
+      done < <(find "${maven_base_path}" -type d -path '*/src/main/java' ! -path '*/target/*' -print | LC_ALL=C sort)
+    else
+      source_dir="${module_root}/src/main/java"
+      if [[ -d "${source_dir}" ]]; then
+        while IFS= read -r source_file; do
+          java_sources+=("${source_file}")
+        done < <(find "${source_dir}" -type f -name '*.java' -print | LC_ALL=C sort)
+      fi
+    fi
+    [[ ${#java_sources[@]} -gt 0 ]] || {
+      printf 'Error: No production Java sources found for JaCoCo XML: %s\n' "${xml_path}" >&2
+      return 2
+    }
     report_index=$((report_index + 1))
     raw_log="${raw_dir}/report-${report_index}.log"
     raw_json="${raw_log%.log}.json"
     set +e
     "${java_bin}" -jar "${analyzer_jar}" \
       --format json --jacoco-xml "${xml_path}" --report-only --threshold "${threshold}" \
-      "${module_root}" >"${raw_json}" 2>"${raw_log}"
+      "${java_sources[@]}" >"${raw_json}" 2>"${raw_log}"
     rc=$?
     set -e
     if [[ ${rc} -ne 0 ]]; then
       tail -n 40 "${raw_log}" >&2 || true
       printf 'Error: crap4java analysis failed for %s (exit %s).\n' "${module_root}" "${rc}" >&2
+      printf 'Analyzer log: %s\n' "${raw_log}" >&2
       return 2
     fi
-    [[ -s "${raw_json}" ]] || { printf 'Error: crap4java produced no JSON for %s.\n' "${module_root}" >&2; return 2; }
+    [[ -s "${raw_json}" ]] || { printf 'Error: crap4java produced no JSON for %s. Analyzer log: %s\n' "${module_root}" "${raw_log}" >&2; return 2; }
     report_args+=(--input "${raw_json}")
   done
 
@@ -234,6 +257,13 @@ cmd_crap() {
   python3 "${reporter}" "${report_args[@]}"
   rc=$?
   set -e
+  if [[ ${rc} -eq 2 ]]; then
+    for raw_json in "${raw_dir}"/report-*.json; do
+      [[ -f "${raw_json}" ]] || continue
+      printf 'Analyzer JSON: %s\n' "${raw_json}" >&2
+      printf 'Analyzer log: %s (may be empty if analysis succeeded)\n' "${raw_json%.json}.log" >&2
+    done
+  fi
   [[ -f "${report_dir}/summary.txt" ]] && cat "${report_dir}/summary.txt"
   printf 'Artifacts: %s\n' "${report_dir}"
   return ${rc}

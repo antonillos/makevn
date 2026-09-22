@@ -114,7 +114,12 @@ def main():
                 end = function_ranges[start]
                 executable = [] if lines is None else [hit for hit in lines[start - 1:end] if hit is not None]
             covered = sum(hit > 0 for hit in executable)
-            percent = None if not executable else covered * 100.0 / len(executable)
+            if executable:
+                percent = covered * 100.0 / len(executable)
+            elif item["function"] == "<main>" and lines is not None:
+                percent = 100.0  # Function-only scripts have no top-level logic to cover.
+            else:
+                percent = None
             complexity = item["cyclomatic"]
             crap = None if percent is None else complexity ** 2 * (1 - percent / 100.0) ** 3 + complexity
             entries.append({"file": item["file"], "line": start, "end_line": end, "function": item["function"], "cyclomatic": complexity, "coverage": percent, "crap": crap, "status": "measured" if crap is not None else "missing-coverage"})

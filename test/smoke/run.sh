@@ -4479,8 +4479,11 @@ setup_crap_fixture() {
   local java_home="${repo}/fake-java"
 
   mkdir -p "${repo}/.git" "${repo}/.makevn" "${repo}/module-a/target/site/jacoco" \
-    "${repo}/module-b/target/site/jacoco" "${java_home}/bin"
+    "${repo}/module-b/target/site/jacoco" "${java_home}/bin" \
+    "${repo}/module-a/src/main/java/example" "${repo}/module-b/src/main/java/example"
   printf '<project/>\n' > "${repo}/pom.xml"
+  printf 'package example; class High {}\n' > "${repo}/module-a/src/main/java/example/High.java"
+  printf 'package example; class HighB {}\n' > "${repo}/module-b/src/main/java/example/HighB.java"
   printf '<report name="a"/>\n' > "${repo}/module-a/target/site/jacoco/jacoco.xml"
   printf '<report name="b"/>\n' > "${repo}/module-b/target/site/jacoco/jacoco.xml"
   printf 'fixture jar\n' > "${repo}/crap4java.jar"
@@ -4559,13 +4562,13 @@ test_crap_command_uses_maven_root_for_custom_xml_path() {
   ${CLI} --repo "${repo}" crap --jacoco-xml coverage/custom/jacoco.xml >/dev/null
 
   local invocation
-  local analyzer_root
+  local analyzer_source
   invocation="$(cat "${repo}/java.log")"
   [[ "${invocation}" == *"--jacoco-xml "*"/crap-custom-xml/coverage/custom/jacoco.xml"* ]] \
     || fail "expected custom JaCoCo XML path in analyzer invocation"
-  analyzer_root="${invocation##* }"
-  [[ "${analyzer_root}" == */crap-custom-xml ]] \
-    || fail "expected custom JaCoCo XML to use the Maven project directory as analyzer root"
+  analyzer_source="${invocation##* }"
+  [[ "${analyzer_source}" == */module-b/src/main/java/example/HighB.java ]] \
+    || fail "expected custom JaCoCo XML to analyze Maven production sources"
 }
 
 test_crap_command_discovers_custom_xml_path() {
@@ -4593,6 +4596,28 @@ test_crap_command_prefers_aggregate_jacoco() {
 
   [[ "$(wc -l < "${repo}/java.log" | tr -d '[:space:]')" == "1" ]] || fail "expected aggregate JaCoCo XML to be preferred"
   grep -q -- '/coverage/target/site/jacoco-aggregate/jacoco.xml' "${repo}/java.log" || fail "expected aggregate JaCoCo XML invocation"
+  grep -q -- '/module-a/src/main/java/example/High.java' "${repo}/java.log" || fail "expected aggregate analysis to include module-a production sources"
+  grep -q -- '/module-b/src/main/java/example/HighB.java' "${repo}/java.log" || fail "expected aggregate analysis to include module-b production sources"
+}
+
+test_crap_command_reports_empty_analyzer_json_path() {
+  local repo="${TMP_ROOT}/crap-empty-analyzer"
+  local output=""
+  local rc=0
+
+  setup_crap_fixture "${repo}"
+  cat > "${repo}/fake-java/bin/java" <<'EOF'
+#!/usr/bin/env bash
+printf '{"entries":[],"summary":{"functions":0}}\n'
+EOF
+  chmod +x "${repo}/fake-java/bin/java"
+  set +e
+  output="$(${CLI} --repo "${repo}" crap 2>&1)"
+  rc=$?
+  set -e
+  [[ ${rc} -eq 2 ]] || fail "expected empty analyzer report to fail with exit 2"
+  [[ "${output}" == *"crap-empty-analyzer/.makevn/reports/crap/raw/report-1.json"* ]] \
+    || fail "expected CRAP failure to point to raw analyzer reports"
 }
 
 test_crap_command_fails_closed_without_analyzer() {
@@ -4742,6 +4767,7 @@ main() {
   test_crap_command_uses_maven_root_for_custom_xml_path
   test_crap_command_discovers_custom_xml_path
   test_crap_command_prefers_aggregate_jacoco
+  test_crap_command_reports_empty_analyzer_json_path
   test_crap_command_fails_closed_without_analyzer
   test_crap_install_analyzer_verifies_pinned_download
   test_crap_install_analyzer_requires_cache_home
