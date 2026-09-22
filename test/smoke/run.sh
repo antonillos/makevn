@@ -1153,7 +1153,7 @@ test_runtime_archive_includes_crap_reporter() {
 
   MAKEVN_BIN_DIR="${bin_dir}" bash "${ROOT_DIR}/packaging/release/build-runtime-archive.sh" \
     v0.0.0 smoke "${dist_dir}" >/dev/null
-  tar -tzf "${archive}" | grep -Fxq 'makevn-0.0.0-smoke/libexec/makevn/crap/report.py' \
+  tar -tzf "${archive}" | grep -Fx 'makevn-0.0.0-smoke/libexec/makevn/crap/report.py' >/dev/null \
     || fail "runtime archive should include CRAP reporter"
 }
 
