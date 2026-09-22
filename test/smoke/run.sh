@@ -1122,6 +1122,7 @@ test_installer() {
   assert_file_exists "${prefix}/libexec/makevn/jdk/manager.sh"
   assert_file_exists "${prefix}/libexec/makevn/docker/ps.sh"
   assert_file_exists "${prefix}/libexec/makevn/coverage/changes.sh"
+  assert_file_exists "${prefix}/libexec/makevn/crap/report.py"
   assert_file_exists "${prefix}/libexec/makevn/compat/verify_changes.sh"
   assert_file_exists "${prefix}/share/makevn/makevn.mk"
   assert_file_exists "${prefix}/share/makevn/skills/makevn/SKILL.md"
@@ -4101,7 +4102,8 @@ test_verify_coverage_fails_when_maven_produces_no_report() {
   local output
   local rc=0
 
-  mkdir -p "${repo}/.makevn"
+  mkdir -p "${repo}/.makevn" "${repo}/target/site/jacoco"
+  printf '<stale-report/>\n' > "${repo}/target/site/jacoco/jacoco.xml"
   printf '<project/>\n' > "${repo}/pom.xml"
   java_home="$(detect_java_home)"
   cat > "${repo}/.makevn/config" <<EOF
@@ -4468,6 +4470,24 @@ test_crap_command_gate_and_explicit_xml() {
   [[ "$(wc -l < "${repo}/java.log" | tr -d '[:space:]')" == "1" ]] || fail "expected explicit JaCoCo XML to run once"
 }
 
+test_crap_command_uses_maven_root_for_custom_xml_path() {
+  local repo="${TMP_ROOT}/crap-custom-xml"
+
+  setup_crap_fixture "${repo}"
+  mkdir -p "${repo}/coverage/custom"
+  printf '<report name="custom"/>\n' > "${repo}/coverage/custom/jacoco.xml"
+  ${CLI} --repo "${repo}" crap --jacoco-xml coverage/custom/jacoco.xml >/dev/null
+
+  local invocation
+  local analyzer_root
+  invocation="$(cat "${repo}/java.log")"
+  [[ "${invocation}" == *"--jacoco-xml "*"/crap-custom-xml/coverage/custom/jacoco.xml"* ]] \
+    || fail "expected custom JaCoCo XML path in analyzer invocation"
+  analyzer_root="${invocation##* }"
+  [[ "${analyzer_root}" == */crap-custom-xml ]] \
+    || fail "expected custom JaCoCo XML to use the Maven project directory as analyzer root"
+}
+
 test_crap_command_prefers_aggregate_jacoco() {
   local repo="${TMP_ROOT}/crap-aggregate"
 
@@ -4605,6 +4625,7 @@ main() {
   test_verify_coverage_fails_when_maven_produces_no_report
   test_crap_command_uses_existing_jacoco_and_writes_reports
   test_crap_command_gate_and_explicit_xml
+  test_crap_command_uses_maven_root_for_custom_xml_path
   test_crap_command_prefers_aggregate_jacoco
   test_crap_command_fails_closed_without_analyzer
   test_crap_install_analyzer_verifies_pinned_download

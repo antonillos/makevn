@@ -189,7 +189,7 @@ analyzes every detected module-local XML, merging the results under
 exceeded. Configuration, analyzer, and coverage errors exit `2`.
 
 The analyzer is resolved from the `MAKEVN_CRAP4JAVA_JAR` environment variable,
-then the setting with the same name in `.makevn/config.env`, then the managed
+then the setting with the same name in `.makevn/config`, then the managed
 user cache. `makevn crap install-analyzer` is the only operation that downloads
 the pinned `antonillos/crap4java` v0.1.0 artifact, and verifies its SHA-256 before
 installing it.

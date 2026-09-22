@@ -221,16 +221,30 @@ makevn_require_jacoco_xml_report() {
   fi
 }
 
+makevn_remove_jacoco_xml_reports() {
+  local maven_base_path="$1"
+  local xml_path=""
+
+  while IFS= read -r xml_path; do
+    [[ -n "${xml_path}" ]] || continue
+    rm -f "${xml_path}"
+  done < <(find "${maven_base_path}" -path '*/target/site/jacoco*/jacoco.xml' -type f -print 2>/dev/null)
+}
+
 cmd_verify_ut_coverage() {
   local repo_root="$1"
   local maven_base_path=""
   local rc=0
 
-  cmd_verify_ut "${repo_root}" "${@:2}"
-  rc=$?
-  [[ ${rc} -eq 0 ]] || return ${rc}
   maven_base_path="$(makevn_detect_maven_base_path "${repo_root}" || true)"
   [[ -z "${maven_base_path}" ]] && return 0
+  makevn_remove_jacoco_xml_reports "${maven_base_path}"
+  if cmd_verify_ut "${repo_root}" "${@:2}"; then
+    rc=0
+  else
+    rc=$?
+  fi
+  [[ ${rc} -eq 0 ]] || return ${rc}
   makevn_require_jacoco_xml_report "${maven_base_path}"
   makevn_print_jacoco_report_hint "${maven_base_path}"
   return ${rc}
@@ -252,11 +266,15 @@ cmd_verify_it_coverage() {
   local maven_base_path=""
   local rc=0
 
-  cmd_verify_it "${repo_root}" "${@:2}"
-  rc=$?
-  [[ ${rc} -eq 0 ]] || return ${rc}
   maven_base_path="$(makevn_detect_maven_base_path "${repo_root}" || true)"
   [[ -z "${maven_base_path}" ]] && return 0
+  makevn_remove_jacoco_xml_reports "${maven_base_path}"
+  if cmd_verify_it "${repo_root}" "${@:2}"; then
+    rc=0
+  else
+    rc=$?
+  fi
+  [[ ${rc} -eq 0 ]] || return ${rc}
   makevn_require_jacoco_xml_report "${maven_base_path}"
   makevn_print_jacoco_report_hint "${maven_base_path}"
   return ${rc}

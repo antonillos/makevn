@@ -81,8 +81,10 @@ makevn_crap_module_root_for_xml() {
   local prefix="${xml_path%%/target/site/*}"
   if [[ "${xml_path}" == */jacoco-aggregate/jacoco.xml ]]; then
     printf '%s\n' "${maven_base_path}"
-  else
+  elif [[ "${xml_path}" == */target/site/* && -d "${prefix}" ]]; then
     printf '%s\n' "${prefix}"
+  else
+    printf '%s\n' "${maven_base_path}"
   fi
 }
 
