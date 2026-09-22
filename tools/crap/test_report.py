@@ -9,6 +9,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 REPORTER = ROOT / "tools/crap/report.py"
 JAVA_REPORTER = ROOT / "libexec/makevn/crap/report.py"
+SHELL_REPORTER = ROOT / "tools/crap/shell_report.py"
 
 
 class CrapReportTests(unittest.TestCase):
@@ -77,6 +78,54 @@ class CrapReportTests(unittest.TestCase):
 
             self.assertEqual(result.returncode, 2)
             self.assertIn("1 Java method(s) without coverage", result.stderr)
+
+    def test_shell_report_uses_lexical_function_ranges(self):
+        with tempfile.TemporaryDirectory() as directory:
+            tmp = Path(directory)
+            source = tmp / "fixture.sh"
+            source.write_text("last() {\n  printf 'untested\\n'\n}\nprintf 'covered main\\n'\n")
+            complexity = tmp / "shell.csv"
+            complexity.write_text(
+                "file,func,lineno,lloc,ccn,lines,comment,blank\n"
+                '"fixture.sh","last",1,1,2,0,0,0\n'
+                '"fixture.sh","<main>",0,1,2,0,0,0\n'
+            )
+            coverage = tmp / "coverage.json"
+            coverage.write_text(
+                json.dumps(
+                    {
+                        "smoke": {
+                            "coverage": {
+                                str(source): {"lines": [None, 0, None, 1]}
+                            }
+                        }
+                    }
+                )
+            )
+            output = tmp / "report.json"
+            result = subprocess.run(
+                [
+                    "python3",
+                    str(SHELL_REPORTER),
+                    "--root",
+                    str(tmp),
+                    "--complexity",
+                    str(complexity),
+                    "--coverage",
+                    str(coverage),
+                    "--output",
+                    str(output),
+                ],
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            entries = {entry["function"]: entry for entry in json.loads(output.read_text())["entries"]}
+            self.assertEqual(entries["last"]["end_line"], 3)
+            self.assertEqual(entries["last"]["coverage"], 0.0)
+            self.assertEqual(entries["<main>"]["coverage"], 100.0)
 
 
 if __name__ == "__main__":

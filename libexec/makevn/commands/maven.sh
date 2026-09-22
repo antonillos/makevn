@@ -215,7 +215,7 @@ makevn_require_jacoco_xml_report() {
   local maven_base_path="$1"
   local jacoco_xml_count=""
 
-  jacoco_xml_count="$(find "${maven_base_path}" -path '*/target/site/jacoco*/jacoco.xml' -type f -print 2>/dev/null | wc -l | tr -d '[:space:]')"
+  jacoco_xml_count="$(find "${maven_base_path}" -path '*/target/*' -name 'jacoco.xml' -type f -print 2>/dev/null | wc -l | tr -d '[:space:]')"
   if [[ ! "${jacoco_xml_count}" =~ ^[1-9][0-9]*$ ]]; then
     makevn_die "coverage verification completed without generating a JaCoCo XML report. Configure jacoco-maven-plugin (or its coverage profile); -Djacoco.skip=false alone does not generate coverage."
   fi
@@ -228,7 +228,7 @@ makevn_remove_jacoco_xml_reports() {
   while IFS= read -r xml_path; do
     [[ -n "${xml_path}" ]] || continue
     rm -f "${xml_path}"
-  done < <(find "${maven_base_path}" -path '*/target/site/jacoco*/jacoco.xml' -type f -print 2>/dev/null)
+  done < <(find "${maven_base_path}" -path '*/target/*' -name 'jacoco.xml' -type f -print 2>/dev/null)
 }
 
 cmd_verify_ut_coverage() {

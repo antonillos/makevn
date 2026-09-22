@@ -2,6 +2,8 @@
 import argparse
 import csv
 import json
+import os
+import subprocess
 import sys
 from pathlib import Path
 
@@ -12,6 +14,7 @@ def parse_args():
     parser.add_argument("--complexity", required=True)
     parser.add_argument("--coverage", required=True)
     parser.add_argument("--output", required=True)
+    parser.add_argument("--bash", default=os.environ.get("MAKEVN_CRAP_BASH", "bash"))
     return parser.parse_args()
 
 
@@ -30,6 +33,22 @@ def coverage_files(payload):
                 if hits is not None:
                     current[index] = (current[index] or 0) + hits
     return merged
+
+
+def function_end(lines, start, bash):
+    for end in range(start, len(lines) + 1):
+        if not lines[end - 1].lstrip().startswith("}"):
+            continue
+        result = subprocess.run(
+            [bash, "-n"],
+            input="\n".join(lines[start - 1:end]) + "\n",
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        if result.returncode == 0:
+            return end
+    raise ValueError(f"cannot determine function end at line {start}")
 
 
 def main():
@@ -67,16 +86,33 @@ def main():
         if lines is None:
             missing.append(str(source.relative_to(root)))
         functions.sort(key=lambda item: (item["line"], item["function"] == "<main>"))
-        file_lines = len(source.read_text().splitlines())
-        starts = sorted({item["line"] for item in functions if item["function"] != "<main>"})
+        source_lines = source.read_text().splitlines()
+        file_lines = len(source_lines)
+        function_ranges = {}
+        try:
+            for item in functions:
+                if item["function"] != "<main>":
+                    function_ranges[item["line"]] = function_end(source_lines, item["line"], args.bash)
+        except (OSError, ValueError) as exc:
+            print(f"Error: cannot parse Bash function ranges in {source.relative_to(root)}: {exc}", file=sys.stderr)
+            return 2
+        function_lines = {
+            line
+            for start, end in function_ranges.items()
+            for line in range(start, end + 1)
+        }
         for item in functions:
             start = item["line"]
             if item["function"] == "<main>":
                 start, end = 1, file_lines
+                executable = [] if lines is None else [
+                    hit
+                    for line, hit in enumerate(lines[:file_lines], start=1)
+                    if line not in function_lines and hit is not None
+                ]
             else:
-                later = [line for line in starts if line > start]
-                end = (later[0] - 1) if later else file_lines
-            executable = [] if lines is None else [hit for hit in lines[start - 1:end] if hit is not None]
+                end = function_ranges[start]
+                executable = [] if lines is None else [hit for hit in lines[start - 1:end] if hit is not None]
             covered = sum(hit > 0 for hit in executable)
             percent = None if not executable else covered * 100.0 / len(executable)
             complexity = item["cyclomatic"]

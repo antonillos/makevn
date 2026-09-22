@@ -47,4 +47,5 @@ python3 "${ROOT_DIR}/tools/crap/shell_report.py" \
   --root "${ROOT_DIR}" \
   --complexity "${OUT_DIR}/shell-complexity.csv" \
   --coverage "${OUT_DIR}/shell-coverage/.resultset.json" \
+  --bash "${BASH_BIN}" \
   --output "${OUT_DIR}/shell-report.json"

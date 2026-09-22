@@ -4131,6 +4131,35 @@ EOF
   [[ "${output}" == *"without generating a JaCoCo XML report"* ]] || fail "expected missing JaCoCo XML explanation"
 }
 
+test_verify_coverage_accepts_custom_jacoco_output_path() {
+  local repo="${TMP_ROOT}/verify-coverage-custom-report"
+  local java_home
+
+  mkdir -p "${repo}/.makevn"
+  printf '<project/>\n' > "${repo}/pom.xml"
+  java_home="$(detect_java_home)"
+  cat > "${repo}/.makevn/config" <<EOF
+MAKEVN_JAVA_HOME="${java_home}"
+MAKEVN_CODE_JAVA_HOME=""
+MAKEVN_KARATE_JAVA_HOME=""
+MAKEVN_CODE_TOOL_VERSIONS=""
+MAKEVN_KARATE_TOOL_VERSIONS=""
+MAKEVN_RUN_CMD=""
+MAKEVN_COVERAGE_PROP_FLAGS="-Djacoco.skip=false"
+EOF
+  cat > "${repo}/mvnw" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+mkdir -p target/coverage
+printf '<report/>\n' > target/coverage/jacoco.xml
+EOF
+  chmod +x "${repo}/mvnw"
+
+  ${CLI} --repo "${repo}" verify-ut-coverage >/dev/null
+
+  assert_file_exists "${repo}/target/coverage/jacoco.xml"
+}
+
 test_verify_coverage_fails_without_maven_project() {
   local repo="${TMP_ROOT}/verify-coverage-no-maven"
   local command=""
@@ -4644,6 +4673,7 @@ main() {
   test_coverage_uses_detected_activation_profile
   test_coverage_fails_early_without_jacoco_strategy
   test_verify_coverage_fails_when_maven_produces_no_report
+  test_verify_coverage_accepts_custom_jacoco_output_path
   test_verify_coverage_fails_without_maven_project
   test_crap_command_uses_existing_jacoco_and_writes_reports
   test_crap_command_gate_and_explicit_xml
