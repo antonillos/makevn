@@ -1015,6 +1015,7 @@ fn command_supports_frontend_loader(command: &OsString) -> bool {
             | "verify-changes"
             | "coverage"
             | "coverage-changes"
+            | "crap"
             | "pr-verify"
             | "format"
             | "checkstyle"
@@ -4235,6 +4236,7 @@ mod tests {
         assert!(command_supports_frontend_loader(&OsString::from(
             "coverage-changes"
         )));
+        assert!(command_supports_frontend_loader(&OsString::from("crap")));
         assert!(command_supports_frontend_loader(&OsString::from(
             "docker-up"
         )));
@@ -4259,6 +4261,38 @@ mod tests {
         assert!(command_supports_frontend_loader(&OsString::from("run-app")));
         assert!(!command_supports_frontend_loader(&OsString::from("doctor")));
         assert!(!command_supports_frontend_loader(&OsString::from("run")));
+    }
+
+    #[test]
+    fn parses_verify_coverage_then_crap_with_ordered_loader_steps() {
+        let repo_root = current_repo_root();
+        let action = parse_invocation(vec![
+            OsString::from("verify-ut-coverage"),
+            OsString::from("crap"),
+        ])
+        .unwrap();
+
+        assert_eq!(
+            action,
+            Action::DispatchToBackend(vec![
+                BackendInvocation {
+                    args: vec![
+                        OsString::from("verify-ut-coverage"),
+                        OsString::from("--repo"),
+                        repo_root.clone(),
+                    ],
+                    frontend_loader: true,
+                    tail: false,
+                    compact: false,
+                },
+                BackendInvocation {
+                    args: vec![OsString::from("crap"), OsString::from("--repo"), repo_root,],
+                    frontend_loader: true,
+                    tail: false,
+                    compact: false,
+                },
+            ])
+        );
     }
 
     #[test]
