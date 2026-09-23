@@ -4,11 +4,13 @@ import json
 import math
 import sys
 from pathlib import Path
+from xml.etree import ElementTree
 
 
 def arguments():
     parser = argparse.ArgumentParser()
     parser.add_argument("--input", action="append", required=True)
+    parser.add_argument("--jacoco-xml", action="append")
     parser.add_argument("--output-dir", required=True)
     parser.add_argument("--threshold", type=float, default=8.0)
     parser.add_argument("--max-warnings", type=int)
@@ -45,14 +47,36 @@ def main():
     args = arguments()
     if not math.isfinite(args.threshold) or args.threshold < 0 or args.max_warnings is not None and args.max_warnings < 0:
         return 2
+    if args.jacoco_xml and len(args.jacoco_xml) != len(args.input):
+        print("Error: each crap4java input must have a matching JaCoCo XML.", file=sys.stderr)
+        return 2
     entries = []
+    coverage_gaps = []
     try:
-        for source in args.input:
+        for index, source in enumerate(args.input):
             payload = json.loads(Path(source).read_text())
             if not isinstance(payload.get("entries"), list):
                 raise ValueError(f"missing entries array: {source}")
+            if args.jacoco_xml:
+                xml_path = args.jacoco_xml[index]
+                xml_classes = {
+                    node.get("name", "").replace("/", ".")
+                    for node in ElementTree.parse(xml_path).iter("class")
+                }
+                for entry in payload["entries"]:
+                    if entry.get("crap") is not None:
+                        continue
+                    class_name = entry.get("class") or ""
+                    coverage_gaps.append({
+                        "reason": "class absent from JaCoCo XML" if class_name not in xml_classes else "method not matched in JaCoCo XML",
+                        "class": class_name,
+                        "method": entry.get("method") or entry.get("function") or "<unknown>",
+                        "file": entry.get("file") or "",
+                        "line": entry.get("line") or 1,
+                        "jacoco_xml": xml_path,
+                    })
             entries.extend(normalize(entry, args.threshold) for entry in payload["entries"])
-    except (OSError, json.JSONDecodeError, ValueError) as exc:
+    except (OSError, ElementTree.ParseError, json.JSONDecodeError, ValueError) as exc:
         print(f"Error: invalid crap4java report: {exc}", file=sys.stderr)
         return 2
     if not entries:
@@ -71,10 +95,27 @@ def main():
         seen_methods.add(identity)
     missing_coverage = sum(entry["crap"] is None for entry in entries)
     if missing_coverage:
-        print(
-            f"Error: CRAP report contains {missing_coverage} Java method(s) without coverage.",
-            file=sys.stderr,
-        )
+        print(f"Error: CRAP report contains {missing_coverage} Java method(s) without coverage.", file=sys.stderr)
+        if coverage_gaps:
+            absent = sum(gap["reason"] == "class absent from JaCoCo XML" for gap in coverage_gaps)
+            unmatched = len(coverage_gaps) - absent
+            output_dir = Path(args.output_dir)
+            output_dir.mkdir(parents=True, exist_ok=True)
+            gap_report = output_dir / "coverage-gaps.txt"
+            lines = [
+                f"Java methods without coverage: {missing_coverage}",
+                f"Classes absent from JaCoCo XML: {absent} method(s)",
+                f"Methods not matched in present classes: {unmatched} method(s)",
+                "",
+                "Check aggregate report module dependencies and JaCoCo exclusions for absent classes.",
+                "Check crap4java source-to-bytecode matching for methods in present classes.",
+                "",
+            ]
+            for gap in sorted(coverage_gaps, key=lambda item: (item["reason"], item["class"], item["method"], item["file"], item["line"])):
+                lines.append(f"{gap['reason']}: {gap['class']}#{gap['method']} at {gap['file']}:{gap['line']} [XML: {gap['jacoco_xml']}]")
+            gap_report.write_text("\n".join(lines) + "\n")
+            print(f"Coverage diagnosis: {absent} method(s) in classes absent from JaCoCo XML; {unmatched} method(s) not matched in present classes.", file=sys.stderr)
+            print(f"Coverage gaps: {gap_report}", file=sys.stderr)
         return 2
     entries.sort(key=lambda entry: (-(entry["crap"] if entry["crap"] is not None else -1), entry["file"], entry["line"], entry["symbol"]))
     warnings = [entry for entry in entries if entry["crap"] is not None and entry["crap"] > args.threshold]

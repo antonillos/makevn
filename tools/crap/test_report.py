@@ -98,6 +98,28 @@ class CrapReportTests(unittest.TestCase):
             self.assertEqual(result.returncode, 2)
             self.assertIn("1 Java method(s) without coverage", result.stderr)
 
+    def test_java_report_explains_missing_coverage_against_jacoco_xml(self):
+        with tempfile.TemporaryDirectory() as directory:
+            tmp = Path(directory)
+            source = tmp / "java.json"
+            source.write_text(json.dumps({"entries": [
+                {"class": "demo.Present", "method": "unmatched", "file": "Present.java", "line": 3, "crap": None},
+                {"class": "demo.Absent", "method": "missing", "file": "Absent.java", "line": 7, "crap": None},
+            ]}))
+            xml = tmp / "jacoco.xml"
+            xml.write_text('<report><package name="demo"><class name="demo/Present"/></package></report>')
+            out = tmp / "out"
+            result = subprocess.run(
+                ["python3", str(JAVA_REPORTER), "--input", str(source), "--jacoco-xml", str(xml), "--output-dir", str(out)],
+                text=True, capture_output=True, check=False,
+            )
+            self.assertEqual(result.returncode, 2)
+            self.assertIn("1 method(s) in classes absent from JaCoCo XML; 1 method(s) not matched", result.stderr)
+            gaps = (out / "coverage-gaps.txt").read_text()
+            self.assertIn("demo.Absent#missing", gaps)
+            self.assertIn("demo.Present#unmatched", gaps)
+            self.assertIn("Check aggregate report module dependencies", gaps)
+
     def test_java_report_rejects_overlapping_jacoco_methods(self):
         with tempfile.TemporaryDirectory() as directory:
             tmp = Path(directory)

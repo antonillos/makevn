@@ -207,7 +207,7 @@ makevn_crap_run() {
   [[ -f "${reporter}" ]] || { printf 'Error: Internal CRAP reporter not found: %s\n' "${reporter}" >&2; return 2; }
 
   mkdir -p "${raw_dir}"
-  rm -f "${report_dir}/report.json" "${report_dir}/report.md" "${report_dir}/report.sarif" "${report_dir}/summary.txt"
+  rm -f "${report_dir}/report.json" "${report_dir}/report.md" "${report_dir}/report.sarif" "${report_dir}/summary.txt" "${report_dir}/coverage-gaps.txt"
   rm -f "${raw_dir}"/*.json "${raw_dir}"/*.log 2>/dev/null || true
   report_args=(--output-dir "${report_dir}" --threshold "${threshold}")
   [[ -z "${max_warnings}" ]] || report_args+=(--max-warnings "${max_warnings}")
@@ -250,7 +250,7 @@ makevn_crap_run() {
       return 2
     fi
     [[ -s "${raw_json}" ]] || { printf 'Error: crap4java produced no JSON for %s. Analyzer log: %s\n' "${module_root}" "${raw_log}" >&2; return 2; }
-    report_args+=(--input "${raw_json}")
+    report_args+=(--input "${raw_json}" --jacoco-xml "${xml_path}")
   done
 
   set +e
@@ -296,7 +296,7 @@ cmd_crap() {
 
   while IFS= read -r detail_line; do
     case "${detail_line}" in
-      Error:*|Analyzer\ JSON:*|Analyzer\ log:*|Artifacts:*|CRAP\ report*|Gate:*|Methods:*|Warnings:*|Missing\ coverage:*|Installed\ crap4java:*)
+      Error:*|Coverage\ gaps:*|Coverage\ diagnosis:*|Analyzer\ JSON:*|Analyzer\ log:*|Artifacts:*|CRAP\ report*|Gate:*|Methods:*|Warnings:*|Missing\ coverage:*|Installed\ crap4java:*)
         makevn_print_detail_line "${detail_line}"
         ;;
     esac
