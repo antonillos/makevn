@@ -1539,6 +1539,54 @@ EOF
   "${compact_cli}" --repo "${repo}" uninstall >/dev/null
 }
 
+test_loader_defers_backend_stderr_until_progress_is_cleared() {
+  local repo="${TMP_ROOT}/loader-stderr-warning"
+  local install_prefix="${TMP_ROOT}/loader-stderr-warning-install"
+  local warning_cli="${install_prefix}/bin/makevn"
+  local output_file="${repo}/loader.out"
+  local java_home
+
+  [[ -x "${ROOT_DIR}/target/release/makevn" ]] || return 0
+  mkdir -p "${repo}"
+  printf '<project/>\n' > "${repo}/pom.xml"
+  java_home="$(detect_java_home)"
+  PREFIX="${install_prefix}" "${ROOT_DIR}/install.sh" --rust >/dev/null
+  "${warning_cli}" --repo "${repo}" init >/dev/null
+  cat > "${repo}/mvnw" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+sleep 1
+EOF
+  chmod +x "${repo}/mvnw"
+  cat > "${repo}/backend-warning.env" <<'EOF'
+case "$0" in
+  */libexec/makevn/backend.sh) printf 'warning: backend warning while loading\n' >&2 ;;
+esac
+EOF
+  cat > "${repo}/.makevn/config" <<EOF
+MAKEVN_JAVA_HOME="${java_home}"
+MAKEVN_CODE_JAVA_HOME=""
+MAKEVN_KARATE_JAVA_HOME=""
+MAKEVN_CODE_TOOL_VERSIONS=""
+MAKEVN_KARATE_TOOL_VERSIONS=""
+MAKEVN_RUN_CMD=""
+EOF
+
+  run_pty_command "${output_file}" env BASH_ENV="${repo}/backend-warning.env" \
+    "${warning_cli}" --repo "${repo}" compile
+  python3 - "${output_file}" <<'PY'
+from pathlib import Path
+import sys
+
+output = Path(sys.argv[1]).read_bytes()
+warning = b'warning: backend warning while loading'
+assert output.count(warning) == 1, 'expected backend warning once'
+assert b'Worked  for ' in output, 'expected final summary'
+after_warning = output.split(warning, 1)[1]
+assert b't tail' not in after_warning, 'live loader continued after warning'
+PY
+}
+
 test_command_routing() {
   local repo="${TMP_ROOT}/command-routing"
   local java_home
@@ -4790,6 +4838,7 @@ main() {
   test_tail_degrades_without_tty
   test_non_tty_run_is_compact_and_keeps_full_log_in_file
   test_compact_tty_omits_color_and_loader
+  test_loader_defers_backend_stderr_until_progress_is_cleared
   test_command_routing
   test_nested_single_maven_project_routing
   test_docker_commands

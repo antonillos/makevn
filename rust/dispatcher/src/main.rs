@@ -188,6 +188,32 @@ struct BackendDetailFile {
     path: PathBuf,
 }
 
+#[derive(Debug)]
+struct BackendStderrFile {
+    path: PathBuf,
+}
+
+impl BackendStderrFile {
+    fn new() -> Result<Self, String> {
+        let unique_suffix = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_err(|error| format!("failed to resolve stderr timestamp: {error}"))?
+            .as_nanos();
+        let path = env::temp_dir().join(format!("makevn-{}-{unique_suffix}.stderr", process::id()));
+        Ok(Self { path })
+    }
+
+    fn path(&self) -> &Path {
+        &self.path
+    }
+}
+
+impl Drop for BackendStderrFile {
+    fn drop(&mut self) {
+        let _ = fs::remove_file(&self.path);
+    }
+}
+
 impl BackendDetailFile {
     fn new() -> Result<Self, String> {
         let unique_suffix = SystemTime::now()
@@ -1106,11 +1132,18 @@ fn dispatch_backend_invocations(
         let run_result = if use_frontend_loader {
             command.process_group(0);
             command.stdout(process::Stdio::null());
+            // Backend stderr must not write into the live dashboard: Git and
+            // other tools can emit warnings that move the terminal cursor and
+            // strand a spinner row above the final summary.
+            let stderr_file = BackendStderrFile::new()?;
+            let stderr_writer = File::create(stderr_file.path())
+                .map_err(|error| format!("failed to capture backend stderr: {error}"))?;
+            command.stderr(process::Stdio::from(stderr_writer));
             command.env("MAKEVN_FRONTEND_OWNS_LOADER", "1");
             if let Some(df) = detail_file.as_ref() {
                 command.env("MAKEVN_BACKEND_DETAIL_OUT", df.path());
             }
-            run_backend_with_loader(
+            let result = run_backend_with_loader(
                 command,
                 metadata_file.as_ref(),
                 backend_invocation.tail,
@@ -1119,7 +1152,14 @@ fn dispatch_backend_invocations(
                 &completed_summaries,
                 renderer.as_mut(),
                 detail_file.as_ref(),
-            )?
+            );
+            if let Some(renderer) = renderer.as_mut() {
+                renderer.clear_line();
+            }
+            if let Ok(mut stderr) = File::open(stderr_file.path()) {
+                let _ = io::copy(&mut stderr, &mut io::stderr());
+            }
+            result?
         } else {
             let elapsed_before = started_at.elapsed();
             let exit_code = run_backend_command(command, backend_path)?;
