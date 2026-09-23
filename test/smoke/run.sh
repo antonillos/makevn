@@ -4467,7 +4467,7 @@ EOF
 
   output="$("${fail_cli}" --repo "${repo}" compile 2>&1 || true)"
 
-  [[ "${output}" == *"Worked for "* ]] || fail "expected dashboard elapsed to be present"
+  [[ "${output}" == *"Worked  for "* ]] || fail "expected dashboard elapsed to be present"
   [[ "${output}" == *"[fail] exit 7 | check the log"* ]] || fail "expected compact failure summary without duplicate elapsed"
   if [[ "${output}" =~ \[fail\]\ exit\ 7\ \|\ [0-9]+s\ \|\ check\ the\ log ]]; then
     fail "expected failure summary not to repeat elapsed after dashboard"
@@ -4565,6 +4565,7 @@ test_crap_changes_filters_methods_and_includes_worktree() {
   rm -f "${repo}/module-a/src/main/java/example/High.java.bak"
   output="$(${CLI} --repo "${repo}" crap-changes --base HEAD)"
   [[ "${output}" == *"Methods: 1"* ]] || fail "expected only the changed Java method"
+  [[ "${output}" != *"Artifacts:"* ]] || fail "successful crap-changes should omit the redundant artifacts path"
   python3 - "${repo}/.makevn/reports/crap-changes/report.json" <<'PY'
 import json,sys
 r=json.load(open(sys.argv[1]))

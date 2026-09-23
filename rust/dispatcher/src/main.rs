@@ -1699,7 +1699,7 @@ fn final_dashboard_lines(
             + usize::from(success),
     );
     lines.push(dim_text(&format!(
-        "Worked for {}",
+        "Worked  for {}",
         format_duration(elapsed)
     )));
     for summary in completed_summaries {
@@ -3773,14 +3773,15 @@ mod tests {
     #[test]
     fn final_dashboard_prints_ok_on_success() {
         let lines = super::final_dashboard_lines(Duration::from_secs(3), &[], true);
-        assert_eq!(lines[0], "Worked for 3s");
+        assert_eq!(lines[0], "Worked  for 3s");
         assert_eq!(lines[1], "[ok]");
+        assert_eq!(lines[0].find("for"), "Working for 3s >".find("for"));
     }
 
     #[test]
     fn final_dashboard_omits_ok_on_failure() {
         let lines = super::final_dashboard_lines(Duration::from_secs(3), &[], false);
-        assert_eq!(lines[0], "Worked for 3s");
+        assert_eq!(lines[0], "Worked  for 3s");
         assert_eq!(lines.len(), 1);
     }
 
@@ -3800,7 +3801,7 @@ mod tests {
 
         let lines = super::final_dashboard_lines(Duration::from_secs(574), &[summary], false);
 
-        assert_eq!(lines[0], "Worked for 9m 34s");
+        assert_eq!(lines[0], "Worked  for 9m 34s");
         assert_eq!(
             lines[1],
             "[x] mutation | 9m 34s | .makevn/logs/mutation.log"
@@ -4693,7 +4694,7 @@ mod tests {
 
         let lines = super::final_dashboard_lines(Duration::from_secs(5), &[summary], true);
 
-        assert_eq!(lines[0], "Worked for 5s");
+        assert_eq!(lines[0], "Worked  for 5s");
         assert_eq!(
             lines[1],
             "[✓] coverage-changes | 9s | .makevn/logs/coverage-changes.log"

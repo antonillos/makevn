@@ -289,7 +289,9 @@ makevn_crap_run() {
     done
   fi
   [[ -f "${report_dir}/summary.txt" ]] && cat "${report_dir}/summary.txt"
-  printf 'Artifacts: %s\n' "${report_dir}"
+  if [[ "${command_name}" == "crap" || ${rc} -ne 0 ]]; then
+    printf 'Artifacts: %s\n' "${report_dir}"
+  fi
   return ${rc}
 }
 
