@@ -84,7 +84,9 @@ Recommended changed-code verification flow:
 4. Call `makevn_verify_changes` to build and test the changed modules/tests.
 5. Call `makevn_coverage_changes` only after a coverage-producing run such as
    `makevn_verify_changes`, `makevn_verify_ut_coverage`, or `makevn_verify`.
-6. If a command fails, report the failure excerpt or summary as the result; do
+6. Call `makevn_crap` after a JaCoCo XML report exists when Java CRAP analysis is
+   requested. It never downloads the analyzer or produces coverage implicitly.
+7. If a command fails, report the failure excerpt or summary as the result; do
    not replace the makevn command with raw `mvn`, raw `docker`, or guessed
    repository-specific scripts.
 
@@ -96,6 +98,7 @@ Tool mapping for common commands:
 - `makevn verify-changes-preview` -> `makevn_verify_changes_preview`
 - `makevn verify-changes` -> `makevn_verify_changes`
 - `makevn coverage-changes` -> `makevn_coverage_changes`
+- `makevn crap` -> `makevn_crap`
 - `makevn docker-up` -> `makevn_docker_up`
 - `makevn docker-ps-required` -> `makevn_docker_ps_required`
 

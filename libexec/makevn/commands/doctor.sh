@@ -36,6 +36,8 @@ print_doctor() {
   makevn_print_item "Detected coverage activation" "${MAKEVN_DOCTOR_DETECTED_COVERAGE_ACTIVATION}"
   makevn_print_item "JaCoCo report layout" "${MAKEVN_DOCTOR_JACOCO_REPORT_LAYOUT}"
   makevn_print_item "JaCoCo report dir" "${MAKEVN_DOCTOR_JACOCO_REPORT_DIR}"
+  makevn_print_item "JaCoCo XML reports" "${MAKEVN_DOCTOR_JACOCO_XML_COUNT}"
+  makevn_print_item "crap4java analyzer" "${MAKEVN_DOCTOR_CRAP_ANALYZER}"
   makevn_print_item "Detected coverage threshold" "${MAKEVN_DOCTOR_DETECTED_COVERAGE_THRESHOLD}"
   makevn_print_item "Detected coverage-changes threshold" "${MAKEVN_DOCTOR_DETECTED_COVERAGE_CHANGES_THRESHOLD}"
   makevn_print_item "Compile profile" "${MAKEVN_DOCTOR_COMPILE_PROFILE}"

@@ -647,17 +647,33 @@ fn validate_command(
     }
 
     match command.to_string_lossy().as_ref() {
-        "compile" | "test-compile" | "compile-tests" | "validate" | "package" | "clean"
-        | "build" | "verify-ut" | "verify-ut-coverage" | "verify-it" | "verify-it-coverage"
-        | "verify" | "verify-changes-preview" | "verify-changes" | "pr-verify" | "format" | "checkstyle" | "karate-test"
-        | "karate-all" | "mutation" => {
+        "compile"
+        | "test-compile"
+        | "compile-tests"
+        | "validate"
+        | "package"
+        | "clean"
+        | "build"
+        | "verify-ut"
+        | "verify-ut-coverage"
+        | "verify-it"
+        | "verify-it-coverage"
+        | "verify"
+        | "verify-changes-preview"
+        | "verify-changes"
+        | "pr-verify"
+        | "format"
+        | "checkstyle"
+        | "karate-test"
+        | "karate-all"
+        | "mutation" => {
             validate_maven_passthrough_args(command, trailing_args)?;
             Ok(CommandValidation::Valid)
         }
         "help" | "init" | "refresh" | "uninstall" | "test" | "coverage" | "coverage-changes"
-        | "docker-up" | "docker-down" | "docker-ps" | "docker-stats" | "docker-ps-required"
-        | "karate-docker-up" | "karate-docker-down" | "run-app" | "run-app-bg" | "stop-app"
-        | "run" => Ok(CommandValidation::Valid),
+        | "crap" | "docker-up" | "docker-down" | "docker-ps" | "docker-stats"
+        | "docker-ps-required" | "karate-docker-up" | "karate-docker-down" | "run-app"
+        | "run-app-bg" | "stop-app" | "run" => Ok(CommandValidation::Valid),
         "exec" => validate_exec_args(trailing_args),
         "doctor" => {
             if let Some(extra_arg) = trailing_args.first() {
@@ -872,6 +888,7 @@ fn is_top_level_command(arg: &OsString) -> bool {
             | "verify-changes"
             | "coverage"
             | "coverage-changes"
+            | "crap"
             | "pr-verify"
             | "format"
             | "checkstyle"
@@ -896,7 +913,14 @@ fn is_top_level_command(arg: &OsString) -> bool {
 fn command_option_takes_value(arg: &OsString) -> bool {
     matches!(
         arg.to_string_lossy().as_ref(),
-        "--name" | "--context" | "--threshold" | "--tag" | "--compose" | "--module"
+        "--name"
+            | "--context"
+            | "--threshold"
+            | "--max-warnings"
+            | "--jacoco-xml"
+            | "--tag"
+            | "--compose"
+            | "--module"
     )
 }
 
@@ -991,6 +1015,7 @@ fn command_supports_frontend_loader(command: &OsString) -> bool {
             | "verify-changes"
             | "coverage"
             | "coverage-changes"
+            | "crap"
             | "pr-verify"
             | "format"
             | "checkstyle"
@@ -3269,6 +3294,7 @@ fn command_help(command: &str) -> Option<(&'static str, &'static str, &'static [
         "verify-changes" => maven_command_help("verify-changes", "Verify changed production modules or modified tests.", true),
         "coverage" => Some(("makevn [--repo PATH] coverage [--threshold PCT]", "Check the latest aggregate coverage report.", &["--threshold  Required coverage percentage"])),
         "coverage-changes" => Some(("makevn [--repo PATH] coverage-changes [--threshold PCT] [--overall-threshold PCT] [--verbose]", "Check incremental and per-module coverage.", &["--threshold          Per-module coverage percentage", "--overall-threshold  Overall coverage percentage", "--verbose            Print detailed coverage output"])),
+        "crap" => Some(("makevn [--repo PATH] crap [install-analyzer] [--jacoco-xml PATH] [--threshold SCORE] [--max-warnings COUNT]", "Calculate Java CRAP metrics from existing JaCoCo XML coverage.", &["install-analyzer  Download and verify the pinned crap4java release", "--jacoco-xml      Use a specific existing JaCoCo XML report", "--threshold       CRAP score warning threshold (default: 8)", "--max-warnings    Fail when the warning count exceeds this ratchet"])),
         "pr-verify" => maven_command_help("pr-verify", "Run a local PR-style verification flow.", false),
         "format" => Some(("makevn [--repo PATH] [--compact] format [--tail] [--apply] [-- EXTRA_MAVEN_ARGS...]", "Check or apply code formatting.", &["--tail     Start in interactive log tail mode", "--compact  Use compact non-interactive output", "--apply    Apply formatting changes"])),
         "checkstyle" => Some(("makevn [--repo PATH] [--compact] checkstyle [--tail] [--module MODULE] [--verbose] [-- EXTRA_MAVEN_ARGS...]", "Run Checkstyle code style checks.", &["--tail     Start in interactive log tail mode", "--compact  Use compact non-interactive output", "--module   Maven module to check", "--verbose  Print detailed output"])),
@@ -3412,6 +3438,8 @@ fn print_help(with_header: bool) {
     println!("  makevn [--repo PATH] [--compact] verify-changes [--tail] [--clean-generated-contract-targets] [-- EXTRA_MAVEN_ARGS...]");
     println!("  makevn [--repo PATH] coverage [--threshold PCT]");
     println!("  makevn [--repo PATH] coverage-changes [--threshold PCT] [--overall-threshold PCT] [--verbose]");
+    println!("  makevn [--repo PATH] crap [--jacoco-xml PATH] [--threshold SCORE] [--max-warnings COUNT]");
+    println!("  makevn [--repo PATH] crap install-analyzer");
     println!("  makevn [--repo PATH] [--compact] pr-verify [--tail] [-- EXTRA_MAVEN_ARGS...]");
     println!(
         "  makevn [--repo PATH] [--compact] format [--tail] [--apply] [-- EXTRA_MAVEN_ARGS...]"
@@ -3460,6 +3488,7 @@ fn print_help(with_header: bool) {
     println!("  makevn verify-changes");
     println!("  makevn coverage");
     println!("  makevn coverage-changes");
+    println!("  makevn crap");
     println!("  makevn pr-verify");
     println!("  makevn format --apply");
     println!("  makevn checkstyle --module domain --verbose");
@@ -3506,9 +3535,9 @@ impl fmt::Display for Lossy<'_> {
 #[cfg(test)]
 mod tests {
     use super::{
-        command_help, command_supports_frontend_loader, dashboard_hint, dim_text,
-        format_resource_sample, insert_backend_option, install_opencode_agent_at, install_root,
-        detect_local_opencode_configs, install_root_with_override, parse_invocation,
+        command_help, command_supports_frontend_loader, dashboard_hint,
+        detect_local_opencode_configs, dim_text, format_resource_sample, insert_backend_option,
+        install_opencode_agent_at, install_root, install_root_with_override, parse_invocation,
         parse_mcp_invocation, read_backend_metadata, spinner_hint, spinner_kitt_frame,
         split_command_segments, strip_frontend_tail_flag, tail_status_lines, Action,
         BackendInvocation, BackendMetadata, CommandSummary, McpAction, ResourceHistory,
@@ -4207,6 +4236,7 @@ mod tests {
         assert!(command_supports_frontend_loader(&OsString::from(
             "coverage-changes"
         )));
+        assert!(command_supports_frontend_loader(&OsString::from("crap")));
         assert!(command_supports_frontend_loader(&OsString::from(
             "docker-up"
         )));
@@ -4231,6 +4261,38 @@ mod tests {
         assert!(command_supports_frontend_loader(&OsString::from("run-app")));
         assert!(!command_supports_frontend_loader(&OsString::from("doctor")));
         assert!(!command_supports_frontend_loader(&OsString::from("run")));
+    }
+
+    #[test]
+    fn parses_verify_coverage_then_crap_with_ordered_loader_steps() {
+        let repo_root = current_repo_root();
+        let action = parse_invocation(vec![
+            OsString::from("verify-ut-coverage"),
+            OsString::from("crap"),
+        ])
+        .unwrap();
+
+        assert_eq!(
+            action,
+            Action::DispatchToBackend(vec![
+                BackendInvocation {
+                    args: vec![
+                        OsString::from("verify-ut-coverage"),
+                        OsString::from("--repo"),
+                        repo_root.clone(),
+                    ],
+                    frontend_loader: true,
+                    tail: false,
+                    compact: false,
+                },
+                BackendInvocation {
+                    args: vec![OsString::from("crap"), OsString::from("--repo"), repo_root,],
+                    frontend_loader: true,
+                    tail: false,
+                    compact: false,
+                },
+            ])
+        );
     }
 
     #[test]
@@ -4294,6 +4356,7 @@ mod tests {
             "verify-changes",
             "coverage",
             "coverage-changes",
+            "crap",
             "pr-verify",
             "format",
             "checkstyle",
