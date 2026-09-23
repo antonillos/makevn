@@ -91,7 +91,7 @@ makevn_crap_module_root_for_xml() {
   fi
 }
 
-cmd_crap() {
+makevn_crap_run() {
   local repo_root="$1"
   local external_jar="${MAKEVN_CRAP4JAVA_JAR:-}"
   local maven_base_path=""
@@ -266,5 +266,40 @@ cmd_crap() {
   fi
   [[ -f "${report_dir}/summary.txt" ]] && cat "${report_dir}/summary.txt"
   printf 'Artifacts: %s\n' "${report_dir}"
+  return ${rc}
+}
+
+cmd_crap() {
+  local repo_root="$1"
+  local log_path=""
+  local detail_line=""
+  local rc=0
+
+  if ! makevn_frontend_owns_loader; then
+    makevn_crap_run "$@"
+    return $?
+  fi
+
+  log_path="$(makevn_logs_dir "${repo_root}")/crap.log"
+  mkdir -p "$(dirname "${log_path}")"
+  : > "${log_path}"
+  makevn_write_backend_metadata \
+    "${MAKEVN_BACKEND_METADATA_OUT:-}" \
+    crap "${repo_root}" "${repo_root}" "${log_path}" \
+    .makevn/logs/crap.log 'makevn crap' '' crap
+
+  if (makevn_crap_run "$@") > "${log_path}" 2>&1; then
+    rc=0
+  else
+    rc=$?
+  fi
+
+  while IFS= read -r detail_line; do
+    case "${detail_line}" in
+      Error:*|Analyzer\ JSON:*|Analyzer\ log:*|Artifacts:*|CRAP\ report*|Gate:*|Methods:*|Warnings:*|Missing\ coverage:*|Installed\ crap4java:*)
+        makevn_print_detail_line "${detail_line}"
+        ;;
+    esac
+  done < "${log_path}"
   return ${rc}
 }

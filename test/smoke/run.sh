@@ -4620,6 +4620,33 @@ EOF
     || fail "expected CRAP failure to point to raw analyzer reports"
 }
 
+test_crap_dashboard_logs_output_below_prior_steps() {
+  local repo="${TMP_ROOT}/crap-dashboard"
+  local metadata="${TMP_ROOT}/crap-dashboard-metadata"
+  local details="${TMP_ROOT}/crap-dashboard-details"
+  local output=""
+  local rc=0
+
+  setup_crap_fixture "${repo}"
+  cat > "${repo}/fake-java/bin/java" <<'EOF'
+#!/usr/bin/env bash
+printf '{"entries":[],"summary":{"functions":0}}\n'
+EOF
+  chmod +x "${repo}/fake-java/bin/java"
+  set +e
+  output="$(MAKEVN_FRONTEND=rust MAKEVN_FRONTEND_OWNS_LOADER=1 MAKEVN_BACKEND_DETAIL_OUT="${details}" \
+    bash "${BACKEND}" crap --repo "${repo}" --metadata-out "${metadata}" 2>&1)"
+  rc=$?
+  set -e
+
+  [[ ${rc} -eq 2 ]] || fail "expected dashboard CRAP failure to exit 2"
+  [[ -z "${output}" ]] || fail "dashboard CRAP must not write over the previous command's display"
+  assert_contains "${metadata}" "crap-dashboard/.makevn/logs/crap.log"
+  assert_contains "${repo}/.makevn/logs/crap.log" "Error: CRAP report contains no measured Java methods."
+  assert_contains "${details}" "Analyzer JSON: "
+  assert_contains "${details}" "Error: CRAP report contains no measured Java methods."
+}
+
 test_crap_command_fails_closed_without_analyzer() {
   local repo="${TMP_ROOT}/crap-missing-analyzer"
   local output=""
@@ -4768,6 +4795,7 @@ main() {
   test_crap_command_discovers_custom_xml_path
   test_crap_command_prefers_aggregate_jacoco
   test_crap_command_reports_empty_analyzer_json_path
+  test_crap_dashboard_logs_output_below_prior_steps
   test_crap_command_fails_closed_without_analyzer
   test_crap_install_analyzer_verifies_pinned_download
   test_crap_install_analyzer_requires_cache_home
