@@ -1258,7 +1258,6 @@ fn run_backend_with_loader(
     detail_file: Option<&BackendDetailFile>,
 ) -> Result<BackendRunResult, String> {
     let started_at = Instant::now();
-    let fallback_metadata = fallback_backend_metadata(fallback_title);
     let mut child = command.spawn().map_err(|error| {
         format!(
             "failed to launch backend {}: {error}",
@@ -1521,16 +1520,25 @@ fn run_backend_with_loader(
         if let Some(renderer) = renderer.as_mut() {
             if !tail_active {
                 let hint = renderer.current_dashboard_hint();
-                renderer
-                    .render_dashboard(
-                        child.id(),
-                        global_started_at.elapsed(),
-                        completed_summaries,
-                        &current_detail_lines,
-                        metadata.as_ref().unwrap_or(&fallback_metadata),
-                        &hint,
-                    )
-                    .map_err(|error| format!("failed to render loader: {error}"))?;
+                if let Some(metadata) = metadata.as_ref() {
+                    renderer
+                        .render_dashboard(
+                            child.id(),
+                            global_started_at.elapsed(),
+                            completed_summaries,
+                            &current_detail_lines,
+                            metadata,
+                            &hint,
+                        )
+                        .map_err(|error| format!("failed to render loader: {error}"))?;
+                } else {
+                    renderer
+                        .render_frame_with_hint(
+                            child.id(),
+                            &format!("{} | {}", pending_command_line(fallback_title), hint),
+                        )
+                        .map_err(|error| format!("failed to render loader: {error}"))?;
+                }
             } else {
                 let hint = renderer.current_spinner_hint();
                 renderer
@@ -1577,19 +1585,6 @@ fn run_backend_with_loader(
         metadata.as_ref(),
         fallback_title,
     ))
-}
-
-fn fallback_backend_metadata(title: &str) -> BackendMetadata {
-    BackendMetadata {
-        command: title.to_owned(),
-        repo: String::new(),
-        cwd: String::new(),
-        log_path: String::new(),
-        relative_log_path: String::new(),
-        command_display: format!("makevn {title}"),
-        title: title.to_owned(),
-        context: None,
-    }
 }
 
 fn read_backend_metadata(metadata_path: &Path) -> Result<Option<BackendMetadata>, String> {
@@ -1765,6 +1760,10 @@ fn tail_status_lines(
     lines.push(backend_header_line(metadata));
     lines.push(backend_tail_notice_line(metadata));
     lines
+}
+
+fn pending_command_line(title: &str) -> String {
+    format!("makevn {title}")
 }
 
 fn running_command_line(metadata: &BackendMetadata) -> String {
@@ -2606,6 +2605,9 @@ impl SpinnerRenderer {
 
     fn render_frame_with_hint(&mut self, pid: u32, hint: &str) -> io::Result<()> {
         let line = self.frame_line_with_hint(pid, hint)?;
+        // Before backend metadata arrives this is the only live row. Clipping
+        // keeps it single-line so the detailed dashboard can replace it cleanly.
+        let line = status_line_text_for_width(&line, terminal_width().max(8));
         write!(io::stdout(), "\r\u{1b}[2K{}", line)?;
         io::stdout().flush()?;
         Ok(())
@@ -4749,15 +4751,13 @@ mod tests {
     }
 
     #[test]
-    fn fallback_backend_metadata_keeps_the_dashboard_visible_before_logging_starts() {
-        let metadata = super::fallback_backend_metadata("verify-changes");
+    fn pending_backend_status_uses_one_line_before_metadata_arrives() {
+        let line = super::pending_command_line("verify-changes");
 
-        assert_eq!(metadata.title, "verify-changes");
-        assert!(metadata.relative_log_path.is_empty());
-        assert_eq!(
-            super::running_command_line(&metadata),
-            "-> makevn verify-changes"
-        );
+        assert_eq!(line, "makevn verify-changes");
+        assert!(!line.contains("Working for"));
+        assert!(!line.contains('\n'));
+        assert!(super::visible_char_count(&super::status_line_text_for_width(&line, 20)) < 20);
     }
 
     #[test]
