@@ -4586,6 +4586,25 @@ test_crap_command_discovers_custom_xml_path() {
     || fail "expected custom JaCoCo XML discovery"
 }
 
+test_crap_command_scopes_module_custom_xml_to_its_sources() {
+  local repo="${TMP_ROOT}/crap-module-custom-xml"
+  local invocation=""
+
+  setup_crap_fixture "${repo}"
+  rm -f "${repo}/module-a/target/site/jacoco/jacoco.xml" "${repo}/module-b/target/site/jacoco/jacoco.xml"
+  mkdir -p "${repo}/module-a/target/coverage"
+  printf '<report name="custom"/>\n' > "${repo}/module-a/target/coverage/jacoco.xml"
+  ${CLI} --repo "${repo}" crap >/dev/null
+
+  invocation="$(cat "${repo}/java.log")"
+  [[ "${invocation}" == *"/module-a/target/coverage/jacoco.xml"* ]] \
+    || fail "expected module custom JaCoCo XML to be discovered"
+  [[ "${invocation}" == *"/module-a/src/main/java/example/High.java"* ]] \
+    || fail "expected module custom JaCoCo XML to analyze its own sources"
+  [[ "${invocation}" != *"/module-b/src/main/java/example/HighB.java"* ]] \
+    || fail "module custom JaCoCo XML must not analyze other modules"
+}
+
 test_crap_command_prefers_aggregate_jacoco() {
   local repo="${TMP_ROOT}/crap-aggregate"
 
@@ -4793,6 +4812,7 @@ main() {
   test_crap_command_gate_and_explicit_xml
   test_crap_command_uses_maven_root_for_custom_xml_path
   test_crap_command_discovers_custom_xml_path
+  test_crap_command_scopes_module_custom_xml_to_its_sources
   test_crap_command_prefers_aggregate_jacoco
   test_crap_command_reports_empty_analyzer_json_path
   test_crap_dashboard_logs_output_below_prior_steps

@@ -81,10 +81,10 @@ makevn_crap_validate_count() {
 makevn_crap_module_root_for_xml() {
   local maven_base_path="$1"
   local xml_path="$2"
-  local prefix="${xml_path%%/target/site/*}"
+  local prefix="${xml_path%%/target/*}"
   if [[ "${xml_path}" == */jacoco-aggregate/jacoco.xml ]]; then
     printf '%s\n' "${maven_base_path}"
-  elif [[ "${xml_path}" == */target/site/* && -d "${prefix}" ]]; then
+  elif [[ "${xml_path}" == */target/* && -d "${prefix}" ]]; then
     printf '%s\n' "${prefix}"
   else
     printf '%s\n' "${maven_base_path}"
