@@ -4553,6 +4553,32 @@ test_crap_command_gate_and_explicit_xml() {
   [[ "$(wc -l < "${repo}/java.log" | tr -d '[:space:]')" == "1" ]] || fail "expected explicit JaCoCo XML to run once"
 }
 
+test_crap_changes_filters_methods_and_includes_worktree() {
+  local repo="${TMP_ROOT}/crap-changes"
+  local output=""
+  setup_crap_fixture "${repo}"
+  printf '%s\n' 'package example;' 'class High {' '{' '}' 'void risk() {' 'int x = 1;' '}' '}' > "${repo}/module-a/src/main/java/example/High.java"
+  git -C "${repo}" init -q
+  git -C "${repo}" add pom.xml module-a/src/main/java/example/High.java
+  git -C "${repo}" -c user.name=Test -c user.email=test@example.com commit -qm base
+  sed -i.bak 's/int x = 1/int x = 2/' "${repo}/module-a/src/main/java/example/High.java"
+  rm -f "${repo}/module-a/src/main/java/example/High.java.bak"
+  output="$(${CLI} --repo "${repo}" crap-changes --base HEAD)"
+  [[ "${output}" == *"Methods: 1"* ]] || fail "expected only the changed Java method"
+  python3 - "${repo}/.makevn/reports/crap-changes/report.json" <<'PY'
+import json,sys
+r=json.load(open(sys.argv[1]))
+assert r['scope']=='changes' and len(r['entries'])==1
+assert r['entries'][0]['symbol']=='High#risk'
+PY
+  printf 'package example; class New {}\n' > "${repo}/module-a/src/main/java/example/New.java"
+  set +e
+  output="$(${CLI} --repo "${repo}" crap-changes --base HEAD 2>&1)"
+  local rc=$?
+  set -e
+  [[ ${rc} -eq 2 && "${output}" == *"New.java"* ]] || fail "expected an untracked uncompiled Java source to fail visibly"
+}
+
 test_crap_command_uses_maven_root_for_custom_xml_path() {
   local repo="${TMP_ROOT}/crap-custom-xml"
 
@@ -4810,6 +4836,8 @@ main() {
   test_verify_coverage_fails_without_maven_project
   test_crap_command_uses_existing_jacoco_and_writes_reports
   test_crap_command_gate_and_explicit_xml
+  test_crap_changes_filters_methods_and_includes_worktree
+  python3 -m unittest discover -s "${ROOT_DIR}/libexec/makevn/crap" -p 'test_changes.py' >/dev/null
   test_crap_command_uses_maven_root_for_custom_xml_path
   test_crap_command_discovers_custom_xml_path
   test_crap_command_scopes_module_custom_xml_to_its_sources

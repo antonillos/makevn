@@ -169,6 +169,7 @@ makevn stop-app
 makevn coverage [--threshold PCT]
 makevn coverage-changes [--threshold PCT] [--overall-threshold PCT] [--verbose]
 makevn crap [--jacoco-xml PATH] [--threshold SCORE] [--max-warnings COUNT]
+makevn crap-changes [--base REF]
 makevn crap install-analyzer
 ```
 
@@ -187,6 +188,17 @@ analyzes every detected module-local XML, merging the results under
 `.makevn/reports/crap/`. The default finding threshold is CRAP `> 8`. Without
 `--max-warnings` it is report-only; with a maximum it exits `1` when the gate is
 exceeded. Configuration, analyzer, and coverage errors exit `2`.
+
+`crap-changes` uses the same existing JaCoCo XML and analyzer, but reports only
+production Java methods whose source ranges overlap changes since the merge base
+of the detected parent branch (or `--base REF`). Committed, staged, unstaged, and
+new untracked files are included. It does not run tests and does not change the
+full-repository behavior of `crap`. Reports are written to
+`.makevn/reports/crap-changes/` (JSON, Markdown, SARIF, summary, and raw analyzer
+outputs). Unchanged methods without JaCoCo coverage do not block the report;
+changed methods without coverage fail with their source location and whether
+their class is absent from XML or their method could not be matched. A changed
+source absent from analyzer output also fails as stale/uncompiled coverage.
 
 The analyzer is resolved from the `MAKEVN_CRAP4JAVA_JAR` environment variable,
 then the setting with the same name in `.makevn/config`, then the managed

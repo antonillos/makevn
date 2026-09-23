@@ -671,7 +671,7 @@ fn validate_command(
             Ok(CommandValidation::Valid)
         }
         "help" | "init" | "refresh" | "uninstall" | "test" | "coverage" | "coverage-changes"
-        | "crap" | "docker-up" | "docker-down" | "docker-ps" | "docker-stats"
+        | "crap" | "crap-changes" | "docker-up" | "docker-down" | "docker-ps" | "docker-stats"
         | "docker-ps-required" | "karate-docker-up" | "karate-docker-down" | "run-app"
         | "run-app-bg" | "stop-app" | "run" => Ok(CommandValidation::Valid),
         "exec" => validate_exec_args(trailing_args),
@@ -889,6 +889,7 @@ fn is_top_level_command(arg: &OsString) -> bool {
             | "coverage"
             | "coverage-changes"
             | "crap"
+            | "crap-changes"
             | "pr-verify"
             | "format"
             | "checkstyle"
@@ -918,6 +919,7 @@ fn command_option_takes_value(arg: &OsString) -> bool {
             | "--threshold"
             | "--max-warnings"
             | "--jacoco-xml"
+            | "--base"
             | "--tag"
             | "--compose"
             | "--module"
@@ -1016,6 +1018,7 @@ fn command_supports_frontend_loader(command: &OsString) -> bool {
             | "coverage"
             | "coverage-changes"
             | "crap"
+            | "crap-changes"
             | "pr-verify"
             | "format"
             | "checkstyle"
@@ -3295,6 +3298,7 @@ fn command_help(command: &str) -> Option<(&'static str, &'static str, &'static [
         "coverage" => Some(("makevn [--repo PATH] coverage [--threshold PCT]", "Check the latest aggregate coverage report.", &["--threshold  Required coverage percentage"])),
         "coverage-changes" => Some(("makevn [--repo PATH] coverage-changes [--threshold PCT] [--overall-threshold PCT] [--verbose]", "Check incremental and per-module coverage.", &["--threshold          Per-module coverage percentage", "--overall-threshold  Overall coverage percentage", "--verbose            Print detailed coverage output"])),
         "crap" => Some(("makevn [--repo PATH] crap [install-analyzer] [--jacoco-xml PATH] [--threshold SCORE] [--max-warnings COUNT]", "Calculate Java CRAP metrics from existing JaCoCo XML coverage.", &["install-analyzer  Download and verify the pinned crap4java release", "--jacoco-xml      Use a specific existing JaCoCo XML report", "--threshold       CRAP score warning threshold (default: 8)", "--max-warnings    Fail when the warning count exceeds this ratchet"])),
+        "crap-changes" => Some(("makevn [--repo PATH] crap-changes [--base REF]", "Show CRAP for changed production Java methods using existing JaCoCo coverage.", &["--base  Override the detected base branch/ref"])),
         "pr-verify" => maven_command_help("pr-verify", "Run a local PR-style verification flow.", false),
         "format" => Some(("makevn [--repo PATH] [--compact] format [--tail] [--apply] [-- EXTRA_MAVEN_ARGS...]", "Check or apply code formatting.", &["--tail     Start in interactive log tail mode", "--compact  Use compact non-interactive output", "--apply    Apply formatting changes"])),
         "checkstyle" => Some(("makevn [--repo PATH] [--compact] checkstyle [--tail] [--module MODULE] [--verbose] [-- EXTRA_MAVEN_ARGS...]", "Run Checkstyle code style checks.", &["--tail     Start in interactive log tail mode", "--compact  Use compact non-interactive output", "--module   Maven module to check", "--verbose  Print detailed output"])),
@@ -3439,6 +3443,7 @@ fn print_help(with_header: bool) {
     println!("  makevn [--repo PATH] coverage [--threshold PCT]");
     println!("  makevn [--repo PATH] coverage-changes [--threshold PCT] [--overall-threshold PCT] [--verbose]");
     println!("  makevn [--repo PATH] crap [--jacoco-xml PATH] [--threshold SCORE] [--max-warnings COUNT]");
+    println!("  makevn [--repo PATH] crap-changes [--base REF]");
     println!("  makevn [--repo PATH] crap install-analyzer");
     println!("  makevn [--repo PATH] [--compact] pr-verify [--tail] [-- EXTRA_MAVEN_ARGS...]");
     println!(
@@ -3489,6 +3494,7 @@ fn print_help(with_header: bool) {
     println!("  makevn coverage");
     println!("  makevn coverage-changes");
     println!("  makevn crap");
+    println!("  makevn crap-changes");
     println!("  makevn pr-verify");
     println!("  makevn format --apply");
     println!("  makevn checkstyle --module domain --verbose");

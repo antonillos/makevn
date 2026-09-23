@@ -14,6 +14,9 @@ def arguments():
     parser.add_argument("--output-dir", required=True)
     parser.add_argument("--threshold", type=float, default=8.0)
     parser.add_argument("--max-warnings", type=int)
+    parser.add_argument("--changes-file")
+    parser.add_argument("--repo-root")
+    parser.add_argument("--source-root", action="append")
     return parser.parse_args()
 
 
@@ -43,6 +46,22 @@ def score(value):
     return "N/A" if value is None else f"{value:.2f}"
 
 
+def changed_path(entry, source_root, repo_root, paths):
+    raw = Path(entry["file"])
+    candidate = (Path(source_root) / raw).resolve()
+    try:
+        relative = candidate.relative_to(repo_root).as_posix()
+        if relative in paths:
+            return relative
+    except ValueError:
+        pass
+    suffix = "/" + raw.as_posix().lstrip("/")
+    matches = [path for path in paths if ("/" + path).endswith(suffix)]
+    if len(matches) > 1:
+        raise ValueError(f"ambiguous changed Java path {raw}: {', '.join(matches)}")
+    return matches[0] if matches else None
+
+
 def main():
     args = arguments()
     if not math.isfinite(args.threshold) or args.threshold < 0 or args.max_warnings is not None and args.max_warnings < 0:
@@ -50,20 +69,40 @@ def main():
     if args.jacoco_xml and len(args.jacoco_xml) != len(args.input):
         print("Error: each crap4java input must have a matching JaCoCo XML.", file=sys.stderr)
         return 2
+    if args.changes_file and (not args.repo_root or not args.source_root or len(args.source_root) != len(args.input)):
+        print("Error: changed CRAP requires a repository and one source root per analyzer report.", file=sys.stderr)
+        return 2
     entries = []
     coverage_gaps = []
     try:
+        changes = json.loads(Path(args.changes_file).read_text()) if args.changes_file else None
+        changed_files = changes["files"] if changes else {}
+        repo_root = Path(args.repo_root).resolve() if changes else None
+        matched_files = set()
         for index, source in enumerate(args.input):
             payload = json.loads(Path(source).read_text())
             if not isinstance(payload.get("entries"), list):
                 raise ValueError(f"missing entries array: {source}")
+            selected = []
+            for entry in payload["entries"]:
+                if changes:
+                    path = changed_path(entry, args.source_root[index], repo_root, changed_files)
+                    if path is None:
+                        continue
+                    matched_files.add(path)
+                    start = int(entry.get("line") or 1)
+                    end = int(entry.get("end_line") or start)
+                    if not any(a <= end and b >= start for a, b in changed_files[path]):
+                        continue
+                    entry = dict(entry, file=path)
+                selected.append(entry)
             if args.jacoco_xml:
                 xml_path = args.jacoco_xml[index]
                 xml_classes = {
                     node.get("name", "").replace("/", ".")
                     for node in ElementTree.parse(xml_path).iter("class")
                 }
-                for entry in payload["entries"]:
+                for entry in selected:
                     if entry.get("crap") is not None:
                         continue
                     class_name = entry.get("class") or ""
@@ -75,11 +114,15 @@ def main():
                         "line": entry.get("line") or 1,
                         "jacoco_xml": xml_path,
                     })
-            entries.extend(normalize(entry, args.threshold) for entry in payload["entries"])
+            entries.extend(normalize(entry, args.threshold) for entry in selected)
+        if changes:
+            unmatched_files = set(changed_files) - matched_files
+            if unmatched_files:
+                raise ValueError("changed Java source absent from analyzer output (stale coverage or uncompiled source): " + ", ".join(sorted(unmatched_files)))
     except (OSError, ElementTree.ParseError, json.JSONDecodeError, ValueError) as exc:
         print(f"Error: invalid crap4java report: {exc}", file=sys.stderr)
         return 2
-    if not entries:
+    if not entries and not args.changes_file:
         print("Error: CRAP report contains no measured Java methods.", file=sys.stderr)
         return 2
     seen_methods = set()
@@ -96,6 +139,9 @@ def main():
     missing_coverage = sum(entry["crap"] is None for entry in entries)
     if missing_coverage:
         print(f"Error: CRAP report contains {missing_coverage} Java method(s) without coverage.", file=sys.stderr)
+        if changes:
+            for gap in coverage_gaps:
+                print(f"Error: {gap['file']}:{gap['line']} {gap['class']}#{gap['method']}: {gap['reason']} [XML: {gap['jacoco_xml']}]", file=sys.stderr)
         if coverage_gaps:
             absent = sum(gap["reason"] == "class absent from JaCoCo XML" for gap in coverage_gaps)
             unmatched = len(coverage_gaps) - absent
@@ -130,10 +176,14 @@ def main():
         "diagnostics": {"java_methods": len(entries), "missing_coverage": missing_coverage},
         "gate": gate,
     }
+    if changes:
+        report["scope"] = "changes"
+        report["base"] = changes["base"]
+        report["merge_base"] = changes["merge_base"]
     out = Path(args.output_dir)
     out.mkdir(parents=True, exist_ok=True)
     (out / "report.json").write_text(json.dumps(report, indent=2) + "\n")
-    lines = ["# CRAP Report", "", f"**Status:** {gate['status'].upper()}", f"**Threshold:** CRAP > {args.threshold:g}", "", "| Location | Symbol | CRAP | CC | Coverage |", "|---|---|---:|---:|---:|"]
+    lines = ["# CRAP Changes Report" if changes else "# CRAP Report", "", f"**Status:** {gate['status'].upper()}", f"**Threshold:** CRAP > {args.threshold:g}", "", "| Location | Symbol | CRAP | CC | Coverage |", "|---|---|---:|---:|---:|"]
     for entry in warnings[:25]:
         coverage = "N/A" if entry["coverage_percent"] is None else f"{entry['coverage_percent']:.2f}%"
         lines.append(f"| `{entry['file']}:{entry['line']}` | {entry['symbol'].replace('|', chr(92) + '|')} | {score(entry['crap'])} | {score(entry['complexity'])} | {coverage} |")
@@ -143,7 +193,9 @@ def main():
     sarif_results = [{"ruleId": "CRAP", "level": "warning", "message": {"text": f"{entry['symbol']} CRAP={score(entry['crap'])}, CC={score(entry['complexity'])}."}, "locations": [{"physicalLocation": {"artifactLocation": {"uri": entry["file"]}, "region": {"startLine": entry["line"]}}}]} for entry in warnings]
     sarif = {"version": "2.1.0", "$schema": "https://json.schemastore.org/sarif-2.1.0.json", "runs": [{"tool": {"driver": {"name": "makevn-crap", "informationUri": "https://github.com/antonillos/crap4java"}}, "results": sarif_results}]}
     (out / "report.sarif").write_text(json.dumps(sarif, indent=2) + "\n")
-    summary = ["CRAP report completed", f"Gate: {gate['status'].upper()}" + (f" ({len(warnings)}/{args.max_warnings} warnings)" if args.max_warnings is not None else " (no warning-count limit configured)"), f"Methods: {len(entries)}", f"Warnings: {len(warnings)}", f"Missing coverage: {report['diagnostics']['missing_coverage']}"]
+    summary = ["CRAP changes report completed" if changes else "CRAP report completed", f"Gate: {gate['status'].upper()}" + (f" ({len(warnings)}/{args.max_warnings} warnings)" if args.max_warnings is not None else " (no warning-count limit configured)"), f"Methods: {len(entries)}", f"Warnings: {len(warnings)}", f"Missing coverage: {report['diagnostics']['missing_coverage']}"]
+    if changes:
+        summary.insert(1, f"Base: {changes['base']}")
     (out / "summary.txt").write_text("\n".join(summary) + "\n")
     return 1 if gate["status"] == "failed" else 0
 
