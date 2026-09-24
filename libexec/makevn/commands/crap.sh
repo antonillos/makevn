@@ -93,6 +93,7 @@ makevn_crap_module_root_for_xml() {
 
 makevn_crap_run() {
   local repo_root="$1"
+  local command_name="${2:-crap}"
   local external_jar="${MAKEVN_CRAP4JAVA_JAR:-}"
   local maven_base_path=""
   local explicit_xml=""
@@ -102,7 +103,7 @@ makevn_crap_run() {
   local cached_jar=""
   local java_home=""
   local java_bin=""
-  local report_dir="${repo_root}/.makevn/reports/crap"
+  local report_dir="${repo_root}/.makevn/reports/${command_name}"
   local raw_dir="${report_dir}/raw"
   local reporter="${MAKEVN_LIBEXEC_DIR}/crap/report.py"
   local xml_path=""
@@ -112,12 +113,13 @@ makevn_crap_run() {
   local source_dir=""
   local source_file=""
   local rc=0
+  local base_ref=""
   local -a xml_reports=()
   local -a report_args=()
   local -a java_sources=()
 
-  shift
-  if [[ "${1:-}" == "install-analyzer" ]]; then
+  shift 2
+  if [[ "${command_name}" == "crap" && "${1:-}" == "install-analyzer" ]]; then
     shift
     [[ $# -eq 0 ]] || {
       printf 'Error: crap install-analyzer does not accept extra arguments.\n' >&2
@@ -129,26 +131,36 @@ makevn_crap_run() {
 
   makevn_load_config "${repo_root}"
   threshold="${MAKEVN_CRAP_THRESHOLD:-8}"
-  max_warnings="${MAKEVN_CRAP_MAX_WARNINGS:-}"
+  if [[ "${command_name}" == "crap" ]]; then
+    max_warnings="${MAKEVN_CRAP_MAX_WARNINGS:-}"
+  fi
   while [[ $# -gt 0 ]]; do
     case "$1" in
+      --base)
+        [[ "${command_name}" == "crap-changes" && $# -ge 2 ]] || { printf 'Error: --base requires crap-changes and a value.\n' >&2; return 2; }
+        base_ref="$2"
+        shift 2
+        ;;
       --jacoco-xml)
+        [[ "${command_name}" == "crap" ]] || { printf 'Error: --jacoco-xml is only supported by crap.\n' >&2; return 2; }
         [[ $# -ge 2 ]] || { printf 'Error: Missing value for --jacoco-xml\n' >&2; return 2; }
         explicit_xml="$2"
         shift 2
         ;;
       --threshold)
+        [[ "${command_name}" == "crap" ]] || { printf 'Error: --threshold is only supported by crap.\n' >&2; return 2; }
         [[ $# -ge 2 ]] || { printf 'Error: Missing value for --threshold\n' >&2; return 2; }
         threshold="$2"
         shift 2
         ;;
       --max-warnings)
+        [[ "${command_name}" == "crap" ]] || { printf 'Error: --max-warnings is only supported by crap.\n' >&2; return 2; }
         [[ $# -ge 2 ]] || { printf 'Error: Missing value for --max-warnings\n' >&2; return 2; }
         max_warnings="$2"
         shift 2
         ;;
       *)
-        printf 'Error: Unknown crap option: %s\n' "$1" >&2
+        printf 'Error: Unknown %s option: %s\n' "${command_name}" "$1" >&2
         return 2
         ;;
     esac
@@ -207,9 +219,20 @@ makevn_crap_run() {
   [[ -f "${reporter}" ]] || { printf 'Error: Internal CRAP reporter not found: %s\n' "${reporter}" >&2; return 2; }
 
   mkdir -p "${raw_dir}"
+  if [[ "${command_name}" == "crap-changes" ]]; then
+    command -v git >/dev/null 2>&1 || { printf 'Error: git is required by crap-changes.\n' >&2; return 2; }
+    if [[ -z "${base_ref}" ]]; then
+      base_ref="$(makevn_detect_parent_branch_spec "${repo_root}")"
+      base_ref="${base_ref%...HEAD}"
+    fi
+    python3 "${MAKEVN_LIBEXEC_DIR}/crap/changes.py" --repo-root "${repo_root}" --base "${base_ref}" --output "${report_dir}/changes.json" || return 2
+  fi
   rm -f "${report_dir}/report.json" "${report_dir}/report.md" "${report_dir}/report.sarif" "${report_dir}/summary.txt" "${report_dir}/coverage-gaps.txt"
   rm -f "${raw_dir}"/*.json "${raw_dir}"/*.log 2>/dev/null || true
   report_args=(--output-dir "${report_dir}" --threshold "${threshold}")
+  if [[ "${command_name}" == "crap-changes" ]]; then
+    report_args+=(--changes-file "${report_dir}/changes.json" --repo-root "${repo_root}")
+  fi
   [[ -z "${max_warnings}" ]] || report_args+=(--max-warnings "${max_warnings}")
 
   local report_index=0
@@ -251,6 +274,7 @@ makevn_crap_run() {
     fi
     [[ -s "${raw_json}" ]] || { printf 'Error: crap4java produced no JSON for %s. Analyzer log: %s\n' "${module_root}" "${raw_log}" >&2; return 2; }
     report_args+=(--input "${raw_json}" --jacoco-xml "${xml_path}")
+    [[ "${command_name}" != "crap-changes" ]] || report_args+=(--source-root "${module_root}")
   done
 
   set +e
@@ -265,12 +289,15 @@ makevn_crap_run() {
     done
   fi
   [[ -f "${report_dir}/summary.txt" ]] && cat "${report_dir}/summary.txt"
-  printf 'Artifacts: %s\n' "${report_dir}"
+  if [[ "${command_name}" == "crap" || ${rc} -ne 0 ]]; then
+    printf 'Artifacts: %s\n' "${report_dir}"
+  fi
   return ${rc}
 }
 
 cmd_crap() {
   local repo_root="$1"
+  local command_name="${2:-crap}"
   local log_path=""
   local detail_line=""
   local rc=0
@@ -280,13 +307,13 @@ cmd_crap() {
     return $?
   fi
 
-  log_path="$(makevn_logs_dir "${repo_root}")/crap.log"
+  log_path="$(makevn_logs_dir "${repo_root}")/${command_name}.log"
   mkdir -p "$(dirname "${log_path}")"
   : > "${log_path}"
   makevn_write_backend_metadata \
     "${MAKEVN_BACKEND_METADATA_OUT:-}" \
-    crap "${repo_root}" "${repo_root}" "${log_path}" \
-    .makevn/logs/crap.log 'makevn crap' '' crap
+    "${command_name}" "${repo_root}" "${repo_root}" "${log_path}" \
+    ".makevn/logs/${command_name}.log" "makevn ${command_name}" '' "${command_name}"
 
   if (makevn_crap_run "$@") > "${log_path}" 2>&1; then
     rc=0
@@ -296,7 +323,7 @@ cmd_crap() {
 
   while IFS= read -r detail_line; do
     case "${detail_line}" in
-      Error:*|Coverage\ gaps:*|Coverage\ diagnosis:*|Analyzer\ JSON:*|Analyzer\ log:*|Artifacts:*|CRAP\ report*|Gate:*|Methods:*|Warnings:*|Missing\ coverage:*|Installed\ crap4java:*)
+      Error:*|Coverage\ gaps:*|Coverage\ diagnosis:*|Analyzer\ JSON:*|Analyzer\ log:*|Artifacts:*|CRAP\ report*|CRAP\ changes*|Base:*|Gate:*|Methods:*|Warnings:*|Missing\ coverage:*|Installed\ crap4java:*)
         makevn_print_detail_line "${detail_line}"
         ;;
     esac

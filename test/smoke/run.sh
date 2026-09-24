@@ -1539,6 +1539,54 @@ EOF
   "${compact_cli}" --repo "${repo}" uninstall >/dev/null
 }
 
+test_loader_defers_backend_stderr_until_progress_is_cleared() {
+  local repo="${TMP_ROOT}/loader-stderr-warning"
+  local install_prefix="${TMP_ROOT}/loader-stderr-warning-install"
+  local warning_cli="${install_prefix}/bin/makevn"
+  local output_file="${repo}/loader.out"
+  local java_home
+
+  [[ -x "${ROOT_DIR}/target/release/makevn" ]] || return 0
+  mkdir -p "${repo}"
+  printf '<project/>\n' > "${repo}/pom.xml"
+  java_home="$(detect_java_home)"
+  PREFIX="${install_prefix}" "${ROOT_DIR}/install.sh" --rust >/dev/null
+  "${warning_cli}" --repo "${repo}" init >/dev/null
+  cat > "${repo}/mvnw" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+sleep 1
+EOF
+  chmod +x "${repo}/mvnw"
+  cat > "${repo}/backend-warning.env" <<'EOF'
+case "$0" in
+  */libexec/makevn/backend.sh) printf 'warning: backend warning while loading\n' >&2 ;;
+esac
+EOF
+  cat > "${repo}/.makevn/config" <<EOF
+MAKEVN_JAVA_HOME="${java_home}"
+MAKEVN_CODE_JAVA_HOME=""
+MAKEVN_KARATE_JAVA_HOME=""
+MAKEVN_CODE_TOOL_VERSIONS=""
+MAKEVN_KARATE_TOOL_VERSIONS=""
+MAKEVN_RUN_CMD=""
+EOF
+
+  run_pty_command "${output_file}" env BASH_ENV="${repo}/backend-warning.env" \
+    "${warning_cli}" --repo "${repo}" compile
+  python3 - "${output_file}" <<'PY'
+from pathlib import Path
+import sys
+
+output = Path(sys.argv[1]).read_bytes()
+warning = b'warning: backend warning while loading'
+assert output.count(warning) == 1, 'expected backend warning once'
+assert b'Worked  for ' in output, 'expected final summary'
+after_warning = output.split(warning, 1)[1]
+assert b't tail' not in after_warning, 'live loader continued after warning'
+PY
+}
+
 test_command_routing() {
   local repo="${TMP_ROOT}/command-routing"
   local java_home
@@ -4467,7 +4515,7 @@ EOF
 
   output="$("${fail_cli}" --repo "${repo}" compile 2>&1 || true)"
 
-  [[ "${output}" == *"Worked for "* ]] || fail "expected dashboard elapsed to be present"
+  [[ "${output}" == *"Worked  for "* ]] || fail "expected dashboard elapsed to be present"
   [[ "${output}" == *"[fail] exit 7 | check the log"* ]] || fail "expected compact failure summary without duplicate elapsed"
   if [[ "${output}" =~ \[fail\]\ exit\ 7\ \|\ [0-9]+s\ \|\ check\ the\ log ]]; then
     fail "expected failure summary not to repeat elapsed after dashboard"
@@ -4551,6 +4599,33 @@ test_crap_command_gate_and_explicit_xml() {
   [[ ${rc} -eq 1 ]] || fail "expected CRAP gate to exit 1, got ${rc}"
   [[ "${output}" == *"Gate: FAILED (1/0 warnings)"* ]] || fail "expected failed CRAP gate summary"
   [[ "$(wc -l < "${repo}/java.log" | tr -d '[:space:]')" == "1" ]] || fail "expected explicit JaCoCo XML to run once"
+}
+
+test_crap_changes_filters_methods_and_includes_worktree() {
+  local repo="${TMP_ROOT}/crap-changes"
+  local output=""
+  setup_crap_fixture "${repo}"
+  printf '%s\n' 'package example;' 'class High {' '{' '}' 'void risk() {' 'int x = 1;' '}' '}' > "${repo}/module-a/src/main/java/example/High.java"
+  git -C "${repo}" init -q
+  git -C "${repo}" add pom.xml module-a/src/main/java/example/High.java
+  git -C "${repo}" -c user.name=Test -c user.email=test@example.com commit -qm base
+  sed -i.bak 's/int x = 1/int x = 2/' "${repo}/module-a/src/main/java/example/High.java"
+  rm -f "${repo}/module-a/src/main/java/example/High.java.bak"
+  output="$(${CLI} --repo "${repo}" crap-changes --base HEAD)"
+  [[ "${output}" == *"Methods: 1"* ]] || fail "expected only the changed Java method"
+  [[ "${output}" != *"Artifacts:"* ]] || fail "successful crap-changes should omit the redundant artifacts path"
+  python3 - "${repo}/.makevn/reports/crap-changes/report.json" <<'PY'
+import json,sys
+r=json.load(open(sys.argv[1]))
+assert r['scope']=='changes' and len(r['entries'])==1
+assert r['entries'][0]['symbol']=='High#risk'
+PY
+  printf 'package example; class New {}\n' > "${repo}/module-a/src/main/java/example/New.java"
+  set +e
+  output="$(${CLI} --repo "${repo}" crap-changes --base HEAD 2>&1)"
+  local rc=$?
+  set -e
+  [[ ${rc} -eq 2 && "${output}" == *"New.java"* ]] || fail "expected an untracked uncompiled Java source to fail visibly"
 }
 
 test_crap_command_uses_maven_root_for_custom_xml_path() {
@@ -4763,6 +4838,7 @@ main() {
   test_tail_degrades_without_tty
   test_non_tty_run_is_compact_and_keeps_full_log_in_file
   test_compact_tty_omits_color_and_loader
+  test_loader_defers_backend_stderr_until_progress_is_cleared
   test_command_routing
   test_nested_single_maven_project_routing
   test_docker_commands
@@ -4810,6 +4886,8 @@ main() {
   test_verify_coverage_fails_without_maven_project
   test_crap_command_uses_existing_jacoco_and_writes_reports
   test_crap_command_gate_and_explicit_xml
+  test_crap_changes_filters_methods_and_includes_worktree
+  python3 -m unittest discover -s "${ROOT_DIR}/libexec/makevn/crap" -p 'test_changes.py' >/dev/null
   test_crap_command_uses_maven_root_for_custom_xml_path
   test_crap_command_discovers_custom_xml_path
   test_crap_command_scopes_module_custom_xml_to_its_sources

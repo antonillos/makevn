@@ -188,6 +188,32 @@ struct BackendDetailFile {
     path: PathBuf,
 }
 
+#[derive(Debug)]
+struct BackendStderrFile {
+    path: PathBuf,
+}
+
+impl BackendStderrFile {
+    fn new() -> Result<Self, String> {
+        let unique_suffix = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_err(|error| format!("failed to resolve stderr timestamp: {error}"))?
+            .as_nanos();
+        let path = env::temp_dir().join(format!("makevn-{}-{unique_suffix}.stderr", process::id()));
+        Ok(Self { path })
+    }
+
+    fn path(&self) -> &Path {
+        &self.path
+    }
+}
+
+impl Drop for BackendStderrFile {
+    fn drop(&mut self) {
+        let _ = fs::remove_file(&self.path);
+    }
+}
+
 impl BackendDetailFile {
     fn new() -> Result<Self, String> {
         let unique_suffix = SystemTime::now()
@@ -671,7 +697,7 @@ fn validate_command(
             Ok(CommandValidation::Valid)
         }
         "help" | "init" | "refresh" | "uninstall" | "test" | "coverage" | "coverage-changes"
-        | "crap" | "docker-up" | "docker-down" | "docker-ps" | "docker-stats"
+        | "crap" | "crap-changes" | "docker-up" | "docker-down" | "docker-ps" | "docker-stats"
         | "docker-ps-required" | "karate-docker-up" | "karate-docker-down" | "run-app"
         | "run-app-bg" | "stop-app" | "run" => Ok(CommandValidation::Valid),
         "exec" => validate_exec_args(trailing_args),
@@ -889,6 +915,7 @@ fn is_top_level_command(arg: &OsString) -> bool {
             | "coverage"
             | "coverage-changes"
             | "crap"
+            | "crap-changes"
             | "pr-verify"
             | "format"
             | "checkstyle"
@@ -918,6 +945,7 @@ fn command_option_takes_value(arg: &OsString) -> bool {
             | "--threshold"
             | "--max-warnings"
             | "--jacoco-xml"
+            | "--base"
             | "--tag"
             | "--compose"
             | "--module"
@@ -1016,6 +1044,7 @@ fn command_supports_frontend_loader(command: &OsString) -> bool {
             | "coverage"
             | "coverage-changes"
             | "crap"
+            | "crap-changes"
             | "pr-verify"
             | "format"
             | "checkstyle"
@@ -1103,11 +1132,18 @@ fn dispatch_backend_invocations(
         let run_result = if use_frontend_loader {
             command.process_group(0);
             command.stdout(process::Stdio::null());
+            // Backend stderr must not write into the live dashboard: Git and
+            // other tools can emit warnings that move the terminal cursor and
+            // strand a spinner row above the final summary.
+            let stderr_file = BackendStderrFile::new()?;
+            let stderr_writer = File::create(stderr_file.path())
+                .map_err(|error| format!("failed to capture backend stderr: {error}"))?;
+            command.stderr(process::Stdio::from(stderr_writer));
             command.env("MAKEVN_FRONTEND_OWNS_LOADER", "1");
             if let Some(df) = detail_file.as_ref() {
                 command.env("MAKEVN_BACKEND_DETAIL_OUT", df.path());
             }
-            run_backend_with_loader(
+            let result = run_backend_with_loader(
                 command,
                 metadata_file.as_ref(),
                 backend_invocation.tail,
@@ -1116,7 +1152,14 @@ fn dispatch_backend_invocations(
                 &completed_summaries,
                 renderer.as_mut(),
                 detail_file.as_ref(),
-            )?
+            );
+            if let Some(renderer) = renderer.as_mut() {
+                renderer.clear_line();
+            }
+            if let Ok(mut stderr) = File::open(stderr_file.path()) {
+                let _ = io::copy(&mut stderr, &mut io::stderr());
+            }
+            result?
         } else {
             let elapsed_before = started_at.elapsed();
             let exit_code = run_backend_command(command, backend_path)?;
@@ -1255,7 +1298,6 @@ fn run_backend_with_loader(
     detail_file: Option<&BackendDetailFile>,
 ) -> Result<BackendRunResult, String> {
     let started_at = Instant::now();
-    let fallback_metadata = fallback_backend_metadata(fallback_title);
     let mut child = command.spawn().map_err(|error| {
         format!(
             "failed to launch backend {}: {error}",
@@ -1518,16 +1560,25 @@ fn run_backend_with_loader(
         if let Some(renderer) = renderer.as_mut() {
             if !tail_active {
                 let hint = renderer.current_dashboard_hint();
-                renderer
-                    .render_dashboard(
-                        child.id(),
-                        global_started_at.elapsed(),
-                        completed_summaries,
-                        &current_detail_lines,
-                        metadata.as_ref().unwrap_or(&fallback_metadata),
-                        &hint,
-                    )
-                    .map_err(|error| format!("failed to render loader: {error}"))?;
+                if let Some(metadata) = metadata.as_ref() {
+                    renderer
+                        .render_dashboard(
+                            child.id(),
+                            global_started_at.elapsed(),
+                            completed_summaries,
+                            &current_detail_lines,
+                            metadata,
+                            &hint,
+                        )
+                        .map_err(|error| format!("failed to render loader: {error}"))?;
+                } else {
+                    renderer
+                        .render_frame_with_hint(
+                            child.id(),
+                            &format!("{} | {}", pending_command_line(fallback_title), hint),
+                        )
+                        .map_err(|error| format!("failed to render loader: {error}"))?;
+                }
             } else {
                 let hint = renderer.current_spinner_hint();
                 renderer
@@ -1574,19 +1625,6 @@ fn run_backend_with_loader(
         metadata.as_ref(),
         fallback_title,
     ))
-}
-
-fn fallback_backend_metadata(title: &str) -> BackendMetadata {
-    BackendMetadata {
-        command: title.to_owned(),
-        repo: String::new(),
-        cwd: String::new(),
-        log_path: String::new(),
-        relative_log_path: String::new(),
-        command_display: format!("makevn {title}"),
-        title: title.to_owned(),
-        context: None,
-    }
 }
 
 fn read_backend_metadata(metadata_path: &Path) -> Result<Option<BackendMetadata>, String> {
@@ -1696,7 +1734,7 @@ fn final_dashboard_lines(
             + usize::from(success),
     );
     lines.push(dim_text(&format!(
-        "Worked for {}",
+        "Worked  for {}",
         format_duration(elapsed)
     )));
     for summary in completed_summaries {
@@ -1762,6 +1800,10 @@ fn tail_status_lines(
     lines.push(backend_header_line(metadata));
     lines.push(backend_tail_notice_line(metadata));
     lines
+}
+
+fn pending_command_line(title: &str) -> String {
+    format!("makevn {title}")
 }
 
 fn running_command_line(metadata: &BackendMetadata) -> String {
@@ -2603,6 +2645,9 @@ impl SpinnerRenderer {
 
     fn render_frame_with_hint(&mut self, pid: u32, hint: &str) -> io::Result<()> {
         let line = self.frame_line_with_hint(pid, hint)?;
+        // Before backend metadata arrives this is the only live row. Clipping
+        // keeps it single-line so the detailed dashboard can replace it cleanly.
+        let line = status_line_text_for_width(&line, terminal_width().max(8));
         write!(io::stdout(), "\r\u{1b}[2K{}", line)?;
         io::stdout().flush()?;
         Ok(())
@@ -3295,6 +3340,7 @@ fn command_help(command: &str) -> Option<(&'static str, &'static str, &'static [
         "coverage" => Some(("makevn [--repo PATH] coverage [--threshold PCT]", "Check the latest aggregate coverage report.", &["--threshold  Required coverage percentage"])),
         "coverage-changes" => Some(("makevn [--repo PATH] coverage-changes [--threshold PCT] [--overall-threshold PCT] [--verbose]", "Check incremental and per-module coverage.", &["--threshold          Per-module coverage percentage", "--overall-threshold  Overall coverage percentage", "--verbose            Print detailed coverage output"])),
         "crap" => Some(("makevn [--repo PATH] crap [install-analyzer] [--jacoco-xml PATH] [--threshold SCORE] [--max-warnings COUNT]", "Calculate Java CRAP metrics from existing JaCoCo XML coverage.", &["install-analyzer  Download and verify the pinned crap4java release", "--jacoco-xml      Use a specific existing JaCoCo XML report", "--threshold       CRAP score warning threshold (default: 8)", "--max-warnings    Fail when the warning count exceeds this ratchet"])),
+        "crap-changes" => Some(("makevn [--repo PATH] crap-changes [--base REF]", "Show CRAP for changed production Java methods using existing JaCoCo coverage.", &["--base  Override the detected base branch/ref"])),
         "pr-verify" => maven_command_help("pr-verify", "Run a local PR-style verification flow.", false),
         "format" => Some(("makevn [--repo PATH] [--compact] format [--tail] [--apply] [-- EXTRA_MAVEN_ARGS...]", "Check or apply code formatting.", &["--tail     Start in interactive log tail mode", "--compact  Use compact non-interactive output", "--apply    Apply formatting changes"])),
         "checkstyle" => Some(("makevn [--repo PATH] [--compact] checkstyle [--tail] [--module MODULE] [--verbose] [-- EXTRA_MAVEN_ARGS...]", "Run Checkstyle code style checks.", &["--tail     Start in interactive log tail mode", "--compact  Use compact non-interactive output", "--module   Maven module to check", "--verbose  Print detailed output"])),
@@ -3439,6 +3485,7 @@ fn print_help(with_header: bool) {
     println!("  makevn [--repo PATH] coverage [--threshold PCT]");
     println!("  makevn [--repo PATH] coverage-changes [--threshold PCT] [--overall-threshold PCT] [--verbose]");
     println!("  makevn [--repo PATH] crap [--jacoco-xml PATH] [--threshold SCORE] [--max-warnings COUNT]");
+    println!("  makevn [--repo PATH] crap-changes [--base REF]");
     println!("  makevn [--repo PATH] crap install-analyzer");
     println!("  makevn [--repo PATH] [--compact] pr-verify [--tail] [-- EXTRA_MAVEN_ARGS...]");
     println!(
@@ -3489,6 +3536,7 @@ fn print_help(with_header: bool) {
     println!("  makevn coverage");
     println!("  makevn coverage-changes");
     println!("  makevn crap");
+    println!("  makevn crap-changes");
     println!("  makevn pr-verify");
     println!("  makevn format --apply");
     println!("  makevn checkstyle --module domain --verbose");
@@ -3767,14 +3815,15 @@ mod tests {
     #[test]
     fn final_dashboard_prints_ok_on_success() {
         let lines = super::final_dashboard_lines(Duration::from_secs(3), &[], true);
-        assert_eq!(lines[0], "Worked for 3s");
+        assert_eq!(lines[0], "Worked  for 3s");
         assert_eq!(lines[1], "[ok]");
+        assert_eq!(lines[0].find("for"), "Working for 3s >".find("for"));
     }
 
     #[test]
     fn final_dashboard_omits_ok_on_failure() {
         let lines = super::final_dashboard_lines(Duration::from_secs(3), &[], false);
-        assert_eq!(lines[0], "Worked for 3s");
+        assert_eq!(lines[0], "Worked  for 3s");
         assert_eq!(lines.len(), 1);
     }
 
@@ -3794,7 +3843,7 @@ mod tests {
 
         let lines = super::final_dashboard_lines(Duration::from_secs(574), &[summary], false);
 
-        assert_eq!(lines[0], "Worked for 9m 34s");
+        assert_eq!(lines[0], "Worked  for 9m 34s");
         assert_eq!(
             lines[1],
             "[x] mutation | 9m 34s | .makevn/logs/mutation.log"
@@ -4687,7 +4736,7 @@ mod tests {
 
         let lines = super::final_dashboard_lines(Duration::from_secs(5), &[summary], true);
 
-        assert_eq!(lines[0], "Worked for 5s");
+        assert_eq!(lines[0], "Worked  for 5s");
         assert_eq!(
             lines[1],
             "[✓] coverage-changes | 9s | .makevn/logs/coverage-changes.log"
@@ -4742,15 +4791,13 @@ mod tests {
     }
 
     #[test]
-    fn fallback_backend_metadata_keeps_the_dashboard_visible_before_logging_starts() {
-        let metadata = super::fallback_backend_metadata("verify-changes");
+    fn pending_backend_status_uses_one_line_before_metadata_arrives() {
+        let line = super::pending_command_line("verify-changes");
 
-        assert_eq!(metadata.title, "verify-changes");
-        assert!(metadata.relative_log_path.is_empty());
-        assert_eq!(
-            super::running_command_line(&metadata),
-            "-> makevn verify-changes"
-        );
+        assert_eq!(line, "makevn verify-changes");
+        assert!(!line.contains("Working for"));
+        assert!(!line.contains('\n'));
+        assert!(super::visible_char_count(&super::status_line_text_for_width(&line, 20)) < 20);
     }
 
     #[test]

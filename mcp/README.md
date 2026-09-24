@@ -99,6 +99,7 @@ Tool mapping for common commands:
 - `makevn verify-changes` -> `makevn_verify_changes`
 - `makevn coverage-changes` -> `makevn_coverage_changes`
 - `makevn crap` -> `makevn_crap`
+- `makevn crap-changes` -> `makevn_crap_changes` (`base` optional; uses existing JaCoCo XML)
 - `makevn docker-up` -> `makevn_docker_up`
 - `makevn docker-ps-required` -> `makevn_docker_ps_required`
 

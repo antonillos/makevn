@@ -226,6 +226,7 @@ const TOOL_SPECS: &[ToolSpec] = &[
     ToolSpec { name: "coverage", description: "Check the latest JaCoCo aggregate coverage report.", command: &["coverage"], options: &[COMMON_REPO, ToolOption { name: "threshold", ty: "number", description: "Coverage threshold percentage", required: false }, COMPACT] },
     ToolSpec { name: "coverage_changes", description: "Check incremental and per-module coverage.", command: &["coverage-changes"], options: &[COMMON_REPO, ToolOption { name: "threshold", ty: "number", description: "Per-module coverage threshold", required: false }, ToolOption { name: "overall-threshold", ty: "number", description: "Overall coverage threshold", required: false }, VERBOSE, COMPACT] },
     ToolSpec { name: "crap", description: "Calculate Java CRAP metrics from an existing JaCoCo XML report. This tool never generates coverage or downloads the analyzer.", command: &["crap"], options: &[COMMON_REPO, ToolOption { name: "jacoco-xml", ty: "string", description: "Path to an existing JaCoCo XML report", required: false }, ToolOption { name: "threshold", ty: "number", description: "CRAP score warning threshold (default 8)", required: false }, ToolOption { name: "max-warnings", ty: "integer", description: "Maximum allowed warnings before the gate fails", required: false }, COMPACT] },
+    ToolSpec { name: "crap_changes", description: "Report CRAP only for changed production Java methods relative to a base ref, including local and new files. Uses existing JaCoCo XML; never runs tests or downloads the analyzer.", command: &["crap-changes"], options: &[COMMON_REPO, ToolOption { name: "base", ty: "string", description: "Git base ref (default: detected parent branch)", required: false }, COMPACT] },
     ToolSpec { name: "pr_verify", description: "Run a local PR-style verification flow.", command: &["pr-verify"], options: &[COMMON_REPO, COMPACT] },
     ToolSpec { name: "format", description: "Check or apply code formatting.", command: &["format"], options: &[COMMON_REPO, ToolOption { name: "apply", ty: "boolean", description: "Apply formatting changes", required: false }, COMPACT] },
     ToolSpec { name: "checkstyle", description: "Run Checkstyle code style checks.", command: &["checkstyle"], options: &[COMMON_REPO, MODULE, VERBOSE, COMPACT] },
@@ -760,7 +761,7 @@ fn push_tool_flags(
             "timeout-seconds" => {
                 exec_timeout_seconds(args)?;
             }
-            "compose" | "context" | "jacoco-xml" | "module" | "name" | "tag" => {
+            "base" | "compose" | "context" | "jacoco-xml" | "module" | "name" | "tag" => {
                 if let Some(text) = value.as_str().filter(|s| !s.is_empty()) {
                     cmd_args.push(format!("--{}", option.name));
                     cmd_args.push(text.into());
@@ -913,6 +914,25 @@ mod tests {
                 "3"
             ]
         );
+    }
+
+    #[test]
+    fn crap_changes_tool_has_typed_schema_and_forwards_base() {
+        let spec = TOOL_SPECS
+            .iter()
+            .find(|s| s.name == "crap_changes")
+            .unwrap();
+        let schema = super::tool(spec);
+        assert_eq!(schema["name"], "crap_changes");
+        assert_eq!(
+            schema["inputSchema"]["properties"]["base"]["type"],
+            "string"
+        );
+        let mut args = Map::new();
+        args.insert("base".into(), json!("origin/develop"));
+        let mut cmd_args = vec![String::from("crap-changes")];
+        push_tool_flags(&mut cmd_args, spec, &args).unwrap();
+        assert_eq!(cmd_args, vec!["crap-changes", "--base", "origin/develop"]);
     }
 
     #[test]
