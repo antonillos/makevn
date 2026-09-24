@@ -1135,6 +1135,7 @@ test_installer() {
   assert_file_exists "${prefix}/libexec/makevn/docker/ps.sh"
   assert_file_exists "${prefix}/libexec/makevn/coverage/changes.sh"
   assert_file_exists "${prefix}/libexec/makevn/crap/report.py"
+  assert_file_exists "${prefix}/libexec/makevn/crap/jacoco_html.py"
   assert_file_exists "${prefix}/libexec/makevn/compat/verify_changes.sh"
   assert_file_exists "${prefix}/share/makevn/makevn.mk"
   assert_file_exists "${prefix}/share/makevn/skills/makevn/SKILL.md"
@@ -1155,6 +1156,8 @@ test_runtime_archive_includes_crap_reporter() {
     v0.0.0 smoke "${dist_dir}" >/dev/null
   tar -tzf "${archive}" | grep -Fx 'makevn-0.0.0-smoke/libexec/makevn/crap/report.py' >/dev/null \
     || fail "runtime archive should include CRAP reporter"
+  tar -tzf "${archive}" | grep -Fx 'makevn-0.0.0-smoke/libexec/makevn/crap/jacoco_html.py' >/dev/null \
+    || fail "runtime archive should include the JaCoCo HTML adapter"
 }
 
 test_mcp_tool_listing() {
@@ -4585,6 +4588,102 @@ assert report["diagnostics"]["java_methods"] == 4
 PY
 }
 
+test_crap_command_falls_back_to_jacoco_html_without_analyzer() {
+  local repo="${TMP_ROOT}/crap-html-fallback"
+  local output=""
+  setup_crap_fixture "${repo}"
+  rm -f "${repo}/module-a/target/site/jacoco/jacoco.xml" "${repo}/module-b/target/site/jacoco/jacoco.xml" "${repo}/crap4java.jar"
+  cat > "${repo}/module-a/src/main/java/example/High.java" <<'JAVA'
+package example;
+class High {
+  void risky() {
+    if (true) { work(); }
+  }
+  void work() {}
+}
+JAVA
+  mkdir -p "${repo}/module-a/target/site/jacoco/example"
+  cat > "${repo}/module-a/target/site/jacoco/index.html" <<'HTML'
+<html><body>JaCoCo</body></html>
+HTML
+  cat > "${repo}/module-a/target/site/jacoco/example/High.html" <<'HTML'
+<table id="coveragetable"><tbody><tr>
+<td><a href="High.java.html#L3">risky()</a></td>
+<td><img src="../jacoco-resources/redbar.gif" title="2 of 5 instructions missed"/><img src="../jacoco-resources/greenbar.gif" title="3 of 5 instructions covered"/></td>
+<td>60%</td><td></td><td>100%</td><td>0</td><td>4</td><td>0</td><td>3</td><td>0</td><td>1</td>
+</tr></tbody></table>
+HTML
+  output="$(${CLI} --repo "${repo}" crap)"
+  [[ "${output}" == *"Methods: 1"* ]] || fail "expected HTML fallback to calculate method CRAP"
+  [[ "${output}" == *"Warnings: 0"* ]] || fail "expected HTML fallback summary"
+  [[ ! -s "${repo}/java.log" ]] || fail "HTML fallback must not invoke Java/crap4java"
+  assert_file_exists "${repo}/.makevn/reports/crap/raw/report-1.json"
+  python3 - "${repo}/.makevn/reports/crap/report.json" <<'PY'
+import json,sys
+r=json.load(open(sys.argv[1]))
+assert len(r['entries']) == 1
+assert r['entries'][0]['symbol'] == 'example.High#risky()'
+assert abs(r['entries'][0]['crap'] - 5.024) < 0.001
+PY
+}
+
+test_crap_command_explains_csv_only_coverage() {
+  local repo="${TMP_ROOT}/crap-csv-only"
+  local output=""
+  local rc=0
+  setup_crap_fixture "${repo}"
+  rm -f "${repo}/module-a/target/site/jacoco/jacoco.xml" "${repo}/module-b/target/site/jacoco/jacoco.xml"
+  rm -f "${repo}/module-a/target/site/jacoco/index.html" "${repo}/module-b/target/site/jacoco/index.html"
+  printf 'GROUP,PACKAGE,CLASS,INSTRUCTION_MISSED,INSTRUCTION_COVERED\n,example,High,2,3\n' > "${repo}/module-a/target/site/jacoco/jacoco.csv"
+  set +e
+  output="$(${CLI} --repo "${repo}" crap 2>&1)"
+  rc=$?
+  set -e
+  [[ ${rc} -eq 2 ]] || fail "CSV-only JaCoCo should fail with configuration exit 2"
+  [[ "${output}" == *"jacoco.csv"* && "${output}" == *"class-level totals"* ]] || fail "expected precise CSV-only CRAP diagnostic"
+  [[ "${output}" == *"does not run tests automatically"* ]] || fail "expected no-implicit-tests guidance"
+}
+
+test_crap_changes_uses_jacoco_html_for_changed_method() {
+  local repo="${TMP_ROOT}/crap-changes-html"
+  local output=""
+  setup_crap_fixture "${repo}"
+  rm -f "${repo}/module-a/target/site/jacoco/jacoco.xml" "${repo}/module-b/target/site/jacoco/jacoco.xml"
+  cat > "${repo}/module-a/src/main/java/example/High.java" <<'JAVA'
+package example;
+class High {
+  void risky() {
+    if (true) { work(); }
+  }
+  void work() {}
+}
+JAVA
+  mkdir -p "${repo}/module-a/target/site/jacoco/example"
+  cat > "${repo}/module-a/target/site/jacoco/index.html" <<'HTML'
+<html><body>JaCoCo</body></html>
+HTML
+  cat > "${repo}/module-a/target/site/jacoco/example/High.html" <<'HTML'
+<table id="coveragetable"><tbody><tr>
+<td><a href="High.java.html#L3">risky()</a></td>
+<td><img src="../jacoco-resources/redbar.gif" title="2 of 5 instructions missed"/><img src="../jacoco-resources/greenbar.gif" title="3 of 5 instructions covered"/></td>
+<td>60%</td><td></td><td>100%</td><td>0</td><td>4</td><td>0</td><td>3</td><td>0</td><td>1</td>
+</tr></tbody></table>
+HTML
+  git -C "${repo}" init -q
+  git -C "${repo}" add module-a/src/main/java/example/High.java module-b/src/main/java/example/HighB.java
+  git -C "${repo}" -c user.name=Test -c user.email=test@example.com commit -qm base
+  sed -i.bak 's/work();/work(); work();/' "${repo}/module-a/src/main/java/example/High.java"
+  rm -f "${repo}/module-a/src/main/java/example/High.java.bak"
+  output="$(${CLI} --repo "${repo}" crap-changes --base HEAD)"
+  [[ "${output}" == *"Methods: 1"* ]] || fail "expected HTML fallback for one changed method"
+  python3 - "${repo}/.makevn/reports/crap-changes/report.json" <<'PY'
+import json,sys
+r=json.load(open(sys.argv[1]))
+assert r['scope']=='changes' and len(r['entries'])==1
+assert r['entries'][0]['symbol']=='example.High#risky()'
+PY
+}
+
 test_crap_command_gate_and_explicit_xml() {
   local repo="${TMP_ROOT}/crap-gate"
   local output=""
@@ -4885,9 +4984,12 @@ main() {
   test_verify_coverage_accepts_custom_jacoco_output_path
   test_verify_coverage_fails_without_maven_project
   test_crap_command_uses_existing_jacoco_and_writes_reports
+  test_crap_command_falls_back_to_jacoco_html_without_analyzer
+  test_crap_command_explains_csv_only_coverage
+  test_crap_changes_uses_jacoco_html_for_changed_method
   test_crap_command_gate_and_explicit_xml
   test_crap_changes_filters_methods_and_includes_worktree
-  python3 -m unittest discover -s "${ROOT_DIR}/libexec/makevn/crap" -p 'test_changes.py' >/dev/null
+  python3 -m unittest discover -s "${ROOT_DIR}/libexec/makevn/crap" -p 'test_*.py' >/dev/null
   test_crap_command_uses_maven_root_for_custom_xml_path
   test_crap_command_discovers_custom_xml_path
   test_crap_command_scopes_module_custom_xml_to_its_sources
