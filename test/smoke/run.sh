@@ -4615,6 +4615,10 @@ HTML
 HTML
   output="$(${CLI} --repo "${repo}" crap)"
   [[ "${output}" == *"Methods: 1"* ]] || fail "expected HTML fallback to calculate method CRAP"
+  mkdir -p "${repo}/compat-bin"
+  ln -s /bin/bash "${repo}/compat-bin/bash"
+  output="$(PATH="${repo}/compat-bin:${PATH}" ${CLI} --repo "${repo}" crap)"
+  [[ "${output}" == *"Methods: 1"* ]] || fail "HTML fallback must work with system Bash"
   [[ "${output}" == *"Warnings: 0"* ]] || fail "expected HTML fallback summary"
   [[ ! -s "${repo}/java.log" ]] || fail "HTML fallback must not invoke Java/crap4java"
   assert_file_exists "${repo}/.makevn/reports/crap/raw/report-1.json"
@@ -4700,6 +4704,10 @@ HTML
   git -C "${repo}" -c user.name=Test -c user.email=test@example.com commit -qm base
   output="$(${CLI} --repo "${repo}" crap-changes --base HEAD)"
   [[ "${output}" == *"Methods: 0"* ]] || fail "unchanged Java must not require unrelated HTML source mapping"
+  mkdir -p "${repo}/compat-bin"
+  ln -s /bin/bash "${repo}/compat-bin/bash"
+  output="$(PATH="${repo}/compat-bin:${PATH}" ${CLI} --repo "${repo}" crap-changes --base HEAD)"
+  [[ "${output}" == *"Methods: 0"* ]] || fail "unchanged Java must work with system Bash"
   set +e
   output="$(${CLI} --repo "${repo}" crap 2>&1)"
   rc=$?

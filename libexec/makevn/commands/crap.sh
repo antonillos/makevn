@@ -284,6 +284,9 @@ makevn_crap_run() {
       fi
     done
   fi
+  # Bash 3.2 treats expansion of an empty array as unbound under `set -u`.
+  # HTML-only reports deliberately leave this list empty.
+  if [[ ${#xml_reports[@]} -gt 0 ]]; then
   for xml_path in "${xml_reports[@]}"; do
     module_root="$(makevn_crap_module_root_for_xml "${maven_base_path}" "${xml_path}")"
     java_sources=()
@@ -324,6 +327,7 @@ makevn_crap_run() {
     report_args+=(--input "${raw_json}" --jacoco-xml "${xml_path}")
     [[ "${command_name}" != "crap-changes" ]] || report_args+=(--source-root "${module_root}")
   done
+  fi
 
   set +e
   python3 "${reporter}" "${report_args[@]}"
