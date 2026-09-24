@@ -125,6 +125,10 @@ def source_roots(repo):
 def source_for_report_page(report_root, page, parsed_link, roots, repo_root):
     html_parts = page.relative_to(report_root).parent.parts
     source_name = Path(parsed_link.path).name.removesuffix(".html")
+    # JaCoCo uses a single dot-separated directory for a Java package. An
+    # aggregate report adds the Maven module name before that directory.
+    package_name = html_parts[-1] if html_parts else ""
+    module_name = html_parts[0] if report_root.name == "jacoco-aggregate" and len(html_parts) > 1 else ""
     report_module = None
     # Module-local reports live at <module>/target/site/jacoco[/aggregate].
     if len(report_root.parents) >= 3 and report_root.parent.name == "site" and report_root.parent.parent.name == "target":
@@ -137,9 +141,13 @@ def source_for_report_page(report_root, page, parsed_link, roots, repo_root):
             if not path.is_file():
                 continue
             package_parts = path.relative_to(root).parent.parts
-            if len(package_parts) <= len(html_parts) and (not package_parts or html_parts[-len(package_parts):] == package_parts):
+            package_matches = (".".join(package_parts) == package_name or
+                               (len(package_parts) <= len(html_parts) and
+                                (not package_parts or html_parts[-len(package_parts):] == package_parts)))
+            if package_matches:
                 module_root = root.parents[2]
                 score = int(report_module is not None and module_root == report_module)
+                score += int(module_name == module_root.name)
                 matches.append((score, path))
     if not matches:
         raise ValueError(f"cannot map HTML source {source_name} in {page}")
@@ -257,7 +265,9 @@ def class_rows(page):
             yield row, method
 
 
-def collect_entries(report_root, repo_root):
+def collect_entries(report_root, repo_root, changed_files=None):
+    if changed_files is not None and not changed_files:
+        return []
     roots = source_roots(repo_root)
     if not roots:
         raise ValueError(f"no production Java source roots found under {repo_root}")
@@ -270,6 +280,15 @@ def collect_entries(report_root, repo_root):
         try:
             method_rows = list(class_rows(page))
             for row, (link, parsed_link) in method_rows:
+                try:
+                    source = source_for_report_page(report_root, page, parsed_link, roots, repo_root)
+                except ValueError:
+                    if changed_files is not None:
+                        # report.py diagnoses changed files missing from output.
+                        continue
+                    raise
+                if changed_files is not None and source.relative_to(repo_root).as_posix() not in changed_files:
+                    continue
                 if len(row) < 7:
                     raise ValueError(f"incomplete method row in {page}")
                 counts = instruction_counts(row[1])
@@ -281,7 +300,6 @@ def collect_entries(report_root, repo_root):
                 total = missed + covered
                 if total == 0:
                     raise ValueError(f"method has no instruction count in {page}: {link['text']}")
-                source = source_for_report_page(report_root, page, parsed_link, roots, repo_root)
                 source_text = source.read_text(encoding="utf-8", errors="replace")
                 start_line = int(line_match.group(1))
                 end_line = method_end_line(source_text, start_line)
@@ -310,7 +328,7 @@ def collect_entries(report_root, repo_root):
                 errors.append(str(exc))
     if errors:
         raise ValueError("; ".join(errors[:8]))
-    if not raw_entries:
+    if not raw_entries and changed_files is None:
         raise ValueError(f"no method-level JaCoCo coverage tables found in {report_root}")
     return raw_entries
 
@@ -320,11 +338,13 @@ def main():
     parser.add_argument("--html-root", required=True)
     parser.add_argument("--repo-root", required=True)
     parser.add_argument("--output", required=True)
+    parser.add_argument("--changes-file")
     args = parser.parse_args()
     repo = Path(args.repo_root).resolve()
     report_root = Path(args.html_root).resolve()
     try:
-        entries = collect_entries(report_root, repo)
+        changed_files = set(json.loads(Path(args.changes_file).read_text())["files"]) if args.changes_file else None
+        entries = collect_entries(report_root, repo, changed_files)
     except (OSError, ValueError) as exc:
         print(f"Error: cannot read JaCoCo HTML method metrics: {exc}", file=sys.stderr)
         return 2

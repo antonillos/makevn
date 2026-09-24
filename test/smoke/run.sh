@@ -4684,6 +4684,31 @@ assert r['entries'][0]['symbol']=='example.High#risky()'
 PY
 }
 
+test_crap_changes_skips_unrelated_html_and_keeps_errors_brief() {
+  local repo="${TMP_ROOT}/crap-changes-unrelated-html"
+  local output=""
+  local rc=0
+  setup_crap_fixture "${repo}"
+  rm -f "${repo}/module-a/target/site/jacoco/jacoco.xml" "${repo}/module-b/target/site/jacoco/jacoco.xml"
+  mkdir -p "${repo}/module-a/target/site/jacoco/com.example"
+  printf '<html>JaCoCo</html>\n' > "${repo}/module-a/target/site/jacoco/index.html"
+  cat > "${repo}/module-a/target/site/jacoco/com.example/Unknown.html" <<'HTML'
+<table id="coveragetable"><tr><td><a href="Unknown.java.html#L1">missing()</a></td></tr></table>
+HTML
+  git -C "${repo}" init -q
+  git -C "${repo}" add module-a/src/main/java module-b/src/main/java
+  git -C "${repo}" -c user.name=Test -c user.email=test@example.com commit -qm base
+  output="$(${CLI} --repo "${repo}" crap-changes --base HEAD)"
+  [[ "${output}" == *"Methods: 0"* ]] || fail "unchanged Java must not require unrelated HTML source mapping"
+  set +e
+  output="$(${CLI} --repo "${repo}" crap 2>&1)"
+  rc=$?
+  set -e
+  [[ ${rc} -eq 2 ]] || fail "unmapped HTML source should fail full CRAP analysis"
+  [[ "${output}" == *"Details: "* && "${output}" != *"Unknown.java in"* ]] || fail "HTML extraction failure must be brief and point to log"
+  grep -q 'cannot map HTML source Unknown.java' "${repo}/.makevn/reports/crap/raw/report-1.log" || fail "HTML extraction detail missing from analyzer log"
+}
+
 test_crap_command_gate_and_explicit_xml() {
   local repo="${TMP_ROOT}/crap-gate"
   local output=""
@@ -4987,6 +5012,7 @@ main() {
   test_crap_command_falls_back_to_jacoco_html_without_analyzer
   test_crap_command_explains_csv_only_coverage
   test_crap_changes_uses_jacoco_html_for_changed_method
+  test_crap_changes_skips_unrelated_html_and_keeps_errors_brief
   test_crap_command_gate_and_explicit_xml
   test_crap_changes_filters_methods_and_includes_worktree
   python3 -m unittest discover -s "${ROOT_DIR}/libexec/makevn/crap" -p 'test_*.py' >/dev/null

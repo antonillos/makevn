@@ -269,16 +269,13 @@ makevn_crap_run() {
       raw_log="${raw_dir}/report-${report_index}.log"
       raw_json="${raw_log%.log}.json"
       set +e
-      python3 "${html_reader}" --html-root "${html_root}" --repo-root "${repo_root}" --output "${raw_json}" > /dev/null 2>"${raw_log}"
+      local -a html_args=(--html-root "${html_root}" --repo-root "${repo_root}" --output "${raw_json}")
+      [[ "${command_name}" != "crap-changes" ]] || html_args+=(--changes-file "${report_dir}/changes.json")
+      python3 "${html_reader}" "${html_args[@]}" > /dev/null 2>"${raw_log}"
       rc=$?
       set -e
       if [[ ${rc} -ne 0 ]]; then
-        tail -n 40 "${raw_log}" >&2 || true
-        printf 'Error: could not extract method-level CRAP metrics from JaCoCo HTML report: %s\n' "${html_root}" >&2
-        if [[ ${#csv_reports[@]} -gt 0 ]]; then
-          printf 'Error: also found JaCoCo CSV report(s) %s; CSV has class-level totals only and cannot replace method metrics.\n' "${csv_reports[*]}" >&2
-        fi
-        printf 'Analyzer log: %s\nArtifacts: %s\n' "${raw_log}" "${report_dir}" >&2
+        printf 'Error: Could not read method coverage from JaCoCo HTML. Details: %s\n' "${raw_log}" >&2
         return 2
       fi
       report_args+=(--input "${raw_json}")

@@ -65,6 +65,28 @@ class JacocoHtmlReaderTests(unittest.TestCase):
         entries = crap_html.collect_entries(self.report, self.repo)
         self.assertEqual(entries[0]["end_line"], 7)
 
+    def test_aggregate_report_maps_dot_separated_package_and_module(self):
+        aggregate = self.repo / "jacoco-report-aggregate/target/site/jacoco-aggregate"
+        package = aggregate / "module-a/com.example"
+        package.mkdir(parents=True)
+        (package / "Foo.html").write_text(self.page.read_text())
+        source = self.module / "src/main/java/com/example/Foo.java"
+        source.parent.mkdir(parents=True)
+        source.write_text(self.source.read_text().replace("package example;", "package com.example;"))
+        other = self.repo / "module-b/src/main/java/com/example/Foo.java"
+        other.parent.mkdir(parents=True)
+        other.write_text(source.read_text())
+        entries = crap_html.collect_entries(aggregate, self.repo)
+        self.assertEqual(entries[0]["file"], "module-a/src/main/java/com/example/Foo.java")
+
+    def test_changes_ignore_unrelated_unmapped_report_pages(self):
+        unrelated = self.report / "unmapped"
+        unrelated.mkdir()
+        (unrelated / "Missing.html").write_text(self.page.read_text().replace("Foo.java.html", "Missing.java.html"))
+        self.assertEqual(crap_html.collect_entries(self.report, self.repo, set()), [])
+        entries = crap_html.collect_entries(self.report, self.repo, {"module-a/src/main/java/example/Foo.java"})
+        self.assertEqual(len(entries), 1)
+
 
 if __name__ == "__main__":
     unittest.main()
