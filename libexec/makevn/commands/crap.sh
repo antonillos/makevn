@@ -202,7 +202,7 @@ makevn_crap_run() {
     while IFS= read -r html_index; do
       [[ -n "${html_index}" ]] || continue
       html_root="${html_index%/index.html}"
-      [[ "${html_root}" == */jacoco || "${html_root}" == */jacoco-aggregate ]] && html_reports+=("${html_root}")
+      html_reports+=("${html_root}")
     done < <(find "${maven_base_path}" -path '*/target/site/jacoco*/index.html' -type f -print 2>/dev/null | LC_ALL=C sort)
     if printf '%s\n' "${html_reports[@]:-}" | grep -q '/jacoco-aggregate$'; then
       for html_root in "${html_reports[@]}"; do

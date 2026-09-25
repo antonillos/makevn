@@ -4602,11 +4602,11 @@ class High {
   void work() {}
 }
 JAVA
-  mkdir -p "${repo}/module-a/target/site/jacoco/example"
-  cat > "${repo}/module-a/target/site/jacoco/index.html" <<'HTML'
+  mkdir -p "${repo}/module-a/target/site/jacoco-ut/example"
+  cat > "${repo}/module-a/target/site/jacoco-ut/index.html" <<'HTML'
 <html><body>JaCoCo</body></html>
 HTML
-  cat > "${repo}/module-a/target/site/jacoco/example/High.html" <<'HTML'
+  cat > "${repo}/module-a/target/site/jacoco-ut/example/High.html" <<'HTML'
 <table id="coveragetable"><tbody><tr>
 <td><a href="High.java.html#L3">risky()</a></td>
 <td><img src="../jacoco-resources/redbar.gif" title="2 of 5 instructions missed"/><img src="../jacoco-resources/greenbar.gif" title="3 of 5 instructions covered"/></td>

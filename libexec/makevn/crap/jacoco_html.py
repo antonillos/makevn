@@ -158,67 +158,37 @@ def source_for_report_page(report_root, page, parsed_link, roots, repo_root):
     return paths[0]
 
 
-def method_end_line(source, start_line):
-    """Find a method body's closing line, ignoring braces in comments/literals."""
+def masked_java(source):
+    """Blank comments and literals while preserving offsets and line breaks."""
+    masked = list(source)
     state = "code"
-    depth = 0
-    body_started = False
     escaped = False
-    line_number = 1
     i = 0
     while i < len(source):
         char = source[i]
         nxt = source[i + 1] if i + 1 < len(source) else ""
-        if line_number < start_line:
-            # Track lexical state before the method anchor so braces inside a
-            # preceding comment or literal cannot corrupt the end-line scan.
-            if state == "line_comment":
-                if char == "\n":
-                    state = "code"
-            elif state == "block_comment":
-                if char == "*" and nxt == "/":
-                    state = "code"
-                    i += 1
-            elif state == "text_block":
-                if source.startswith('"""', i):
-                    state = "code"
-                    i += 2
-            elif state in ("string", "char"):
-                if escaped:
-                    escaped = False
-                elif char == "\\":
-                    escaped = True
-                elif (state == "string" and char == '"') or (state == "char" and char == "'"):
-                    state = "code"
-            elif char == "/" and nxt == "/":
-                state = "line_comment"
-                i += 1
-            elif char == "/" and nxt == "*":
-                state = "block_comment"
-                i += 1
-            elif source.startswith('"""', i):
-                state = "text_block"
-                i += 2
-            elif char == '"':
-                state = "string"
-            elif char == "'":
-                state = "char"
-            if char == "\n":
-                line_number += 1
-            i += 1
-            continue
         if state == "line_comment":
             if char == "\n":
                 state = "code"
+            else:
+                masked[i] = " "
         elif state == "block_comment":
+            if char != "\n":
+                masked[i] = " "
             if char == "*" and nxt == "/":
+                masked[i + 1] = " "
                 state = "code"
                 i += 1
         elif state == "text_block":
+            if char != "\n":
+                masked[i] = " "
             if source.startswith('"""', i):
+                masked[i:i + 3] = "   "
                 state = "code"
                 i += 2
         elif state in ("string", "char"):
+            if char != "\n":
+                masked[i] = " "
             if escaped:
                 escaped = False
             elif char == "\\":
@@ -227,33 +197,66 @@ def method_end_line(source, start_line):
                 state = "code"
         else:
             if char == "/" and nxt == "/":
+                masked[i:i + 2] = "  "
                 state = "line_comment"
                 i += 1
             elif char == "/" and nxt == "*":
+                masked[i:i + 2] = "  "
                 state = "block_comment"
                 i += 1
             elif source.startswith('"""', i):
+                masked[i:i + 3] = "   "
                 state = "text_block"
                 i += 2
             elif char == '"':
+                masked[i] = " "
                 state = "string"
             elif char == "'":
+                masked[i] = " "
                 state = "char"
-            elif char == "{" and not body_started:
-                body_started = True
-                depth = 1
-            elif char == "{" and body_started:
-                depth += 1
-            elif char == "}" and body_started:
-                depth -= 1
-                if depth == 0:
-                    return line_number
-            elif char == ";" and not body_started:
-                return start_line
-        if char == "\n":
-            line_number += 1
         i += 1
-    return start_line
+    return "".join(masked)
+
+
+def method_range(source, anchor_line):
+    """Locate the enclosing method declaration and body around a JaCoCo line."""
+    code = masked_java(source)
+    stack = []
+    blocks = []
+    for offset, char in enumerate(code):
+        if char == "{":
+            stack.append(offset)
+        elif char == "}" and stack:
+            blocks.append((stack.pop(), offset))
+    ignored = {"if", "for", "while", "switch", "catch", "synchronized", "try"}
+    candidates = []
+    for opening, closing in blocks:
+        boundary = max(code.rfind(";", 0, opening), code.rfind("{", 0, opening), code.rfind("}", 0, opening))
+        prefix = code[boundary + 1:opening]
+        close_paren = prefix.rfind(")")
+        if close_paren < 0:
+            continue
+        depth = 1
+        open_paren = close_paren - 1
+        while open_paren >= 0 and depth:
+            if prefix[open_paren] == ")":
+                depth += 1
+            elif prefix[open_paren] == "(":
+                depth -= 1
+            open_paren -= 1
+        open_paren += 1
+        name = re.search(r"([A-Za-z_$][\w$]*)\s*$", prefix[:open_paren])
+        if not name or name.group(1) in ignored:
+            continue
+        start_offset = boundary + 1 + len(prefix) - len(prefix.lstrip())
+        start_line = code.count("\n", 0, start_offset) + 1
+        end_line = code.count("\n", 0, closing) + 1
+        if start_line <= anchor_line <= end_line:
+            candidates.append((end_line - start_line, start_line, end_line))
+    if not candidates:
+        raise ValueError(f"cannot locate Java method around JaCoCo line {anchor_line}")
+    _, start_line, end_line = min(candidates)
+    return start_line, end_line
 
 
 def class_rows(page):
@@ -301,8 +304,8 @@ def collect_entries(report_root, repo_root, changed_files=None):
                 if total == 0:
                     raise ValueError(f"method has no instruction count in {page}: {link['text']}")
                 source_text = source.read_text(encoding="utf-8", errors="replace")
-                start_line = int(line_match.group(1))
-                end_line = method_end_line(source_text, start_line)
+                anchor_line = int(line_match.group(1))
+                start_line, end_line = method_range(source_text, anchor_line)
                 cc = max(complexity, 1)
                 coverage = covered / total
                 crap = cc * cc * (1 - coverage) ** 3 + cc

@@ -65,6 +65,17 @@ class JacocoHtmlReaderTests(unittest.TestCase):
         entries = crap_html.collect_entries(self.report, self.repo)
         self.assertEqual(entries[0]["end_line"], 7)
 
+    def test_expands_executable_anchor_to_full_method_range(self):
+        self.source.write_text(
+            "package example;\nclass Foo {\n"
+            "  void risky(\n      int value) {\n"
+            "    if (value > 0) {\n      work();\n    }\n"
+            "    work();\n  }\n}\n"
+        )
+        self.page.write_text(self.page.read_text().replace("#L3", "#L6"))
+        entries = crap_html.collect_entries(self.report, self.repo)
+        self.assertEqual((entries[0]["line"], entries[0]["end_line"]), (3, 9))
+
     def test_aggregate_report_maps_dot_separated_package_and_module(self):
         aggregate = self.repo / "jacoco-report-aggregate/target/site/jacoco-aggregate"
         package = aggregate / "module-a/com.example"
