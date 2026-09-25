@@ -14,7 +14,10 @@ All channels should install the same runtime layout and the dedicated
 
 ## GitHub Releases
 
-The release workflow is manual through `workflow_dispatch`:
+Releases are produced by the repository workflows. The normal path starts with
+**Prepare Release**, passes through the protected release PR, and continues
+automatically after merge. `workflow_dispatch` remains available for an
+authorized recovery or controlled rerun:
 
 - `.github/workflows/release.yml`
 
@@ -41,28 +44,20 @@ gh workflow run release.yml -f version=v0.1.0-test.1 -f target_ref=main -f prere
 
 ### Release PR flow
 
-`prepare-release.yml` creates a signed `release/vX.Y.Z` branch and opens the
-release PR against `main` with the separate `makevn-release` GitHub App identity.
-The workflows generate a short-lived installation token from the
-`MAKEVN_RELEASE_APP_CLIENT_ID` Actions variable and the
-`MAKEVN_RELEASE_APP_PRIVATE_KEY` Actions secret. The App must be installed on
-this repository with `Contents: Read and write` and
-`Pull requests: Read and write`; all other repository permissions can remain
-disabled. Each generated token is restricted further to `Contents: Read` and
-`Pull requests: Write`, and is scoped to the current repository. The built-in
-`GITHUB_TOKEN` remains responsible for pushing the prepared branch and
-dispatching the commit-policy workflow.
-This is intentional: `smart-merge.yml` runs as `github-actions[bot]`, which
-cannot approve a PR authored by itself. The existing `MAKEVN_RELEASE_TOKEN`
-personal token remains limited to publishing the Homebrew and asdf repositories;
-it is not used to create repository PRs. The repository must also enable
-**Allow GitHub Actions to create and approve pull requests** under
-**Settings → Actions → General → Workflow permissions** so Smart Merge can
-submit its approval.
+`prepare-release.yml` validates the requested version, creates the release
+branch, and opens a signed PR against `main`. After the repository checks and
+merge policy pass, release and package-manager publication continue through the
+dedicated workflows.
 
-After the release PR is merged by `smart-merge.yml`, the merge workflow
-explicitly dispatches `release.yml`; it does not rely on a push made with
-`GITHUB_TOKEN` to trigger a downstream workflow.
+Release automation uses a dedicated GitHub App with short-lived credentials and
+least-privilege repository access. Long-lived personal access tokens are not
+part of the supported release path. Operational credential names, installation
+scope, and permission details are intentionally maintained in repository
+settings rather than in public documentation.
+
+The supported release path promotes `develop` into `main` before preparing the
+release and synchronizes the long-lived branches afterward. Workflow changes
+must continue to enter through the normal protected branch process.
 
 ## Homebrew
 

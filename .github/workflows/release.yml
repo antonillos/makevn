@@ -26,7 +26,11 @@ on:
         default: false
 
 permissions:
-  contents: write
+  contents: read
+
+concurrency:
+  group: release-${{ github.event_name == 'workflow_dispatch' && inputs.version || github.sha }}
+  cancel-in-progress: false
 
 env:
   CARGO_TERM_COLOR: always
@@ -37,6 +41,7 @@ env:
 jobs:
   validate-version:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     outputs:
       semver: ${{ steps.parse.outputs.semver }}
       version: ${{ steps.parse.outputs.version }}
@@ -45,9 +50,10 @@ jobs:
       draft: ${{ steps.parse.outputs.draft }}
       exists: ${{ steps.release.outputs.exists }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.event_name == 'workflow_dispatch' && inputs.target_ref || github.sha }}
+          persist-credentials: false
       - name: Validate and parse version
         id: parse
         shell: bash
@@ -105,10 +111,12 @@ jobs:
           - runner: macos-14
             target: aarch64-apple-darwin
     runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ needs.validate-version.outputs.target-ref }}
+          persist-credentials: false
       - name: Install Rust
         shell: bash
         run: rustup toolchain install stable --profile minimal
@@ -122,9 +130,16 @@ jobs:
         run: |
           set -euo pipefail
           bash packaging/release/build-runtime-archive.sh "${{ needs.validate-version.outputs.version }}" "${{ matrix.target }}" dist
+      - name: Generate release app token
+        id: release-app-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
+        with:
+          client-id: ${{ vars.MAKEVN_RELEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.MAKEVN_RELEASE_APP_PRIVATE_KEY }}
+          permission-contents: write
       - name: Upload runtime archive
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ steps.release-app-token.outputs.token }}
         shell: bash
         run: |
           set -euo pipefail
@@ -136,20 +151,29 @@ jobs:
   build-source-archive:
     if: needs.validate-version.outputs.exists != 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     needs: [validate-version, create-release]
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ needs.validate-version.outputs.target-ref }}
           fetch-depth: 0
+          persist-credentials: false
       - name: Build source archive
         shell: bash
         run: |
           set -euo pipefail
           bash packaging/release/build-source-archive.sh "${{ needs.validate-version.outputs.version }}" dist
+      - name: Generate release app token
+        id: release-app-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
+        with:
+          client-id: ${{ vars.MAKEVN_RELEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.MAKEVN_RELEASE_APP_PRIVATE_KEY }}
+          permission-contents: write
       - name: Upload source archive
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ steps.release-app-token.outputs.token }}
         shell: bash
         run: |
           set -euo pipefail
@@ -161,15 +185,29 @@ jobs:
   publish-package-managers:
     if: needs.validate-version.outputs.exists != 'true' && needs.validate-version.outputs.prerelease != 'true' && needs.validate-version.outputs.draft != 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     needs: [validate-version, build-runtime-archives, build-source-archive]
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ needs.validate-version.outputs.target-ref }}
+          persist-credentials: false
+      - name: Generate release app token
+        id: release-app-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
+        with:
+          client-id: ${{ vars.MAKEVN_RELEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.MAKEVN_RELEASE_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: |
+            makevn
+            homebrew-tap
+            asdf-makevn
+          permission-contents: write
       - name: Read release asset checksums
         id: checksums
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ steps.release-app-token.outputs.token }}
           VERSION: ${{ needs.validate-version.outputs.version }}
           REPOSITORY: ${{ github.repository }}
         shell: bash
@@ -189,22 +227,18 @@ jobs:
           printf 'intel-sha=%s\n' "${intel_sha}" >> "${GITHUB_OUTPUT}"
       - name: Publish Homebrew tap
         env:
-          RELEASE_TOKEN: ${{ secrets.MAKEVN_RELEASE_TOKEN }}
+          RELEASE_TOKEN: ${{ steps.release-app-token.outputs.token }}
+          APP_SLUG: ${{ steps.release-app-token.outputs.app-slug }}
           VERSION: ${{ needs.validate-version.outputs.version }}
           ARM_SHA: ${{ steps.checksums.outputs.arm-sha }}
           INTEL_SHA: ${{ steps.checksums.outputs.intel-sha }}
         shell: bash
         run: |
           set -euo pipefail
-          if [[ -z "${RELEASE_TOKEN}" ]]; then
-            printf 'Skipping Homebrew tap update: MAKEVN_RELEASE_TOKEN is not configured.\n' >> "${GITHUB_STEP_SUMMARY}"
-            exit 0
-          fi
-
           git clone "https://x-access-token:${RELEASE_TOKEN}@github.com/antonillos/homebrew-tap.git" homebrew-tap
           cd homebrew-tap
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config user.name "${APP_SLUG}[bot]"
+          git config user.email "${APP_SLUG}[bot]@users.noreply.github.com"
           mkdir -p Formula
           cat > Formula/makevn.rb <<FORMULA
           class Makevn < Formula
@@ -262,21 +296,17 @@ jobs:
           printf 'Updated Homebrew tap for %s.\n' "${VERSION}" >> "${GITHUB_STEP_SUMMARY}"
       - name: Publish asdf plugin
         env:
-          RELEASE_TOKEN: ${{ secrets.MAKEVN_RELEASE_TOKEN }}
+          RELEASE_TOKEN: ${{ steps.release-app-token.outputs.token }}
+          APP_SLUG: ${{ steps.release-app-token.outputs.app-slug }}
           VERSION: ${{ needs.validate-version.outputs.version }}
         shell: bash
         run: |
           set -euo pipefail
-          if [[ -z "${RELEASE_TOKEN}" ]]; then
-            printf 'Skipping asdf plugin update: MAKEVN_RELEASE_TOKEN is not configured.\n' >> "${GITHUB_STEP_SUMMARY}"
-            exit 0
-          fi
-
           git clone "https://x-access-token:${RELEASE_TOKEN}@github.com/antonillos/asdf-makevn.git" asdf-makevn
           cp -R packaging/asdf/. asdf-makevn/
           cd asdf-makevn
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config user.name "${APP_SLUG}[bot]"
+          git config user.email "${APP_SLUG}[bot]@users.noreply.github.com"
           chmod +x bin/download bin/install bin/latest-stable bin/list-all
 
           if git diff --quiet; then
@@ -291,11 +321,13 @@ jobs:
   create-release:
     if: needs.validate-version.outputs.exists != 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     needs: validate-version
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ needs.validate-version.outputs.target-ref }}
+          persist-credentials: false
       - name: Generate release notes
         shell: bash
         run: |
@@ -338,9 +370,16 @@ jobs:
           - Runtime archives for Linux x86_64, macOS x86_64, and macOS arm64
           - SHA-256 checksum files for each archive
           RELEASE
+      - name: Generate release app token
+        id: release-app-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
+        with:
+          client-id: ${{ vars.MAKEVN_RELEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.MAKEVN_RELEASE_APP_PRIVATE_KEY }}
+          permission-contents: write
       - name: Create GitHub release
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ steps.release-app-token.outputs.token }}
         shell: bash
         run: |
           set -euo pipefail

@@ -63,10 +63,11 @@ if [[ -f "${VERSION_ENV}" ]]; then
   cp "${VERSION_ENV}" "${LIBEXEC_DIR}/version.env"
 fi
 rm -rf "${LIBEXEC_DIR}/commands" "${LIBEXEC_DIR}/common"
-rm -rf "${LIBEXEC_DIR}/compat" "${LIBEXEC_DIR}/coverage" "${LIBEXEC_DIR}/docker" "${LIBEXEC_DIR}/jdk" "${LIBEXEC_DIR}/mcp"
+rm -rf "${LIBEXEC_DIR}/compat" "${LIBEXEC_DIR}/coverage" "${LIBEXEC_DIR}/crap" "${LIBEXEC_DIR}/docker" "${LIBEXEC_DIR}/jdk" "${LIBEXEC_DIR}/mcp"
 cp -R "${SCRIPT_DIR}/libexec/makevn/commands" "${LIBEXEC_DIR}/commands"
 cp -R "${SCRIPT_DIR}/libexec/makevn/common" "${LIBEXEC_DIR}/common"
 cp -R "${SCRIPT_DIR}/libexec/makevn/coverage" "${LIBEXEC_DIR}/coverage"
+cp -R "${SCRIPT_DIR}/libexec/makevn/crap" "${LIBEXEC_DIR}/crap"
 cp -R "${SCRIPT_DIR}/libexec/makevn/docker" "${LIBEXEC_DIR}/docker"
 cp -R "${SCRIPT_DIR}/libexec/makevn/jdk" "${LIBEXEC_DIR}/jdk"
 cp -R "${SCRIPT_DIR}/libexec/makevn/compat" "${LIBEXEC_DIR}/compat"
@@ -74,7 +75,7 @@ cp -R "${SCRIPT_DIR}/share/makevn/." "${SHARE_DIR}/"
 cp -R "${SCRIPT_DIR}/skills/makevn/." "${SKILL_DIR}/"
 
 chmod +x "${LIBEXEC_DIR}/cli.sh" "${LIBEXEC_DIR}/backend.sh" "${LIBEXEC_DIR}/common.sh"
-find "${LIBEXEC_DIR}/commands" "${LIBEXEC_DIR}/coverage" "${LIBEXEC_DIR}/docker" "${LIBEXEC_DIR}/jdk" "${LIBEXEC_DIR}/compat" -type f -name '*.sh' -exec chmod +x {} +
+find "${LIBEXEC_DIR}/commands" "${LIBEXEC_DIR}/coverage" "${LIBEXEC_DIR}/crap" "${LIBEXEC_DIR}/docker" "${LIBEXEC_DIR}/jdk" "${LIBEXEC_DIR}/compat" -type f -name '*.sh' -exec chmod +x {} +
 
 printf 'Installed makevn to %s\n' "${PREFIX}"
 printf 'Installed Rust dispatcher from %s\n' "${RUST_BIN}"

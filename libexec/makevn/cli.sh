@@ -40,6 +40,9 @@ Usage:
   makevn [--repo PATH] verify-changes [--clean-generated-contract-targets] [-- EXTRA_MAVEN_ARGS...]
   makevn [--repo PATH] coverage [--threshold PCT]
   makevn [--repo PATH] coverage-changes [--threshold PCT] [--overall-threshold PCT] [--verbose]
+  makevn [--repo PATH] crap [--jacoco-xml PATH] [--threshold SCORE] [--max-warnings COUNT]
+  makevn [--repo PATH] crap-changes [--base REF]
+  makevn [--repo PATH] crap install-analyzer
   makevn [--repo PATH] pr-verify [-- EXTRA_MAVEN_ARGS...]
   makevn [--repo PATH] format [--apply] [-- EXTRA_MAVEN_ARGS...]
   makevn [--repo PATH] checkstyle [--module MODULE] [--verbose] [-- EXTRA_MAVEN_ARGS...]
@@ -87,6 +90,7 @@ Examples:
   makevn verify-changes-preview
   makevn verify-changes
   makevn coverage-changes
+  makevn crap
   makevn pr-verify
   makevn format --apply
   makevn checkstyle --module domain --verbose
@@ -121,7 +125,7 @@ print_command_intro() {
 
 makevn_cli_is_top_level_command() {
   case "$1" in
-    help|doctor|init|make|uninstall|profile|exec|compile|test-compile|compile-tests|validate|package|clean|build|test|verify-ut|verify-ut-coverage|verify-it|verify-it-coverage|verify|verify-changes-preview|verify-changes|coverage|coverage-changes|pr-verify|format|checkstyle|docker-up|docker-down|docker-ps|docker-stats|docker-ps-required|karate-docker-up|karate-docker-down|karate-test|karate-all|run-app|run-app-bg|stop-app|run|jdk|mutation)
+    help|doctor|init|make|uninstall|profile|exec|compile|test-compile|compile-tests|validate|package|clean|build|test|verify-ut|verify-ut-coverage|verify-it|verify-it-coverage|verify|verify-changes-preview|verify-changes|coverage|coverage-changes|crap|crap-changes|pr-verify|format|checkstyle|docker-up|docker-down|docker-ps|docker-stats|docker-ps-required|karate-docker-up|karate-docker-down|karate-test|karate-all|run-app|run-app-bg|stop-app|run|jdk|mutation)
       return 0
       ;;
   esac
@@ -130,7 +134,7 @@ makevn_cli_is_top_level_command() {
 
 makevn_cli_option_takes_value() {
   case "$1" in
-    --name|--context|--threshold|--overall-threshold|--tag|--compose|--module)
+    --name|--context|--threshold|--overall-threshold|--max-warnings|--jacoco-xml|--base|--tag|--compose|--module)
       return 0
       ;;
   esac
@@ -218,6 +222,8 @@ source "${SCRIPT_DIR}/commands/exec.sh"
 source "${SCRIPT_DIR}/commands/maven.sh"
 # shellcheck source=/dev/null
 source "${SCRIPT_DIR}/commands/changes.sh"
+# shellcheck source=/dev/null
+source "${SCRIPT_DIR}/commands/crap.sh"
 # shellcheck source=/dev/null
 source "${SCRIPT_DIR}/commands/docker.sh"
 # shellcheck source=/dev/null
@@ -387,6 +393,12 @@ case "${COMMAND}" in
     ;;
   coverage-changes)
     cmd_coverage_changes "${REPO_ROOT}" "$@"
+    ;;
+  crap)
+    cmd_crap "${REPO_ROOT}" crap "$@"
+    ;;
+  crap-changes)
+    cmd_crap "${REPO_ROOT}" crap-changes "$@"
     ;;
   pr-verify)
     cmd_pr_verify "${REPO_ROOT}" "$@"

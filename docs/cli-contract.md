@@ -168,11 +168,49 @@ makevn stop-app
 ```bash
 makevn coverage [--threshold PCT]
 makevn coverage-changes [--threshold PCT] [--overall-threshold PCT] [--verbose]
+makevn crap [--jacoco-xml PATH] [--threshold SCORE] [--max-warnings COUNT]
+makevn crap-changes [--base REF]
+makevn crap install-analyzer
 ```
 
 `coverage` checks the latest aggregate JaCoCo CSV report against the configured repository threshold. It requires a prior coverage-producing command such as `verify`, `verify-ut-coverage`, or `verify-it-coverage`.
 
 `coverage-changes` requires an existing JaCoCo aggregate report. If the aggregate module has already been built but the HTML report is missing, the backend may run `jacoco:report-aggregate` for the detected aggregate module before analysis. The command compares changed Java production code against the detected parent branch and uses the internal coverage runtime packaged under `libexec/makevn/`. It reports line-level incremental coverage, changed-code coverage grouped by JaCoCo module, top offending changed classes, and overall project coverage. `--threshold` applies to incremental coverage and changed-module instruction coverage, `--overall-threshold` applies to the aggregate JaCoCo CSV gate, and `--verbose` includes per-class detail plus ignored class paths.
+
+The `verify-ut-coverage` and `verify-it-coverage` commands now fail when Maven
+returns success but no JaCoCo XML report was generated. Passing
+`-Djacoco.skip=false` only enables a configured JaCoCo plugin; it cannot create
+coverage when the repository has no JaCoCo plugin or coverage profile.
+
+`crap` analyzes Java only and never generates coverage or runs tests. Run
+`verify-ut-coverage` or `verify-it-coverage` first. It prefers an aggregate
+JaCoCo XML report and otherwise analyzes every detected module-local XML,
+merging the results under `.makevn/reports/crap/`. When JaCoCo XML is absent,
+it reads method counters and complexity from an existing JaCoCo HTML report;
+JaCoCo CSV is also detected for diagnostics, but its class-level totals are not
+sufficient to calculate method CRAP. If neither XML nor usable HTML exists, the
+error lists the coverage artifacts found and explains what is missing. The
+default finding threshold is CRAP `> 8`. Without
+`--max-warnings` it is report-only; with a maximum it exits `1` when the gate is
+exceeded. Configuration, analyzer, and coverage errors exit `2`.
+
+`crap-changes` uses the same existing JaCoCo XML or HTML data, but reports only
+production Java methods whose source ranges overlap changes since the merge base
+of the detected parent branch (or `--base REF`). Committed, staged, unstaged, and
+new untracked files are included. It does not run tests and does not change the
+full-repository behavior of `crap`. Reports are written to
+`.makevn/reports/crap-changes/` (JSON, Markdown, SARIF, summary, and raw analyzer
+outputs). Unchanged methods without JaCoCo coverage do not block the report;
+changed methods without coverage fail with their source location and whether
+their class is absent from XML or their method could not be matched. A changed
+source absent from analyzer output also fails as stale/uncompiled coverage.
+
+The XML analyzer is resolved from the `MAKEVN_CRAP4JAVA_JAR` environment variable,
+then the setting with the same name in `.makevn/config`, then the managed
+user cache. The internal HTML reader does not require crap4java.
+`makevn crap install-analyzer` is the only operation that downloads
+the pinned `antonillos/crap4java` v0.1.0 artifact, and verifies its SHA-256 before
+installing it.
 
 `verify-changes-preview` computes and prints the affected modules, classes, tests, and selected verification strategy without running Maven. It writes a short-lived preflight snapshot under `.makevn/` so an immediate follow-up `verify-changes` call can reuse the same affected-scope calculation.
 

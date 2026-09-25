@@ -21,8 +21,11 @@ on:
         default: main
 
 permissions:
-  actions: write
-  contents: write
+  contents: read
+
+concurrency:
+  group: prepare-release-${{ inputs.base_branch }}
+  cancel-in-progress: false
 
 env:
   CARGO_TERM_COLOR: always
@@ -33,11 +36,13 @@ env:
 jobs:
   prepare:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ inputs.base_branch }}
           fetch-depth: 0
+          persist-credentials: false
       - name: Validate release base
         shell: bash
         run: |
@@ -105,9 +110,18 @@ jobs:
       - name: Run smoke tests
         shell: bash
         run: bash test/smoke/run.sh
+      - name: Generate release app token
+        id: release-app-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
+        with:
+          client-id: ${{ vars.MAKEVN_RELEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.MAKEVN_RELEASE_APP_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
       - name: Create release branch
         env:
           ACTIONS_SIGNING_KEY: ${{ secrets.MAKEVN_ACTIONS_SIGNING_KEY }}
+          GH_TOKEN: ${{ steps.release-app-token.outputs.token }}
         shell: bash
         run: |
           set -euo pipefail
@@ -138,15 +152,8 @@ jobs:
           git add rust/dispatcher/Cargo.toml rust/dispatcher/Cargo.lock
           git commit --gpg-sign -m "release: bump to ${{ steps.version.outputs.next }}"
           git cat-file commit HEAD | grep -q '^gpgsig '
+          gh auth setup-git
           git push --force-with-lease origin "${branch}"
-      - name: Generate release app token
-        id: release-app-token
-        uses: actions/create-github-app-token@v3
-        with:
-          client-id: ${{ vars.MAKEVN_RELEASE_APP_CLIENT_ID }}
-          private-key: ${{ secrets.MAKEVN_RELEASE_APP_PRIVATE_KEY }}
-          permission-contents: read
-          permission-pull-requests: write
       - name: Open release PR
         env:
           # Use a separate identity for the PR author. Smart Merge runs as
@@ -166,6 +173,8 @@ jobs:
           pr_number=""
           pr_state=""
           pr_author=""
+          pr_title=""
+          pr_body=""
           create_error_file="$(mktemp)"
 
           pr_data="$(gh pr list \
@@ -173,13 +182,15 @@ jobs:
             --head "${branch}" \
             --base "${{ inputs.base_branch }}" \
             --state all \
-            --json number,state,author \
+            --json number,state,author,title,body \
             --jq '.[0] // empty')"
 
           if [[ -n "${pr_data}" ]]; then
             pr_number="$(jq -r '.number' <<< "${pr_data}")"
             pr_state="$(jq -r '.state' <<< "${pr_data}")"
             pr_author="$(jq -r '.author.login // empty' <<< "${pr_data}")"
+            pr_title="$(jq -r '.title' <<< "${pr_data}")"
+            pr_body="$(jq -r '.body // ""' <<< "${pr_data}")"
           fi
 
           if [[ -n "${pr_number}" ]]; then
@@ -191,11 +202,15 @@ jobs:
               pr_number=""
               pr_state=""
             elif [[ "${pr_state}" == "OPEN" ]]; then
-              echo "Updating existing open PR #${pr_number}"
-              gh pr edit "${pr_number}" \
-                --repo "${{ github.repository }}" \
-                --title "${title}" \
-                --body "${body}"
+              if [[ "${pr_title}" != "${title}" || "${pr_body}" != "${body}" ]]; then
+                echo "Updating existing open PR #${pr_number}"
+                gh pr edit "${pr_number}" \
+                  --repo "${{ github.repository }}" \
+                  --title "${title}" \
+                  --body "${body}"
+              else
+                echo "Existing open PR #${pr_number} already has the expected metadata"
+              fi
               pr_url="$(gh pr view "${pr_number}" --repo "${{ github.repository }}" --json url --jq '.url')"
             else
               echo "Found ${pr_state,,} PR #${pr_number}, creating a new release PR"
@@ -232,23 +247,6 @@ jobs:
             fi
           fi
           if [[ -n "${pr_url}" ]]; then
-            if [[ -z "${pr_number}" || "${pr_state}" != "OPEN" ]]; then
-              pr_number="$(gh pr view "${branch}" --repo "${{ github.repository }}" --json number --jq '.number')"
-            fi
-            pr_data="$(gh pr view "${pr_number}" --repo "${{ github.repository }}" --json headRefOid,baseRefOid,baseRefName)"
-            head_sha="$(jq -r '.headRefOid' <<< "${pr_data}")"
-            base_sha="$(jq -r '.baseRefOid' <<< "${pr_data}")"
-            base_ref="$(jq -r '.baseRefName' <<< "${pr_data}")"
-            if ! GH_TOKEN="${{ github.token }}" gh workflow run commit-policy.yml \
-              --repo "${{ github.repository }}" \
-              --ref "${branch}" \
-              -f pull_number="${pr_number}" \
-              -f head_sha="${head_sha}" \
-              -f base_sha="${base_sha}" \
-              -f base_ref="${base_ref}"; then
-              printf 'Error: could not dispatch Commit Policy for release PR #%s.\n' "${pr_number}" >&2
-              exit 1
-            fi
             printf 'Release PR: %s\n' "${pr_url}" >> "${GITHUB_STEP_SUMMARY}"
           else
             echo "Release PR URL could not be determined"

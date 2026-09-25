@@ -375,6 +375,18 @@ assert data['suggested_next_step']['note'] == 'no automatic recommendation: Mave
 PY
 }
 
+test_doctor_counts_custom_jacoco_xml_path() {
+  local repo="${TMP_ROOT}/doctor-custom-jacoco"
+  local output=""
+
+  mkdir -p "${repo}/target/coverage"
+  printf '<project/>\n' > "${repo}/pom.xml"
+  printf '<report/>\n' > "${repo}/target/coverage/jacoco.xml"
+
+  output="$(${CLI} --repo "${repo}" doctor)"
+  [[ "${output}" == *"JaCoCo XML reports: 1"* ]] || fail "doctor should count custom target/**/jacoco.xml reports"
+}
+
 test_doctor_resolves_java_version_from_pom() {
   local repo="${TMP_ROOT}/doctor-pom-java-version"
   local fake_java_home="${repo}/fake-java-home"
@@ -1122,10 +1134,30 @@ test_installer() {
   assert_file_exists "${prefix}/libexec/makevn/jdk/manager.sh"
   assert_file_exists "${prefix}/libexec/makevn/docker/ps.sh"
   assert_file_exists "${prefix}/libexec/makevn/coverage/changes.sh"
+  assert_file_exists "${prefix}/libexec/makevn/crap/report.py"
+  assert_file_exists "${prefix}/libexec/makevn/crap/jacoco_html.py"
   assert_file_exists "${prefix}/libexec/makevn/compat/verify_changes.sh"
   assert_file_exists "${prefix}/share/makevn/makevn.mk"
   assert_file_exists "${prefix}/share/makevn/skills/makevn/SKILL.md"
   "${prefix}/bin/makevn" --help >/dev/null
+}
+
+test_runtime_archive_includes_crap_reporter() {
+  local dist_dir="${TMP_ROOT}/runtime-archive"
+  local archive="${dist_dir}/makevn-v0.0.0-smoke.tar.gz"
+  local bin_dir="${dist_dir}/bin-source"
+
+  mkdir -p "${bin_dir}"
+  printf '#!/usr/bin/env bash\nexit 0\n' > "${bin_dir}/makevn"
+  printf '#!/usr/bin/env bash\nexit 0\n' > "${bin_dir}/makevn-mcp"
+  chmod +x "${bin_dir}/makevn" "${bin_dir}/makevn-mcp"
+
+  MAKEVN_BIN_DIR="${bin_dir}" bash "${ROOT_DIR}/packaging/release/build-runtime-archive.sh" \
+    v0.0.0 smoke "${dist_dir}" >/dev/null
+  tar -tzf "${archive}" | grep -Fx 'makevn-0.0.0-smoke/libexec/makevn/crap/report.py' >/dev/null \
+    || fail "runtime archive should include CRAP reporter"
+  tar -tzf "${archive}" | grep -Fx 'makevn-0.0.0-smoke/libexec/makevn/crap/jacoco_html.py' >/dev/null \
+    || fail "runtime archive should include the JaCoCo HTML adapter"
 }
 
 test_mcp_tool_listing() {
@@ -1364,6 +1396,8 @@ test_tail_degrades_without_tty() {
 set -euo pipefail
 printf 'ARGS=%s\n' "$*" >> .mvnw.log
 printf 'JAVA_HOME=%s\n' "${JAVA_HOME:-}" >> .mvnw.log
+mkdir -p target/site/jacoco
+printf '<report/>\n' > target/site/jacoco/jacoco.xml
 EOF
   chmod +x "${repo}/mvnw"
   cat > "${repo}/.makevn/config" <<EOF
@@ -1506,6 +1540,54 @@ EOF
   assert_contains "${repo}/.makevn/logs/compile.log" "compact-tty-ok"
 
   "${compact_cli}" --repo "${repo}" uninstall >/dev/null
+}
+
+test_loader_defers_backend_stderr_until_progress_is_cleared() {
+  local repo="${TMP_ROOT}/loader-stderr-warning"
+  local install_prefix="${TMP_ROOT}/loader-stderr-warning-install"
+  local warning_cli="${install_prefix}/bin/makevn"
+  local output_file="${repo}/loader.out"
+  local java_home
+
+  [[ -x "${ROOT_DIR}/target/release/makevn" ]] || return 0
+  mkdir -p "${repo}"
+  printf '<project/>\n' > "${repo}/pom.xml"
+  java_home="$(detect_java_home)"
+  PREFIX="${install_prefix}" "${ROOT_DIR}/install.sh" --rust >/dev/null
+  "${warning_cli}" --repo "${repo}" init >/dev/null
+  cat > "${repo}/mvnw" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+sleep 1
+EOF
+  chmod +x "${repo}/mvnw"
+  cat > "${repo}/backend-warning.env" <<'EOF'
+case "$0" in
+  */libexec/makevn/backend.sh) printf 'warning: backend warning while loading\n' >&2 ;;
+esac
+EOF
+  cat > "${repo}/.makevn/config" <<EOF
+MAKEVN_JAVA_HOME="${java_home}"
+MAKEVN_CODE_JAVA_HOME=""
+MAKEVN_KARATE_JAVA_HOME=""
+MAKEVN_CODE_TOOL_VERSIONS=""
+MAKEVN_KARATE_TOOL_VERSIONS=""
+MAKEVN_RUN_CMD=""
+EOF
+
+  run_pty_command "${output_file}" env BASH_ENV="${repo}/backend-warning.env" \
+    "${warning_cli}" --repo "${repo}" compile
+  python3 - "${output_file}" <<'PY'
+from pathlib import Path
+import sys
+
+output = Path(sys.argv[1]).read_bytes()
+warning = b'warning: backend warning while loading'
+assert output.count(warning) == 1, 'expected backend warning once'
+assert b'Worked  for ' in output, 'expected final summary'
+after_warning = output.split(warning, 1)[1]
+assert b't tail' not in after_warning, 'live loader continued after warning'
+PY
 }
 
 test_command_routing() {
@@ -1741,6 +1823,8 @@ EOF
 set -euo pipefail
 printf 'ARGS=%s\n' "$*" >> .mvnw.log
 printf 'JAVA_HOME=%s\n' "${JAVA_HOME:-}" >> .mvnw.log
+mkdir -p target/site/jacoco
+printf '<report/>\n' > target/site/jacoco/jacoco.xml
 EOF
   chmod +x "${repo}/cataloger-cli/mvnw"
 
@@ -2659,6 +2743,8 @@ test_verify_split_commands() {
 set -euo pipefail
 printf 'ARGS=%s\n' "$*" >> .mvnw.log
 printf 'JAVA_HOME=%s\n' "${JAVA_HOME:-}" >> .mvnw.log
+mkdir -p target/site/jacoco
+printf '<report/>\n' > target/site/jacoco/jacoco.xml
 EOF
   chmod +x "${repo}/mvnw"
 
@@ -4089,6 +4175,91 @@ EOF
     || fail "expected missing JaCoCo strategy message to recommend profile refresh"
 }
 
+test_verify_coverage_fails_when_maven_produces_no_report() {
+  local repo="${TMP_ROOT}/verify-coverage-no-report"
+  local java_home
+  local output
+  local rc=0
+
+  mkdir -p "${repo}/.makevn" "${repo}/target/site/jacoco"
+  printf '<stale-report/>\n' > "${repo}/target/site/jacoco/jacoco.xml"
+  printf '<project/>\n' > "${repo}/pom.xml"
+  java_home="$(detect_java_home)"
+  cat > "${repo}/.makevn/config" <<EOF
+MAKEVN_JAVA_HOME="${java_home}"
+MAKEVN_CODE_JAVA_HOME=""
+MAKEVN_KARATE_JAVA_HOME=""
+MAKEVN_CODE_TOOL_VERSIONS=""
+MAKEVN_KARATE_TOOL_VERSIONS=""
+MAKEVN_RUN_CMD=""
+MAKEVN_COVERAGE_PROP_FLAGS="-Djacoco.skip=false"
+EOF
+  cat > "${repo}/mvnw" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+printf 'ARGS=%s\n' "$*" >> .mvnw.log
+EOF
+  chmod +x "${repo}/mvnw"
+
+  set +e
+  output="$(${CLI} --repo "${repo}" verify-ut-coverage 2>&1)"
+  rc=$?
+  set -e
+
+  [[ ${rc} -eq 1 ]] || fail "expected coverage verification without XML to exit 1, got ${rc}"
+  [[ "${output}" == *"without generating a JaCoCo XML report"* ]] || fail "expected missing JaCoCo XML explanation"
+}
+
+test_verify_coverage_accepts_custom_jacoco_output_path() {
+  local repo="${TMP_ROOT}/verify-coverage-custom-report"
+  local java_home
+
+  mkdir -p "${repo}/.makevn"
+  printf '<project/>\n' > "${repo}/pom.xml"
+  java_home="$(detect_java_home)"
+  cat > "${repo}/.makevn/config" <<EOF
+MAKEVN_JAVA_HOME="${java_home}"
+MAKEVN_CODE_JAVA_HOME=""
+MAKEVN_KARATE_JAVA_HOME=""
+MAKEVN_CODE_TOOL_VERSIONS=""
+MAKEVN_KARATE_TOOL_VERSIONS=""
+MAKEVN_RUN_CMD=""
+MAKEVN_COVERAGE_PROP_FLAGS="-Djacoco.skip=false"
+EOF
+  cat > "${repo}/mvnw" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+mkdir -p target/coverage
+printf '<report/>\n' > target/coverage/jacoco.xml
+EOF
+  chmod +x "${repo}/mvnw"
+
+  ${CLI} --repo "${repo}" verify-ut-coverage >/dev/null
+
+  assert_file_exists "${repo}/target/coverage/jacoco.xml"
+}
+
+test_verify_coverage_fails_without_maven_project() {
+  local repo="${TMP_ROOT}/verify-coverage-no-maven"
+  local command=""
+  local output=""
+  local rc=0
+
+  mkdir -p "${repo}"
+  git init --initial-branch=main "${repo}" >/dev/null
+
+  for command in verify-ut-coverage verify-it-coverage; do
+    set +e
+    output="$(${CLI} --repo "${repo}" "${command}" 2>&1)"
+    rc=$?
+    set -e
+
+    [[ ${rc} -ne 0 ]] || fail "expected ${command} without Maven to fail"
+    [[ "${output}" == *"No Maven project detected"* ]] \
+      || fail "expected ${command} to explain that no Maven project was detected"
+  done
+}
+
 test_verify_rejects_skip_flags() {
   local repo="${TMP_ROOT}/verify-rejects-skip-flags"
   local output=""
@@ -4347,16 +4518,426 @@ EOF
 
   output="$("${fail_cli}" --repo "${repo}" compile 2>&1 || true)"
 
-  [[ "${output}" == *"Worked for "* ]] || fail "expected dashboard elapsed to be present"
+  [[ "${output}" == *"Worked  for "* ]] || fail "expected dashboard elapsed to be present"
   [[ "${output}" == *"[fail] exit 7 | check the log"* ]] || fail "expected compact failure summary without duplicate elapsed"
   if [[ "${output}" =~ \[fail\]\ exit\ 7\ \|\ [0-9]+s\ \|\ check\ the\ log ]]; then
     fail "expected failure summary not to repeat elapsed after dashboard"
   fi
 }
 
+setup_crap_fixture() {
+  local repo="$1"
+  local java_home="${repo}/fake-java"
+
+  mkdir -p "${repo}/.git" "${repo}/.makevn" "${repo}/module-a/target/site/jacoco" \
+    "${repo}/module-b/target/site/jacoco" "${java_home}/bin" \
+    "${repo}/module-a/src/main/java/example" "${repo}/module-b/src/main/java/example"
+  printf '<project/>\n' > "${repo}/pom.xml"
+  printf 'package example; class High {}\n' > "${repo}/module-a/src/main/java/example/High.java"
+  printf 'package example; class HighB {}\n' > "${repo}/module-b/src/main/java/example/HighB.java"
+  printf '<report name="a"/>\n' > "${repo}/module-a/target/site/jacoco/jacoco.xml"
+  printf '<report name="b"/>\n' > "${repo}/module-b/target/site/jacoco/jacoco.xml"
+  printf 'fixture jar\n' > "${repo}/crap4java.jar"
+  cat > "${repo}/.makevn/config" <<EOF
+MAKEVN_CODE_JAVA_HOME="${java_home}"
+MAKEVN_CRAP4JAVA_JAR="${repo}/crap4java.jar"
+MAKEVN_CRAP_THRESHOLD="8"
+MAKEVN_CRAP_MAX_WARNINGS=""
+EOF
+  cat > "${java_home}/bin/java" <<EOF
+#!/usr/bin/env bash
+set -euo pipefail
+if [[ "\${1:-}" == "-version" ]]; then
+  printf 'openjdk version "17.0.1"\n' >&2
+  exit 0
+fi
+printf '%s\n' "\$*" >> "${repo}/java.log"
+suffix=""
+[[ "\$*" != *"/module-b/"* ]] || suffix="B"
+cat <<JSON
+{
+  "entries": [
+    {"file":"src/main/java/example/High\${suffix}.java","line":5,"end_line":9,"class":"High\${suffix}","method":"risk","complexity":4,"coverage_percent":50,"crap":9.0,"status":"measured"},
+    {"file":"src/main/java/example/Low\${suffix}.java","line":2,"end_line":3,"class":"Low\${suffix}","method":"safe","complexity":2,"coverage_percent":100,"crap":2.0,"status":"measured"}
+  ],
+  "summary": {"methods":2}
+}
+JSON
+EOF
+  chmod +x "${java_home}/bin/java"
+}
+
+test_crap_command_uses_existing_jacoco_and_writes_reports() {
+  local repo="${TMP_ROOT}/crap-command"
+  local output=""
+
+  setup_crap_fixture "${repo}"
+  output="$(${CLI} --repo "${repo}" crap --max-warnings 2)"
+
+  [[ "${output}" == *"Gate: PASSED (2/2 warnings)"* ]] || fail "expected CRAP ratchet summary"
+  assert_file_exists "${repo}/.makevn/reports/crap/report.json"
+  assert_file_exists "${repo}/.makevn/reports/crap/report.md"
+  assert_file_exists "${repo}/.makevn/reports/crap/report.sarif"
+  assert_file_exists "${repo}/.makevn/reports/crap/summary.txt"
+  [[ "$(wc -l < "${repo}/java.log" | tr -d '[:space:]')" == "2" ]] || fail "expected one crap4java run per module-local JaCoCo XML"
+  python3 - "${repo}/.makevn/reports/crap/report.json" <<'PY'
+import json, sys
+report = json.load(open(sys.argv[1]))
+assert report["gate"] == {"mode": "ratchet", "max_warnings": 2, "warnings": 2, "status": "passed"}
+assert report["diagnostics"]["java_methods"] == 4
+PY
+}
+
+test_crap_command_falls_back_to_jacoco_html_without_analyzer() {
+  local repo="${TMP_ROOT}/crap-html-fallback"
+  local output=""
+  setup_crap_fixture "${repo}"
+  rm -f "${repo}/module-a/target/site/jacoco/jacoco.xml" "${repo}/module-b/target/site/jacoco/jacoco.xml" "${repo}/crap4java.jar"
+  cat > "${repo}/module-a/src/main/java/example/High.java" <<'JAVA'
+package example;
+class High {
+  void risky() {
+    if (true) { work(); }
+  }
+  void work() {}
+}
+JAVA
+  mkdir -p "${repo}/module-a/target/site/jacoco-ut/example"
+  cat > "${repo}/module-a/target/site/jacoco-ut/index.html" <<'HTML'
+<html><body>JaCoCo</body></html>
+HTML
+  cat > "${repo}/module-a/target/site/jacoco-ut/example/High.html" <<'HTML'
+<table id="coveragetable"><tbody><tr>
+<td><a href="High.java.html#L3">risky()</a></td>
+<td><img src="../jacoco-resources/redbar.gif" title="2 of 5 instructions missed"/><img src="../jacoco-resources/greenbar.gif" title="3 of 5 instructions covered"/></td>
+<td>60%</td><td></td><td>100%</td><td>0</td><td>4</td><td>0</td><td>3</td><td>0</td><td>1</td>
+</tr></tbody></table>
+HTML
+  output="$(${CLI} --repo "${repo}" crap)"
+  [[ "${output}" == *"Methods: 1"* ]] || fail "expected HTML fallback to calculate method CRAP"
+  mkdir -p "${repo}/compat-bin"
+  ln -s /bin/bash "${repo}/compat-bin/bash"
+  output="$(PATH="${repo}/compat-bin:${PATH}" ${CLI} --repo "${repo}" crap)"
+  [[ "${output}" == *"Methods: 1"* ]] || fail "HTML fallback must work with system Bash"
+  [[ "${output}" == *"Warnings: 0"* ]] || fail "expected HTML fallback summary"
+  [[ ! -s "${repo}/java.log" ]] || fail "HTML fallback must not invoke Java/crap4java"
+  assert_file_exists "${repo}/.makevn/reports/crap/raw/report-1.json"
+  python3 - "${repo}/.makevn/reports/crap/report.json" <<'PY'
+import json,sys
+r=json.load(open(sys.argv[1]))
+assert len(r['entries']) == 1
+assert r['entries'][0]['symbol'] == 'example.High#risky()'
+assert abs(r['entries'][0]['crap'] - 5.024) < 0.001
+PY
+}
+
+test_crap_command_explains_csv_only_coverage() {
+  local repo="${TMP_ROOT}/crap-csv-only"
+  local output=""
+  local rc=0
+  setup_crap_fixture "${repo}"
+  rm -f "${repo}/module-a/target/site/jacoco/jacoco.xml" "${repo}/module-b/target/site/jacoco/jacoco.xml"
+  rm -f "${repo}/module-a/target/site/jacoco/index.html" "${repo}/module-b/target/site/jacoco/index.html"
+  printf 'GROUP,PACKAGE,CLASS,INSTRUCTION_MISSED,INSTRUCTION_COVERED\n,example,High,2,3\n' > "${repo}/module-a/target/site/jacoco/jacoco.csv"
+  set +e
+  output="$(${CLI} --repo "${repo}" crap 2>&1)"
+  rc=$?
+  set -e
+  [[ ${rc} -eq 2 ]] || fail "CSV-only JaCoCo should fail with configuration exit 2"
+  [[ "${output}" == *"jacoco.csv"* && "${output}" == *"class-level totals"* ]] || fail "expected precise CSV-only CRAP diagnostic"
+  [[ "${output}" == *"does not run tests automatically"* ]] || fail "expected no-implicit-tests guidance"
+}
+
+test_crap_changes_uses_jacoco_html_for_changed_method() {
+  local repo="${TMP_ROOT}/crap-changes-html"
+  local output=""
+  setup_crap_fixture "${repo}"
+  rm -f "${repo}/module-a/target/site/jacoco/jacoco.xml" "${repo}/module-b/target/site/jacoco/jacoco.xml"
+  cat > "${repo}/module-a/src/main/java/example/High.java" <<'JAVA'
+package example;
+class High {
+  void risky() {
+    if (true) { work(); }
+  }
+  void work() {}
+}
+JAVA
+  mkdir -p "${repo}/module-a/target/site/jacoco/example"
+  cat > "${repo}/module-a/target/site/jacoco/index.html" <<'HTML'
+<html><body>JaCoCo</body></html>
+HTML
+  cat > "${repo}/module-a/target/site/jacoco/example/High.html" <<'HTML'
+<table id="coveragetable"><tbody><tr>
+<td><a href="High.java.html#L3">risky()</a></td>
+<td><img src="../jacoco-resources/redbar.gif" title="2 of 5 instructions missed"/><img src="../jacoco-resources/greenbar.gif" title="3 of 5 instructions covered"/></td>
+<td>60%</td><td></td><td>100%</td><td>0</td><td>4</td><td>0</td><td>3</td><td>0</td><td>1</td>
+</tr></tbody></table>
+HTML
+  git -C "${repo}" init -q
+  git -C "${repo}" add module-a/src/main/java/example/High.java module-b/src/main/java/example/HighB.java
+  git -C "${repo}" -c user.name=Test -c user.email=test@example.com commit -qm base
+  sed -i.bak 's/work();/work(); work();/' "${repo}/module-a/src/main/java/example/High.java"
+  rm -f "${repo}/module-a/src/main/java/example/High.java.bak"
+  output="$(${CLI} --repo "${repo}" crap-changes --base HEAD)"
+  [[ "${output}" == *"Methods: 1"* ]] || fail "expected HTML fallback for one changed method"
+  python3 - "${repo}/.makevn/reports/crap-changes/report.json" <<'PY'
+import json,sys
+r=json.load(open(sys.argv[1]))
+assert r['scope']=='changes' and len(r['entries'])==1
+assert r['entries'][0]['symbol']=='example.High#risky()'
+PY
+}
+
+test_crap_changes_skips_unrelated_html_and_keeps_errors_brief() {
+  local repo="${TMP_ROOT}/crap-changes-unrelated-html"
+  local output=""
+  local rc=0
+  setup_crap_fixture "${repo}"
+  rm -f "${repo}/module-a/target/site/jacoco/jacoco.xml" "${repo}/module-b/target/site/jacoco/jacoco.xml"
+  mkdir -p "${repo}/module-a/target/site/jacoco/com.example"
+  printf '<html>JaCoCo</html>\n' > "${repo}/module-a/target/site/jacoco/index.html"
+  cat > "${repo}/module-a/target/site/jacoco/com.example/Unknown.html" <<'HTML'
+<table id="coveragetable"><tr><td><a href="Unknown.java.html#L1">missing()</a></td></tr></table>
+HTML
+  git -C "${repo}" init -q
+  git -C "${repo}" add module-a/src/main/java module-b/src/main/java
+  git -C "${repo}" -c user.name=Test -c user.email=test@example.com commit -qm base
+  output="$(${CLI} --repo "${repo}" crap-changes --base HEAD)"
+  [[ "${output}" == *"Methods: 0"* ]] || fail "unchanged Java must not require unrelated HTML source mapping"
+  mkdir -p "${repo}/compat-bin"
+  ln -s /bin/bash "${repo}/compat-bin/bash"
+  output="$(PATH="${repo}/compat-bin:${PATH}" ${CLI} --repo "${repo}" crap-changes --base HEAD)"
+  [[ "${output}" == *"Methods: 0"* ]] || fail "unchanged Java must work with system Bash"
+  set +e
+  output="$(${CLI} --repo "${repo}" crap 2>&1)"
+  rc=$?
+  set -e
+  [[ ${rc} -eq 2 ]] || fail "unmapped HTML source should fail full CRAP analysis"
+  [[ "${output}" == *"Details: "* && "${output}" != *"Unknown.java in"* ]] || fail "HTML extraction failure must be brief and point to log"
+  grep -q 'cannot map HTML source Unknown.java' "${repo}/.makevn/reports/crap/raw/report-1.log" || fail "HTML extraction detail missing from analyzer log"
+}
+
+test_crap_command_gate_and_explicit_xml() {
+  local repo="${TMP_ROOT}/crap-gate"
+  local output=""
+  local rc=0
+
+  setup_crap_fixture "${repo}"
+  set +e
+  output="$(${CLI} --repo "${repo}" crap --jacoco-xml module-a/target/site/jacoco/jacoco.xml --max-warnings 0 2>&1)"
+  rc=$?
+  set -e
+
+  [[ ${rc} -eq 1 ]] || fail "expected CRAP gate to exit 1, got ${rc}"
+  [[ "${output}" == *"Gate: FAILED (1/0 warnings)"* ]] || fail "expected failed CRAP gate summary"
+  [[ "$(wc -l < "${repo}/java.log" | tr -d '[:space:]')" == "1" ]] || fail "expected explicit JaCoCo XML to run once"
+}
+
+test_crap_changes_filters_methods_and_includes_worktree() {
+  local repo="${TMP_ROOT}/crap-changes"
+  local output=""
+  setup_crap_fixture "${repo}"
+  printf '%s\n' 'package example;' 'class High {' '{' '}' 'void risk() {' 'int x = 1;' '}' '}' > "${repo}/module-a/src/main/java/example/High.java"
+  git -C "${repo}" init -q
+  git -C "${repo}" add pom.xml module-a/src/main/java/example/High.java
+  git -C "${repo}" -c user.name=Test -c user.email=test@example.com commit -qm base
+  sed -i.bak 's/int x = 1/int x = 2/' "${repo}/module-a/src/main/java/example/High.java"
+  rm -f "${repo}/module-a/src/main/java/example/High.java.bak"
+  output="$(${CLI} --repo "${repo}" crap-changes --base HEAD)"
+  [[ "${output}" == *"Methods: 1"* ]] || fail "expected only the changed Java method"
+  [[ "${output}" != *"Artifacts:"* ]] || fail "successful crap-changes should omit the redundant artifacts path"
+  python3 - "${repo}/.makevn/reports/crap-changes/report.json" <<'PY'
+import json,sys
+r=json.load(open(sys.argv[1]))
+assert r['scope']=='changes' and len(r['entries'])==1
+assert r['entries'][0]['symbol']=='High#risk'
+PY
+  printf 'package example; class New {}\n' > "${repo}/module-a/src/main/java/example/New.java"
+  set +e
+  output="$(${CLI} --repo "${repo}" crap-changes --base HEAD 2>&1)"
+  local rc=$?
+  set -e
+  [[ ${rc} -eq 2 && "${output}" == *"New.java"* ]] || fail "expected an untracked uncompiled Java source to fail visibly"
+}
+
+test_crap_command_uses_maven_root_for_custom_xml_path() {
+  local repo="${TMP_ROOT}/crap-custom-xml"
+
+  setup_crap_fixture "${repo}"
+  mkdir -p "${repo}/coverage/custom"
+  printf '<report name="custom"/>\n' > "${repo}/coverage/custom/jacoco.xml"
+  ${CLI} --repo "${repo}" crap --jacoco-xml coverage/custom/jacoco.xml >/dev/null
+
+  local invocation
+  local analyzer_source
+  invocation="$(cat "${repo}/java.log")"
+  [[ "${invocation}" == *"--jacoco-xml "*"/crap-custom-xml/coverage/custom/jacoco.xml"* ]] \
+    || fail "expected custom JaCoCo XML path in analyzer invocation"
+  analyzer_source="${invocation##* }"
+  [[ "${analyzer_source}" == */module-b/src/main/java/example/HighB.java ]] \
+    || fail "expected custom JaCoCo XML to analyze Maven production sources"
+}
+
+test_crap_command_discovers_custom_xml_path() {
+  local repo="${TMP_ROOT}/crap-discover-custom-xml"
+
+  setup_crap_fixture "${repo}"
+  rm -f "${repo}/module-a/target/site/jacoco/jacoco.xml" "${repo}/module-b/target/site/jacoco/jacoco.xml"
+  mkdir -p "${repo}/target/coverage"
+  printf '<report name="custom"/>\n' > "${repo}/target/coverage/jacoco.xml"
+  ${CLI} --repo "${repo}" crap >/dev/null
+
+  [[ "$(wc -l < "${repo}/java.log" | tr -d '[:space:]')" == "1" ]] \
+    || fail "expected one discovered custom JaCoCo XML invocation"
+  grep -q -- '/target/coverage/jacoco.xml' "${repo}/java.log" \
+    || fail "expected custom JaCoCo XML discovery"
+}
+
+test_crap_command_scopes_module_custom_xml_to_its_sources() {
+  local repo="${TMP_ROOT}/crap-module-custom-xml"
+  local invocation=""
+
+  setup_crap_fixture "${repo}"
+  rm -f "${repo}/module-a/target/site/jacoco/jacoco.xml" "${repo}/module-b/target/site/jacoco/jacoco.xml"
+  mkdir -p "${repo}/module-a/target/coverage"
+  printf '<report name="custom"/>\n' > "${repo}/module-a/target/coverage/jacoco.xml"
+  ${CLI} --repo "${repo}" crap >/dev/null
+
+  invocation="$(cat "${repo}/java.log")"
+  [[ "${invocation}" == *"/module-a/target/coverage/jacoco.xml"* ]] \
+    || fail "expected module custom JaCoCo XML to be discovered"
+  [[ "${invocation}" == *"/module-a/src/main/java/example/High.java"* ]] \
+    || fail "expected module custom JaCoCo XML to analyze its own sources"
+  [[ "${invocation}" != *"/module-b/src/main/java/example/HighB.java"* ]] \
+    || fail "module custom JaCoCo XML must not analyze other modules"
+}
+
+test_crap_command_prefers_aggregate_jacoco() {
+  local repo="${TMP_ROOT}/crap-aggregate"
+
+  setup_crap_fixture "${repo}"
+  mkdir -p "${repo}/coverage/target/site/jacoco-aggregate"
+  printf '<report name="aggregate"/>\n' > "${repo}/coverage/target/site/jacoco-aggregate/jacoco.xml"
+  ${CLI} --repo "${repo}" crap >/dev/null
+
+  [[ "$(wc -l < "${repo}/java.log" | tr -d '[:space:]')" == "1" ]] || fail "expected aggregate JaCoCo XML to be preferred"
+  grep -q -- '/coverage/target/site/jacoco-aggregate/jacoco.xml' "${repo}/java.log" || fail "expected aggregate JaCoCo XML invocation"
+  grep -q -- '/module-a/src/main/java/example/High.java' "${repo}/java.log" || fail "expected aggregate analysis to include module-a production sources"
+  grep -q -- '/module-b/src/main/java/example/HighB.java' "${repo}/java.log" || fail "expected aggregate analysis to include module-b production sources"
+}
+
+test_crap_command_reports_empty_analyzer_json_path() {
+  local repo="${TMP_ROOT}/crap-empty-analyzer"
+  local output=""
+  local rc=0
+
+  setup_crap_fixture "${repo}"
+  cat > "${repo}/fake-java/bin/java" <<'EOF'
+#!/usr/bin/env bash
+printf '{"entries":[],"summary":{"functions":0}}\n'
+EOF
+  chmod +x "${repo}/fake-java/bin/java"
+  set +e
+  output="$(${CLI} --repo "${repo}" crap 2>&1)"
+  rc=$?
+  set -e
+  [[ ${rc} -eq 2 ]] || fail "expected empty analyzer report to fail with exit 2"
+  [[ "${output}" == *"crap-empty-analyzer/.makevn/reports/crap/raw/report-1.json"* ]] \
+    || fail "expected CRAP failure to point to raw analyzer reports"
+}
+
+test_crap_dashboard_logs_output_below_prior_steps() {
+  local repo="${TMP_ROOT}/crap-dashboard"
+  local metadata="${TMP_ROOT}/crap-dashboard-metadata"
+  local details="${TMP_ROOT}/crap-dashboard-details"
+  local output=""
+  local rc=0
+
+  setup_crap_fixture "${repo}"
+  cat > "${repo}/fake-java/bin/java" <<'EOF'
+#!/usr/bin/env bash
+printf '{"entries":[],"summary":{"functions":0}}\n'
+EOF
+  chmod +x "${repo}/fake-java/bin/java"
+  set +e
+  output="$(MAKEVN_FRONTEND=rust MAKEVN_FRONTEND_OWNS_LOADER=1 MAKEVN_BACKEND_DETAIL_OUT="${details}" \
+    bash "${BACKEND}" crap --repo "${repo}" --metadata-out "${metadata}" 2>&1)"
+  rc=$?
+  set -e
+
+  [[ ${rc} -eq 2 ]] || fail "expected dashboard CRAP failure to exit 2"
+  [[ -z "${output}" ]] || fail "dashboard CRAP must not write over the previous command's display"
+  assert_contains "${metadata}" "crap-dashboard/.makevn/logs/crap.log"
+  assert_contains "${repo}/.makevn/logs/crap.log" "Error: CRAP report contains no measured Java methods."
+  assert_contains "${details}" "Analyzer JSON: "
+  assert_contains "${details}" "Error: CRAP report contains no measured Java methods."
+}
+
+test_crap_command_fails_closed_without_analyzer() {
+  local repo="${TMP_ROOT}/crap-missing-analyzer"
+  local output=""
+  local rc=0
+
+  setup_crap_fixture "${repo}"
+  cat > "${repo}/.makevn/config" <<EOF
+MAKEVN_CODE_JAVA_HOME="${repo}/fake-java"
+MAKEVN_CRAP4JAVA_JAR=""
+EOF
+  set +e
+  output="$(XDG_CACHE_HOME="${repo}/empty-cache" ${CLI} --repo "${repo}" crap 2>&1)"
+  rc=$?
+  set -e
+
+  [[ ${rc} -eq 2 ]] || fail "expected missing analyzer to exit 2, got ${rc}"
+  [[ "${output}" == *"makevn crap install-analyzer"* ]] || fail "expected analyzer installation remediation"
+}
+
+test_crap_install_analyzer_verifies_pinned_download() {
+  local repo="${TMP_ROOT}/crap-install"
+  local fake_bin="${repo}/fake-bin"
+  local cache="${repo}/cache"
+  local output=""
+
+  mkdir -p "${repo}/.git" "${fake_bin}"
+  cat > "${fake_bin}/curl" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+out=""
+while [[ $# -gt 0 ]]; do
+  if [[ "$1" == "-o" ]]; then out="$2"; shift 2; else shift; fi
+done
+printf 'downloaded jar\n' > "${out}"
+EOF
+  cat > "${fake_bin}/sha256sum" <<'EOF'
+#!/usr/bin/env bash
+printf 'b996434078d560d52a058e3d9ffb0d07a9469ecdc57c8b4fa241fa70252bf68e  %s\n' "$1"
+EOF
+  chmod +x "${fake_bin}/curl" "${fake_bin}/sha256sum"
+
+  output="$(PATH="${fake_bin}:${PATH}" XDG_CACHE_HOME="${cache}" ${CLI} --repo "${repo}" crap install-analyzer)"
+  [[ "${output}" == *"Installed crap4java"* ]] || fail "expected successful analyzer installation"
+  assert_file_exists "${cache}/makevn/crap4java/0.1.0/crap4java-0.1.0.jar"
+}
+
+test_crap_install_analyzer_requires_cache_home() {
+  local repo="${TMP_ROOT}/crap-no-cache-home"
+  local output=""
+  local rc=0
+
+  mkdir -p "${repo}/.git"
+  set +e
+  output="$(env -u HOME -u XDG_CACHE_HOME ${CLI} --repo "${repo}" crap install-analyzer 2>&1)"
+  rc=$?
+  set -e
+  [[ ${rc} -eq 2 ]] || fail "expected missing cache home to exit 2, got ${rc}"
+  [[ "${output}" == *"HOME or XDG_CACHE_HOME is required"* ]] \
+    || fail "expected missing cache home error"
+}
+
 main() {
   test_doctor_unsupported
   test_backend_doctor_json
+  test_doctor_counts_custom_jacoco_xml_path
   test_doctor_resolves_java_version_from_pom
   test_doctor_resolves_java_version_from_pom_property_reference
   test_doctor_resolves_java_version_from_compiler_plugin_source
@@ -4380,6 +4961,7 @@ main() {
   test_make_install_existing_makefile
   test_make_install_without_makefile
   test_installer
+  test_runtime_archive_includes_crap_reporter
   test_init_does_not_touch_existing_makefile
   test_profile_refresh
   test_interactive_pid_output
@@ -4388,6 +4970,7 @@ main() {
   test_tail_degrades_without_tty
   test_non_tty_run_is_compact_and_keeps_full_log_in_file
   test_compact_tty_omits_color_and_loader
+  test_loader_defers_backend_stderr_until_progress_is_cleared
   test_command_routing
   test_nested_single_maven_project_routing
   test_docker_commands
@@ -4430,6 +5013,26 @@ main() {
   test_coverage_generates_module_reports_when_missing
   test_coverage_uses_detected_activation_profile
   test_coverage_fails_early_without_jacoco_strategy
+  test_verify_coverage_fails_when_maven_produces_no_report
+  test_verify_coverage_accepts_custom_jacoco_output_path
+  test_verify_coverage_fails_without_maven_project
+  test_crap_command_uses_existing_jacoco_and_writes_reports
+  test_crap_command_falls_back_to_jacoco_html_without_analyzer
+  test_crap_command_explains_csv_only_coverage
+  test_crap_changes_uses_jacoco_html_for_changed_method
+  test_crap_changes_skips_unrelated_html_and_keeps_errors_brief
+  test_crap_command_gate_and_explicit_xml
+  test_crap_changes_filters_methods_and_includes_worktree
+  python3 -m unittest discover -s "${ROOT_DIR}/libexec/makevn/crap" -p 'test_*.py' >/dev/null
+  test_crap_command_uses_maven_root_for_custom_xml_path
+  test_crap_command_discovers_custom_xml_path
+  test_crap_command_scopes_module_custom_xml_to_its_sources
+  test_crap_command_prefers_aggregate_jacoco
+  test_crap_command_reports_empty_analyzer_json_path
+  test_crap_dashboard_logs_output_below_prior_steps
+  test_crap_command_fails_closed_without_analyzer
+  test_crap_install_analyzer_verifies_pinned_download
+  test_crap_install_analyzer_requires_cache_home
   test_verify_rejects_skip_flags
   test_verify_split_commands_reject_wrong_skip_flags
   test_sequential_commands

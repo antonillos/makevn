@@ -43,6 +43,7 @@ cp "${ROOT_DIR}/libexec/makevn/common.sh" "${STAGE_DIR}/libexec/makevn/common.sh
 cp -R "${ROOT_DIR}/libexec/makevn/commands" "${STAGE_DIR}/libexec/makevn/commands"
 cp -R "${ROOT_DIR}/libexec/makevn/common" "${STAGE_DIR}/libexec/makevn/common"
 cp -R "${ROOT_DIR}/libexec/makevn/coverage" "${STAGE_DIR}/libexec/makevn/coverage"
+cp -R "${ROOT_DIR}/libexec/makevn/crap" "${STAGE_DIR}/libexec/makevn/crap"
 cp -R "${ROOT_DIR}/libexec/makevn/docker" "${STAGE_DIR}/libexec/makevn/docker"
 cp -R "${ROOT_DIR}/libexec/makevn/jdk" "${STAGE_DIR}/libexec/makevn/jdk"
 cp -R "${ROOT_DIR}/libexec/makevn/compat" "${STAGE_DIR}/libexec/makevn/compat"

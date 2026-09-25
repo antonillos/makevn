@@ -27,7 +27,7 @@ jobs:
     timeout-minutes: 65
     steps:
       - name: Analyze and merge pull request
-        uses: actions/github-script@v9
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         with:
           github-token: ${{ github.token }}
           script: |
@@ -168,9 +168,9 @@ jobs:
               }
             }
 
-            // Smoke is the stable branch-protection gate for makevn. It validates
-            // the exact head SHA through the complete Verify workflow.
-            const requiredChecks = ["smoke"];
+            // Smoke and CRAP are the stable branch-protection gates for makevn.
+            // Together they validate the exact head SHA through Verify.
+            const requiredChecks = ["smoke", "crap"];
             const deadline = Date.now() + 30 * 60 * 1000;
 
             async function loadRequiredJobs(runId) {
@@ -237,6 +237,10 @@ jobs:
                 repo,
                 workflow_id: "verify.yml",
                 ref: pull.head.ref,
+                inputs: {
+                  base_ref: pull.base.ref,
+                  publish_badge: "false",
+                },
                 request: githubApiRequest,
               });
 

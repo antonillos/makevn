@@ -14,6 +14,9 @@
   <a href="LICENSE">
     <img src="https://img.shields.io/badge/license-MIT-lightgrey" alt="MIT License" />
   </a>
+  <a href="https://github.com/antonillos/makevn/actions/workflows/verify.yml">
+    <img src="https://img.shields.io/endpoint?url=https%3A%2F%2Fantonillos.github.io%2Fmakevn%2Fcrap-badge.json" alt="CRAP warnings" />
+  </a>
 </p>
 
 <p align="center"><strong>Run Java/Maven builds, tests, apps, Docker services, coverage, and E2E workflows with one CLI.</strong></p>
@@ -128,6 +131,8 @@ makevn --repo "/path/to/java-repo" verify-changes
 | Build and verify | `makevn package`, `makevn verify` |
 | Preview and verify changed modules or tests | `makevn verify-changes-preview`, `makevn verify-changes` |
 | Check aggregate or changed-code coverage | `makevn coverage`, `makevn coverage-changes` |
+| Analyze Java CRAP from an existing JaCoCo XML report | `makevn crap` |
+| Analyze CRAP only for changed Java methods | `makevn crap-changes [--base REF]` |
 | Start and inspect Docker services | `makevn docker-up`, `makevn docker-ps-required` |
 | Run Karate E2E flows | `makevn karate-test`, `makevn karate-all` |
 | Run the application | `makevn run-app`, `makevn run-app-bg` |
@@ -177,6 +182,7 @@ make -f .makevn/makevn.mk vn-doctor
 - [Backend contract](docs/backend-contract.md)
 - [Integration](docs/integration.md)
 - [Distribution](docs/distribution.md)
+- [Internal CRAP ratchet](tools/crap/README.md)
 
 ## License
 

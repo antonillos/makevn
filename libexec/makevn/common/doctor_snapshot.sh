@@ -97,6 +97,9 @@ makevn_collect_doctor_snapshot() {
   local detected_coverage_changes_threshold=""
   local detected_jacoco_report_layout=""
   local detected_jacoco_report_dir=""
+  local detected_jacoco_xml_count=0
+  local crap_analyzer="not installed"
+  local external_crap_analyzer="${MAKEVN_CRAP4JAVA_JAR:-}"
   local compile_profile=""
   local build_profile=""
   local test_profile=""
@@ -277,6 +280,18 @@ makevn_collect_doctor_snapshot() {
   if [[ -n "${maven_base_path}" ]]; then
     detected_jacoco_report_layout="$(makevn_jacoco_report_layout "${maven_base_path}" || true)"
     detected_jacoco_report_dir="$(makevn_jacoco_report_dir "${maven_base_path}" || true)"
+    detected_jacoco_xml_count="$(find "${maven_base_path}" -path '*/target/*' -name 'jacoco.xml' -type f 2>/dev/null | wc -l | tr -d '[:space:]')"
+  fi
+
+  makevn_load_config "${repo_root}"
+  if [[ -n "${external_crap_analyzer}" && -f "${external_crap_analyzer}" ]]; then
+    crap_analyzer="${external_crap_analyzer} (from environment)"
+  elif [[ -n "${MAKEVN_CRAP4JAVA_JAR:-}" && -f "${MAKEVN_CRAP4JAVA_JAR}" ]]; then
+    crap_analyzer="${MAKEVN_CRAP4JAVA_JAR} (from config)"
+  elif declare -F makevn_crap_cache_jar >/dev/null 2>&1; then
+    local _cached_crap_jar=""
+    _cached_crap_jar="$(makevn_crap_cache_jar || true)"
+    [[ -n "${_cached_crap_jar}" && -f "${_cached_crap_jar}" ]] && crap_analyzer="${_cached_crap_jar} (managed)"
   fi
 
   [[ -f "${repo_root}/Makefile" ]] && existing_makefile="${repo_root}/Makefile"
@@ -388,6 +403,8 @@ makevn_collect_doctor_snapshot() {
   MAKEVN_DOCTOR_DETECTED_COVERAGE_ACTIVATION="${detected_coverage_activation:-none}"
   MAKEVN_DOCTOR_JACOCO_REPORT_LAYOUT="${detected_jacoco_report_layout:-not detected}"
   MAKEVN_DOCTOR_JACOCO_REPORT_DIR="${detected_jacoco_report_dir:-not detected}"
+  MAKEVN_DOCTOR_JACOCO_XML_COUNT="${detected_jacoco_xml_count:-0}"
+  MAKEVN_DOCTOR_CRAP_ANALYZER="${crap_analyzer}"
   MAKEVN_DOCTOR_DETECTED_COVERAGE_THRESHOLD="${detected_coverage_threshold}"
   MAKEVN_DOCTOR_DETECTED_COVERAGE_CHANGES_THRESHOLD="${detected_coverage_changes_threshold}"
   MAKEVN_DOCTOR_COMPILE_PROFILE="${compile_profile}"
@@ -471,6 +488,8 @@ makevn_print_doctor_json() {
   printf '    "detected_coverage_activation": "%s",\n' "$(makevn_json_escape "${MAKEVN_DOCTOR_DETECTED_COVERAGE_ACTIVATION}")"
   printf '    "jacoco_report_layout": "%s",\n' "$(makevn_json_escape "${MAKEVN_DOCTOR_JACOCO_REPORT_LAYOUT}")"
   printf '    "jacoco_report_dir": "%s",\n' "$(makevn_json_escape "${MAKEVN_DOCTOR_JACOCO_REPORT_DIR}")"
+  printf '    "jacoco_xml_reports": "%s",\n' "$(makevn_json_escape "${MAKEVN_DOCTOR_JACOCO_XML_COUNT}")"
+  printf '    "crap4java_analyzer": "%s",\n' "$(makevn_json_escape "${MAKEVN_DOCTOR_CRAP_ANALYZER}")"
   printf '    "detected_coverage_threshold": "%s",\n' "$(makevn_json_escape "${MAKEVN_DOCTOR_DETECTED_COVERAGE_THRESHOLD}")"
   printf '    "detected_coverage_changes_threshold": "%s",\n' "$(makevn_json_escape "${MAKEVN_DOCTOR_DETECTED_COVERAGE_CHANGES_THRESHOLD}")"
   printf '    "compile_profile": "%s",\n' "$(makevn_json_escape "${MAKEVN_DOCTOR_COMPILE_PROFILE}")"

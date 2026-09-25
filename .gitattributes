@@ -1,0 +1,2 @@
+# The legacy MCP fallback is a checked-in bundle, not authored source.
+.github/scripts/*.test.js linguist-detectable=false

@@ -17,3 +17,11 @@ test("workflow identity approves maintainer-authored PRs", () => {
   assert.doesNotMatch(workflow, /actor === targetAuthor \|\| targetAuthorIsWorkflowBot/);
   assert.match(workflow, /github\.rest\.pulls\.createReview/);
 });
+
+test("Smart Merge requires both smoke and CRAP gates", () => {
+  assert.match(workflow, /const requiredChecks = \["smoke", "crap"\];/);
+});
+
+test("Smart Merge dispatches Verify with a base ratchet and no badge publication", () => {
+  assert.match(workflow, /workflow_id: "verify\.yml",[\s\S]*base_ref: pull\.base\.ref,[\s\S]*publish_badge: "false"/);
+});
