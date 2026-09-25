@@ -182,14 +182,19 @@ returns success but no JaCoCo XML report was generated. Passing
 `-Djacoco.skip=false` only enables a configured JaCoCo plugin; it cannot create
 coverage when the repository has no JaCoCo plugin or coverage profile.
 
-`crap` analyzes Java only and never generates coverage. Run `verify-ut-coverage` or
-`verify-it-coverage` first. It prefers an aggregate JaCoCo XML report and otherwise
-analyzes every detected module-local XML, merging the results under
-`.makevn/reports/crap/`. The default finding threshold is CRAP `> 8`. Without
+`crap` analyzes Java only and never generates coverage or runs tests. Run
+`verify-ut-coverage` or `verify-it-coverage` first. It prefers an aggregate
+JaCoCo XML report and otherwise analyzes every detected module-local XML,
+merging the results under `.makevn/reports/crap/`. When JaCoCo XML is absent,
+it reads method counters and complexity from an existing JaCoCo HTML report;
+JaCoCo CSV is also detected for diagnostics, but its class-level totals are not
+sufficient to calculate method CRAP. If neither XML nor usable HTML exists, the
+error lists the coverage artifacts found and explains what is missing. The
+default finding threshold is CRAP `> 8`. Without
 `--max-warnings` it is report-only; with a maximum it exits `1` when the gate is
 exceeded. Configuration, analyzer, and coverage errors exit `2`.
 
-`crap-changes` uses the same existing JaCoCo XML and analyzer, but reports only
+`crap-changes` uses the same existing JaCoCo XML or HTML data, but reports only
 production Java methods whose source ranges overlap changes since the merge base
 of the detected parent branch (or `--base REF`). Committed, staged, unstaged, and
 new untracked files are included. It does not run tests and does not change the
@@ -200,9 +205,10 @@ changed methods without coverage fail with their source location and whether
 their class is absent from XML or their method could not be matched. A changed
 source absent from analyzer output also fails as stale/uncompiled coverage.
 
-The analyzer is resolved from the `MAKEVN_CRAP4JAVA_JAR` environment variable,
+The XML analyzer is resolved from the `MAKEVN_CRAP4JAVA_JAR` environment variable,
 then the setting with the same name in `.makevn/config`, then the managed
-user cache. `makevn crap install-analyzer` is the only operation that downloads
+user cache. The internal HTML reader does not require crap4java.
+`makevn crap install-analyzer` is the only operation that downloads
 the pinned `antonillos/crap4java` v0.1.0 artifact, and verifies its SHA-256 before
 installing it.
 

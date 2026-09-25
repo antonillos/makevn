@@ -106,6 +106,10 @@ makevn_crap_run() {
   local report_dir="${repo_root}/.makevn/reports/${command_name}"
   local raw_dir="${report_dir}/raw"
   local reporter="${MAKEVN_LIBEXEC_DIR}/crap/report.py"
+  local html_reader="${MAKEVN_LIBEXEC_DIR}/crap/jacoco_html.py"
+  local html_root=""
+  local csv_path=""
+  local html_index=""
   local xml_path=""
   local module_root=""
   local raw_log=""
@@ -115,6 +119,8 @@ makevn_crap_run() {
   local rc=0
   local base_ref=""
   local -a xml_reports=()
+  local -a html_reports=()
+  local -a csv_reports=()
   local -a report_args=()
   local -a java_sources=()
 
@@ -175,19 +181,6 @@ makevn_crap_run() {
   maven_base_path="$(makevn_detect_maven_base_path "${repo_root}" || true)"
   [[ -n "${maven_base_path}" ]] || { printf 'Error: No Maven project detected in %s.\n' "${repo_root}" >&2; return 2; }
 
-  cached_jar="$(makevn_crap_cache_jar || true)"
-  if [[ -n "${external_jar}" ]]; then
-    analyzer_jar="${external_jar}"
-  elif [[ -n "${MAKEVN_CRAP4JAVA_JAR:-}" ]]; then
-    analyzer_jar="${MAKEVN_CRAP4JAVA_JAR}"
-  elif [[ -n "${cached_jar}" && -f "${cached_jar}" ]]; then
-    analyzer_jar="${cached_jar}"
-  fi
-  if [[ -z "${analyzer_jar}" || ! -f "${analyzer_jar}" ]]; then
-    printf 'Error: crap4java is not installed. Set MAKEVN_CRAP4JAVA_JAR or run `makevn crap install-analyzer`.\n' >&2
-    return 2
-  fi
-
   if [[ -n "${explicit_xml}" ]]; then
     [[ "${explicit_xml}" = /* ]] || explicit_xml="${repo_root}/${explicit_xml}"
     [[ -f "${explicit_xml}" ]] || { printf 'Error: JaCoCo XML not found: %s\n' "${explicit_xml}" >&2; return 2; }
@@ -202,23 +195,56 @@ makevn_crap_run() {
       done < <(printf '%s\n' "${xml_reports[@]}" | grep '/jacoco-aggregate/jacoco.xml$')
     fi
   fi
-  [[ ${#xml_reports[@]} -gt 0 ]] || {
-    printf 'Error: No JaCoCo XML report found. Run `makevn verify-ut-coverage` or pass --jacoco-xml.\n' >&2
-    return 2
-  }
-
-  java_home="$(makevn_effective_java_home "${repo_root}" code "${maven_base_path}" || true)"
-  if [[ -n "${java_home}" && -x "${java_home}/bin/java" ]]; then
-    java_bin="${java_home}/bin/java"
-  elif command -v java >/dev/null 2>&1; then
-    java_bin="$(command -v java)"
-  else
-    printf 'Error: Java is required to run crap4java.\n' >&2
-    return 2
-  fi
   [[ -f "${reporter}" ]] || { printf 'Error: Internal CRAP reporter not found: %s\n' "${reporter}" >&2; return 2; }
 
   mkdir -p "${raw_dir}"
+  if [[ ${#xml_reports[@]} -eq 0 ]]; then
+    while IFS= read -r html_index; do
+      [[ -n "${html_index}" ]] || continue
+      html_root="${html_index%/index.html}"
+      html_reports+=("${html_root}")
+    done < <(find "${maven_base_path}" -path '*/target/site/jacoco*/index.html' -type f -print 2>/dev/null | LC_ALL=C sort)
+    if printf '%s\n' "${html_reports[@]:-}" | grep -q '/jacoco-aggregate$'; then
+      for html_root in "${html_reports[@]}"; do
+        [[ "${html_root}" != */jacoco-aggregate ]] || { html_reports=("${html_root}"); break; }
+      done
+    fi
+    while IFS= read -r csv_path; do
+      [[ -n "${csv_path}" ]] && csv_reports+=("${csv_path}")
+    done < <(find "${maven_base_path}" -path '*/target/*' -name 'jacoco.csv' -type f -print 2>/dev/null | LC_ALL=C sort)
+  fi
+  if [[ ${#xml_reports[@]} -eq 0 && ${#html_reports[@]} -eq 0 ]]; then
+    printf 'Error: No JaCoCo XML or HTML report found under %s.\n' "${maven_base_path}" >&2
+    if [[ ${#csv_reports[@]} -gt 0 ]]; then
+      printf 'Error: found JaCoCo CSV report(s) %s, but CSV contains class-level totals, not method-level complexity and coverage; CRAP cannot be calculated from CSV alone.\n' "${csv_reports[*]}" >&2
+    fi
+    printf 'Run `makevn verify-ut-coverage` to generate JaCoCo reports, or configure JaCoCo HTML/XML output; makevn does not run tests automatically.\n' >&2
+    printf 'Artifacts: %s\n' "${report_dir}" >&2
+    return 2
+  fi
+  if [[ ${#xml_reports[@]} -gt 0 ]]; then
+    cached_jar="$(makevn_crap_cache_jar || true)"
+    if [[ -n "${external_jar}" ]]; then
+      analyzer_jar="${external_jar}"
+    elif [[ -n "${MAKEVN_CRAP4JAVA_JAR:-}" ]]; then
+      analyzer_jar="${MAKEVN_CRAP4JAVA_JAR}"
+    elif [[ -n "${cached_jar}" && -f "${cached_jar}" ]]; then
+      analyzer_jar="${cached_jar}"
+    fi
+    if [[ -z "${analyzer_jar}" || ! -f "${analyzer_jar}" ]]; then
+      printf 'Error: crap4java is not installed. Set MAKEVN_CRAP4JAVA_JAR or run `makevn crap install-analyzer`.\n' >&2
+      return 2
+    fi
+    java_home="$(makevn_effective_java_home "${repo_root}" code "${maven_base_path}" || true)"
+    if [[ -n "${java_home}" && -x "${java_home}/bin/java" ]]; then
+      java_bin="${java_home}/bin/java"
+    elif command -v java >/dev/null 2>&1; then
+      java_bin="$(command -v java)"
+    else
+      printf 'Error: Java is required to run crap4java.\n' >&2
+      return 2
+    fi
+  fi
   if [[ "${command_name}" == "crap-changes" ]]; then
     command -v git >/dev/null 2>&1 || { printf 'Error: git is required by crap-changes.\n' >&2; return 2; }
     if [[ -z "${base_ref}" ]]; then
@@ -236,6 +262,31 @@ makevn_crap_run() {
   [[ -z "${max_warnings}" ]] || report_args+=(--max-warnings "${max_warnings}")
 
   local report_index=0
+  if [[ ${#xml_reports[@]} -eq 0 ]]; then
+    [[ -f "${html_reader}" ]] || { printf 'Error: Internal JaCoCo HTML reader not found: %s\n' "${html_reader}" >&2; return 2; }
+    for html_root in "${html_reports[@]}"; do
+      report_index=$((report_index + 1))
+      raw_log="${raw_dir}/report-${report_index}.log"
+      raw_json="${raw_log%.log}.json"
+      set +e
+      local -a html_args=(--html-root "${html_root}" --repo-root "${repo_root}" --output "${raw_json}")
+      [[ "${command_name}" != "crap-changes" ]] || html_args+=(--changes-file "${report_dir}/changes.json")
+      python3 "${html_reader}" "${html_args[@]}" > /dev/null 2>"${raw_log}"
+      rc=$?
+      set -e
+      if [[ ${rc} -ne 0 ]]; then
+        printf 'Error: Could not read method coverage from JaCoCo HTML. Details: %s\n' "${raw_log}" >&2
+        return 2
+      fi
+      report_args+=(--input "${raw_json}")
+      if [[ "${command_name}" == "crap-changes" ]]; then
+        report_args+=(--source-root "${repo_root}")
+      fi
+    done
+  fi
+  # Bash 3.2 treats expansion of an empty array as unbound under `set -u`.
+  # HTML-only reports deliberately leave this list empty.
+  if [[ ${#xml_reports[@]} -gt 0 ]]; then
   for xml_path in "${xml_reports[@]}"; do
     module_root="$(makevn_crap_module_root_for_xml "${maven_base_path}" "${xml_path}")"
     java_sources=()
@@ -276,6 +327,7 @@ makevn_crap_run() {
     report_args+=(--input "${raw_json}" --jacoco-xml "${xml_path}")
     [[ "${command_name}" != "crap-changes" ]] || report_args+=(--source-root "${module_root}")
   done
+  fi
 
   set +e
   python3 "${reporter}" "${report_args[@]}"
