@@ -218,7 +218,26 @@ def masked_java(source):
     return "".join(masked)
 
 
-def method_range(source, anchor_line):
+def method_identity(label):
+    match = re.search(r"([A-Za-z_$][\w$]*)\s*\((.*)\)", label or "", re.DOTALL)
+    if not match:
+        return None
+    parameters = match.group(2).strip()
+    if not parameters:
+        return match.group(1), 0
+    depth = 0
+    count = 1
+    for char in parameters:
+        if char in "(<[":
+            depth += 1
+        elif char in ")>]":
+            depth = max(0, depth - 1)
+        elif char == "," and depth == 0:
+            count += 1
+    return match.group(1), count
+
+
+def method_range(source, anchor_line, reported_method):
     """Locate the enclosing method declaration and body around a JaCoCo line."""
     code = masked_java(source)
     stack = []
@@ -252,11 +271,22 @@ def method_range(source, anchor_line):
         start_line = code.count("\n", 0, start_offset) + 1
         end_line = code.count("\n", 0, closing) + 1
         if start_line <= anchor_line <= end_line:
-            candidates.append((end_line - start_line, start_line, end_line))
+            identity = method_identity(f"{name.group(1)}({prefix[open_paren + 1:close_paren]})")
+            candidates.append((identity, end_line - start_line, start_line, end_line))
+    expected = method_identity(reported_method)
+    if expected:
+        candidates = [candidate for candidate in candidates if candidate[0] == expected]
     if not candidates:
-        raise ValueError(f"cannot locate Java method around JaCoCo line {anchor_line}")
-    _, start_line, end_line = min(candidates)
+        raise ValueError(f"cannot locate Java method {reported_method} around JaCoCo line {anchor_line}")
+    _, _, start_line, end_line = min(candidates, key=lambda candidate: candidate[1:])
     return start_line, end_line
+
+
+def is_implicit_or_initializer(method, class_name):
+    text = text_value(method)
+    return (text.startswith("<init>") or text.startswith("<clinit>") or
+            text.startswith("static {") or
+            method_identity(text) == (class_name, 0))
 
 
 def class_rows(page):
@@ -305,7 +335,12 @@ def collect_entries(report_root, repo_root, changed_files=None):
                     raise ValueError(f"method has no instruction count in {page}: {link['text']}")
                 source_text = source.read_text(encoding="utf-8", errors="replace")
                 anchor_line = int(line_match.group(1))
-                start_line, end_line = method_range(source_text, anchor_line)
+                try:
+                    start_line, end_line = method_range(source_text, anchor_line, link["text"])
+                except ValueError:
+                    if is_implicit_or_initializer(link["text"], page.stem):
+                        continue
+                    raise
                 cc = max(complexity, 1)
                 coverage = covered / total
                 crap = cc * cc * (1 - coverage) ** 3 + cc

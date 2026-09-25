@@ -72,9 +72,28 @@ class JacocoHtmlReaderTests(unittest.TestCase):
             "    if (value > 0) {\n      work();\n    }\n"
             "    work();\n  }\n}\n"
         )
-        self.page.write_text(self.page.read_text().replace("#L3", "#L6"))
+        self.page.write_text(self.page.read_text().replace("risky()", "risky(int)").replace("#L3", "#L6"))
         entries = crap_html.collect_entries(self.report, self.repo)
         self.assertEqual((entries[0]["line"], entries[0]["end_line"]), (3, 9))
+
+    def test_matches_reported_method_when_anchor_is_inside_nested_method(self):
+        self.source.write_text(
+            "package example;\nclass Foo {\n"
+            "  void risky() {\n"
+            "    Runnable task = new Runnable() { public void run() {} };\n"
+            "    work();\n  }\n  void work() {}\n}\n"
+        )
+        self.page.write_text(self.page.read_text().replace("#L3", "#L4"))
+        entries = crap_html.collect_entries(self.report, self.repo)
+        self.assertEqual((entries[0]["line"], entries[0]["end_line"]), (3, 6))
+
+    def test_skips_implicit_default_constructor_row(self):
+        document = self.page.read_text()
+        row = document[document.index("<tr>"):document.index("</tr>") + len("</tr>")]
+        constructor = row.replace("risky()", "Foo()").replace("#L3", "#L2")
+        self.page.write_text(document.replace("</tbody>", constructor + "</tbody>"))
+        entries = crap_html.collect_entries(self.report, self.repo)
+        self.assertEqual([entry["method"] for entry in entries], ["risky()"])
 
     def test_aggregate_report_maps_dot_separated_package_and_module(self):
         aggregate = self.repo / "jacoco-report-aggregate/target/site/jacoco-aggregate"
