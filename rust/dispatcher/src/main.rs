@@ -3583,9 +3583,10 @@ impl fmt::Display for Lossy<'_> {
 #[cfg(test)]
 mod tests {
     use super::{
-        command_help, command_supports_frontend_loader, dashboard_hint,
+        command_help, command_suggestion_suffix, command_supports_frontend_loader, dashboard_hint,
         detect_local_opencode_configs, dim_text, format_resource_sample, insert_backend_option,
-        install_opencode_agent_at, install_root, install_root_with_override, parse_invocation,
+        exit_code_from_status, format_failure_summary, install_opencode_agent_at, install_root,
+        install_root_with_override, parse_invocation, read_failure_hint,
         parse_mcp_invocation, read_backend_metadata, spinner_hint, spinner_kitt_frame,
         split_command_segments, strip_frontend_tail_flag, tail_status_lines, Action,
         BackendInvocation, BackendMetadata, CommandSummary, McpAction, ResourceHistory,
@@ -3603,6 +3604,47 @@ mod tests {
     use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
     static ENV_LOCK: Mutex<()> = Mutex::new(());
+
+    #[test]
+    fn suggests_only_known_misspellings() {
+        assert_eq!(command_suggestion_suffix(&OsString::from("verity-ut")), " Did you mean 'verify-ut'?");
+        assert_eq!(command_suggestion_suffix(&OsString::from("verity-it")), " Did you mean 'verify-it'?");
+        assert!(command_suggestion_suffix(&OsString::from("verify")).is_empty());
+    }
+
+    #[test]
+    fn failure_summary_handles_optional_details() {
+        assert_eq!(format_failure_summary(2, None, None), " exit 2 | check the log");
+        assert_eq!(format_failure_summary(1, Some("3s"), Some("")), " exit 1 | 3s | check the log");
+        assert_eq!(format_failure_summary(7, Some("2s"), Some("Maven failed")), " exit 7 | 2s | Maven failed");
+    }
+
+    #[test]
+    fn failure_hint_reads_first_error_line() {
+        assert_eq!(read_failure_hint(None), None);
+        assert_eq!(read_failure_hint(Some("/nonexistent/makevn-crap-test.log")), None);
+        let path = env::temp_dir().join(format!("makevn-failure-hint-{}", process::id()));
+        fs::write(&path, "info\n  Error: first problem\nError: second problem\n").unwrap();
+        assert_eq!(read_failure_hint(path.to_str()), Some(String::from("first problem")));
+        fs::write(&path, "no error here\n").unwrap();
+        assert_eq!(read_failure_hint(path.to_str()), None);
+        fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn exit_status_preserves_code_and_interrupt() {
+        let success = process::Command::new("sh").arg("-c").arg("exit 0").status().unwrap();
+        let failed = process::Command::new("sh").arg("-c").arg("exit 7").status().unwrap();
+        assert_eq!(exit_code_from_status(success, false), 0);
+        assert_eq!(exit_code_from_status(failed, false), 7);
+        assert_eq!(exit_code_from_status(success, true), 130);
+        #[cfg(unix)]
+        {
+            use std::os::unix::process::ExitStatusExt;
+            assert_eq!(exit_code_from_status(process::ExitStatus::from_raw(libc::SIGTERM), false), 130);
+            assert_eq!(exit_code_from_status(process::ExitStatus::from_raw(libc::SIGKILL), false), 1);
+        }
+    }
 
     fn current_repo_root() -> OsString {
         super::resolve_repo_root(None).unwrap().into_os_string()
