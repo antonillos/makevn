@@ -3587,6 +3587,7 @@ mod tests {
         detect_local_opencode_configs, dim_text, format_resource_sample, insert_backend_option,
         exit_code_from_status, format_failure_summary, install_opencode_agent_at, install_root,
         install_root_with_override, parse_invocation, print_final_dashboard, read_failure_hint,
+        register_signal_flag, validate_maven_passthrough_args,
         parse_mcp_invocation, read_backend_metadata, spinner_hint, spinner_kitt_frame,
         split_command_segments, strip_frontend_tail_flag, tail_status_lines, Action,
         BackendDetailFile, BackendInvocation, BackendMetadata, CommandSummary, McpAction,
@@ -3600,10 +3601,61 @@ mod tests {
     use std::os::unix::fs::symlink;
     use std::path::Path;
     use std::process;
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::Arc;
     use std::sync::Mutex;
     use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
     static ENV_LOCK: Mutex<()> = Mutex::new(());
+
+    #[test]
+    fn maven_passthrough_accepts_option_values_and_separator() {
+        let command = OsString::from("verify");
+        assert!(validate_maven_passthrough_args(
+            &command,
+            &[
+                OsString::from("--tail"),
+                OsString::from("-f"),
+                OsString::from("pom.xml"),
+                OsString::from("--"),
+                OsString::from("custom-goal"),
+            ],
+        )
+        .is_ok());
+    }
+
+    #[test]
+    fn maven_passthrough_rejects_bare_commands_before_separator() {
+        let command = OsString::from("verify");
+        let error = validate_maven_passthrough_args(
+            &command,
+            &[OsString::from("verity-ut")],
+        )
+        .unwrap_err();
+        assert!(error.contains("Extra Maven arguments for verify must follow '--'"));
+        assert!(error.contains("Did you mean 'verify-ut'?"));
+    }
+
+    #[test]
+    fn install_root_honors_explicit_environment_override() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        let original = env::var_os("MAKEVN_INSTALL_ROOT");
+        env::set_var("MAKEVN_INSTALL_ROOT", "/tmp/makevn-explicit-root");
+        let root = install_root(Path::new("/missing/makevn")).unwrap();
+        match original {
+            Some(value) => env::set_var("MAKEVN_INSTALL_ROOT", value),
+            None => env::remove_var("MAKEVN_INSTALL_ROOT"),
+        }
+        assert_eq!(root, Path::new("/tmp/makevn-explicit-root"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn signal_handlers_register_without_setting_the_flag() {
+        let flag = Arc::new(AtomicBool::new(false));
+        register_signal_flag(&flag).unwrap();
+        assert!(!flag.load(Ordering::SeqCst));
+    }
 
     #[test]
     fn resource_sampler_skips_zero_pid_and_reuses_recent_sample() {
@@ -4707,6 +4759,21 @@ mod tests {
         tail_window.finish().unwrap();
         assert_eq!(tail_window.lines, vec![String::from("last line")]);
         assert!(tail_window.pending.is_empty());
+    }
+
+    #[test]
+    fn tail_window_clear_resets_rendered_state() {
+        let mut tail_window = super::LogTailWindow::new(
+            env::temp_dir().join(format!("makevn-tail-clear-{}.log", process::id())),
+        );
+        tail_window.clear().unwrap();
+        assert_eq!(tail_window.rendered_lines, 0);
+
+        tail_window.rendered_lines = 2;
+        tail_window.rendered_line_widths = vec![1, 1];
+        tail_window.clear().unwrap();
+        assert_eq!(tail_window.rendered_lines, 0);
+        assert!(tail_window.rendered_line_widths.is_empty());
     }
 
     #[test]
