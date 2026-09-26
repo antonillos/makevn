@@ -791,8 +791,27 @@ fn format_number(number: f64) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{exec_timeout_seconds, push_tool_flags, TOOL_SPECS};
+    use super::{exec_timeout_seconds, push_tool_flags, resolve_makevn_bin, TOOL_SPECS};
     use serde_json::{json, Map};
+    use std::fs;
+    use std::path::Path;
+    use std::process;
+
+    #[test]
+    fn resolves_sibling_makevn_or_current_binary() {
+        let dir = std::env::temp_dir().join(format!("makevn-mcp-bin-test-{}", process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let mcp = dir.join("makevn-mcp");
+        let makevn = dir.join("makevn");
+        assert!(resolve_makevn_bin(&mcp).is_err());
+        fs::write(&makevn, b"").unwrap();
+        assert_eq!(resolve_makevn_bin(&mcp).unwrap(), makevn);
+        assert_eq!(resolve_makevn_bin(&makevn).unwrap(), makevn);
+        fs::remove_file(&makevn).unwrap();
+        assert_eq!(resolve_makevn_bin(&makevn).unwrap(), makevn);
+        assert!(resolve_makevn_bin(Path::new("/")).is_err());
+        fs::remove_dir(dir).unwrap();
+    }
 
     #[test]
     fn exec_command_is_forwarded_after_tool_options() {

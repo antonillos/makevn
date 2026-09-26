@@ -3589,7 +3589,7 @@ mod tests {
         install_root_with_override, parse_invocation, read_failure_hint,
         parse_mcp_invocation, read_backend_metadata, spinner_hint, spinner_kitt_frame,
         split_command_segments, strip_frontend_tail_flag, tail_status_lines, Action,
-        BackendInvocation, BackendMetadata, CommandSummary, McpAction, ResourceHistory,
+        BackendDetailFile, BackendInvocation, BackendMetadata, CommandSummary, McpAction, ResourceHistory,
         ResourceSample,
     };
     use std::env;
@@ -3604,6 +3604,16 @@ mod tests {
     use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
     static ENV_LOCK: Mutex<()> = Mutex::new(());
+
+    #[test]
+    fn detail_file_reads_nonempty_lines_and_handles_absence() {
+        let detail = BackendDetailFile::new().unwrap();
+        assert!(detail.read_lines().is_empty());
+        fs::write(detail.path(), "first\n\nsecond\n").unwrap();
+        assert_eq!(detail.read_lines(), vec!["first", "second"]);
+        detail.clear();
+        assert!(detail.read_lines().is_empty());
+    }
 
     #[test]
     fn suggests_only_known_misspellings() {

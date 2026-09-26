@@ -2,8 +2,8 @@
   "schema": 1,
   "threshold": 8,
   "max_warnings": {
-    "rust": 43,
+    "rust": 41,
     "shell": 79,
-    "total": 122
+    "total": 120
   }
 }
