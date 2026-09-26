@@ -23,7 +23,7 @@ jobs:
     concurrency:
       group: smart-merge-${{ github.repository }}-pr-${{ github.event.issue.number }}
       cancel-in-progress: false
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 65
     steps:
       - name: Analyze and merge pull request
