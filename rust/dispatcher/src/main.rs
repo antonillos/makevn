@@ -3586,11 +3586,11 @@ mod tests {
         command_help, command_suggestion_suffix, command_supports_frontend_loader, dashboard_hint,
         detect_local_opencode_configs, dim_text, format_resource_sample, insert_backend_option,
         exit_code_from_status, format_failure_summary, install_opencode_agent_at, install_root,
-        install_root_with_override, parse_invocation, read_failure_hint,
+        install_root_with_override, parse_invocation, print_final_dashboard, read_failure_hint,
         parse_mcp_invocation, read_backend_metadata, spinner_hint, spinner_kitt_frame,
         split_command_segments, strip_frontend_tail_flag, tail_status_lines, Action,
-        BackendDetailFile, BackendInvocation, BackendMetadata, CommandSummary, McpAction, ResourceHistory,
-        ResourceSample,
+        BackendDetailFile, BackendInvocation, BackendMetadata, CommandSummary, McpAction,
+        ResourceHistory, ResourceSample, ResourceSampler,
     };
     use std::env;
     use std::ffi::OsString;
@@ -3604,6 +3604,27 @@ mod tests {
     use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
     static ENV_LOCK: Mutex<()> = Mutex::new(());
+
+    #[test]
+    fn resource_sampler_skips_zero_pid_and_reuses_recent_sample() {
+        let mut sampler = ResourceSampler::new();
+        assert!(sampler.sample(0).unwrap().is_none());
+        assert_eq!(sampler.revision(), 0);
+
+        let cached = ResourceSample { cpu_percent: 12.5, rss_kb: 2048 };
+        sampler.last_sample_at = Some(std::time::Instant::now());
+        sampler.last_sample = Some(cached);
+        let sample = sampler.sample(u32::MAX).unwrap().unwrap();
+        assert_eq!(sample.cpu_percent, cached.cpu_percent);
+        assert_eq!(sample.rss_kb, cached.rss_kb);
+        assert_eq!(sampler.revision(), 0);
+    }
+
+    #[test]
+    fn final_dashboard_prints_success_and_failure() {
+        print_final_dashboard(Duration::from_secs(1), &[], true).unwrap();
+        print_final_dashboard(Duration::from_secs(1), &[], false).unwrap();
+    }
 
     #[test]
     fn detail_file_reads_nonempty_lines_and_handles_absence() {
@@ -4673,6 +4694,19 @@ mod tests {
         assert_eq!(tail_window.lines, vec![String::from("third")]);
 
         fs::remove_file(log_path).unwrap();
+    }
+
+    #[test]
+    fn tail_window_finish_flushes_pending_unterminated_line() {
+        let log_path = env::temp_dir().join(format!(
+            "makevn-tail-finish-{}.log",
+            process::id()
+        ));
+        let mut tail_window = super::LogTailWindow::new(log_path);
+        tail_window.pending.extend_from_slice(b"last line");
+        tail_window.finish().unwrap();
+        assert_eq!(tail_window.lines, vec![String::from("last line")]);
+        assert!(tail_window.pending.is_empty());
     }
 
     #[test]
