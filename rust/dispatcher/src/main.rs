@@ -3795,6 +3795,40 @@ mod tests {
         assert_eq!(root, expected_root);
     }
 
+    #[test]
+    fn install_root_falls_back_to_path_runtime() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        let unique_suffix = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let work_dir = env::temp_dir().join(format!(
+            "makevn-install-path-test-{}-{unique_suffix}",
+            process::id()
+        ));
+        let path_root = work_dir.join("from-path");
+        fs::create_dir_all(path_root.join("bin")).unwrap();
+        fs::create_dir_all(path_root.join("libexec/makevn")).unwrap();
+        fs::write(path_root.join("bin/makevn"), b"").unwrap();
+        fs::write(path_root.join("libexec/makevn/backend.sh"), b"").unwrap();
+
+        let original_path = env::var_os("PATH");
+        let original_install_root = env::var_os("MAKEVN_INSTALL_ROOT");
+        env::remove_var("MAKEVN_INSTALL_ROOT");
+        env::set_var("PATH", path_root.join("bin"));
+        let root = install_root(&work_dir.join("missing/bin/makevn")).unwrap();
+        match original_path {
+            Some(path) => env::set_var("PATH", path),
+            None => env::remove_var("PATH"),
+        }
+        match original_install_root {
+            Some(value) => env::set_var("MAKEVN_INSTALL_ROOT", value),
+            None => env::remove_var("MAKEVN_INSTALL_ROOT"),
+        }
+        assert_eq!(root, fs::canonicalize(&path_root).unwrap());
+        fs::remove_dir_all(work_dir).unwrap();
+    }
+
     #[cfg(unix)]
     #[test]
     fn derives_install_root_from_resolved_binary_symlink() {
