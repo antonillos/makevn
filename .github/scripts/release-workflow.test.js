@@ -6,6 +6,7 @@ const { readFileSync } = require("node:fs");
 const { resolve } = require("node:path");
 
 const workflow = readFileSync(resolve(__dirname, "../workflows/prepare-release.yml"), "utf8");
+const releaseWorkflow = readFileSync(resolve(__dirname, "../workflows/release.yml"), "utf8");
 
 test("uses a least-privilege GitHub App token for release PRs", () => {
   assert.match(workflow, /permissions:\n  contents: read/);
@@ -39,4 +40,10 @@ test("replaces an existing workflow-authored release PR", () => {
 
 test("does not emit a redundant edited event for unchanged release PR metadata", () => {
   assert.match(workflow, /if \[\[ "\$\{pr_title\}" != "\$\{title\}" \|\| "\$\{pr_body\}" != "\$\{body\}" \]\]; then/);
+});
+
+test("push-triggered releases retain prerelease status from the version suffix", () => {
+  assert.match(releaseWorkflow, /prerelease="\$\{\{ github\.event_name == 'workflow_dispatch' && inputs\.prerelease \|\| false \}\}"/);
+  assert.match(releaseWorkflow, /if \[\[ "\$\{\{ github\.event_name \}\}" == push && "\$SEMVER" == \*-\* \]\]; then\s+prerelease=true/);
+  assert.match(releaseWorkflow, /printf 'prerelease=%s\\n' "\$prerelease" >> "\$GITHUB_OUTPUT"/);
 });

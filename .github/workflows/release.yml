@@ -80,7 +80,11 @@ jobs:
           printf 'semver=%s\n' "$SEMVER" >> "$GITHUB_OUTPUT"
           printf 'version=%s\n' "$VERSION" >> "$GITHUB_OUTPUT"
           printf 'target-ref=%s\n' "${{ github.event_name == 'workflow_dispatch' && inputs.target_ref || github.sha }}" >> "$GITHUB_OUTPUT"
-          printf 'prerelease=%s\n' "${{ github.event_name == 'workflow_dispatch' && inputs.prerelease || false }}" >> "$GITHUB_OUTPUT"
+          prerelease="${{ github.event_name == 'workflow_dispatch' && inputs.prerelease || false }}"
+          if [[ "${{ github.event_name }}" == push && "$SEMVER" == *-* ]]; then
+            prerelease=true
+          fi
+          printf 'prerelease=%s\n' "$prerelease" >> "$GITHUB_OUTPUT"
           printf 'draft=%s\n' "${{ github.event_name == 'workflow_dispatch' && inputs.draft || false }}" >> "$GITHUB_OUTPUT"
       - name: Skip existing release
         id: release
