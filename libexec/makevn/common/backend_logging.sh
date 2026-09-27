@@ -166,6 +166,18 @@ makevn_interrupt_process_tree() {
   fi
 }
 
+makevn_command_working_directory() {
+  local repo_root="$1"
+  local maven_base_path="$2"
+  local executable="$3"
+
+  if [[ "${maven_base_path}" != "${repo_root}" && "${executable}" == "${maven_base_path}/mvnw" ]]; then
+    printf '%s\n' "${maven_base_path}"
+  else
+    printf '%s\n' "${repo_root}"
+  fi
+}
+
 makevn_run_logged_in_context() {
   local repo_root="$1"
   local context="$2"
@@ -187,8 +199,11 @@ makevn_run_logged_in_context() {
   local relative_log_path=""
   local metadata_out="${MAKEVN_BACKEND_METADATA_OUT:-}"
   local interrupted_by_shell=false
+  local command_cwd=""
 
   shift 6
+
+  command_cwd="$(makevn_command_working_directory "${repo_root}" "${maven_base_path}" "${1:-}")"
 
   java_home="$(makevn_effective_java_home "${repo_root}" "${context}" "${maven_base_path}" || true)"
   if [[ -z "${java_home}" ]]; then
@@ -206,7 +221,7 @@ makevn_run_logged_in_context() {
     "${metadata_out}" \
     "${command_key}" \
     "${repo_root}" \
-    "${repo_root}" \
+    "${command_cwd}" \
     "${logfile}" \
     "${relative_log_path}" \
     "${command_display}" \
@@ -219,13 +234,13 @@ makevn_run_logged_in_context() {
     set +e
     if makevn_compact_output_enabled; then
       (
-        cd "${repo_root}"
+        cd "${command_cwd}"
         env JAVA_HOME="${java_home}" PATH="${java_home}/bin:${PATH}" "$@"
       ) > "${logfile}" 2>&1
       exit_code=$?
     else
       (
-        cd "${repo_root}"
+        cd "${command_cwd}"
         env JAVA_HOME="${java_home}" PATH="${java_home}/bin:${PATH}" "$@"
       ) 2>&1 | tee "${logfile}"
       exit_code=${PIPESTATUS[0]}
@@ -246,7 +261,7 @@ makevn_run_logged_in_context() {
   fi
 
   bash -c '
-    repo_root="$1"
+    command_cwd="$1"
     java_home="$2"
     title="$3"
     start_epoch="$4"
@@ -254,7 +269,7 @@ makevn_run_logged_in_context() {
     command_display="$6"
     shift 6
 
-    cd "${repo_root}" || exit 1
+    cd "${command_cwd}" || exit 1
     {
       printf "started: %s\n" "$(date "+%Y-%m-%d %H:%M:%S")"
       printf "pid: %s\n" "$$"
@@ -272,7 +287,7 @@ makevn_run_logged_in_context() {
         "$(( $(date +%s) - start_epoch ))"
       exit "${command_exit_code}"
     } > "${logfile}" 2>&1
-  ' bash "${repo_root}" "${java_home}" "${title}" "${start_epoch}" "${logfile}" "${command_display}" "$@" &
+  ' bash "${command_cwd}" "${java_home}" "${title}" "${start_epoch}" "${logfile}" "${command_display}" "$@" &
   cmd_pid=$!
 
   if makevn_frontend_owns_loader; then

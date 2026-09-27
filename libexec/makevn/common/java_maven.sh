@@ -176,8 +176,10 @@ makevn_run_in_context() {
   local context="$2"
   local maven_base_path="$3"
   local java_home=""
+  local command_cwd=""
 
   shift 3
+  command_cwd="$(makevn_command_working_directory "${repo_root}" "${maven_base_path}" "${1:-}")"
 
   java_home="$(makevn_effective_java_home "${repo_root}" "${context}" "${maven_base_path}" || true)"
   if [[ -z "${java_home}" ]]; then
@@ -202,7 +204,7 @@ makevn_run_in_context() {
   makevn_trace_command exec env JAVA_HOME="${java_home}" "$@"
 
   (
-    cd "${repo_root}"
+    cd "${command_cwd}"
     env JAVA_HOME="${java_home}" PATH="${java_home}/bin:${PATH}" "$@"
   )
 }
