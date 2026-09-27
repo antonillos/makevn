@@ -3586,11 +3586,12 @@ mod tests {
         command_help, command_suggestion_suffix, command_supports_frontend_loader, dashboard_hint,
         detect_local_opencode_configs, dim_text, format_resource_sample, insert_backend_option,
         exit_code_from_status, format_failure_summary, install_opencode_agent_at, install_root,
-        install_root_with_override, parse_invocation, read_failure_hint,
+        install_root_with_override, parse_invocation, print_final_dashboard, read_failure_hint,
+        register_signal_flag, validate_maven_passthrough_args,
         parse_mcp_invocation, read_backend_metadata, spinner_hint, spinner_kitt_frame,
         split_command_segments, strip_frontend_tail_flag, tail_status_lines, Action,
-        BackendDetailFile, BackendInvocation, BackendMetadata, CommandSummary, McpAction, ResourceHistory,
-        ResourceSample,
+        BackendDetailFile, BackendInvocation, BackendMetadata, CommandSummary, McpAction,
+        ResourceHistory, ResourceSample, ResourceSampler,
     };
     use std::env;
     use std::ffi::OsString;
@@ -3600,10 +3601,95 @@ mod tests {
     use std::os::unix::fs::symlink;
     use std::path::Path;
     use std::process;
+    use std::sync::atomic::AtomicBool;
+    use std::sync::Arc;
     use std::sync::Mutex;
     use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
     static ENV_LOCK: Mutex<()> = Mutex::new(());
+
+    #[test]
+    fn maven_passthrough_accepts_option_values_and_separator() {
+        let command = OsString::from("verify");
+        assert!(validate_maven_passthrough_args(
+            &command,
+            &[
+                OsString::from("--tail"),
+                OsString::from("-f"),
+                OsString::from("pom.xml"),
+                OsString::from("--"),
+                OsString::from("custom-goal"),
+            ],
+        )
+        .is_ok());
+    }
+
+    #[test]
+    fn maven_passthrough_rejects_bare_commands_before_separator() {
+        let command = OsString::from("verify");
+        let error = validate_maven_passthrough_args(
+            &command,
+            &[OsString::from("verity-ut")],
+        )
+        .unwrap_err();
+        assert!(error.contains("Extra Maven arguments for verify must follow '--'"));
+        assert!(error.contains("Did you mean 'verify-ut'?"));
+    }
+
+    #[test]
+    fn install_root_honors_explicit_environment_override() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        let original = env::var_os("MAKEVN_INSTALL_ROOT");
+        env::set_var("MAKEVN_INSTALL_ROOT", "/tmp/makevn-explicit-root");
+        let root = install_root(Path::new("/missing/makevn")).unwrap();
+        match original {
+            Some(value) => env::set_var("MAKEVN_INSTALL_ROOT", value),
+            None => env::remove_var("MAKEVN_INSTALL_ROOT"),
+        }
+        assert_eq!(root, Path::new("/tmp/makevn-explicit-root"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn signal_handlers_register_in_isolated_process() {
+        const CHILD_MARKER: &str = "MAKEVN_SIGNAL_REGISTRATION_TEST_CHILD";
+        if env::var_os(CHILD_MARKER).is_some() {
+            register_signal_flag(&Arc::new(AtomicBool::new(false))).unwrap();
+            return;
+        }
+
+        let output = process::Command::new(env::current_exe().unwrap())
+            .args(["--exact", "tests::signal_handlers_register_in_isolated_process"])
+            .env(CHILD_MARKER, "1")
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "isolated signal registration failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+
+    #[test]
+    fn resource_sampler_skips_zero_pid_and_reuses_recent_sample() {
+        let mut sampler = ResourceSampler::new();
+        assert!(sampler.sample(0).unwrap().is_none());
+        assert_eq!(sampler.revision(), 0);
+
+        let cached = ResourceSample { cpu_percent: 12.5, rss_kb: 2048 };
+        sampler.last_sample_at = Some(std::time::Instant::now());
+        sampler.last_sample = Some(cached);
+        let sample = sampler.sample(u32::MAX).unwrap().unwrap();
+        assert_eq!(sample.cpu_percent, cached.cpu_percent);
+        assert_eq!(sample.rss_kb, cached.rss_kb);
+        assert_eq!(sampler.revision(), 0);
+    }
+
+    #[test]
+    fn final_dashboard_prints_success_and_failure() {
+        print_final_dashboard(Duration::from_secs(1), &[], true).unwrap();
+        print_final_dashboard(Duration::from_secs(1), &[], false).unwrap();
+    }
 
     #[test]
     fn detail_file_reads_nonempty_lines_and_handles_absence() {
@@ -3720,6 +3806,40 @@ mod tests {
         fs::remove_dir_all(work_dir).unwrap();
 
         assert_eq!(root, expected_root);
+    }
+
+    #[test]
+    fn install_root_falls_back_to_path_runtime() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        let unique_suffix = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let work_dir = env::temp_dir().join(format!(
+            "makevn-install-path-test-{}-{unique_suffix}",
+            process::id()
+        ));
+        let path_root = work_dir.join("from-path");
+        fs::create_dir_all(path_root.join("bin")).unwrap();
+        fs::create_dir_all(path_root.join("libexec/makevn")).unwrap();
+        fs::write(path_root.join("bin/makevn"), b"").unwrap();
+        fs::write(path_root.join("libexec/makevn/backend.sh"), b"").unwrap();
+
+        let original_path = env::var_os("PATH");
+        let original_install_root = env::var_os("MAKEVN_INSTALL_ROOT");
+        env::remove_var("MAKEVN_INSTALL_ROOT");
+        env::set_var("PATH", path_root.join("bin"));
+        let root = install_root(&work_dir.join("missing/bin/makevn")).unwrap();
+        match original_path {
+            Some(path) => env::set_var("PATH", path),
+            None => env::remove_var("PATH"),
+        }
+        match original_install_root {
+            Some(value) => env::set_var("MAKEVN_INSTALL_ROOT", value),
+            None => env::remove_var("MAKEVN_INSTALL_ROOT"),
+        }
+        assert_eq!(root, fs::canonicalize(&path_root).unwrap());
+        fs::remove_dir_all(work_dir).unwrap();
     }
 
     #[cfg(unix)]
@@ -4673,6 +4793,34 @@ mod tests {
         assert_eq!(tail_window.lines, vec![String::from("third")]);
 
         fs::remove_file(log_path).unwrap();
+    }
+
+    #[test]
+    fn tail_window_finish_flushes_pending_unterminated_line() {
+        let log_path = env::temp_dir().join(format!(
+            "makevn-tail-finish-{}.log",
+            process::id()
+        ));
+        let mut tail_window = super::LogTailWindow::new(log_path);
+        tail_window.pending.extend_from_slice(b"last line");
+        tail_window.finish().unwrap();
+        assert_eq!(tail_window.lines, vec![String::from("last line")]);
+        assert!(tail_window.pending.is_empty());
+    }
+
+    #[test]
+    fn tail_window_clear_resets_rendered_state() {
+        let mut tail_window = super::LogTailWindow::new(
+            env::temp_dir().join(format!("makevn-tail-clear-{}.log", process::id())),
+        );
+        tail_window.clear().unwrap();
+        assert_eq!(tail_window.rendered_lines, 0);
+
+        tail_window.rendered_lines = 2;
+        tail_window.rendered_line_widths = vec![1, 1];
+        tail_window.clear().unwrap();
+        assert_eq!(tail_window.rendered_lines, 0);
+        assert!(tail_window.rendered_line_widths.is_empty());
     }
 
     #[test]
