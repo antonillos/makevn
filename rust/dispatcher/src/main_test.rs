@@ -1,18 +1,21 @@
 use super::{
-    command_help, command_suggestion_suffix, command_supports_frontend_loader, dashboard_hint,
-    detect_local_opencode_configs, dim_text, exit_code_from_status, format_failure_summary,
-    format_resource_sample, insert_backend_option, install_opencode_agent_at, install_root,
-    install_root_with_override, parse_invocation, parse_mcp_invocation, print_final_dashboard,
+    clear_tail_rows, command_help, command_suggestion_suffix, command_supports_frontend_loader,
+    dashboard_hint, detect_local_opencode_configs, dim_text, exit_code_from_status,
+    format_failure_summary, format_resource_sample_cpu, format_resource_sample_ram,
+    insert_backend_option, install_opencode_agent_at, install_root, install_root_with_override,
+    parse_invocation, parse_mcp_invocation, print_command_help, print_final_dashboard,
     read_backend_metadata, read_failure_hint, register_signal_flag, spinner_hint,
-    spinner_kitt_frame, split_command_segments, strip_frontend_tail_flag, strip_jsonc_comments,
-    tail_status_lines, validate_maven_passthrough_args, Action, BackendDetailFile,
-    BackendInvocation, BackendMetadata, CommandSummary, McpAction, ResourceHistory, ResourceSample,
-    ResourceSampler,
+    spinner_resource_suffix, split_command_segments, strip_frontend_tail_flag,
+    strip_jsonc_comments, tail_command_help, tail_status_lines, validate_maven_passthrough_args,
+    Action, BackendDetailFile, BackendInvocation, BackendMetadata, CommandSummary, InputEvent,
+    McpAction, ResourceHistory, ResourceSample, ResourceSampler, SpinnerRenderer, TtyModeGuard,
 };
 use std::env;
 use std::ffi::OsString;
 use std::fs;
+use std::fs::File;
 use std::io::Write;
+use std::os::fd::FromRawFd;
 #[cfg(unix)]
 use std::os::unix::fs::symlink;
 use std::path::Path;
@@ -20,9 +23,180 @@ use std::process;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use std::sync::Mutex;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 static ENV_LOCK: Mutex<()> = Mutex::new(());
+
+fn format_resource_sample(sample: &ResourceSample, history: &ResourceHistory) -> String {
+    format!(
+        "{} | {}",
+        format_resource_sample_cpu(sample, history),
+        format_resource_sample_ram(sample, history)
+    )
+}
+
+#[test]
+fn spinner_resource_suffix_preserves_hint_with_and_without_metrics() {
+    assert_eq!(spinner_resource_suffix("", "interrupt"), "interrupt");
+    assert!(spinner_resource_suffix("CPU 10%", "interrupt").contains("CPU 10%"));
+    assert!(spinner_resource_suffix("CPU 10%", "interrupt").ends_with("interrupt"));
+}
+
+#[test]
+fn resource_history_only_records_new_sample_revisions() {
+    let mut history = ResourceHistory::new();
+    let sample = ResourceSample {
+        cpu_percent: 12.0,
+        rss_kb: 64,
+    };
+    assert_eq!(history.sync_sample(0, 0, Some(&sample)), 0);
+    assert!(history.cpu_percent.is_empty());
+    assert_eq!(history.sync_sample(0, 1, Some(&sample)), 1);
+    assert_eq!(history.cpu_percent, vec![12.0]);
+    assert_eq!(history.rss_kb, vec![64]);
+    assert_eq!(history.sync_sample(1, 2, None), 2);
+    assert_eq!(history.cpu_percent, vec![12.0]);
+}
+
+#[test]
+fn spinner_renderer_handles_tty_input_and_dashboard_lifecycle() {
+    let mut master_fd = -1;
+    let mut slave_fd = -1;
+    let rc = unsafe {
+        libc::openpty(
+            &mut master_fd,
+            &mut slave_fd,
+            std::ptr::null_mut(),
+            std::ptr::null_mut(),
+            std::ptr::null_mut(),
+        )
+    };
+    assert_eq!(rc, 0, "openpty failed: {}", std::io::Error::last_os_error());
+    let mut master = unsafe { File::from_raw_fd(master_fd) };
+    let tty = unsafe { File::from_raw_fd(slave_fd) };
+    let tty_guard = TtyModeGuard::new(&tty).unwrap();
+    let mut renderer = SpinnerRenderer {
+        tty,
+        tty_guard,
+        frame: 0,
+        frame_interval: Duration::ZERO,
+        next_frame_at: Instant::now(),
+        second_escape_deadline: None,
+        resource_sampler: ResourceSampler::new(),
+        resource_history: ResourceHistory::new(),
+        resource_history_revision: 0,
+        cpu_visual_load: 0.0,
+        ram_visual_load: 0.0,
+        resource_visual_load: 0.0,
+        rendered_block_line_widths: Vec::new(),
+    };
+
+    master.write_all(b"tT+-x\x1b\x1b").unwrap();
+    assert!(matches!(
+        renderer.poll_input().unwrap(),
+        InputEvent::StartTail
+    ));
+    assert!(matches!(
+        renderer.poll_input().unwrap(),
+        InputEvent::StartTail
+    ));
+    assert!(matches!(
+        renderer.poll_input().unwrap(),
+        InputEvent::IncreaseLines
+    ));
+    assert!(matches!(
+        renderer.poll_input().unwrap(),
+        InputEvent::DecreaseLines
+    ));
+    assert!(matches!(renderer.poll_input().unwrap(), InputEvent::None));
+    assert!(matches!(renderer.poll_input().unwrap(), InputEvent::None));
+    assert!(matches!(
+        renderer.poll_input().unwrap(),
+        InputEvent::Interrupt
+    ));
+
+    assert!(renderer
+        .frame_line_with_hint(0, "interrupt")
+        .unwrap()
+        .contains("interrupt"));
+    renderer.resource_sampler.sample_revision = 1;
+    let sample = ResourceSample {
+        cpu_percent: 10.0,
+        rss_kb: 32,
+    };
+    renderer.sync_resource_history(Some(&sample));
+    assert_eq!(renderer.resource_history.cpu_percent, vec![10.0]);
+    renderer.sync_resource_history(Some(&sample));
+    assert_eq!(renderer.resource_history.cpu_percent, vec![10.0]);
+
+    let metadata = BackendMetadata {
+        command: "verify".into(),
+        repo: "repo".into(),
+        cwd: "repo".into(),
+        log_path: "log".into(),
+        relative_log_path: "log".into(),
+        command_display: "verify".into(),
+        title: "Verify".into(),
+        context: None,
+    };
+    renderer
+        .render_dashboard(0, Duration::ZERO, &[], &[], &metadata, "interrupt")
+        .unwrap();
+    assert!(!renderer.rendered_block_line_widths.is_empty());
+    renderer.clear_dynamic_block().unwrap();
+    assert!(renderer.rendered_block_line_widths.is_empty());
+    renderer.clear_dynamic_block().unwrap();
+    renderer.rendered_block_line_widths.push(1000);
+    renderer.clear_dynamic_block().unwrap();
+
+    renderer.resource_sampler.last_sample_at = Some(Instant::now());
+    renderer.resource_sampler.last_sample = Some(sample);
+    renderer.next_frame_at = Instant::now() + Duration::from_millis(1);
+    assert!(renderer
+        .frame_line_with_hint(1, "interrupt")
+        .unwrap()
+        .contains("interrupt"));
+    renderer.render_frame_with_hint(1, "interrupt").unwrap();
+    renderer
+        .render_dashboard(1, Duration::ZERO, &[], &[], &metadata, "interrupt")
+        .unwrap();
+
+    let original_tty = std::mem::replace(&mut renderer.tty, File::open("/dev/null").unwrap());
+    assert!(matches!(renderer.poll_input().unwrap(), InputEvent::None));
+    renderer.tty = File::options().write(true).open("/dev/null").unwrap();
+    assert!(renderer.poll_input().is_err());
+    renderer.tty = original_tty;
+}
+
+#[test]
+fn known_command_help_can_be_printed() {
+    print_command_help("verify");
+}
+
+#[test]
+fn clear_tail_rows_erases_each_physical_row() {
+    let mut output = Vec::new();
+    clear_tail_rows(&mut output, 2).unwrap();
+    assert_eq!(output, b"\x1b[2A\r\x1b[2K\n\r\x1b[2K\n\r\x1b[2K\x1b[2A\r");
+}
+
+#[test]
+fn tail_command_help_covers_all_interactive_commands() {
+    for command in [
+        "docker-up",
+        "docker-down",
+        "docker-ps",
+        "docker-stats",
+        "karate-docker-up",
+        "karate-docker-down",
+    ] {
+        let (usage, description, options) = tail_command_help(command, "description").unwrap();
+        assert!(usage.contains(command));
+        assert_eq!(description, "description");
+        assert_eq!(options.len(), 1);
+    }
+    assert!(tail_command_help("verify", "description").is_none());
+}
 
 #[test]
 fn strips_jsonc_comments_without_changing_strings_or_unicode() {

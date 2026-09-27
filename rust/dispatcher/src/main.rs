@@ -2378,20 +2378,24 @@ impl LogTailWindow {
             return Ok(());
         }
 
-        write!(io::stdout(), "\u{1b}[{}A", rows)?;
-        for index in 0..=rows {
-            write!(io::stdout(), "\r\u{1b}[2K")?;
-            if index < rows {
-                write!(io::stdout(), "\n")?;
-            }
-        }
-        write!(io::stdout(), "\u{1b}[{}A\r", rows)?;
-        io::stdout().flush()?;
+        clear_tail_rows(&mut io::stdout(), rows)?;
         self.rendered_lines = 0;
         self.rendered_width = terminal_width().max(8);
         self.rendered_line_widths.clear();
         Ok(())
     }
+}
+
+fn clear_tail_rows(writer: &mut impl Write, rows: usize) -> io::Result<()> {
+    write!(writer, "\u{1b}[{}A", rows)?;
+    for index in 0..=rows {
+        write!(writer, "\r\u{1b}[2K")?;
+        if index < rows {
+            write!(writer, "\n")?;
+        }
+    }
+    write!(writer, "\u{1b}[{}A\r", rows)?;
+    writer.flush()
 }
 
 fn physical_rows_for_width(line_widths: &[usize], terminal_width: usize) -> usize {
@@ -2429,11 +2433,6 @@ fn interpolate_color(cool: Rgb, warm: Rgb, load: f32) -> Rgb {
 
 fn rgb_code(color: Rgb) -> String {
     format!("38;2;{};{};{}", color.r, color.g, color.b)
-}
-
-#[cfg(test)]
-fn spinner_kitt_frame(frame_index: usize) -> String {
-    spinner_kitt_frame_with_load(frame_index, 0.0)
 }
 
 fn spinner_kitt_frame_with_load(frame_index: usize, load: f32) -> String {
@@ -2619,21 +2618,10 @@ impl SpinnerRenderer {
     fn poll_input(&mut self) -> io::Result<InputEvent> {
         let mut buffer = [0_u8; 1];
         match self.tty.read(&mut buffer) {
-            Ok(1) if buffer[0] == 0x1b => {
-                let now = Instant::now();
-                if self
-                    .second_escape_deadline
-                    .is_some_and(|deadline| deadline > now)
-                {
-                    self.second_escape_deadline = None;
-                    return Ok(InputEvent::Interrupt);
-                }
-                self.second_escape_deadline = Some(now + Duration::from_secs(3));
-                Ok(InputEvent::None)
-            }
-            Ok(1) if buffer[0] == b't' || buffer[0] == b'T' => Ok(InputEvent::StartTail),
-            Ok(1) if buffer[0] == b'+' => Ok(InputEvent::IncreaseLines),
-            Ok(1) if buffer[0] == b'-' => Ok(InputEvent::DecreaseLines),
+            Ok(1) => Ok(decode_spinner_input(
+                buffer[0],
+                &mut self.second_escape_deadline,
+            )),
             Ok(_) => Ok(InputEvent::None),
             Err(error) if error.kind() == io::ErrorKind::WouldBlock => Ok(InputEvent::None),
             Err(error) => Err(error),
@@ -2667,10 +2655,7 @@ impl SpinnerRenderer {
     }
 
     fn frame_line_with_hint(&mut self, pid: u32, hint: &str) -> io::Result<String> {
-        let now = Instant::now();
-        if self.next_frame_at > now {
-            thread::sleep(self.next_frame_at - now);
-        }
+        wait_until_next_frame(self.next_frame_at);
 
         let resource_sample = self.resource_sampler.sample(pid).unwrap_or(None);
         self.sync_resource_history(resource_sample.as_ref());
@@ -2686,11 +2671,7 @@ impl SpinnerRenderer {
                 )
             })
             .unwrap_or_default();
-        let suffix = if resource_text.is_empty() {
-            hint.to_owned()
-        } else {
-            format!("{} {} {}", resource_text, dim_text("|"), hint)
-        };
+        let suffix = spinner_resource_suffix(&resource_text, hint);
 
         let line = format!(
             "{}  {}",
@@ -2711,10 +2692,7 @@ impl SpinnerRenderer {
         metadata: &BackendMetadata,
         hint: &str,
     ) -> io::Result<()> {
-        let now = Instant::now();
-        if self.next_frame_at > now {
-            thread::sleep(self.next_frame_at - now);
-        }
+        wait_until_next_frame(self.next_frame_at);
 
         let resource_sample = self.resource_sampler.sample(pid).unwrap_or(None);
         self.sync_resource_history(resource_sample.as_ref());
@@ -2730,11 +2708,7 @@ impl SpinnerRenderer {
                 )
             })
             .unwrap_or_default();
-        let spinner_suffix = if resource_text.is_empty() {
-            hint.to_owned()
-        } else {
-            format!("{} {} {}", resource_text, dim_text("|"), hint)
-        };
+        let spinner_suffix = spinner_resource_suffix(&resource_text, hint);
 
         let lines = dashboard_output_lines(
             global_elapsed,
@@ -2779,14 +2753,11 @@ impl SpinnerRenderer {
     }
 
     fn sync_resource_history(&mut self, sample: Option<&ResourceSample>) {
-        let revision = self.resource_sampler.revision();
-        if revision == self.resource_history_revision {
-            return;
-        }
-        self.resource_history_revision = revision;
-        if let Some(sample) = sample {
-            self.resource_history.push(*sample);
-        }
+        self.resource_history_revision = self.resource_history.sync_sample(
+            self.resource_history_revision,
+            self.resource_sampler.revision(),
+            sample,
+        );
     }
 
     fn frame_interval(&self) -> Duration {
@@ -2838,6 +2809,32 @@ impl SpinnerRenderer {
         }
         self.rendered_block_line_widths.clear();
         Ok(())
+    }
+}
+
+fn decode_spinner_input(byte: u8, escape_deadline: &mut Option<Instant>) -> InputEvent {
+    match byte {
+        0x1b => {
+            let now = Instant::now();
+            if escape_deadline.is_some_and(|deadline| deadline > now) {
+                *escape_deadline = None;
+                InputEvent::Interrupt
+            } else {
+                *escape_deadline = Some(now + Duration::from_secs(3));
+                InputEvent::None
+            }
+        }
+        b't' | b'T' => InputEvent::StartTail,
+        b'+' => InputEvent::IncreaseLines,
+        b'-' => InputEvent::DecreaseLines,
+        _ => InputEvent::None,
+    }
+}
+
+fn wait_until_next_frame(next_frame_at: Instant) {
+    let now = Instant::now();
+    if next_frame_at > now {
+        thread::sleep(next_frame_at - now);
     }
 }
 
@@ -2951,6 +2948,29 @@ impl ResourceHistory {
         push_ring_value(&mut self.cpu_percent, sample.cpu_percent, Self::WIDTH);
         push_ring_value(&mut self.rss_kb, sample.rss_kb, Self::WIDTH);
     }
+
+    fn sync_sample(
+        &mut self,
+        previous_revision: u64,
+        revision: u64,
+        sample: Option<&ResourceSample>,
+    ) -> u64 {
+        if revision == previous_revision {
+            return previous_revision;
+        }
+        if let Some(sample) = sample {
+            self.push(*sample);
+        }
+        revision
+    }
+}
+
+fn spinner_resource_suffix(resource_text: &str, hint: &str) -> String {
+    if resource_text.is_empty() {
+        hint.to_owned()
+    } else {
+        format!("{} {} {}", resource_text, dim_text("|"), hint)
+    }
 }
 
 fn read_resource_sample(root_pid: u32) -> io::Result<ResourceSample> {
@@ -3049,15 +3069,6 @@ fn format_resource_metrics(
         adaptive_metric_text(&cpu_text, cpu_load),
         dim_text("|"),
         adaptive_metric_text(&ram_text, ram_load)
-    )
-}
-
-#[cfg(test)]
-fn format_resource_sample(sample: &ResourceSample, history: &ResourceHistory) -> String {
-    format!(
-        "{} | {}",
-        format_resource_sample_cpu(sample, history),
-        format_resource_sample_ram(sample, history)
     )
 }
 
