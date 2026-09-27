@@ -519,46 +519,59 @@ fn install_opencode_agent_config(config_path: &Path) -> Result<PathBuf, String> 
 }
 
 fn strip_jsonc_comments(input: &str) -> String {
-    let mut output = String::with_capacity(input.len());
     let bytes = input.as_bytes();
+    let mut output = Vec::with_capacity(bytes.len());
     let mut index = 0;
     while index < bytes.len() {
-        if bytes[index] == b'"' {
-            output.push('"');
+        match bytes[index] {
+            b'"' => {
+                let end = jsonc_string_end(bytes, index + 1);
+                output.extend_from_slice(&bytes[index..end]);
+                index = end;
+            }
+            b'/' if bytes.get(index + 1) == Some(&b'/') => {
+                index = jsonc_line_comment_end(bytes, index + 2);
+            }
+            b'/' if bytes.get(index + 1) == Some(&b'*') => {
+                index = jsonc_block_comment_end(bytes, index + 2);
+            }
+            byte => {
+                output.push(byte);
+                index += 1;
+            }
+        }
+    }
+    String::from_utf8(output).expect("removing ASCII comment tokens preserves UTF-8")
+}
+
+fn jsonc_string_end(bytes: &[u8], mut index: usize) -> usize {
+    while index < bytes.len() {
+        if bytes[index] == b'\\' && index + 1 < bytes.len() {
+            index += 2;
+        } else if bytes[index] == b'"' {
+            return index + 1;
+        } else {
             index += 1;
-            while index < bytes.len() {
-                let character = bytes[index] as char;
-                output.push(character);
-                if character == '\\' && index + 1 < bytes.len() {
-                    index += 1;
-                    output.push(bytes[index] as char);
-                } else if character == '"' {
-                    index += 1;
-                    break;
-                }
-                index += 1;
-            }
-            continue;
         }
-        if bytes[index] == b'/' && index + 1 < bytes.len() && bytes[index + 1] == b'/' {
-            index += 2;
-            while index < bytes.len() && bytes[index] != b'\n' {
-                index += 1;
-            }
-            continue;
-        }
-        if bytes[index] == b'/' && index + 1 < bytes.len() && bytes[index + 1] == b'*' {
-            index += 2;
-            while index + 1 < bytes.len() && !(bytes[index] == b'*' && bytes[index + 1] == b'/') {
-                index += 1;
-            }
-            index = (index + 2).min(bytes.len());
-            continue;
-        }
-        output.push(bytes[index] as char);
+    }
+    bytes.len()
+}
+
+fn jsonc_line_comment_end(bytes: &[u8], mut index: usize) -> usize {
+    while index < bytes.len() && bytes[index] != b'\n' {
         index += 1;
     }
-    output
+    index
+}
+
+fn jsonc_block_comment_end(bytes: &[u8], mut index: usize) -> usize {
+    while index + 1 < bytes.len() {
+        if bytes[index] == b'*' && bytes[index + 1] == b'/' {
+            return index + 2;
+        }
+        index += 1;
+    }
+    bytes.len()
 }
 
 fn parse_mcp_invocation(args: Vec<OsString>) -> Result<McpAction, String> {
