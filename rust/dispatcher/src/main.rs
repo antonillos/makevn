@@ -3601,7 +3601,7 @@ mod tests {
     use std::os::unix::fs::symlink;
     use std::path::Path;
     use std::process;
-    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::atomic::AtomicBool;
     use std::sync::Arc;
     use std::sync::Mutex;
     use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -3651,10 +3651,23 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn signal_handlers_register_without_setting_the_flag() {
-        let flag = Arc::new(AtomicBool::new(false));
-        register_signal_flag(&flag).unwrap();
-        assert!(!flag.load(Ordering::SeqCst));
+    fn signal_handlers_register_in_isolated_process() {
+        const CHILD_MARKER: &str = "MAKEVN_SIGNAL_REGISTRATION_TEST_CHILD";
+        if env::var_os(CHILD_MARKER).is_some() {
+            register_signal_flag(&Arc::new(AtomicBool::new(false))).unwrap();
+            return;
+        }
+
+        let output = process::Command::new(env::current_exe().unwrap())
+            .args(["--exact", "tests::signal_handlers_register_in_isolated_process"])
+            .env(CHILD_MARKER, "1")
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "isolated signal registration failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
     }
 
     #[test]
