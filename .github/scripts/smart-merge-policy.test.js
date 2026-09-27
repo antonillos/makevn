@@ -50,3 +50,9 @@ test("App-authenticated merge relies on push triggers instead of duplicate dispa
   assert.match(sync, /push:\s*\n\s*branches:\s*\n\s*- main/);
   assert.doesNotMatch(sync, /workflow_run:/);
 });
+
+test("branch cleanup ignores only an already-deleted reference", () => {
+  assert.match(workflow, /const alreadyDeleted = \[404, 422\]\.includes\(error\.status\) &&/);
+  assert.match(workflow, /Reference does not exist\/i\.test\(error\.message\)/);
+  assert.match(workflow, /if \(!alreadyDeleted\) \{\s*core\.warning\(`Could not delete/);
+});
