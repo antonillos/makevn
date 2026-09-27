@@ -1,6 +1,7 @@
 use super::{exec_timeout_seconds, push_tool_flags, resolve_makevn_bin, TOOL_SPECS};
 use serde_json::{json, Map};
 use std::fs;
+use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 use std::process;
 
@@ -226,4 +227,173 @@ fn tool_schema_for_parallel_run_has_array_type() {
     let schema = super::tool(spec);
     let steps_prop = &schema["inputSchema"]["properties"]["steps"];
     assert_eq!(steps_prop["type"], "array");
+}
+
+#[test]
+fn tool_call_validates_name_and_composite_steps() {
+    let bin = Path::new("/nonexistent/makevn");
+    assert!(super::handle_tool_call(bin, &json!({}))
+        .err()
+        .unwrap()
+        .contains("missing tool name"));
+    assert!(super::handle_tool_call(bin, &json!({"name": "unknown"}))
+        .err()
+        .unwrap()
+        .contains("unknown makevn tool"));
+    assert!(
+        super::handle_tool_call(bin, &json!({"name": "composite_run"}))
+            .err()
+            .unwrap()
+            .contains("steps")
+    );
+    assert!(
+        super::handle_tool_call(bin, &json!({"name": "parallel_run"}))
+            .err()
+            .unwrap()
+            .contains("steps")
+    );
+}
+
+#[test]
+fn tool_call_forwards_arguments_and_reports_process_failure() {
+    let dir = std::env::temp_dir().join(format!("makevn-mcp-tool-call-{}", process::id()));
+    fs::create_dir_all(&dir).unwrap();
+    let bin = dir.join("makevn");
+    fs::write(
+        &bin,
+        b"#!/bin/sh\nprintf '%s\\n' \"$@\"\necho diagnostic >&2\nexit 7\n",
+    )
+    .unwrap();
+    fs::set_permissions(&bin, fs::Permissions::from_mode(0o700)).unwrap();
+
+    let result = super::handle_tool_call(
+        &bin,
+        &json!({"name": "doctor", "arguments": {"repo": "/tmp/example"}}),
+    )
+    .unwrap();
+    assert_eq!(result.exit_code, 7);
+    assert!(result
+        .output
+        .contains("--repo\n/tmp/example\n--compact\ndoctor"));
+    assert!(result.output.contains("diagnostic"));
+    assert!(result.output.contains("exit code 7"));
+
+    fs::remove_file(bin).unwrap();
+    fs::remove_dir(dir).unwrap();
+}
+
+#[test]
+fn tool_call_reports_success_and_exec_argument_errors() {
+    let result = super::handle_tool_call(
+        Path::new("/bin/echo"),
+        &json!({"name": "doctor", "arguments": {"repo": ""}}),
+    )
+    .unwrap();
+    assert_eq!(result.exit_code, 0);
+    assert_eq!(result.output, "--compact doctor");
+
+    let error = super::handle_tool_call(
+        Path::new("/bin/echo"),
+        &json!({"name": "exec", "arguments": {"command": "mvn -v", "timeout-seconds": 0}}),
+    )
+    .err()
+    .unwrap();
+    assert!(error.contains("timeout-seconds"));
+}
+
+#[test]
+fn composite_run_stops_on_error_unless_fail_fast_is_disabled() {
+    let steps = json!([
+        {"tool": "unknown"},
+        {"tool": "doctor", "arguments": {"repo": "/step"}}
+    ]);
+    let stopped = super::handle_tool_call(
+        Path::new("/bin/echo"),
+        &json!({"name": "composite_run", "arguments": {"steps": steps}}),
+    )
+    .unwrap();
+    let stopped: serde_json::Value = serde_json::from_str(&stopped.output).unwrap();
+    assert_eq!(stopped["executed_steps"], 1);
+    assert_eq!(stopped["failed"], true);
+    assert_eq!(stopped["steps"][0]["exitCode"], -1);
+
+    let continued = super::handle_tool_call(
+        Path::new("/bin/echo"),
+        &json!({"name": "composite_run", "arguments": {
+            "steps": steps, "fail-fast": false, "repo": "/global"
+        }}),
+    )
+    .unwrap();
+    let continued: serde_json::Value = serde_json::from_str(&continued.output).unwrap();
+    assert_eq!(continued["executed_steps"], 2);
+    assert_eq!(continued["steps"][1]["exitCode"], 0);
+    assert!(continued["steps"][1]["output"]
+        .as_str()
+        .unwrap()
+        .contains("--repo /step"));
+}
+
+#[test]
+fn composite_run_stops_on_nonzero_exit_and_can_continue() {
+    let steps = json!([{"tool": "doctor"}, {"tool": "doctor"}]);
+    let stopped = super::handle_tool_call(
+        Path::new("/usr/bin/false"),
+        &json!({"name": "composite_run", "arguments": {"steps": steps}}),
+    )
+    .unwrap();
+    let stopped: serde_json::Value = serde_json::from_str(&stopped.output).unwrap();
+    assert_eq!(stopped["executed_steps"], 1);
+    assert_eq!(stopped["steps"][0]["exitCode"], 1);
+
+    let continued = super::handle_tool_call(
+        Path::new("/usr/bin/false"),
+        &json!({"name": "composite_run", "arguments": {
+            "steps": steps, "fail-fast": false
+        }}),
+    )
+    .unwrap();
+    let continued: serde_json::Value = serde_json::from_str(&continued.output).unwrap();
+    assert_eq!(continued["executed_steps"], 2);
+    assert_eq!(continued["exitCode"], 1);
+}
+
+#[test]
+fn parallel_run_reports_success_and_invalid_steps_in_input_order() {
+    let result = super::handle_tool_call(
+        Path::new("/bin/echo"),
+        &json!({"name": "parallel_run", "arguments": {
+            "repo": "/global",
+            "steps": [{"tool": "doctor"}, {"tool": "unknown"}]
+        }}),
+    )
+    .unwrap();
+    let summary: serde_json::Value = serde_json::from_str(&result.output).unwrap();
+    assert_eq!(summary["total_steps"], 2);
+    assert_eq!(summary["failed"], true);
+    assert_eq!(summary["steps"][0]["exitCode"], 0);
+    assert!(summary["steps"][0]["output"]
+        .as_str()
+        .unwrap()
+        .contains("--repo /global"));
+    assert_eq!(summary["steps"][1]["exitCode"], -1);
+}
+
+#[test]
+fn timed_execution_captures_output_and_stops_overdue_processes() {
+    let output =
+        super::run_makevn_with_timeout(Path::new("/bin/echo"), &[String::from("hello")], 1)
+            .unwrap();
+    assert_eq!(output.stdout, b"hello\n");
+    assert!(output.stderr.is_empty());
+    assert!(output.status.success());
+    assert!(!output.timed_out);
+
+    let output = super::run_makevn_with_timeout(
+        Path::new("/bin/sh"),
+        &[String::from("-c"), String::from("sleep 3")],
+        1,
+    )
+    .unwrap();
+    assert!(output.timed_out);
+    assert!(!output.status.success());
 }
