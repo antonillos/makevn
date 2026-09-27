@@ -1,6 +1,7 @@
 use super::{exec_timeout_seconds, push_tool_flags, resolve_makevn_bin, TOOL_SPECS};
 use serde_json::{json, Map};
 use std::fs;
+use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 use std::process;
 
@@ -226,4 +227,57 @@ fn tool_schema_for_parallel_run_has_array_type() {
     let schema = super::tool(spec);
     let steps_prop = &schema["inputSchema"]["properties"]["steps"];
     assert_eq!(steps_prop["type"], "array");
+}
+
+#[test]
+fn tool_call_validates_name_and_composite_steps() {
+    let bin = Path::new("/nonexistent/makevn");
+    assert!(super::handle_tool_call(bin, &json!({}))
+        .err()
+        .unwrap()
+        .contains("missing tool name"));
+    assert!(super::handle_tool_call(bin, &json!({"name": "unknown"}))
+        .err()
+        .unwrap()
+        .contains("unknown makevn tool"));
+    assert!(
+        super::handle_tool_call(bin, &json!({"name": "composite_run"}))
+            .err()
+            .unwrap()
+            .contains("steps")
+    );
+    assert!(
+        super::handle_tool_call(bin, &json!({"name": "parallel_run"}))
+            .err()
+            .unwrap()
+            .contains("steps")
+    );
+}
+
+#[test]
+fn tool_call_forwards_arguments_and_reports_process_failure() {
+    let dir = std::env::temp_dir().join(format!("makevn-mcp-tool-call-{}", process::id()));
+    fs::create_dir_all(&dir).unwrap();
+    let bin = dir.join("makevn");
+    fs::write(
+        &bin,
+        b"#!/bin/sh\nprintf '%s\\n' \"$@\"\necho diagnostic >&2\nexit 7\n",
+    )
+    .unwrap();
+    fs::set_permissions(&bin, fs::Permissions::from_mode(0o700)).unwrap();
+
+    let result = super::handle_tool_call(
+        &bin,
+        &json!({"name": "doctor", "arguments": {"repo": "/tmp/example"}}),
+    )
+    .unwrap();
+    assert_eq!(result.exit_code, 7);
+    assert!(result
+        .output
+        .contains("--repo\n/tmp/example\n--compact\ndoctor"));
+    assert!(result.output.contains("diagnostic"));
+    assert!(result.output.contains("exit code 7"));
+
+    fs::remove_file(bin).unwrap();
+    fs::remove_dir(dir).unwrap();
 }
