@@ -1,9 +1,11 @@
 use super::{exec_timeout_seconds, push_tool_flags, resolve_makevn_bin, TOOL_SPECS};
 use serde_json::{json, Map};
 use std::fs;
+use std::io::Write;
 use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 use std::process;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 #[test]
 fn resolves_sibling_makevn_or_current_binary() {
@@ -256,14 +258,22 @@ fn tool_call_validates_name_and_composite_steps() {
 
 #[test]
 fn tool_call_forwards_arguments_and_reports_process_failure() {
-    let dir = std::env::temp_dir().join(format!("makevn-mcp-tool-call-{}", process::id()));
-    fs::create_dir_all(&dir).unwrap();
+    let nonce = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let dir = std::env::temp_dir().join(format!("makevn-mcp-tool-call-{}-{nonce}", process::id()));
+    fs::create_dir(&dir).unwrap();
     let bin = dir.join("makevn");
-    fs::write(
-        &bin,
-        b"#!/bin/sh\nprintf '%s\\n' \"$@\"\necho diagnostic >&2\nexit 7\n",
-    )
-    .unwrap();
+    let mut script = fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&bin)
+        .unwrap();
+    script
+        .write_all(b"#!/bin/sh\nprintf '%s\\n' \"$@\"\necho diagnostic >&2\nexit 7\n")
+        .unwrap();
+    drop(script);
     fs::set_permissions(&bin, fs::Permissions::from_mode(0o700)).unwrap();
 
     let result = super::handle_tool_call(
