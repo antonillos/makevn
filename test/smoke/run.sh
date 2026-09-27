@@ -3695,9 +3695,14 @@ EOF
   cat > "${code_repo}/mvnw" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
+[[ -f .mvn/wrapper/maven-wrapper.properties ]] || exit 42
+printf 'CWD=%s\n' "$PWD" >> .mvnw.log
+printf 'LOCAL_CONTAINERS=%s\n' "${LOCAL_CONTAINERS:-}" >> .mvnw.log
 printf 'ARGS=%s\n' "$*" >> .mvnw.log
 EOF
   chmod +x "${code_repo}/mvnw"
+  mkdir -p "${code_repo}/.mvn/wrapper"
+  printf 'distributionUrl=unused\n' > "${code_repo}/.mvn/wrapper/maven-wrapper.properties"
   cat > "${repo}/.makevn/config" <<EOF
 MAKEVN_JAVA_HOME="${java_home}"
 MAKEVN_CODE_JAVA_HOME=""
@@ -3705,10 +3710,13 @@ MAKEVN_KARATE_JAVA_HOME=""
 MAKEVN_CODE_TOOL_VERSIONS=""
 MAKEVN_KARATE_TOOL_VERSIONS=""
 MAKEVN_RUN_CMD=""
+MAKEVN_LOCAL_CONTAINERS="TRUE"
 EOF
 
   ${CLI} --repo "${code_repo}" verify-changes >/dev/null
 
+  assert_matches "${code_repo}/.mvnw.log" '^CWD=.*/verify-changes-nested-maven-base/code$'
+  assert_contains "${code_repo}/.mvnw.log" 'LOCAL_CONTAINERS=TRUE'
   assert_matches "${code_repo}/.mvnw.log" '^ARGS=-nsu -f .*/code/pom\.xml -pl boot,jacoco-report-aggregate -am verify -Djacoco\.skip=false -DskipTests=false -Dmaven\.test\.failure\.ignore=false -Dmaven\.build\.cache\.enabled=false$'
 
   ${CLI} --repo "${repo}" uninstall >/dev/null

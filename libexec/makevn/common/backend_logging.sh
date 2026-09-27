@@ -169,7 +169,16 @@ makevn_interrupt_process_tree() {
 makevn_command_working_directory() {
   local repo_root="$1"
   local maven_base_path="$2"
-  local executable="$3"
+  local executable=""
+
+  shift 2
+  if [[ "${1:-}" == env ]]; then
+    shift
+    while [[ "${1:-}" == *=* ]]; do
+      shift
+    done
+  fi
+  executable="${1:-}"
 
   if [[ "${maven_base_path}" != "${repo_root}" && "${executable}" == "${maven_base_path}/mvnw" ]]; then
     printf '%s\n' "${maven_base_path}"
@@ -203,7 +212,7 @@ makevn_run_logged_in_context() {
 
   shift 6
 
-  command_cwd="$(makevn_command_working_directory "${repo_root}" "${maven_base_path}" "${1:-}")"
+  command_cwd="$(makevn_command_working_directory "${repo_root}" "${maven_base_path}" "$@")"
 
   java_home="$(makevn_effective_java_home "${repo_root}" "${context}" "${maven_base_path}" || true)"
   if [[ -z "${java_home}" ]]; then

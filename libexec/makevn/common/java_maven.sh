@@ -179,7 +179,7 @@ makevn_run_in_context() {
   local command_cwd=""
 
   shift 3
-  command_cwd="$(makevn_command_working_directory "${repo_root}" "${maven_base_path}" "${1:-}")"
+  command_cwd="$(makevn_command_working_directory "${repo_root}" "${maven_base_path}" "$@")"
 
   java_home="$(makevn_effective_java_home "${repo_root}" "${context}" "${maven_base_path}" || true)"
   if [[ -z "${java_home}" ]]; then
