@@ -4,9 +4,10 @@ use super::{
     format_resource_sample, insert_backend_option, install_opencode_agent_at, install_root,
     install_root_with_override, parse_invocation, parse_mcp_invocation, print_final_dashboard,
     read_backend_metadata, read_failure_hint, register_signal_flag, spinner_hint,
-    spinner_kitt_frame, split_command_segments, strip_frontend_tail_flag, tail_status_lines,
-    validate_maven_passthrough_args, Action, BackendDetailFile, BackendInvocation, BackendMetadata,
-    CommandSummary, McpAction, ResourceHistory, ResourceSample, ResourceSampler,
+    spinner_kitt_frame, split_command_segments, strip_frontend_tail_flag, strip_jsonc_comments,
+    tail_status_lines, validate_maven_passthrough_args, Action, BackendDetailFile,
+    BackendInvocation, BackendMetadata, CommandSummary, McpAction, ResourceHistory, ResourceSample,
+    ResourceSampler,
 };
 use std::env;
 use std::ffi::OsString;
@@ -22,6 +23,25 @@ use std::sync::Mutex;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 static ENV_LOCK: Mutex<()> = Mutex::new(());
+
+#[test]
+fn strips_jsonc_comments_without_changing_strings_or_unicode() {
+    let source = "{\"url\":\"https://example.test/a//b\",// line\n\"text\":\"🦀 \\\"/*keep*/\\\"\",/* block */\"name\":\"José\"}";
+    let expected = "{\"url\":\"https://example.test/a//b\",\n\"text\":\"🦀 \\\"/*keep*/\\\"\",\"name\":\"José\"}";
+
+    assert_eq!(strip_jsonc_comments(source), expected);
+}
+
+#[test]
+fn strips_jsonc_comments_at_eof_and_preserves_unterminated_strings() {
+    assert_eq!(strip_jsonc_comments("{}// trailing"), "{}");
+    assert_eq!(strip_jsonc_comments("{}/* trailing"), "{}");
+    assert_eq!(
+        strip_jsonc_comments("{\"key\":\"a\\\"//"),
+        "{\"key\":\"a\\\"//"
+    );
+    assert_eq!(strip_jsonc_comments("/"), "/");
+}
 
 #[test]
 fn maven_passthrough_accepts_option_values_and_separator() {
