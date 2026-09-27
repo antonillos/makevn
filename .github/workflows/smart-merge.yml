@@ -621,7 +621,13 @@ jobs:
                     ref: `heads/${targetHead}`,
                   });
                 } catch (error) {
-                  core.warning(`Could not delete ${targetHead}: ${error.message}`);
+                  // GitHub may have already removed the head branch when
+                  // delete_branch_on_merge is enabled. Cleanup is idempotent.
+                  const alreadyDeleted = [404, 422].includes(error.status) &&
+                    /Reference does not exist/i.test(error.message);
+                  if (!alreadyDeleted) {
+                    core.warning(`Could not delete ${targetHead}: ${error.message}`);
+                  }
                 }
               }
             }
