@@ -7,7 +7,7 @@ const { resolve } = require("node:path");
 
 const workflow = readFileSync(resolve(__dirname, "../workflows/sync-main-to-develop.yml"), "utf8");
 
-test("syncs every main push and successful release completion", () => {
+test("syncs main pushes once and still allows manual recovery", () => {
   assert.match(workflow, /permissions:\n  contents: read/);
   assert.doesNotMatch(workflow, /permissions:[\s\S]*?actions: write/);
   assert.match(workflow, /uses: actions\/create-github-app-token@[0-9a-f]{40}/);
@@ -22,9 +22,8 @@ test("syncs every main push and successful release completion", () => {
     "the App token must authenticate checkout and branch pushes",
   );
   assert.match(workflow, /push:\n    branches:\n      - main/);
-  assert.match(workflow, /workflow_run:\n    workflows:\n      - Release/);
-  assert.match(workflow, /github\.event_name == 'push'/);
-  assert.match(workflow, /github\.event\.workflow_run\.conclusion == 'success'/);
+  assert.match(workflow, /workflow_dispatch:/);
+  assert.doesNotMatch(workflow, /workflow_run:/);
   assert.doesNotMatch(workflow, /gh workflow run commit-policy\.yml/);
 });
 

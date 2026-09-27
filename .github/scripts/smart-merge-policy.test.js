@@ -47,4 +47,5 @@ test("App-authenticated merge relies on push triggers instead of duplicate dispa
   assert.match(verify, /push:\s*\n\s*branches:\s*\n\s*- develop/);
   assert.match(release, /push:\s*\n\s*branches:\s*\n\s*- main/);
   assert.match(sync, /push:\s*\n\s*branches:\s*\n\s*- main/);
+  assert.doesNotMatch(sync, /workflow_run:/);
 });
