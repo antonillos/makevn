@@ -2944,33 +2944,26 @@ fn read_resource_sample(root_pid: u32) -> io::Result<ResourceSample> {
     let output = process::Command::new("ps")
         .args(["-axo", "pid=,ppid=,%cpu=,rss="])
         .output()?;
-    if !output.status.success() {
-        return Ok(ResourceSample {
+    Ok(parse_ps_resource_sample(
+        root_pid,
+        output.status.success(),
+        &String::from_utf8_lossy(&output.stdout),
+    ))
+}
+
+fn parse_ps_resource_sample(root_pid: u32, success: bool, stdout: &str) -> ResourceSample {
+    if !success {
+        return ResourceSample {
             cpu_percent: 0.0,
             rss_kb: 0,
-        });
+        };
     }
 
-    let stdout = String::from_utf8_lossy(&output.stdout);
     let mut parent_by_pid = HashMap::new();
     let mut metrics_by_pid = HashMap::new();
 
     for line in stdout.lines() {
-        let fields = line.split_whitespace().collect::<Vec<_>>();
-        if fields.len() != 4 {
-            continue;
-        }
-
-        let Ok(pid) = fields[0].parse::<u32>() else {
-            continue;
-        };
-        let Ok(ppid) = fields[1].parse::<u32>() else {
-            continue;
-        };
-        let Ok(cpu_percent) = fields[2].replace(',', ".").parse::<f32>() else {
-            continue;
-        };
-        let Ok(rss_kb) = fields[3].parse::<u64>() else {
+        let Some((pid, ppid, cpu_percent, rss_kb)) = parse_ps_resource_row(line) else {
             continue;
         };
 
@@ -2978,11 +2971,19 @@ fn read_resource_sample(root_pid: u32) -> io::Result<ResourceSample> {
         metrics_by_pid.insert(pid, (cpu_percent, rss_kb));
     }
 
+    sum_descendant_metrics(root_pid, &parent_by_pid, &metrics_by_pid)
+}
+
+fn sum_descendant_metrics(
+    root_pid: u32,
+    parent_by_pid: &HashMap<u32, u32>,
+    metrics_by_pid: &HashMap<u32, (f32, u64)>,
+) -> ResourceSample {
     let mut descendants = HashSet::from([root_pid]);
     let mut changed = true;
     while changed {
         changed = false;
-        for (&pid, &ppid) in &parent_by_pid {
+        for (&pid, &ppid) in parent_by_pid {
             if descendants.contains(&ppid) && descendants.insert(pid) {
                 changed = true;
             }
@@ -2998,11 +2999,29 @@ fn read_resource_sample(root_pid: u32) -> io::Result<ResourceSample> {
         }
     }
 
-    Ok(ResourceSample {
+    ResourceSample {
         cpu_percent,
         rss_kb,
-    })
+    }
 }
+
+fn parse_ps_resource_row(line: &str) -> Option<(u32, u32, f32, u64)> {
+    let fields = line.split_whitespace().collect::<Vec<_>>();
+    if fields.len() != 4 {
+        return None;
+    }
+
+    Some((
+        fields[0].parse().ok()?,
+        fields[1].parse().ok()?,
+        fields[2].replace(',', ".").parse().ok()?,
+        fields[3].parse().ok()?,
+    ))
+}
+
+#[cfg(test)]
+#[path = "resource_sample_test.rs"]
+mod resource_sample_test;
 
 fn format_resource_metrics(
     sample: &ResourceSample,

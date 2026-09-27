@@ -9,6 +9,7 @@ This repository's agent-facing documentation lives in:
 For work in this repository:
 
 - Open pull requests against `develop` by default. Never open a pull request targeting `main` unless the user explicitly authorizes `main` as the base for that specific request; do not infer authorization from previous requests or release workflows. Verify the base branch before creating a pull request.
+- Keep tests in separate files from production code where practical. For Rust unit tests that need private access, prefer sibling `*_test.rs` files included as `#[cfg(test)]` modules with `#[path = "..."]` rather than inline test bodies.
 - Prefer `fff` MCP tools for file and code search when available.
 - Prefer `rtk` wrappers for shell commands when available.
 - Use `makevn` as the public terminal contract for Java and Maven work.
