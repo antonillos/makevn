@@ -32,6 +32,7 @@ test("release App performs the merge while the workflow bot keeps approval dutie
   assert.match(workflow, /MAKEVN_RELEASE_APP_PRIVATE_KEY/);
   assert.match(workflow, /permission-contents: write/);
   assert.match(workflow, /permission-pull-requests: write/);
+  assert.match(workflow, /permission-workflows: write/);
   assert.match(workflow, /github-token: \$\{\{ github\.token \}\}/);
   assert.match(workflow, /const mergeGithub = getOctokit\(process\.env\.MERGE_APP_TOKEN\)/);
   assert.match(workflow, /mergeRequest = await mergeGithub\.request\(\s*"PUT \/repos\/\{owner\}\/\{repo\}\/pulls\/\{pull_number\}\/merge-async"/);
