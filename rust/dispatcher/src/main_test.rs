@@ -1,14 +1,14 @@
 use super::{
     clear_tail_rows, command_help, command_suggestion_suffix, command_supports_frontend_loader,
     dashboard_hint, detect_local_opencode_configs, dim_text, exit_code_from_status,
-    format_failure_summary, format_resource_sample, insert_backend_option,
-    install_opencode_agent_at, install_root, install_root_with_override, parse_invocation,
-    parse_mcp_invocation, print_command_help, print_final_dashboard, read_backend_metadata,
-    read_failure_hint, register_signal_flag, spinner_hint, spinner_resource_suffix,
-    split_command_segments, strip_frontend_tail_flag, strip_jsonc_comments, tail_command_help,
-    tail_status_lines, validate_maven_passthrough_args, Action, BackendDetailFile,
-    BackendInvocation, BackendMetadata, CommandSummary, InputEvent, McpAction, ResourceHistory,
-    ResourceSample, ResourceSampler, SpinnerRenderer, TtyModeGuard,
+    format_failure_summary, format_resource_sample_cpu, format_resource_sample_ram,
+    insert_backend_option, install_opencode_agent_at, install_root, install_root_with_override,
+    parse_invocation, parse_mcp_invocation, print_command_help, print_final_dashboard,
+    read_backend_metadata, read_failure_hint, register_signal_flag, spinner_hint,
+    spinner_resource_suffix, split_command_segments, strip_frontend_tail_flag,
+    strip_jsonc_comments, tail_command_help, tail_status_lines, validate_maven_passthrough_args,
+    Action, BackendDetailFile, BackendInvocation, BackendMetadata, CommandSummary, InputEvent,
+    McpAction, ResourceHistory, ResourceSample, ResourceSampler, SpinnerRenderer, TtyModeGuard,
 };
 use std::env;
 use std::ffi::OsString;
@@ -26,6 +26,14 @@ use std::sync::Mutex;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 static ENV_LOCK: Mutex<()> = Mutex::new(());
+
+fn format_resource_sample(sample: &ResourceSample, history: &ResourceHistory) -> String {
+    format!(
+        "{} | {}",
+        format_resource_sample_cpu(sample, history),
+        format_resource_sample_ram(sample, history)
+    )
+}
 
 #[test]
 fn spinner_resource_suffix_preserves_hint_with_and_without_metrics() {

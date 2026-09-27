@@ -2435,11 +2435,6 @@ fn rgb_code(color: Rgb) -> String {
     format!("38;2;{};{};{}", color.r, color.g, color.b)
 }
 
-#[cfg(test)]
-fn spinner_kitt_frame(frame_index: usize) -> String {
-    spinner_kitt_frame_with_load(frame_index, 0.0)
-}
-
 fn spinner_kitt_frame_with_load(frame_index: usize, load: f32) -> String {
     let width = 8usize;
     let scan_frames = 30usize;
@@ -3074,15 +3069,6 @@ fn format_resource_metrics(
         adaptive_metric_text(&cpu_text, cpu_load),
         dim_text("|"),
         adaptive_metric_text(&ram_text, ram_load)
-    )
-}
-
-#[cfg(test)]
-fn format_resource_sample(sample: &ResourceSample, history: &ResourceHistory) -> String {
-    format!(
-        "{} | {}",
-        format_resource_sample_cpu(sample, history),
-        format_resource_sample_ram(sample, history)
     )
 }
 
