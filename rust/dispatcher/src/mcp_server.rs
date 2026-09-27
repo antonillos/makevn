@@ -488,37 +488,22 @@ fn handle_composite_run(makevn_bin: &Path, args: &Map<String, Value>) -> Result<
             .as_str()
             .ok_or_else(|| String::from("each step must have a 'tool' field"))?;
 
-        match execute_single_step(makevn_bin, step, global_repo) {
-            Ok((output, exit_code, duration_ms)) => {
-                let step_result = json!({
-                    "step": i,
-                    "tool": step_tool,
-                    "exitCode": exit_code,
-                    "durationMs": duration_ms,
-                    "output": output,
-                });
-                results.push(step_result);
-
-                if exit_code != 0 {
-                    overall_exit_code = exit_code;
-                    if fail_fast {
-                        break;
-                    }
-                }
-            }
-            Err(err) => {
-                let step_result = json!({
-                    "step": i,
-                    "tool": step_tool,
-                    "exitCode": -1,
-                    "durationMs": 0,
-                    "output": err,
-                });
-                results.push(step_result);
-                overall_exit_code = -1;
-                if fail_fast {
-                    break;
-                }
+        let (output, exit_code, duration_ms) =
+            match execute_single_step(makevn_bin, step, global_repo) {
+                Ok(result) => result,
+                Err(error) => (error, -1, 0),
+            };
+        results.push(json!({
+            "step": i,
+            "tool": step_tool,
+            "exitCode": exit_code,
+            "durationMs": duration_ms,
+            "output": output,
+        }));
+        if exit_code != 0 {
+            overall_exit_code = exit_code;
+            if fail_fast {
+                break;
             }
         }
     }
