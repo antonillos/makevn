@@ -1821,20 +1821,25 @@ EOF
   cat > "${repo}/cataloger-cli/mvnw" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
+[[ -f .mvn/wrapper/maven-wrapper.properties ]] || exit 42
+printf 'CWD=%s\n' "$PWD" >> .mvnw.log
 printf 'ARGS=%s\n' "$*" >> .mvnw.log
 printf 'JAVA_HOME=%s\n' "${JAVA_HOME:-}" >> .mvnw.log
 mkdir -p target/site/jacoco
 printf '<report/>\n' > target/site/jacoco/jacoco.xml
 EOF
   chmod +x "${repo}/cataloger-cli/mvnw"
+  mkdir -p "${repo}/cataloger-cli/.mvn/wrapper"
+  printf 'distributionUrl=unused\n' > "${repo}/cataloger-cli/.mvn/wrapper/maven-wrapper.properties"
 
   ${CLI} --repo "${repo}" test --name NestedTest >/dev/null
   ${CLI} --repo "${repo}" checkstyle --module cataloger-cli --verbose >/dev/null
 
-  assert_matches "${repo}/.mvnw.log" '^ARGS=-nsu -f .*/cataloger-cli/pom\.xml test -Dtest=com\.example\.NestedTest -Dfailsafe\.failIfNoSpecifiedTests=false -Dsurefire\.failIfNoSpecifiedTests=false -Dmaven\.build\.cache\.enabled=true -Dsurefire\.testFailureIgnore=false$'
-  assert_matches "${repo}/.mvnw.log" '^ARGS=-f .*/cataloger-cli/pom\.xml org\.apache\.maven\.plugins:maven-checkstyle-plugin:check -Dcheckstyle\.consoleOutput=true$'
-  assert_not_contains "${repo}/.mvnw.log" '-pl cataloger-cli'
-  assert_contains "${repo}/.mvnw.log" "JAVA_HOME=${java_home}"
+  assert_matches "${repo}/cataloger-cli/.mvnw.log" '^CWD=.*/nested-single-maven-project-routing/cataloger-cli$'
+  assert_matches "${repo}/cataloger-cli/.mvnw.log" '^ARGS=-nsu -f .*/cataloger-cli/pom\.xml test -Dtest=com\.example\.NestedTest -Dfailsafe\.failIfNoSpecifiedTests=false -Dsurefire\.failIfNoSpecifiedTests=false -Dmaven\.build\.cache\.enabled=true -Dsurefire\.testFailureIgnore=false$'
+  assert_matches "${repo}/cataloger-cli/.mvnw.log" '^ARGS=-f .*/cataloger-cli/pom\.xml org\.apache\.maven\.plugins:maven-checkstyle-plugin:check -Dcheckstyle\.consoleOutput=true$'
+  assert_not_contains "${repo}/cataloger-cli/.mvnw.log" '-pl cataloger-cli'
+  assert_contains "${repo}/cataloger-cli/.mvnw.log" "JAVA_HOME=${java_home}"
 }
 
 test_docker_commands() {
@@ -3690,9 +3695,14 @@ EOF
   cat > "${code_repo}/mvnw" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
+[[ -f .mvn/wrapper/maven-wrapper.properties ]] || exit 42
+printf 'CWD=%s\n' "$PWD" >> .mvnw.log
+printf 'LOCAL_CONTAINERS=%s\n' "${LOCAL_CONTAINERS:-}" >> .mvnw.log
 printf 'ARGS=%s\n' "$*" >> .mvnw.log
 EOF
   chmod +x "${code_repo}/mvnw"
+  mkdir -p "${code_repo}/.mvn/wrapper"
+  printf 'distributionUrl=unused\n' > "${code_repo}/.mvn/wrapper/maven-wrapper.properties"
   cat > "${repo}/.makevn/config" <<EOF
 MAKEVN_JAVA_HOME="${java_home}"
 MAKEVN_CODE_JAVA_HOME=""
@@ -3700,11 +3710,14 @@ MAKEVN_KARATE_JAVA_HOME=""
 MAKEVN_CODE_TOOL_VERSIONS=""
 MAKEVN_KARATE_TOOL_VERSIONS=""
 MAKEVN_RUN_CMD=""
+MAKEVN_LOCAL_CONTAINERS="TRUE"
 EOF
 
   ${CLI} --repo "${code_repo}" verify-changes >/dev/null
 
-  assert_matches "${repo}/.mvnw.log" '^ARGS=-nsu -f .*/code/pom\.xml -pl boot,jacoco-report-aggregate -am verify -Djacoco\.skip=false -DskipTests=false -Dmaven\.test\.failure\.ignore=false -Dmaven\.build\.cache\.enabled=false$'
+  assert_matches "${code_repo}/.mvnw.log" '^CWD=.*/verify-changes-nested-maven-base/code$'
+  assert_contains "${code_repo}/.mvnw.log" 'LOCAL_CONTAINERS=TRUE'
+  assert_matches "${code_repo}/.mvnw.log" '^ARGS=-nsu -f .*/code/pom\.xml -pl boot,jacoco-report-aggregate -am verify -Djacoco\.skip=false -DskipTests=false -Dmaven\.test\.failure\.ignore=false -Dmaven\.build\.cache\.enabled=false$'
 
   ${CLI} --repo "${repo}" uninstall >/dev/null
 }
