@@ -1121,7 +1121,9 @@ fn dispatch_backend_invocations(
         let use_frontend_loader = backend_invocation.frontend_loader
             && !backend_invocation.compact
             && frontend_loader_is_available();
-        let metadata_file = if use_frontend_loader {
+        // Managed-log commands expose backend metadata, including in compact
+        // runs. State commands reject this internal option.
+        let metadata_file = if backend_invocation.frontend_loader {
             let metadata_file = BackendMetadataFile::new()?;
             insert_backend_option(
                 &mut backend_invocation.args,
@@ -1176,16 +1178,19 @@ fn dispatch_backend_invocations(
         } else {
             let elapsed_before = started_at.elapsed();
             let exit_code = run_backend_command(command, backend_path)?;
+            let metadata = metadata_file
+                .as_ref()
+                .map(|metadata_file| read_backend_metadata(metadata_file.path()))
+                .transpose()?
+                .flatten();
             BackendRunResult {
                 exit_code,
-                summary: CommandSummary {
-                    title: fallback_title.clone(),
-                    duration: format_duration(started_at.elapsed().saturating_sub(elapsed_before)),
-                    log_path: None,
-                    relative_log_path: None,
+                summary: summary_from_backend_metadata(
                     exit_code,
-                    detail_lines: Vec::new(),
-                },
+                    format_duration(started_at.elapsed().saturating_sub(elapsed_before)),
+                    &fallback_title,
+                    metadata.as_ref(),
+                ),
             }
         };
 
@@ -1279,8 +1284,33 @@ fn format_failure_summary(
     summary
 }
 
+fn summary_from_backend_metadata(
+    exit_code: i32,
+    duration: String,
+    fallback_title: &str,
+    metadata: Option<&BackendMetadata>,
+) -> CommandSummary {
+    CommandSummary {
+        title: metadata
+            .map(|metadata| metadata.title.clone())
+            .unwrap_or_else(|| fallback_title.to_owned()),
+        duration,
+        log_path: metadata.map(|metadata| metadata.log_path.clone()),
+        relative_log_path: metadata.map(|metadata| metadata.relative_log_path.clone()),
+        exit_code,
+        detail_lines: Vec::new(),
+    }
+}
+
 fn read_failure_hint(log_path: Option<&str>) -> Option<String> {
     let content = fs::read_to_string(log_path?).ok()?;
+    let lower = content.to_ascii_lowercase();
+    if lower.contains("cannot connect to the docker daemon")
+        || lower.contains("is the docker daemon running")
+        || lower.contains("error during connect") && lower.contains("docker")
+    {
+        return Some("Docker is unavailable. Start Docker Desktop or your Docker runtime (e.g. `colima start`), check `docker info`, then retry".to_owned());
+    }
     for line in content.lines() {
         let trimmed = line.trim();
         if let Some(error) = trimmed.strip_prefix("Error: ") {
