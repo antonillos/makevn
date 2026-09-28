@@ -1121,14 +1121,19 @@ fn dispatch_backend_invocations(
         let use_frontend_loader = backend_invocation.frontend_loader
             && !backend_invocation.compact
             && frontend_loader_is_available();
-        // Metadata also supplies the log path for compact/non-loader failures,
-        // so recovery hints work through MCP and other agent-facing paths.
-        let metadata_file = BackendMetadataFile::new()?;
-        insert_backend_option(
-            &mut backend_invocation.args,
-            "--metadata-out",
-            metadata_file.path().as_os_str().to_os_string(),
-        );
+        // Managed-log commands expose backend metadata, including in compact
+        // runs. State commands reject this internal option.
+        let metadata_file = if backend_invocation.frontend_loader {
+            let metadata_file = BackendMetadataFile::new()?;
+            insert_backend_option(
+                &mut backend_invocation.args,
+                "--metadata-out",
+                metadata_file.path().as_os_str().to_os_string(),
+            );
+            Some(metadata_file)
+        } else {
+            None
+        };
 
         let mut command = process::Command::new("bash");
         command.arg(backend_path);
@@ -1155,7 +1160,7 @@ fn dispatch_backend_invocations(
             }
             let result = run_backend_with_loader(
                 command,
-                Some(&metadata_file),
+                metadata_file.as_ref(),
                 backend_invocation.tail,
                 &fallback_title,
                 started_at,
@@ -1173,7 +1178,11 @@ fn dispatch_backend_invocations(
         } else {
             let elapsed_before = started_at.elapsed();
             let exit_code = run_backend_command(command, backend_path)?;
-            let metadata = read_backend_metadata(metadata_file.path())?;
+            let metadata = metadata_file
+                .as_ref()
+                .map(|metadata_file| read_backend_metadata(metadata_file.path()))
+                .transpose()?
+                .flatten();
             BackendRunResult {
                 exit_code,
                 summary: summary_from_backend_metadata(
