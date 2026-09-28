@@ -365,6 +365,16 @@ fn failure_hint_reads_first_error_line() {
 }
 
 #[test]
+fn failure_hint_suggests_docker_runtime_recovery() {
+    let path = env::temp_dir().join(format!("makevn-docker-hint-{}", process::id()));
+    fs::write(&path, "Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?\n").unwrap();
+    let hint = read_failure_hint(path.to_str()).unwrap();
+    assert!(hint.contains("colima start"));
+    assert!(hint.contains("docker info"));
+    fs::remove_file(path).unwrap();
+}
+
+#[test]
 fn exit_status_preserves_code_and_interrupt() {
     #[cfg(unix)]
     let shell = "/bin/sh";
