@@ -6,9 +6,10 @@ use super::{
     parse_invocation, parse_mcp_invocation, print_command_help, print_final_dashboard,
     read_backend_metadata, read_failure_hint, register_signal_flag, spinner_hint,
     spinner_resource_suffix, split_command_segments, strip_frontend_tail_flag,
-    strip_jsonc_comments, tail_command_help, tail_status_lines, validate_maven_passthrough_args,
-    Action, BackendDetailFile, BackendInvocation, BackendMetadata, CommandSummary, InputEvent,
-    McpAction, ResourceHistory, ResourceSample, ResourceSampler, SpinnerRenderer, TtyModeGuard,
+    strip_jsonc_comments, summary_from_backend_metadata, tail_command_help, tail_status_lines,
+    validate_maven_passthrough_args, Action, BackendDetailFile, BackendInvocation, BackendMetadata,
+    CommandSummary, InputEvent, McpAction, ResourceHistory, ResourceSample, ResourceSampler,
+    SpinnerRenderer, TtyModeGuard,
 };
 use std::env;
 use std::ffi::OsString;
@@ -372,6 +373,29 @@ fn failure_hint_suggests_docker_runtime_recovery() {
     assert!(hint.contains("colima start"));
     assert!(hint.contains("docker info"));
     fs::remove_file(path).unwrap();
+}
+
+#[test]
+fn non_loader_summary_keeps_backend_log_path_for_recovery_hints() {
+    let metadata = super::BackendMetadata {
+        command: String::from("docker-up"),
+        repo: String::from("/repo"),
+        cwd: String::from("/repo"),
+        log_path: String::from("/repo/.makevn/logs/docker-up.log"),
+        relative_log_path: String::from(".makevn/logs/docker-up.log"),
+        command_display: String::from("makevn docker-up"),
+        title: String::from("docker-up"),
+        context: None,
+    };
+    let summary = summary_from_backend_metadata(1, String::from("0s"), "fallback", Some(&metadata));
+    assert_eq!(
+        summary.log_path.as_deref(),
+        Some(metadata.log_path.as_str())
+    );
+    assert_eq!(
+        summary.relative_log_path.as_deref(),
+        Some(metadata.relative_log_path.as_str())
+    );
 }
 
 #[test]

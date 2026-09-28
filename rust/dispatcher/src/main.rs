@@ -1121,17 +1121,14 @@ fn dispatch_backend_invocations(
         let use_frontend_loader = backend_invocation.frontend_loader
             && !backend_invocation.compact
             && frontend_loader_is_available();
-        let metadata_file = if use_frontend_loader {
-            let metadata_file = BackendMetadataFile::new()?;
-            insert_backend_option(
-                &mut backend_invocation.args,
-                "--metadata-out",
-                metadata_file.path().as_os_str().to_os_string(),
-            );
-            Some(metadata_file)
-        } else {
-            None
-        };
+        // Metadata also supplies the log path for compact/non-loader failures,
+        // so recovery hints work through MCP and other agent-facing paths.
+        let metadata_file = BackendMetadataFile::new()?;
+        insert_backend_option(
+            &mut backend_invocation.args,
+            "--metadata-out",
+            metadata_file.path().as_os_str().to_os_string(),
+        );
 
         let mut command = process::Command::new("bash");
         command.arg(backend_path);
@@ -1158,7 +1155,7 @@ fn dispatch_backend_invocations(
             }
             let result = run_backend_with_loader(
                 command,
-                metadata_file.as_ref(),
+                Some(&metadata_file),
                 backend_invocation.tail,
                 &fallback_title,
                 started_at,
@@ -1176,16 +1173,15 @@ fn dispatch_backend_invocations(
         } else {
             let elapsed_before = started_at.elapsed();
             let exit_code = run_backend_command(command, backend_path)?;
+            let metadata = read_backend_metadata(metadata_file.path())?;
             BackendRunResult {
                 exit_code,
-                summary: CommandSummary {
-                    title: fallback_title.clone(),
-                    duration: format_duration(started_at.elapsed().saturating_sub(elapsed_before)),
-                    log_path: None,
-                    relative_log_path: None,
+                summary: summary_from_backend_metadata(
                     exit_code,
-                    detail_lines: Vec::new(),
-                },
+                    format_duration(started_at.elapsed().saturating_sub(elapsed_before)),
+                    &fallback_title,
+                    metadata.as_ref(),
+                ),
             }
         };
 
@@ -1277,6 +1273,24 @@ fn format_failure_summary(
         summary.push_str(" | check the log");
     }
     summary
+}
+
+fn summary_from_backend_metadata(
+    exit_code: i32,
+    duration: String,
+    fallback_title: &str,
+    metadata: Option<&BackendMetadata>,
+) -> CommandSummary {
+    CommandSummary {
+        title: metadata
+            .map(|metadata| metadata.title.clone())
+            .unwrap_or_else(|| fallback_title.to_owned()),
+        duration,
+        log_path: metadata.map(|metadata| metadata.log_path.clone()),
+        relative_log_path: metadata.map(|metadata| metadata.relative_log_path.clone()),
+        exit_code,
+        detail_lines: Vec::new(),
+    }
 }
 
 fn read_failure_hint(log_path: Option<&str>) -> Option<String> {
