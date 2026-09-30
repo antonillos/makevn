@@ -1,20 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-cmd_init() {
-  local repo_root="$1"
-  local dry_run=false
-  local force=false
-  local state_dir
-  local config_path
-  local logs_dir
-  local existing_manifest
-  local managed_makefile=""
-  local generated_root_makefile=""
-
-  print_command_intro "${repo_root}" init
-
-  shift
+# Updates the caller-local dry_run and force options.
+cmd_init_parse_options() {
   while [[ $# -gt 0 ]]; do
     case "$1" in
       --dry-run)
@@ -30,6 +18,24 @@ cmd_init() {
         ;;
     esac
   done
+  return 0
+}
+
+cmd_init() {
+  local repo_root="$1"
+  local dry_run=false
+  local force=false
+  local state_dir
+  local config_path
+  local logs_dir
+  local existing_manifest
+  local managed_makefile=""
+  local generated_root_makefile=""
+
+  print_command_intro "${repo_root}" init
+
+  shift
+  cmd_init_parse_options "$@"
 
   existing_manifest="$(makevn_manifest_path "${repo_root}")"
   if [[ -f "${existing_manifest}" && "${force}" != true ]]; then
@@ -78,17 +84,8 @@ cmd_init() {
   fi
 }
 
-cmd_make_install() {
-  local repo_root="$1"
-  local dry_run=false
-  local make_include_path
-  local managed_makefile=""
-  local generated_root_makefile=""
-  local integration_status=""
-
-  print_command_intro "${repo_root}" "make install"
-
-  shift
+# Updates the caller-local dry_run options.
+cmd_make_install_parse_options() {
   while [[ $# -gt 0 ]]; do
     case "$1" in
       --dry-run)
@@ -100,6 +97,48 @@ cmd_make_install() {
         ;;
     esac
   done
+  return 0
+}
+
+makevn_print_make_install_preview() {
+  local repo_root="$1" make_include_path="$2" managed_makefile="$3" generated_root_makefile="$4"
+  makevn_print_header "Dry run"
+  makevn_print_item "repo root" "${repo_root}"
+  makevn_print_item "would create" "${make_include_path}"
+  if [[ -n "${managed_makefile}" ]]; then
+    makevn_print_item "would update" "${managed_makefile}"
+  fi
+  if [[ -n "${generated_root_makefile}" ]]; then
+    makevn_print_item "would create" "${generated_root_makefile}"
+  fi
+  return 0
+}
+
+makevn_print_make_install_result() {
+  local managed_makefile="$1" generated_root_makefile="$2"
+  printf '%s\n' "$(makevn_accent "Installed Make integration.")"
+  makevn_print_item "created" ".makevn/makevn.mk"
+  if [[ -n "${managed_makefile}" ]]; then
+    makevn_print_item "updated" "${managed_makefile}"
+  fi
+  if [[ -n "${generated_root_makefile}" ]]; then
+    makevn_print_item "created" "${generated_root_makefile}"
+  fi
+  return 0
+}
+
+cmd_make_install() {
+  local repo_root="$1"
+  local dry_run=false
+  local make_include_path
+  local managed_makefile=""
+  local generated_root_makefile=""
+  local integration_status=""
+
+  print_command_intro "${repo_root}" "make install"
+
+  shift
+  cmd_make_install_parse_options "$@"
 
   [[ -f "$(makevn_manifest_path "${repo_root}")" ]] || makevn_die "makevn is not initialized in ${repo_root}. Run 'makevn init' first."
 
@@ -118,15 +157,7 @@ cmd_make_install() {
   fi
 
   if [[ "${dry_run}" == true ]]; then
-    makevn_print_header "Dry run"
-    makevn_print_item "repo root" "${repo_root}"
-    makevn_print_item "would create" "${make_include_path}"
-    if [[ -n "${managed_makefile}" ]]; then
-      makevn_print_item "would update" "${managed_makefile}"
-    fi
-    if [[ -n "${generated_root_makefile}" ]]; then
-      makevn_print_item "would create" "${generated_root_makefile}"
-    fi
+    makevn_print_make_install_preview "${repo_root}" "${make_include_path}" "${managed_makefile}" "${generated_root_makefile}"
     return 0
   fi
 
@@ -142,14 +173,55 @@ cmd_make_install() {
 
   makevn_update_manifest_make_integration "${repo_root}" "${managed_makefile}" "${generated_root_makefile}"
 
-  printf '%s\n' "$(makevn_accent "Installed Make integration.")"
-  makevn_print_item "created" ".makevn/makevn.mk"
-  if [[ -n "${managed_makefile}" ]]; then
-    makevn_print_item "updated" "${managed_makefile}"
-  fi
+  makevn_print_make_install_result "${managed_makefile}" "${generated_root_makefile}"
+}
+
+# Updates the caller-local dry_run options.
+cmd_make_uninstall_parse_options() {
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --dry-run)
+        dry_run=true
+        shift
+        ;;
+      *)
+        makevn_die "Unknown make uninstall option: $1"
+        ;;
+    esac
+  done
+  return 0
+}
+
+cmd_make_uninstall_preview() {
+  local repo_root="$1" managed_makefile="$2" generated_root_makefile="$3"
+  makevn_print_header "Make uninstall dry run"
+  [[ -n "${managed_makefile}" ]] && makevn_print_item "would remove include block from" "${managed_makefile}"
   if [[ -n "${generated_root_makefile}" ]]; then
-    makevn_print_item "created" "${generated_root_makefile}"
+    if makevn_is_managed_bootstrap_makefile "${repo_root}"; then
+      makevn_print_item "would remove root file" "${generated_root_makefile}"
+    else
+      makevn_print_item "would leave modified root file untouched" "${generated_root_makefile}"
+    fi
   fi
+  [[ -f "${make_include_path}" ]] && makevn_print_item "would remove" ".makevn/makevn.mk"
+  return 0
+}
+
+cmd_make_uninstall_remove_makefiles() {
+  local repo_root="$1" managed_makefile="$2" generated_root_makefile="$3"
+  if [[ -n "${managed_makefile}" && -f "${repo_root}/${managed_makefile}" ]]; then
+    makevn_remove_include_block "${repo_root}/${managed_makefile}"
+  fi
+
+  if [[ -n "${generated_root_makefile}" ]]; then
+    if makevn_is_managed_bootstrap_makefile "${repo_root}"; then
+      rm -f "${repo_root}/${generated_root_makefile}"
+    else
+      printf '%s\n' "$(makevn_warn "Warning: ${generated_root_makefile} was modified after make install and was left untouched.")" >&2
+    fi
+  fi
+
+  return 0
 }
 
 cmd_make_uninstall() {
@@ -162,17 +234,7 @@ cmd_make_uninstall() {
   print_command_intro "${repo_root}" "make uninstall"
 
   shift
-  while [[ $# -gt 0 ]]; do
-    case "$1" in
-      --dry-run)
-        dry_run=true
-        shift
-        ;;
-      *)
-        makevn_die "Unknown make uninstall option: $1"
-        ;;
-    esac
-  done
+  cmd_make_uninstall_parse_options "$@"
 
   [[ -f "$(makevn_manifest_path "${repo_root}")" ]] || makevn_die "makevn is not initialized in ${repo_root}. Run 'makevn init' first."
 
@@ -186,47 +248,19 @@ cmd_make_uninstall() {
   fi
 
   if [[ "${dry_run}" == true ]]; then
-    makevn_print_header "Make uninstall dry run"
-    [[ -n "${managed_makefile}" ]] && makevn_print_item "would remove include block from" "${managed_makefile}"
-    if [[ -n "${generated_root_makefile}" ]]; then
-      if makevn_is_managed_bootstrap_makefile "${repo_root}"; then
-        makevn_print_item "would remove root file" "${generated_root_makefile}"
-      else
-        makevn_print_item "would leave modified root file untouched" "${generated_root_makefile}"
-      fi
-    fi
-    [[ -f "${make_include_path}" ]] && makevn_print_item "would remove" ".makevn/makevn.mk"
+    cmd_make_uninstall_preview "${repo_root}" "${managed_makefile}" "${generated_root_makefile}"
     return 0
   fi
 
-  if [[ -n "${managed_makefile}" && -f "${repo_root}/${managed_makefile}" ]]; then
-    makevn_remove_include_block "${repo_root}/${managed_makefile}"
-  fi
-
-  if [[ -n "${generated_root_makefile}" ]]; then
-    if makevn_is_managed_bootstrap_makefile "${repo_root}"; then
-      rm -f "${repo_root}/${generated_root_makefile}"
-    else
-      printf '%s\n' "$(makevn_warn "Warning: ${generated_root_makefile} was modified after make install and was left untouched.")" >&2
-    fi
-  fi
-
+  cmd_make_uninstall_remove_makefiles "${repo_root}" "${managed_makefile}" "${generated_root_makefile}"
   rm -f "${make_include_path}"
   makevn_update_manifest_make_integration "${repo_root}" "" ""
 
   printf '%s\n' "$(makevn_accent "Removed Make integration.")"
 }
 
-cmd_uninstall() {
-  local repo_root="$1"
-  local dry_run=false
-  local manifest_path
-  local managed_makefile
-  local generated_root_makefile
-
-  print_command_intro "${repo_root}" uninstall
-
-  shift
+# Updates the caller-local dry_run options.
+cmd_uninstall_parse_options() {
   while [[ $# -gt 0 ]]; do
     case "$1" in
       --dry-run)
@@ -238,28 +272,27 @@ cmd_uninstall() {
         ;;
     esac
   done
+  return 0
+}
 
-  manifest_path="$(makevn_manifest_path "${repo_root}")"
-  [[ -f "${manifest_path}" ]] || makevn_die "makevn is not initialized in ${repo_root}"
-
-  managed_makefile="$(makevn_manifest_value "${repo_root}" managed_makefile || true)"
-  generated_root_makefile="$(makevn_manifest_value "${repo_root}" generated_root_makefile || true)"
-
-  if [[ "${dry_run}" == true ]]; then
-    makevn_print_header "Uninstall dry run"
-    [[ -n "${managed_makefile}" ]] && makevn_print_item "would remove include block from" "${managed_makefile}"
-    if [[ -n "${generated_root_makefile}" ]]; then
-      if makevn_is_managed_bootstrap_makefile "${repo_root}"; then
-        makevn_print_item "would remove root file" "${generated_root_makefile}"
-      else
-        makevn_print_item "would leave modified root file untouched" "${generated_root_makefile}"
-      fi
+cmd_uninstall_preview() {
+  local repo_root="$1" managed_makefile="$2" generated_root_makefile="$3"
+  makevn_print_header "Uninstall dry run"
+  [[ -n "${managed_makefile}" ]] && makevn_print_item "would remove include block from" "${managed_makefile}"
+  if [[ -n "${generated_root_makefile}" ]]; then
+    if makevn_is_managed_bootstrap_makefile "${repo_root}"; then
+      makevn_print_item "would remove root file" "${generated_root_makefile}"
+    else
+      makevn_print_item "would leave modified root file untouched" "${generated_root_makefile}"
     fi
-    [[ -f "$(makevn_state_dir "${repo_root}")/makevn.mk" ]] && makevn_print_item "would remove" ".makevn/makevn.mk"
-    makevn_print_item "would remove" ".makevn/"
-    return 0
   fi
+  [[ -f "$(makevn_state_dir "${repo_root}")/makevn.mk" ]] && makevn_print_item "would remove" ".makevn/makevn.mk"
+  makevn_print_item "would remove" ".makevn/"
+  return 0
+}
 
+cmd_uninstall_remove_makefiles() {
+  local repo_root="$1" managed_makefile="$2" generated_root_makefile="$3"
   if [[ -n "${managed_makefile}" && -f "${repo_root}/${managed_makefile}" ]]; then
     makevn_remove_include_block "${repo_root}/${managed_makefile}"
   fi
@@ -272,6 +305,33 @@ cmd_uninstall() {
     fi
   fi
 
+  return 0
+}
+
+cmd_uninstall() {
+  local repo_root="$1"
+  local dry_run=false
+  local manifest_path
+  local managed_makefile
+  local generated_root_makefile
+
+  print_command_intro "${repo_root}" uninstall
+
+  shift
+  cmd_uninstall_parse_options "$@"
+
+  manifest_path="$(makevn_manifest_path "${repo_root}")"
+  [[ -f "${manifest_path}" ]] || makevn_die "makevn is not initialized in ${repo_root}"
+
+  managed_makefile="$(makevn_manifest_value "${repo_root}" managed_makefile || true)"
+  generated_root_makefile="$(makevn_manifest_value "${repo_root}" generated_root_makefile || true)"
+
+  if [[ "${dry_run}" == true ]]; then
+    cmd_uninstall_preview "${repo_root}" "${managed_makefile}" "${generated_root_makefile}"
+    return 0
+  fi
+
+  cmd_uninstall_remove_makefiles "${repo_root}" "${managed_makefile}" "${generated_root_makefile}"
   rm -rf "$(makevn_state_dir "${repo_root}")"
   printf '%s\n' "$(makevn_accent "makevn removed from ${repo_root}")"
 }

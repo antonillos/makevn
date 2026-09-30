@@ -573,6 +573,72 @@ makevn_detect_verify_it_workflow_invocation() {
   return 1
 }
 
+# Uses the owning command's local option/argument state (Bash dynamic scope).
+makevn_append_verify_it_workflow_tokens() {
+  for token in "${workflow_tokens[@]:1}"; do
+    if [[ "${skip_next}" == true ]]; then
+      skip_next=false
+      continue
+    fi
+
+    case "${token}" in
+      -f|--file)
+        skip_next=true
+        ;;
+      -DskipIT|-DskipIT=*|-DskipITs|-DskipITs=*|-DskipITests|-DskipITests=*|-DskipIntegrationTests|-DskipIntegrationTests=*|-DskipFailsafeTests|-DskipFailsafeTests=*|-Dmaven.failsafe.skip|-Dmaven.failsafe.skip=*|-Dmaven.build.cache.enabled|-Dmaven.build.cache.enabled=*)
+        ;;
+      install)
+        maven_args+=(verify)
+        ;;
+      *)
+        maven_args+=("${token}")
+        ;;
+    esac
+  done
+  return 0
+}
+
+# Uses the owning command's local option/argument state (Bash dynamic scope).
+makevn_prepare_verify_it_properties() {
+  for token in ${maven_prop_flags_value}; do
+    if ! makevn_should_drop_maven_cache_prop_flag "${token}"; then
+      filtered_prop_flags_value="$(makevn_append_word "${filtered_prop_flags_value}" "${token}")"
+    fi
+  done
+
+  filtered_prop_flags_value="$(makevn_append_coverage_prop_flags "${repo_root}" "${filtered_prop_flags_value}")"
+  filtered_prop_flags_value="$(makevn_append_word "${filtered_prop_flags_value}" "-DskipUTs")"
+  filtered_prop_flags_value="$(makevn_append_word "${filtered_prop_flags_value}" "-Dskip.unit.tests=true")"
+  filtered_prop_flags_value="$(makevn_append_word "${filtered_prop_flags_value}" "-DfailIfNoTests=false")"
+  filtered_prop_flags_value="$(makevn_append_word "${filtered_prop_flags_value}" "-Dmaven.test.failure.ignore=false")"
+  filtered_prop_flags_value="$(makevn_append_word "${filtered_prop_flags_value}" "-Dmaven.build.cache.enabled=false")"
+
+  return 0
+}
+
+# Uses the owning command's local option/argument state (Bash dynamic scope).
+makevn_build_verify_it_fallback_args() {
+  if [[ -n "${local_containers}" ]]; then
+    maven_args=(env "LOCAL_CONTAINERS=${local_containers}" "${maven_executable}")
+  else
+    maven_args=("${maven_executable}")
+  fi
+  if [[ -n "${maven_cli_flags_value}" ]]; then
+    read -r -a maven_cli_flags <<< "${maven_cli_flags_value}"
+    maven_args+=("${maven_cli_flags[@]}")
+  fi
+  maven_args+=(-f "${maven_base_path}/pom.xml" verify)
+  if [[ -n "${filtered_prop_flags_value}" ]]; then
+    read -r -a filtered_prop_flags <<< "${filtered_prop_flags_value}"
+    maven_args+=("${filtered_prop_flags[@]}")
+  fi
+  if [[ $# -gt 0 ]]; then
+    maven_args+=("$@")
+  fi
+
+  return 0
+}
+
 makevn_run_verify_it_goal() {
   local repo_root="$1"
   local log_name="$2"
@@ -610,26 +676,7 @@ makevn_run_verify_it_goal() {
     else
       maven_args=("${maven_executable}" -f "${maven_base_path}/pom.xml")
     fi
-    for token in "${workflow_tokens[@]:1}"; do
-      if [[ "${skip_next}" == true ]]; then
-        skip_next=false
-        continue
-      fi
-
-      case "${token}" in
-        -f|--file)
-          skip_next=true
-          ;;
-        -DskipIT|-DskipIT=*|-DskipITs|-DskipITs=*|-DskipITests|-DskipITests=*|-DskipIntegrationTests|-DskipIntegrationTests=*|-DskipFailsafeTests|-DskipFailsafeTests=*|-Dmaven.failsafe.skip|-Dmaven.failsafe.skip=*|-Dmaven.build.cache.enabled|-Dmaven.build.cache.enabled=*)
-          ;;
-        install)
-          maven_args+=(verify)
-          ;;
-        *)
-          maven_args+=("${token}")
-          ;;
-      esac
-    done
+    makevn_append_verify_it_workflow_tokens
     maven_args+=(-Dmaven.build.cache.enabled=false)
     if [[ $# -gt 0 ]]; then
       maven_args+=("$@")
@@ -648,38 +695,25 @@ makevn_run_verify_it_goal() {
   maven_cli_flags_value="$(makevn_maven_cli_flags_for_command "${repo_root}" verify)"
   maven_prop_flags_value="$(makevn_maven_prop_flags_for_command "${repo_root}" verify)"
 
-  for token in ${maven_prop_flags_value}; do
-    if ! makevn_should_drop_maven_cache_prop_flag "${token}"; then
-      filtered_prop_flags_value="$(makevn_append_word "${filtered_prop_flags_value}" "${token}")"
-    fi
-  done
-
-  filtered_prop_flags_value="$(makevn_append_coverage_prop_flags "${repo_root}" "${filtered_prop_flags_value}")"
-  filtered_prop_flags_value="$(makevn_append_word "${filtered_prop_flags_value}" "-DskipUTs")"
-  filtered_prop_flags_value="$(makevn_append_word "${filtered_prop_flags_value}" "-Dskip.unit.tests=true")"
-  filtered_prop_flags_value="$(makevn_append_word "${filtered_prop_flags_value}" "-DfailIfNoTests=false")"
-  filtered_prop_flags_value="$(makevn_append_word "${filtered_prop_flags_value}" "-Dmaven.test.failure.ignore=false")"
-  filtered_prop_flags_value="$(makevn_append_word "${filtered_prop_flags_value}" "-Dmaven.build.cache.enabled=false")"
-
-  if [[ -n "${local_containers}" ]]; then
-    maven_args=(env "LOCAL_CONTAINERS=${local_containers}" "${maven_executable}")
-  else
-    maven_args=("${maven_executable}")
-  fi
-  if [[ -n "${maven_cli_flags_value}" ]]; then
-    read -r -a maven_cli_flags <<< "${maven_cli_flags_value}"
-    maven_args+=("${maven_cli_flags[@]}")
-  fi
-  maven_args+=(-f "${maven_base_path}/pom.xml" verify)
-  if [[ -n "${filtered_prop_flags_value}" ]]; then
-    read -r -a filtered_prop_flags <<< "${filtered_prop_flags_value}"
-    maven_args+=("${filtered_prop_flags[@]}")
-  fi
-  if [[ $# -gt 0 ]]; then
-    maven_args+=("$@")
-  fi
+  makevn_prepare_verify_it_properties
+  makevn_build_verify_it_fallback_args "$@"
 
   MAKEVN_COMPACT_OUTPUT=1 makevn_run_logged_in_context "${repo_root}" code "${maven_base_path}" "${log_name}" verify-it "${log_name}" "${maven_args[@]}"
+}
+
+# Uses the owning command's local option/argument state (Bash dynamic scope).
+makevn_parse_goal_flags() {
+  if [[ -n "${maven_cli_flags_value}" ]]; then
+    read -r -a maven_cli_flags <<< "${maven_cli_flags_value}"
+  fi
+  if [[ -n "${maven_prop_flags_value}" ]]; then
+    read -r -a maven_prop_flags <<< "${maven_prop_flags_value}"
+  fi
+  if [[ -n "${command_pre_goals_value}" ]]; then
+    read -r -a command_pre_goals <<< "${command_pre_goals_value}"
+  fi
+
+  return 0
 }
 
 makevn_run_maven_goal() {
@@ -710,16 +744,7 @@ makevn_run_maven_goal() {
   maven_cli_flags_value="$(makevn_maven_cli_flags_for_command "${repo_root}" "${command_name}")"
   maven_prop_flags_value="$(makevn_maven_prop_flags_for_command "${repo_root}" "${command_name}")"
   command_pre_goals_value="$(makevn_maven_pre_goals_for_command "${repo_root}" "${command_name}")"
-  if [[ -n "${maven_cli_flags_value}" ]]; then
-    read -r -a maven_cli_flags <<< "${maven_cli_flags_value}"
-  fi
-  if [[ -n "${maven_prop_flags_value}" ]]; then
-    read -r -a maven_prop_flags <<< "${maven_prop_flags_value}"
-  fi
-  if [[ -n "${command_pre_goals_value}" ]]; then
-    read -r -a command_pre_goals <<< "${command_pre_goals_value}"
-  fi
-
+  makevn_parse_goal_flags
   maven_args=("${maven_executable}")
   if [[ ${#maven_cli_flags[@]} -gt 0 ]]; then
     maven_args+=("${maven_cli_flags[@]}")

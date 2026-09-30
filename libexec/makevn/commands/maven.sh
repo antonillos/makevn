@@ -72,25 +72,8 @@ cmd_clean() {
   makevn_clean_generated_contract_if_needed "${repo_root}"
 }
 
-cmd_test() {
-  local repo_root="$1"
-  local fast_mode=false
-  local name_arg=""
-  local test_name=""
-  local failed_names=""
-  local index=0
-  local total=0
-  local -a name_args
-  local -a split_names
-  local -a test_names
-  local -a extra_args
-
-  shift
-  name_args=()
-  split_names=()
-  test_names=()
-  extra_args=()
-
+# Uses the owning command's local option/argument state (Bash dynamic scope).
+makevn_parse_test_options() {
   while [[ $# -gt 0 ]]; do
     case "$1" in
       --name)
@@ -113,6 +96,11 @@ cmd_test() {
     esac
   done
 
+  return 0
+}
+
+# Uses the owning command's local option/argument state (Bash dynamic scope).
+makevn_collect_test_names() {
   for name_arg in "${name_args[@]-}"; do
     IFS=',' read -r -a split_names <<< "${name_arg}"
     for test_name in "${split_names[@]-}"; do
@@ -122,36 +110,31 @@ cmd_test() {
     done
   done
 
-  if [[ "${fast_mode}" == true && ${#test_names[@]} -eq 0 ]]; then
-    makevn_die "test --fast requires at least one --name"
-  fi
+  return 0
+}
 
-  if [[ ${#test_names[@]} -eq 0 ]]; then
-    local rc=0
-    if [[ ${#extra_args[@]} -gt 0 ]]; then
-      makevn_run_maven_goal "${repo_root}" test test test "${extra_args[@]}"
-      rc=$?
-    else
-      makevn_run_maven_goal "${repo_root}" test test test
-      rc=$?
-    fi
-    if [[ ${rc} -ne 0 ]]; then
-      local logs_dir_hint
-      logs_dir_hint="$(makevn_logs_dir "${repo_root}")"
-      makevn_hint_stale_generated_sources_if_needed "${logs_dir_hint}/test.log"
-    fi
-    return ${rc}
+# Uses the owning command's local option/argument state (Bash dynamic scope).
+makevn_run_all_tests() {
+  local repo_root="$1"
+  local rc=0
+  if [[ ${#extra_args[@]} -gt 0 ]]; then
+    makevn_run_maven_goal "${repo_root}" test test test "${extra_args[@]}"
+    rc=$?
+  else
+    makevn_run_maven_goal "${repo_root}" test test test
+    rc=$?
   fi
-
-  if [[ ${#test_names[@]} -eq 1 ]]; then
-    if [[ ${#extra_args[@]} -gt 0 ]]; then
-      makevn_run_selected_test "${repo_root}" "${test_names[0]}" "${fast_mode}" "${extra_args[@]}"
-    else
-      makevn_run_selected_test "${repo_root}" "${test_names[0]}" "${fast_mode}"
-    fi
-    return 0
+  if [[ ${rc} -ne 0 ]]; then
+    local logs_dir_hint
+    logs_dir_hint="$(makevn_logs_dir "${repo_root}")"
+    makevn_hint_stale_generated_sources_if_needed "${logs_dir_hint}/test.log"
   fi
+  return ${rc}
+}
 
+# Uses the owning command's local option/argument state (Bash dynamic scope).
+makevn_run_test_sequence() {
+  local repo_root="$1"
   total=${#test_names[@]}
   printf '%s\n' "$(makevn_accent "Running ${total} tests sequentially.")"
   for test_name in "${test_names[@]-}"; do
@@ -173,6 +156,48 @@ cmd_test() {
   fi
 
   printf '%s\n' "$(makevn_accent "ok selected tests completed")"
+}
+
+cmd_test() {
+  local repo_root="$1"
+  local fast_mode=false
+  local name_arg=""
+  local test_name=""
+  local failed_names=""
+  local index=0
+  local total=0
+  local -a name_args
+  local -a split_names
+  local -a test_names
+  local -a extra_args
+
+  shift
+  name_args=()
+  split_names=()
+  test_names=()
+  extra_args=()
+
+  makevn_parse_test_options "$@"
+  makevn_collect_test_names
+  if [[ "${fast_mode}" == true && ${#test_names[@]} -eq 0 ]]; then
+    makevn_die "test --fast requires at least one --name"
+  fi
+
+  if [[ ${#test_names[@]} -eq 0 ]]; then
+    makevn_run_all_tests "${repo_root}"
+    return $?
+  fi
+
+  if [[ ${#test_names[@]} -eq 1 ]]; then
+    if [[ ${#extra_args[@]} -gt 0 ]]; then
+      makevn_run_selected_test "${repo_root}" "${test_names[0]}" "${fast_mode}" "${extra_args[@]}"
+    else
+      makevn_run_selected_test "${repo_root}" "${test_names[0]}" "${fast_mode}"
+    fi
+    return 0
+  fi
+
+  makevn_run_test_sequence "${repo_root}"
 }
 
 cmd_verify_ut() {
@@ -481,23 +506,8 @@ makevn_detect_format_plugin_goal() {
   )
 }
 
-cmd_checkstyle() {
-  local repo_root="$1"
-  local module=""
-  local verbose=false
-  local maven_base_path=""
-  local maven_base_rel=""
-  local maven_executable=""
-  local checkstyle_goal=""
-  local maven_cli_flags_value=""
-  local -a maven_cli_flags
-  local -a maven_args
-  local -a extra_args
-
-  shift
-  maven_cli_flags=()
-  maven_args=()
-  extra_args=()
+# Uses the owning command's local option/argument state (Bash dynamic scope).
+makevn_parse_checkstyle_options() {
   while [[ $# -gt 0 ]]; do
     case "$1" in
       --module)
@@ -520,21 +530,23 @@ cmd_checkstyle() {
     esac
   done
 
-  maven_base_path="$(makevn_detect_maven_base_path "${repo_root}" || true)"
-  [[ -n "${maven_base_path}" ]] || makevn_die "No Maven project detected in ${repo_root}"
+  return 0
+}
+
+# Uses the owning command's local option/argument state (Bash dynamic scope).
+makevn_normalize_checkstyle_module() {
+  local repo_root="$1" maven_base_path="$2"
   if [[ -n "${module}" && ! -f "${repo_root}/pom.xml" ]]; then
     maven_base_rel="${maven_base_path#${repo_root}/}"
     if [[ "${module}" == "${maven_base_rel}" || "${module}" == "$(basename "${maven_base_path}")" ]]; then
       module=""
     fi
   fi
-  checkstyle_goal="$(makevn_checkstyle_goal_for_project "${repo_root}" "${maven_base_path}")"
-  maven_executable="$(makevn_maven_executable "${repo_root}" "${maven_base_path}")"
-  maven_cli_flags_value="$(makevn_maven_cli_flags_for_command "${repo_root}" checkstyle)"
-  if [[ -n "${maven_cli_flags_value}" ]]; then
-    read -r -a maven_cli_flags <<< "${maven_cli_flags_value}"
-  fi
+  return 0
+}
 
+# Uses the owning command's local option/argument state (Bash dynamic scope).
+makevn_build_checkstyle_args() {
   maven_args=("${maven_executable}")
   if [[ ${#maven_cli_flags[@]} -gt 0 ]]; then
     maven_args+=("${maven_cli_flags[@]}")
@@ -554,6 +566,38 @@ cmd_checkstyle() {
     maven_args+=("${extra_args[@]}")
   fi
 
+  return 0
+}
+
+cmd_checkstyle() {
+  local repo_root="$1"
+  local module=""
+  local verbose=false
+  local maven_base_path=""
+  local maven_base_rel=""
+  local maven_executable=""
+  local checkstyle_goal=""
+  local maven_cli_flags_value=""
+  local -a maven_cli_flags
+  local -a maven_args
+  local -a extra_args
+
+  shift
+  maven_cli_flags=()
+  maven_args=()
+  extra_args=()
+  makevn_parse_checkstyle_options "$@"
+  maven_base_path="$(makevn_detect_maven_base_path "${repo_root}" || true)"
+  [[ -n "${maven_base_path}" ]] || makevn_die "No Maven project detected in ${repo_root}"
+  makevn_normalize_checkstyle_module "${repo_root}" "${maven_base_path}"
+  checkstyle_goal="$(makevn_checkstyle_goal_for_project "${repo_root}" "${maven_base_path}")"
+  maven_executable="$(makevn_maven_executable "${repo_root}" "${maven_base_path}")"
+  maven_cli_flags_value="$(makevn_maven_cli_flags_for_command "${repo_root}" checkstyle)"
+  if [[ -n "${maven_cli_flags_value}" ]]; then
+    read -r -a maven_cli_flags <<< "${maven_cli_flags_value}"
+  fi
+
+  makevn_build_checkstyle_args
   MAKEVN_COMPACT_OUTPUT=1 makevn_run_logged_in_context "${repo_root}" code "${maven_base_path}" checkstyle checkstyle checkstyle "${maven_args[@]}"
 }
 

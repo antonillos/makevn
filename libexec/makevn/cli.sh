@@ -141,6 +141,35 @@ makevn_cli_option_takes_value() {
   return 1
 }
 
+# Updates caller-local parser state and current segment; nonzero means a command candidate.
+makevn_cli_consume_sequence_option() {
+  local arg="$1"
+  if [[ "${forwarding_passthrough}" == true ]]; then
+    current+=("${arg}")
+    return 0
+  fi
+
+  if [[ "${option_expects_value}" == true ]]; then
+    current+=("${arg}")
+    option_expects_value=false
+    return 0
+  fi
+
+  if [[ "${arg}" == "--" ]]; then
+    forwarding_passthrough=true
+    current+=("${arg}")
+    return 0
+  fi
+
+  if makevn_cli_option_takes_value "${arg}"; then
+    current+=("${arg}")
+    option_expects_value=true
+    return 0
+  fi
+
+  return 1
+}
+
 makevn_cli_dispatch_sequence_if_needed() {
   local repo_root="$1"
   shift
@@ -161,26 +190,7 @@ makevn_cli_dispatch_sequence_if_needed() {
       continue
     fi
 
-    if [[ "${forwarding_passthrough}" == true ]]; then
-      current+=("${arg}")
-      continue
-    fi
-
-    if [[ "${option_expects_value}" == true ]]; then
-      current+=("${arg}")
-      option_expects_value=false
-      continue
-    fi
-
-    if [[ "${arg}" == "--" ]]; then
-      forwarding_passthrough=true
-      current+=("${arg}")
-      continue
-    fi
-
-    if makevn_cli_option_takes_value "${arg}"; then
-      current+=("${arg}")
-      option_expects_value=true
+    if makevn_cli_consume_sequence_option "${arg}"; then
       continue
     fi
 

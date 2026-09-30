@@ -3,7 +3,7 @@
   "threshold": 8,
   "max_warnings": {
     "rust": 12,
-    "shell": 58,
-    "total": 70
+    "shell": 48,
+    "total": 60
   }
 }
