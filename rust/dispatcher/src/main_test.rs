@@ -1771,3 +1771,206 @@ fn accepts_repo_local_exec_command() {
     .unwrap();
     assert!(matches!(action, Action::DispatchToBackend(_)));
 }
+
+#[test]
+fn metadata_parser_preserves_last_value_empty_fields_and_equals() {
+    let content = "ignored\nunknown=value\ncommand=old\ncommand=test\nrepo=/repo\ncwd=\nlog_path=/log=a\nrelative_log_path=log\ncommand_display=mvn test\ntitle=Test\n";
+    let metadata = super::parse_backend_metadata(content).unwrap();
+    assert_eq!(metadata.command, "test");
+    assert_eq!(metadata.cwd, "");
+    assert_eq!(metadata.log_path, "/log=a");
+    assert_eq!(metadata.context, None);
+    let with_context = format!("{content}context=old\ncontext=karate\n");
+    assert_eq!(
+        super::parse_backend_metadata(&with_context)
+            .unwrap()
+            .context
+            .as_deref(),
+        Some("karate")
+    );
+    for key in [
+        "command",
+        "repo",
+        "cwd",
+        "log_path",
+        "relative_log_path",
+        "command_display",
+        "title",
+    ] {
+        let incomplete = content
+            .lines()
+            .filter(|line| !line.starts_with(&format!("{key}=")))
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(
+            super::parse_backend_metadata(&incomplete).is_none(),
+            "missing {key}"
+        );
+    }
+}
+
+#[test]
+fn command_option_consumption_preserves_passthrough_and_values() {
+    let mut passthrough = false;
+    let mut expects_value = false;
+    assert!(!super::consume_command_option(
+        &"compile".into(),
+        &mut passthrough,
+        &mut expects_value
+    ));
+    assert!(super::consume_command_option(
+        &"--name".into(),
+        &mut passthrough,
+        &mut expects_value
+    ));
+    assert!(expects_value);
+    assert!(super::consume_command_option(
+        &"verify".into(),
+        &mut passthrough,
+        &mut expects_value
+    ));
+    assert!(!expects_value);
+    assert!(super::consume_command_option(
+        &"--".into(),
+        &mut passthrough,
+        &mut expects_value
+    ));
+    assert!(super::consume_command_option(
+        &"verify".into(),
+        &mut passthrough,
+        &mut expects_value
+    ));
+    assert!(passthrough);
+    assert_eq!(
+        split_command_segments(vec!["make".into(), "install".into(), "doctor".into()]).unwrap(),
+        vec![
+            ("make".into(), vec!["install".into()]),
+            ("doctor".into(), vec![])
+        ]
+    );
+}
+
+#[test]
+fn backend_invocation_preserves_tail_compact_and_forwarding() {
+    let args = vec!["--tail".into(), "--".into(), "--tail".into()];
+    let invocation =
+        super::build_backend_invocation(Path::new("/repo"), "test".into(), args, false, true)
+            .unwrap();
+    assert!(invocation.tail && invocation.compact && invocation.frontend_loader);
+    assert_eq!(
+        invocation.args,
+        vec![
+            OsString::from("test"),
+            "--repo".into(),
+            "/repo".into(),
+            "--compact".into(),
+            "--".into(),
+            "--tail".into()
+        ]
+    );
+    let plain =
+        super::build_backend_invocation(Path::new("/repo"), "doctor".into(), vec![], false, false)
+            .unwrap();
+    assert!(!plain.tail && !plain.frontend_loader && !plain.compact);
+    assert!(super::build_backend_invocation(
+        Path::new("/repo"),
+        "doctor".into(),
+        vec![],
+        true,
+        false
+    )
+    .unwrap_err()
+    .contains("not doctor"));
+    assert!(super::build_backend_invocation(
+        Path::new("/repo"),
+        "unknown".into(),
+        vec![],
+        false,
+        false
+    )
+    .is_err());
+}
+
+#[test]
+fn opencode_mcp_configuration_rejects_nonobject_fields() {
+    let path = Path::new("config.json");
+    let mut config = serde_json::json!([]);
+    assert!(super::configure_opencode_mcp(&mut config, path)
+        .unwrap_err()
+        .contains("must be a JSON object"));
+    let mut config = serde_json::json!({"mcp": false});
+    assert_eq!(
+        super::configure_opencode_mcp(&mut config, path).unwrap_err(),
+        "OpenCode config field 'mcp' must be a JSON object"
+    );
+    let mut config = serde_json::json!({"other": 42, "mcp": {"existing": {"enabled": true}}});
+    super::configure_opencode_mcp(&mut config, path).unwrap();
+    assert_eq!(config["other"], 42);
+    assert_eq!(config["mcp"]["existing"]["enabled"], true);
+    assert_eq!(
+        config["mcp"]["makevn"]["command"],
+        serde_json::json!(["makevn-mcp"])
+    );
+}
+
+#[test]
+fn docker_connection_hint_predicate_requires_docker_for_generic_errors() {
+    for message in [
+        "cannot connect to the docker daemon",
+        "is the docker daemon running",
+        "docker: error during connect",
+    ] {
+        assert!(super::docker_connection_failed(message));
+    }
+    for message in [
+        "error during connect",
+        "docker build failed",
+        "maven failed",
+    ] {
+        assert!(!super::docker_connection_failed(message));
+    }
+}
+
+#[test]
+fn spinner_background_and_pulse_handle_load_and_blank_frames() {
+    assert_eq!(super::spinner_background(None, 0, 0.0), " ");
+    for load in [0.0, 0.01, 0.5, 1.0] {
+        assert!(super::spinner_pulse_style("38;2;72;84;112", 30, load).contains('·'));
+        let background = super::spinner_background(Some("38;2;72;84;112"), 30, load);
+        assert!(!background.is_empty());
+    }
+}
+
+#[test]
+fn maven_usage_lookup_keeps_all_supported_commands_and_options() {
+    for command in [
+        "compile",
+        "test-compile",
+        "compile-tests",
+        "validate",
+        "package",
+        "build",
+        "clean",
+        "verify-ut",
+        "verify-ut-coverage",
+        "verify-it",
+        "verify-it-coverage",
+        "verify",
+        "verify-changes",
+        "pr-verify",
+    ] {
+        let (usage, description, options) =
+            super::maven_command_help(command, "description", false).unwrap();
+        assert!(usage.contains(&format!(" {command} [--tail]")));
+        assert_eq!(description, "description");
+        assert_eq!(options.len(), 3);
+        assert_eq!(
+            super::maven_command_help(command, "description", true)
+                .unwrap()
+                .2
+                .len(),
+            4
+        );
+    }
+    assert!(super::maven_command_help("doctor", "description", false).is_none());
+}

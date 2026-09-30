@@ -407,3 +407,95 @@ fn timed_execution_captures_output_and_stops_overdue_processes() {
     assert!(output.timed_out);
     assert!(!output.status.success());
 }
+
+#[test]
+fn step_output_formatting_preserves_empty_streams_errors_and_timeouts() {
+    use std::os::unix::process::ExitStatusExt;
+    for (stdout, stderr, timed_out, expected) in [
+        ("", "", false, ""),
+        (" out \n", "", false, "out"),
+        ("", " err \n", false, "err"),
+        ("out", "err", false, "out\nerr"),
+        ("", "", true, "timed out after 5s"),
+        ("out", "err", true, "out\nerr\ntimed out after 5s"),
+        (" \n", "err", false, "err"),
+    ] {
+        let output = super::ToolOutput {
+            stdout: stdout.as_bytes().to_vec(),
+            stderr: stderr.as_bytes().to_vec(),
+            status: std::process::ExitStatus::from_raw(7 << 8),
+            timed_out,
+            timeout_seconds: 5,
+        };
+        assert_eq!(
+            super::format_tool_output(&output),
+            (expected.to_owned(), if timed_out { -1 } else { 7 })
+        );
+    }
+    let output = super::ToolOutput {
+        stdout: vec![0xff],
+        stderr: vec![],
+        status: std::process::ExitStatus::from_raw(9),
+        timed_out: false,
+        timeout_seconds: 5,
+    };
+    assert_eq!(super::format_tool_output(&output), ("�".into(), -1));
+}
+
+#[test]
+fn tool_option_dispatch_preserves_type_filtering_and_command_errors() {
+    let mut output = vec![];
+    let args = Map::new();
+    for name in [
+        "apply",
+        "clean-generated-contract-targets",
+        "dry-run",
+        "fast",
+        "force",
+        "verbose",
+    ] {
+        super::push_tool_option(&mut output, name, &json!(true), &args).unwrap();
+        assert_eq!(output.pop().unwrap(), format!("--{name}"));
+        super::push_tool_option(&mut output, name, &json!(false), &args).unwrap();
+        super::push_tool_option(&mut output, name, &json!("true"), &args).unwrap();
+        assert!(output.is_empty());
+    }
+    for name in [
+        "threshold",
+        "overall-threshold",
+        "max-warnings",
+        "wait-seconds",
+    ] {
+        super::push_tool_option(&mut output, name, &json!(8.5), &args).unwrap();
+        assert_eq!(output, vec![format!("--{name}"), "8.5".to_owned()]);
+        output.clear();
+        super::push_tool_option(&mut output, name, &json!("8"), &args).unwrap();
+        assert!(output.is_empty());
+    }
+    for name in [
+        "base",
+        "compose",
+        "context",
+        "jacoco-xml",
+        "module",
+        "name",
+        "tag",
+    ] {
+        super::push_tool_option(&mut output, name, &json!("value"), &args).unwrap();
+        assert_eq!(output, vec![format!("--{name}"), "value".to_owned()]);
+        output.clear();
+        for value in [json!(""), json!(false), json!(null)] {
+            super::push_tool_option(&mut output, name, &value, &args).unwrap();
+            assert!(output.is_empty());
+        }
+    }
+    for value in [json!(""), json!(null), json!(42)] {
+        assert_eq!(
+            super::push_tool_option(&mut output, "command", &value, &args).unwrap_err(),
+            "command must be a non-empty string"
+        );
+    }
+    super::push_tool_option(&mut output, "command", &json!("mvn test"), &args).unwrap();
+    super::push_tool_option(&mut output, "unknown", &json!(true), &args).unwrap();
+    assert!(output.is_empty());
+}
