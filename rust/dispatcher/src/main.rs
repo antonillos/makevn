@@ -460,24 +460,26 @@ fn detect_local_opencode_configs(repo_root: &Path) -> Vec<PathBuf> {
 }
 
 fn install_opencode_agent_config(config_path: &Path) -> Result<PathBuf, String> {
-    if let Some(parent) = config_path.parent() {
-        fs::create_dir_all(parent).map_err(|error| {
-            format!(
-                "failed to create OpenCode config directory {}: {error}",
-                parent.display()
-            )
-        })?;
-    }
-    let original = if config_path.is_file() {
-        fs::read_to_string(config_path)
-            .map_err(|error| format!("failed to read {}: {error}", config_path.display()))?
-    } else {
-        String::from("{}")
-    };
+    let original = read_opencode_config(config_path)?;
     let mut config: serde_json::Value = serde_json::from_str(&original)
         .or_else(|_| serde_json::from_str(&strip_jsonc_comments(&original)))
         .map_err(|error| format!("failed to parse {}: {error}", config_path.display()))?;
     let original_config = config.clone();
+    configure_opencode_mcp(&mut config, config_path)?;
+    if config == original_config {
+        return Ok(config_path.to_path_buf());
+    }
+    let updated = serde_json::to_string_pretty(&config)
+        .map_err(|error| format!("failed to serialize OpenCode config: {error}"))?;
+
+    write_opencode_config(config_path, &updated)?;
+    Ok(config_path.to_path_buf())
+}
+
+fn configure_opencode_mcp(
+    config: &mut serde_json::Value,
+    config_path: &Path,
+) -> Result<(), String> {
     let root = config.as_object_mut().ok_or_else(|| {
         format!(
             "OpenCode config must be a JSON object: {}",
@@ -498,12 +500,28 @@ fn install_opencode_agent_config(config_path: &Path) -> Result<PathBuf, String> 
             "timeout": 900000
         }),
     );
-    if config == original_config {
-        return Ok(config_path.to_path_buf());
-    }
-    let updated = serde_json::to_string_pretty(&config)
-        .map_err(|error| format!("failed to serialize OpenCode config: {error}"))?;
+    Ok(())
+}
 
+fn read_opencode_config(config_path: &Path) -> Result<String, String> {
+    if let Some(parent) = config_path.parent() {
+        fs::create_dir_all(parent).map_err(|error| {
+            format!(
+                "failed to create OpenCode config directory {}: {error}",
+                parent.display()
+            )
+        })?;
+    }
+    let original = if config_path.is_file() {
+        fs::read_to_string(config_path)
+            .map_err(|error| format!("failed to read {}: {error}", config_path.display()))?
+    } else {
+        String::from("{}")
+    };
+    Ok(original)
+}
+
+fn write_opencode_config(config_path: &Path, updated: &str) -> Result<(), String> {
     if config_path.is_file() {
         let backup_path = PathBuf::from(format!("{}.makevn.bak", config_path.display()));
         fs::copy(config_path, &backup_path)
@@ -515,7 +533,7 @@ fn install_opencode_agent_config(config_path: &Path) -> Result<PathBuf, String> 
         .map_err(|error| format!("failed to verify {}: {error}", config_path.display()))?;
     serde_json::from_str::<serde_json::Value>(&written)
         .map_err(|error| format!("written OpenCode config is invalid: {error}"))?;
-    Ok(config_path.to_path_buf())
+    Ok(())
 }
 
 fn strip_jsonc_comments(input: &str) -> String {
@@ -608,40 +626,21 @@ fn split_command_segments(args: Vec<OsString>) -> Result<Vec<(OsString, Vec<OsSt
             continue;
         }
 
-        if forwarding_passthrough_args {
+        if consume_command_option(
+            &arg,
+            &mut forwarding_passthrough_args,
+            &mut option_expects_value,
+        ) {
             current_args.push(arg);
             continue;
         }
 
-        if option_expects_value {
-            current_args.push(arg);
-            option_expects_value = false;
-            continue;
-        }
-
-        if arg == OsString::from("--") {
-            forwarding_passthrough_args = true;
+        if is_make_subcommand(current_command.as_ref(), &current_args, &arg) {
             current_args.push(arg);
             continue;
         }
 
-        if command_option_takes_value(&arg) {
-            current_args.push(arg);
-            option_expects_value = true;
-            continue;
-        }
-
-        if current_command.as_ref() == Some(&OsString::from("make"))
-            && current_args.is_empty()
-            && (arg == OsString::from("install") || arg == OsString::from("uninstall"))
-        {
-            current_args.push(arg);
-            continue;
-        }
-
-        if is_top_level_command(&arg)
-            && !COMMAND_SEQUENCE_BREAKERS.contains(&arg.to_string_lossy().as_ref())
-        {
+        if starts_command_segment(&arg) {
             segments.push((current_command.take().unwrap(), current_args));
             current_command = Some(arg);
             current_args = Vec::new();
@@ -653,6 +652,37 @@ fn split_command_segments(args: Vec<OsString>) -> Result<Vec<(OsString, Vec<OsSt
 
     segments.push((current_command.unwrap(), current_args));
     Ok(segments)
+}
+
+fn consume_command_option(
+    arg: &OsString,
+    passthrough: &mut bool,
+    expects_value: &mut bool,
+) -> bool {
+    if *passthrough || *expects_value {
+        *expects_value = false;
+        return true;
+    }
+    if arg == "--" {
+        *passthrough = true;
+        return true;
+    }
+    if command_option_takes_value(arg) {
+        *expects_value = true;
+        return true;
+    }
+    false
+}
+
+fn is_make_subcommand(command: Option<&OsString>, args: &[OsString], arg: &OsString) -> bool {
+    command == Some(&OsString::from("make"))
+        && args.is_empty()
+        && (arg == "install" || arg == "uninstall")
+}
+
+fn starts_command_segment(arg: &OsString) -> bool {
+    is_top_level_command(arg)
+        && !COMMAND_SEQUENCE_BREAKERS.contains(&arg.to_string_lossy().as_ref())
 }
 
 fn split_trailing_global_options(
@@ -871,33 +901,50 @@ fn build_backend_invocations(
     let mut backend_invocations = Vec::with_capacity(command_segments.len());
 
     for (command, trailing_args) in command_segments {
-        validate_command(&command, &trailing_args)?;
-        let frontend_loader = command_supports_frontend_loader(&command);
-        let (trailing_args, command_tail) = strip_frontend_tail_flag(&command, trailing_args)?;
-        if global_tail && !frontend_loader {
-            return Err(format!(
-                "--tail is only supported for managed-log run commands, not {}",
-                Lossy(&command)
-            ));
-        }
-        let tail = command_tail || (global_tail && frontend_loader);
-        let mut backend_args = Vec::with_capacity(trailing_args.len() + 3);
-        backend_args.push(command);
-        backend_args.push(OsString::from("--repo"));
-        backend_args.push(repo_root.clone().into_os_string());
-        if global_compact {
-            backend_args.push(OsString::from("--compact"));
-        }
-        backend_args.extend(trailing_args);
-        backend_invocations.push(BackendInvocation {
-            args: backend_args,
-            frontend_loader,
-            tail,
-            compact: global_compact,
-        });
+        backend_invocations.push(build_backend_invocation(
+            &repo_root,
+            command,
+            trailing_args,
+            global_tail,
+            global_compact,
+        )?);
     }
 
     Ok(backend_invocations)
+}
+
+fn build_backend_invocation(
+    repo_root: &Path,
+    command: OsString,
+    trailing_args: Vec<OsString>,
+    global_tail: bool,
+    global_compact: bool,
+) -> Result<BackendInvocation, String> {
+    validate_command(&command, &trailing_args)?;
+    let frontend_loader = command_supports_frontend_loader(&command);
+    let (trailing_args, command_tail) = strip_frontend_tail_flag(&command, trailing_args)?;
+    if global_tail && !frontend_loader {
+        return Err(format!(
+            "--tail is only supported for managed-log run commands, not {}",
+            Lossy(&command)
+        ));
+    }
+    // Unsupported global tail was rejected above.
+    let tail = command_tail || global_tail;
+    let mut backend_args = Vec::with_capacity(trailing_args.len() + 3);
+    backend_args.push(command);
+    backend_args.push(OsString::from("--repo"));
+    backend_args.push(repo_root.as_os_str().to_owned());
+    if global_compact {
+        backend_args.push(OsString::from("--compact"));
+    }
+    backend_args.extend(trailing_args);
+    Ok(BackendInvocation {
+        args: backend_args,
+        frontend_loader,
+        tail,
+        compact: global_compact,
+    })
 }
 
 fn is_top_level_command(arg: &OsString) -> bool {
@@ -1302,13 +1349,16 @@ fn summary_from_backend_metadata(
     }
 }
 
+fn docker_connection_failed(lower: &str) -> bool {
+    lower.contains("cannot connect to the docker daemon")
+        || lower.contains("is the docker daemon running")
+        || lower.contains("error during connect") && lower.contains("docker")
+}
+
 fn read_failure_hint(log_path: Option<&str>) -> Option<String> {
     let content = fs::read_to_string(log_path?).ok()?;
     let lower = content.to_ascii_lowercase();
-    if lower.contains("cannot connect to the docker daemon")
-        || lower.contains("is the docker daemon running")
-        || lower.contains("error during connect") && lower.contains("docker")
-    {
+    if docker_connection_failed(&lower) {
         return Some("Docker is unavailable. Start Docker Desktop or your Docker runtime (e.g. `colima start`), check `docker info`, then retry".to_owned());
     }
     for line in content.lines() {
@@ -1682,32 +1732,14 @@ fn read_backend_metadata(metadata_path: &Path) -> Result<Option<BackendMetadata>
         }
     };
 
-    let mut command = None;
-    let mut repo = None;
-    let mut cwd = None;
-    let mut log_path = None;
-    let mut relative_log_path = None;
-    let mut command_display = None;
-    let mut title = None;
-    let mut context = None;
+    Ok(parse_backend_metadata(&content))
+}
 
-    for line in content.lines() {
-        let Some((key, value)) = line.split_once('=') else {
-            continue;
-        };
-        match key {
-            "command" => command = Some(value.to_owned()),
-            "repo" => repo = Some(value.to_owned()),
-            "cwd" => cwd = Some(value.to_owned()),
-            "log_path" => log_path = Some(value.to_owned()),
-            "relative_log_path" => relative_log_path = Some(value.to_owned()),
-            "command_display" => command_display = Some(value.to_owned()),
-            "title" => title = Some(value.to_owned()),
-            "context" => context = Some(value.to_owned()),
-            _ => {}
-        }
-    }
-
+fn parse_backend_metadata(content: &str) -> Option<BackendMetadata> {
+    let fields: std::collections::HashMap<_, _> = content
+        .lines()
+        .filter_map(|line| line.split_once('='))
+        .collect();
     let (
         Some(command),
         Some(repo),
@@ -1717,28 +1749,27 @@ fn read_backend_metadata(metadata_path: &Path) -> Result<Option<BackendMetadata>
         Some(command_display),
         Some(title),
     ) = (
-        command,
-        repo,
-        cwd,
-        log_path,
-        relative_log_path,
-        command_display,
-        title,
+        fields.get("command"),
+        fields.get("repo"),
+        fields.get("cwd"),
+        fields.get("log_path"),
+        fields.get("relative_log_path"),
+        fields.get("command_display"),
+        fields.get("title"),
     )
     else {
-        return Ok(None);
+        return None;
     };
-
-    Ok(Some(BackendMetadata {
-        command,
-        repo,
-        cwd,
-        log_path,
-        relative_log_path,
-        command_display,
-        title,
-        context,
-    }))
+    Some(BackendMetadata {
+        command: (*command).to_owned(),
+        repo: (*repo).to_owned(),
+        cwd: (*cwd).to_owned(),
+        log_path: (*log_path).to_owned(),
+        relative_log_path: (*relative_log_path).to_owned(),
+        command_display: (*command_display).to_owned(),
+        title: (*title).to_owned(),
+        context: fields.get("context").map(|value| (*value).to_owned()),
+    })
 }
 
 fn backend_header_line(metadata: &BackendMetadata) -> String {
@@ -2557,26 +2588,33 @@ fn spinner_kitt_frame_with_load(frame_index: usize, load: f32) -> String {
         if color_index >= 0 && (color_index as usize) < trail_colors.len() {
             output.push_str(&style(&rgb_code(trail_colors[color_index as usize]), "■"));
         } else {
-            match pulse_codes[frame_index % pulse_codes.len()] {
-                Some(code) if use_color() => {
-                    if load <= 0.01 {
-                        output.push_str(&style(code, "·"));
-                    } else {
-                        let cool = pulse_color(frame_index % pulse_codes.len());
-                        let warm = Rgb::new(72, 54, 48);
-                        output.push_str(&style(
-                            &rgb_code(interpolate_color(cool, warm, load * 0.55)),
-                            "·",
-                        ));
-                    }
-                }
-                Some(_) => output.push('.'),
-                None => output.push(' '),
-            }
+            output.push_str(&spinner_background(
+                pulse_codes[frame_index % pulse_codes.len()],
+                frame_index % pulse_codes.len(),
+                load,
+            ));
         }
     }
 
     output
+}
+
+fn spinner_background(code: Option<&str>, pulse_index: usize, load: f32) -> String {
+    match code {
+        Some(code) if use_color() => spinner_pulse_style(code, pulse_index, load),
+        Some(_) => ".".to_owned(),
+        None => " ".to_owned(),
+    }
+}
+
+fn spinner_pulse_style(code: &str, pulse_index: usize, load: f32) -> String {
+    if load <= 0.01 {
+        style(code, "·")
+    } else {
+        let cool = pulse_color(pulse_index);
+        let warm = Rgb::new(72, 54, 48);
+        style(&rgb_code(interpolate_color(cool, warm, load * 0.55)), "·")
+    }
 }
 
 fn pulse_color(index: usize) -> Rgb {
@@ -3441,39 +3479,23 @@ fn maven_command_help(
     description: &'static str,
     clean_contract: bool,
 ) -> Option<(&'static str, &'static str, &'static [&'static str])> {
-    let usage = match command {
-        "compile" => "makevn [--repo PATH] [--compact] compile [--tail] [-- EXTRA_MAVEN_ARGS...]",
-        "test-compile" => {
-            "makevn [--repo PATH] [--compact] test-compile [--tail] [-- EXTRA_MAVEN_ARGS...]"
-        }
-        "compile-tests" => {
-            "makevn [--repo PATH] [--compact] compile-tests [--tail] [-- EXTRA_MAVEN_ARGS...]"
-        }
-        "validate" => "makevn [--repo PATH] [--compact] validate [--tail] [-- EXTRA_MAVEN_ARGS...]",
-        "package" => "makevn [--repo PATH] [--compact] package [--tail] [-- EXTRA_MAVEN_ARGS...]",
-        "build" => "makevn [--repo PATH] [--compact] build [--tail] [-- EXTRA_MAVEN_ARGS...]",
-        "clean" => "makevn [--repo PATH] [--compact] clean [--tail] [-- EXTRA_MAVEN_ARGS...]",
-        "verify-ut" => {
-            "makevn [--repo PATH] [--compact] verify-ut [--tail] [--clean-generated-contract-targets] [-- EXTRA_MAVEN_ARGS...]"
-        }
-        "verify-ut-coverage" => {
-            "makevn [--repo PATH] [--compact] verify-ut-coverage [--tail] [--clean-generated-contract-targets] [-- EXTRA_MAVEN_ARGS...]"
-        }
-        "verify-it" => {
-            "makevn [--repo PATH] [--compact] verify-it [--tail] [--clean-generated-contract-targets] [-- EXTRA_MAVEN_ARGS...]"
-        }
-        "verify-it-coverage" => {
-            "makevn [--repo PATH] [--compact] verify-it-coverage [--tail] [--clean-generated-contract-targets] [-- EXTRA_MAVEN_ARGS...]"
-        }
-        "verify" => "makevn [--repo PATH] [--compact] verify [--tail] [--clean-generated-contract-targets] [-- EXTRA_MAVEN_ARGS...]",
-        "verify-changes" => {
-            "makevn [--repo PATH] [--compact] verify-changes [--tail] [--clean-generated-contract-targets] [-- EXTRA_MAVEN_ARGS...]"
-        }
-        "pr-verify" => {
-            "makevn [--repo PATH] [--compact] pr-verify [--tail] [-- EXTRA_MAVEN_ARGS...]"
-        }
-        _ => return None,
-    };
+    let usages = [
+        ("compile", "makevn [--repo PATH] [--compact] compile [--tail] [-- EXTRA_MAVEN_ARGS...]"),
+        ("test-compile", "makevn [--repo PATH] [--compact] test-compile [--tail] [-- EXTRA_MAVEN_ARGS...]"),
+        ("compile-tests", "makevn [--repo PATH] [--compact] compile-tests [--tail] [-- EXTRA_MAVEN_ARGS...]"),
+        ("validate", "makevn [--repo PATH] [--compact] validate [--tail] [-- EXTRA_MAVEN_ARGS...]"),
+        ("package", "makevn [--repo PATH] [--compact] package [--tail] [-- EXTRA_MAVEN_ARGS...]"),
+        ("build", "makevn [--repo PATH] [--compact] build [--tail] [-- EXTRA_MAVEN_ARGS...]"),
+        ("clean", "makevn [--repo PATH] [--compact] clean [--tail] [-- EXTRA_MAVEN_ARGS...]"),
+        ("verify-ut", "makevn [--repo PATH] [--compact] verify-ut [--tail] [--clean-generated-contract-targets] [-- EXTRA_MAVEN_ARGS...]"),
+        ("verify-ut-coverage", "makevn [--repo PATH] [--compact] verify-ut-coverage [--tail] [--clean-generated-contract-targets] [-- EXTRA_MAVEN_ARGS...]"),
+        ("verify-it", "makevn [--repo PATH] [--compact] verify-it [--tail] [--clean-generated-contract-targets] [-- EXTRA_MAVEN_ARGS...]"),
+        ("verify-it-coverage", "makevn [--repo PATH] [--compact] verify-it-coverage [--tail] [--clean-generated-contract-targets] [-- EXTRA_MAVEN_ARGS...]"),
+        ("verify", "makevn [--repo PATH] [--compact] verify [--tail] [--clean-generated-contract-targets] [-- EXTRA_MAVEN_ARGS...]"),
+        ("verify-changes", "makevn [--repo PATH] [--compact] verify-changes [--tail] [--clean-generated-contract-targets] [-- EXTRA_MAVEN_ARGS...]"),
+        ("pr-verify", "makevn [--repo PATH] [--compact] pr-verify [--tail] [-- EXTRA_MAVEN_ARGS...]"),
+    ];
+    let usage = usages.iter().find(|(name, _)| *name == command)?.1;
     let base_options = &[
         "--tail     Start in interactive log tail mode",
         "--compact  Use compact non-interactive output",
