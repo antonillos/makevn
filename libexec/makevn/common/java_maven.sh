@@ -23,7 +23,7 @@ makevn_tool_versions_java_major() {
   local major=""
 
   [[ -f "${tool_versions_file}" ]] || return 1
-  configured_jdk="$(awk '$1 == "ivm-java" { print $2; exit }' "${tool_versions_file}")"
+  configured_jdk="$(awk '($1 == "ivm-java" || $1 == "java") { print $2; exit }' "${tool_versions_file}")"
   [[ -n "${configured_jdk}" ]] || return 1
   major="$(printf '%s\n' "${configured_jdk}" | sed -E 's/.*-([0-9]+)(\..*)?$/\1/')"
   [[ "${major}" =~ ^[0-9]+$ ]] || return 1

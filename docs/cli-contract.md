@@ -299,6 +299,12 @@ makevn jdk current
 makevn jdk list
 ```
 
+`jdk current` reports the same context-specific JDK resolution used for command
+execution, including explicit `.makevn/config` overrides. Project `.tool-versions`
+entries (`java` or `ivm-java`) prefer their installed asdf version, including
+version suffixes, before falling back to major-version discovery. Both asdf
+installation directories are discovered under `${ASDF_DATA_DIR:-$HOME/.asdf}`.
+
 ## Output Modes
 
 ### Default Human Mode
