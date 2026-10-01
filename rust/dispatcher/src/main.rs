@@ -170,7 +170,6 @@ const COMMAND_SEQUENCE_BREAKERS: &[&str] = &[
     "--tail",
     "--compact",
     "--name",
-    "--context",
     "--threshold",
     "--tag",
     "--compose",
@@ -743,7 +742,6 @@ fn validate_command(
         | "crap" | "crap-changes" | "docker-up" | "docker-down" | "docker-ps" | "docker-stats"
         | "docker-ps-required" | "karate-docker-up" | "karate-docker-down" | "run-app"
         | "run-app-bg" | "stop-app" | "run" => Ok(CommandValidation::Valid),
-        "exec" => validate_exec_args(trailing_args),
         "doctor" => {
             if let Some(extra_arg) = trailing_args.first() {
                 Err(format!("Unknown doctor option: {}", Lossy(extra_arg)))
@@ -855,31 +853,6 @@ fn command_suggestion_suffix(command: &OsString) -> String {
     }
 }
 
-fn validate_exec_args(trailing_args: &[OsString]) -> Result<CommandValidation, String> {
-    let Some(separator_index) = trailing_args.iter().position(|arg| arg == "--") else {
-        return Err(String::from("exec requires '--' before the command"));
-    };
-
-    let delegated_args = &trailing_args[(separator_index + 1)..];
-    let Some(delegated_command) = delegated_args.first() else {
-        return Err(String::from("No command provided to exec"));
-    };
-
-    let command_text = delegated_command.to_string_lossy();
-    if exec_command_is_allowed(command_text.as_ref()) {
-        return Ok(CommandValidation::Valid);
-    }
-
-    Err(format!(
-        "makevn exec only supports Maven, Java, or repo-local executable commands; use native agent shell tools for {}",
-        Lossy(delegated_command)
-    ))
-}
-
-fn exec_command_is_allowed(command: &str) -> bool {
-    matches!(command, "mvn" | "mvnw" | "./mvnw" | "java") || command.starts_with("./")
-}
-
 fn build_backend_invocations(
     repo_override: Option<OsString>,
     command_segments: Vec<(OsString, Vec<OsString>)>,
@@ -956,7 +929,6 @@ fn is_top_level_command(arg: &OsString) -> bool {
             | "make"
             | "uninstall"
             | "profile"
-            | "exec"
             | "compile"
             | "test-compile"
             | "compile-tests"
@@ -1001,7 +973,6 @@ fn command_option_takes_value(arg: &OsString) -> bool {
     matches!(
         arg.to_string_lossy().as_ref(),
         "--name"
-            | "--context"
             | "--threshold"
             | "--max-warnings"
             | "--jacoco-xml"
@@ -3432,7 +3403,6 @@ fn command_help(command: &str) -> Option<(&'static str, &'static str, &'static [
         "uninstall" => Some(("makevn [--repo PATH] uninstall [--dry-run]", "Remove makevn local repository state.", &["--dry-run  Show what would be removed"])),
         "refresh" => Some(("makevn [--repo PATH] refresh [--dry-run]", "Reinitialize makevn state from scratch. Removes stale state and runs init --force.", &["--dry-run  Show what would change without writing files"])),
         "profile" => Some(("makevn [--repo PATH] profile refresh", "Refresh detected repository profile information.", &[])),
-        "exec" => Some(("makevn [--repo PATH] exec [--context code|karate] -- COMMAND [ARGS...]", "Run an arbitrary command with makevn's resolved environment.", &["--context  Java context to use: code or karate"])),
         "compile" => maven_command_help("compile", "Compile project sources.", false),
         "test-compile" => maven_command_help("test-compile", "Compile project tests.", false),
         "compile-tests" => maven_command_help("compile-tests", "Compile project tests.", false),
@@ -3602,7 +3572,6 @@ fn print_help(with_header: bool) {
     println!("  makevn [--repo PATH] run-app-bg");
     println!("  makevn [--repo PATH] stop-app");
     println!("  makevn [--repo PATH] run");
-    println!("  makevn [--repo PATH] exec [--context code|karate] -- COMMAND [ARGS...]");
     println!("  makevn [--repo PATH] jdk current");
     println!("  makevn [--repo PATH] jdk list");
     println!();
@@ -3641,7 +3610,6 @@ fn print_help(with_header: bool) {
     println!("  makevn karate-test --tag @smoke");
     println!("  makevn run-app-bg");
     println!("  makevn stop-app");
-    println!("  makevn exec -- mvn -q -v");
     println!("  make -f .makevn/makevn.mk vn-doctor");
     println!();
     println!("Notes:");

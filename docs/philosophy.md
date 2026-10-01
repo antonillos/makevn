@@ -79,7 +79,6 @@ The public contract should stay small and explainable:
 - `makevn build`
 - `makevn test`
 - `makevn verify`
-- `makevn exec -- ...`
 
 That contract can grow, but it should remain grounded in commands that are already natural for Java Maven repositories.
 

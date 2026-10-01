@@ -1,4 +1,4 @@
-use super::{exec_timeout_seconds, push_tool_flags, resolve_makevn_bin, TOOL_SPECS};
+use super::{push_tool_flags, resolve_makevn_bin, TOOL_SPECS};
 use serde_json::{json, Map};
 use std::fs;
 use std::io::Write;
@@ -21,70 +21,6 @@ fn resolves_sibling_makevn_or_current_binary() {
     assert_eq!(resolve_makevn_bin(&makevn).unwrap(), makevn);
     assert!(resolve_makevn_bin(Path::new("/")).is_err());
     fs::remove_dir(dir).unwrap();
-}
-
-#[test]
-fn exec_command_is_forwarded_after_tool_options() {
-    let spec = TOOL_SPECS.iter().find(|spec| spec.name == "exec").unwrap();
-    let mut args = Map::new();
-    args.insert("context".into(), json!("code"));
-    args.insert("command".into(), json!("mvn -v"));
-    args.insert("timeout-seconds".into(), json!(5));
-    let mut cmd_args = vec![String::from("exec")];
-
-    push_tool_flags(&mut cmd_args, spec, &args).unwrap();
-
-    assert_eq!(
-        cmd_args,
-        vec!["exec", "--context", "code", "--", "mvn", "-v"]
-    );
-}
-
-#[test]
-fn exec_git_command_is_forwarded_verbatim_for_cli_validation() {
-    let spec = TOOL_SPECS.iter().find(|spec| spec.name == "exec").unwrap();
-    let mut args = Map::new();
-    args.insert("context".into(), json!("code"));
-    args.insert("command".into(), json!("git status"));
-    let mut cmd_args = vec![String::from("exec")];
-
-    push_tool_flags(&mut cmd_args, spec, &args).unwrap();
-
-    assert_eq!(
-        cmd_args,
-        vec!["exec", "--context", "code", "--", "git", "status"]
-    );
-}
-
-#[test]
-fn exec_timeout_defaults_when_omitted() {
-    let args = Map::new();
-
-    assert_eq!(exec_timeout_seconds(&args).unwrap(), 120);
-}
-
-#[test]
-fn exec_timeout_accepts_valid_range() {
-    let mut args = Map::new();
-    args.insert("timeout-seconds".into(), json!(900));
-
-    assert_eq!(exec_timeout_seconds(&args).unwrap(), 900);
-}
-
-#[test]
-fn exec_timeout_rejects_zero() {
-    let mut args = Map::new();
-    args.insert("timeout-seconds".into(), json!(0));
-
-    assert!(exec_timeout_seconds(&args).is_err());
-}
-
-#[test]
-fn exec_timeout_rejects_above_maximum() {
-    let mut args = Map::new();
-    args.insert("timeout-seconds".into(), json!(901));
-
-    assert!(exec_timeout_seconds(&args).is_err());
 }
 
 #[test]
@@ -293,7 +229,7 @@ fn tool_call_forwards_arguments_and_reports_process_failure() {
 }
 
 #[test]
-fn tool_call_reports_success_and_exec_argument_errors() {
+fn tool_call_reports_success_and_unknown_tool_errors() {
     let result = super::handle_tool_call(
         Path::new("/bin/echo"),
         &json!({"name": "doctor", "arguments": {"repo": ""}}),
@@ -308,7 +244,7 @@ fn tool_call_reports_success_and_exec_argument_errors() {
     )
     .err()
     .unwrap();
-    assert!(error.contains("timeout-seconds"));
+    assert!(error.contains("unknown makevn tool: exec"));
 }
 
 #[test]
@@ -389,63 +325,8 @@ fn parallel_run_reports_success_and_invalid_steps_in_input_order() {
 }
 
 #[test]
-fn timed_execution_captures_output_and_stops_overdue_processes() {
-    let output =
-        super::run_makevn_with_timeout(Path::new("/bin/echo"), &[String::from("hello")], 1)
-            .unwrap();
-    assert_eq!(output.stdout, b"hello\n");
-    assert!(output.stderr.is_empty());
-    assert!(output.status.success());
-    assert!(!output.timed_out);
-
-    let output = super::run_makevn_with_timeout(
-        Path::new("/bin/sh"),
-        &[String::from("-c"), String::from("sleep 3")],
-        1,
-    )
-    .unwrap();
-    assert!(output.timed_out);
-    assert!(!output.status.success());
-}
-
-#[test]
-fn step_output_formatting_preserves_empty_streams_errors_and_timeouts() {
-    use std::os::unix::process::ExitStatusExt;
-    for (stdout, stderr, timed_out, expected) in [
-        ("", "", false, ""),
-        (" out \n", "", false, "out"),
-        ("", " err \n", false, "err"),
-        ("out", "err", false, "out\nerr"),
-        ("", "", true, "timed out after 5s"),
-        ("out", "err", true, "out\nerr\ntimed out after 5s"),
-        (" \n", "err", false, "err"),
-    ] {
-        let output = super::ToolOutput {
-            stdout: stdout.as_bytes().to_vec(),
-            stderr: stderr.as_bytes().to_vec(),
-            status: std::process::ExitStatus::from_raw(7 << 8),
-            timed_out,
-            timeout_seconds: 5,
-        };
-        assert_eq!(
-            super::format_tool_output(&output),
-            (expected.to_owned(), if timed_out { -1 } else { 7 })
-        );
-    }
-    let output = super::ToolOutput {
-        stdout: vec![0xff],
-        stderr: vec![],
-        status: std::process::ExitStatus::from_raw(9),
-        timed_out: false,
-        timeout_seconds: 5,
-    };
-    assert_eq!(super::format_tool_output(&output), ("�".into(), -1));
-}
-
-#[test]
 fn tool_option_dispatch_preserves_type_filtering_and_command_errors() {
     let mut output = vec![];
-    let args = Map::new();
     for name in [
         "apply",
         "clean-generated-contract-targets",
@@ -454,10 +335,10 @@ fn tool_option_dispatch_preserves_type_filtering_and_command_errors() {
         "force",
         "verbose",
     ] {
-        super::push_tool_option(&mut output, name, &json!(true), &args).unwrap();
+        super::push_tool_option(&mut output, name, &json!(true)).unwrap();
         assert_eq!(output.pop().unwrap(), format!("--{name}"));
-        super::push_tool_option(&mut output, name, &json!(false), &args).unwrap();
-        super::push_tool_option(&mut output, name, &json!("true"), &args).unwrap();
+        super::push_tool_option(&mut output, name, &json!(false)).unwrap();
+        super::push_tool_option(&mut output, name, &json!("true")).unwrap();
         assert!(output.is_empty());
     }
     for name in [
@@ -466,36 +347,34 @@ fn tool_option_dispatch_preserves_type_filtering_and_command_errors() {
         "max-warnings",
         "wait-seconds",
     ] {
-        super::push_tool_option(&mut output, name, &json!(8.5), &args).unwrap();
+        super::push_tool_option(&mut output, name, &json!(8.5)).unwrap();
         assert_eq!(output, vec![format!("--{name}"), "8.5".to_owned()]);
         output.clear();
-        super::push_tool_option(&mut output, name, &json!("8"), &args).unwrap();
+        super::push_tool_option(&mut output, name, &json!("8")).unwrap();
         assert!(output.is_empty());
     }
-    for name in [
-        "base",
-        "compose",
-        "context",
-        "jacoco-xml",
-        "module",
-        "name",
-        "tag",
-    ] {
-        super::push_tool_option(&mut output, name, &json!("value"), &args).unwrap();
+    for name in ["base", "compose", "jacoco-xml", "module", "name", "tag"] {
+        super::push_tool_option(&mut output, name, &json!("value")).unwrap();
         assert_eq!(output, vec![format!("--{name}"), "value".to_owned()]);
         output.clear();
         for value in [json!(""), json!(false), json!(null)] {
-            super::push_tool_option(&mut output, name, &value, &args).unwrap();
+            super::push_tool_option(&mut output, name, &value).unwrap();
             assert!(output.is_empty());
         }
     }
-    for value in [json!(""), json!(null), json!(42)] {
-        assert_eq!(
-            super::push_tool_option(&mut output, "command", &value, &args).unwrap_err(),
-            "command must be a non-empty string"
-        );
-    }
-    super::push_tool_option(&mut output, "command", &json!("mvn test"), &args).unwrap();
-    super::push_tool_option(&mut output, "unknown", &json!(true), &args).unwrap();
+    super::push_tool_option(&mut output, "unknown", &json!(true)).unwrap();
     assert!(output.is_empty());
+}
+
+#[test]
+fn removed_exec_is_not_advertised_or_available_in_workflows() {
+    assert!(!TOOL_SPECS.iter().any(|spec| spec.name == "exec"));
+    for tool in ["composite_run", "parallel_run"] {
+        let result = super::handle_tool_call(
+            Path::new("/bin/echo"),
+            &json!({"name": tool, "arguments": {"steps": [{"tool": "exec"}]}}),
+        )
+        .unwrap();
+        assert!(result.output.contains("unknown makevn tool in step: exec"));
+    }
 }

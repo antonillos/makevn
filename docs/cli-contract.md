@@ -267,15 +267,11 @@ makevn clean [--clean-generated-contract-targets] [-- EXTRA_MAVEN_ARGS...]
 ### Command Execution
 
 ```bash
-makevn exec [--context code|karate] -- COMMAND [ARGS...]
 makevn run
 ```
 
 Rules:
 
-- `exec` requires `--` before the delegated command
-- `exec` only accepts `mvn`, `mvnw`, `java`, or repo-local executable paths such as `./script.sh`
-- `exec` must not be used for `git`, `gh`, Docker, shell wrappers, or Python helpers
 - `run` executes the configured repository run command
 
 ### Docker Helpers
@@ -394,7 +390,6 @@ Initial set:
 - `verify-changes --json`
 - `coverage-changes --json`
 - `pr-verify --json`
-- `exec --json`
 - `run --json`
 - `docker-up --json`
 - `docker-down --json`
@@ -412,7 +407,7 @@ Minimum common fields on every event:
 }
 ```
 
-Stable event families:
+Stable event families (event names describe execution telemetry, not CLI commands):
 
 - `started`
 - `exec`
@@ -514,7 +509,7 @@ Initially supported command family:
 
 Commands such as `doctor`, `init`, `uninstall`, `profile refresh`, `coverage-changes`, `jdk current`, `jdk list`, `karate-all`, `run-app`, `run-app-bg`, and `stop-app` should reject `--tail`.
 
-`exec` and `run` may gain `--tail` support later if they are routed through the same managed log model, but that support is not assumed by this frozen contract.
+`run` may gain `--tail` support later if they are routed through the same managed log model, but that support is not assumed by this frozen contract.
 
 ## Exit Codes
 

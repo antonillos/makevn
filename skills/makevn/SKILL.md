@@ -130,28 +130,9 @@ Optional when the user wants `make`:
 
 - `makevn make install`
 
-## Using `makevn exec` with Subdirectory Maven Projects
+## Subdirectory Maven Projects
 
-Some repositories keep the Maven project inside a subdirectory (e.g., `code/`) rather than at the repo root. `makevn doctor` reports this as `Maven base path`.
-
-This only matters when falling back to `makevn exec -- mvn`. First-class commands (`makevn test`, `makevn verify`, `makevn package`, etc.) resolve the Maven base path internally — do not add `-f` to them and do not mention the base path in your reasoning when using these commands.
-
-**Only check `Maven base path` in the `makevn doctor` output when composing a `makevn exec -- mvn ...` command.**
-
-- If `Maven base path` equals the repo root → no `-f` flag needed.
-- If `Maven base path` is a subdirectory (e.g., `.../repo/code`) → you **must** add `-f <relative-path>/pom.xml` to every `mvn` invocation, where `<relative-path>` is the subdirectory relative to the repo root.
-
-Example: `makevn doctor` reports `Maven base path: /project/root/code`
-
-```bash
-# Wrong — Maven cannot find the reactor from the repo root
-makevn exec -- mvn -pl application test
-
-# Correct
-makevn exec -- mvn -f code/pom.xml -pl application test
-```
-
-`makevn exec` always runs from the repo root, so the `-f` flag is the only safe way to point Maven at the correct `pom.xml` when the project lives in a subdirectory.
+First-class commands resolve the Maven base path internally; do not add `-f` manually.
 
 ## Application Health URL
 
@@ -224,7 +205,6 @@ makevn run-app
 makevn run-app-bg
 makevn stop-app
 makevn run
-makevn exec -- mvn -v
 makevn jdk current
 makevn jdk list
 ```
@@ -299,7 +279,7 @@ coverage report discovery.
 
 ## Running Specific Tests
 
-**Always prefer `makevn test --name` over `makevn exec -- mvn -Dtest=...`** when the goal is to run one or more specific test classes. This works for any test type — unit tests (UT) and integration tests (IT) alike.
+**Use `makevn test --name`** when the goal is to run one or more specific test classes. This works for any test type — unit tests (UT) and integration tests (IT) alike.
 
 ```bash
 # Run a single test class
@@ -322,9 +302,7 @@ For MCP, omit the `fast` parameter on the first `makevn_test` call. Passing
 `fast=false` is equivalent to the normal compile-aware mode; `fast=true` is the
 only mode that skips compilation.
 
-Only fall back to `makevn exec -- mvn` when you need Maven flags or options that `makevn test` does not expose (e.g., `-pl` to target a specific module, or additional `-D` properties). In that case, check `Maven base path` in `makevn doctor` output first and add `-f <path>/pom.xml` if the Maven root is a subdirectory.
-
-`makevn exec` is intentionally restricted to `mvn`, `mvnw`, `java`, or repo-local executables such as `./script.sh`. Do not try to route `git`, `gh`, shell wrappers, Python helpers, or Docker through it.
+Pass extra Maven flags after `--` on the matching typed command when needed.
 
 For the frozen public and internal contracts, see:
 
@@ -363,20 +341,16 @@ and test compose locations to decide whether boot services are required. Do not
 prepend `makevn docker-up` or `makevn docker-ps-required` just because a compose
 file exists somewhere in the repository.
 
-### Never use `makevn exec` for Docker operations
+### Use dedicated Docker commands
 
-`makevn exec` is for Maven commands, not for containers. Agents must **never**
-use `makevn exec` to run raw `docker` or `docker compose` commands — even if the
-command appears correct. Always use the dedicated `docker-*` and `karate-docker-*`
-subcommands. This guarantees that compose file paths, override files, Docker
-binary resolution, and log handling are all applied consistently.
+Use `docker-*` and `karate-docker-*` subcommands for container operations.
 
 `makevn docker-up` runs a full lifecycle: `down -v --remove-orphans`,
 `volume prune -f`, then `up --detach` for **all** boot compose services.
 There is no option to target a single service. If only one service needs
 starting, run `makevn docker-up` anyway — the
 lifecycle ensures a clean state and unused services remain idle. Do not
-fall back to raw docker commands or `makevn exec -- docker compose ...`.
+fall back to raw docker commands.
 
 Do not guess a root `make` target from a `makevn` subcommand name. This is invalid unless the repository itself defines such a target:
 
@@ -409,7 +383,6 @@ make vn-test NAME=MyTest
 make vn-test NAMES="MyTest,OtherTest"
 make vn-test NAME=MyTest FAST=true
 make vn-karate-test TAG=@smoke
-make vn-exec MAKEVN_ARGS="-- mvn -v"
 make vn-docker-ps-required MAKEVN_DOCKER_PS_REQUIRED_ARGS="--compose karate"
 ```
 
@@ -417,7 +390,7 @@ make vn-docker-ps-required MAKEVN_DOCKER_PS_REQUIRED_ARGS="--compose karate"
 
 `makevn make install` generates `.makevn/makevn.mk` and a root `Makefile` that includes it. All `vn-*` targets delegate to the installed `makevn` binary — they are thin wrappers, not an alternative implementation.
 
-Available targets mirror the `makevn` command surface: `vn-doctor`, `vn-init`, `vn-make-install`, `vn-make-uninstall`, `vn-uninstall`, `vn-profile-refresh`, `vn-compile`, `vn-test-compile`, `vn-compile-tests`, `vn-validate`, `vn-package`, `vn-build`, `vn-clean`, `vn-test`, `vn-verify-ut`, `vn-verify-ut-coverage`, `vn-verify-it`, `vn-verify-it-coverage`, `vn-verify`, `vn-verify-changes`, `vn-coverage-changes`, `vn-pr-verify`, `vn-docker-up`, `vn-docker-down`, `vn-docker-ps`, `vn-docker-stats`, `vn-docker-ps-required`, `vn-karate-docker-up`, `vn-karate-docker-down`, `vn-karate-test`, `vn-karate-all`, `vn-run-app`, `vn-run-app-bg`, `vn-stop-app`, `vn-run`, `vn-jdk-current`, `vn-jdk-list`, `vn-exec`.
+Available targets mirror the `makevn` command surface: `vn-doctor`, `vn-init`, `vn-make-install`, `vn-make-uninstall`, `vn-uninstall`, `vn-profile-refresh`, `vn-compile`, `vn-test-compile`, `vn-compile-tests`, `vn-validate`, `vn-package`, `vn-build`, `vn-clean`, `vn-test`, `vn-verify-ut`, `vn-verify-ut-coverage`, `vn-verify-it`, `vn-verify-it-coverage`, `vn-verify`, `vn-verify-changes`, `vn-coverage-changes`, `vn-pr-verify`, `vn-docker-up`, `vn-docker-down`, `vn-docker-ps`, `vn-docker-stats`, `vn-docker-ps-required`, `vn-karate-docker-up`, `vn-karate-docker-down`, `vn-karate-test`, `vn-karate-all`, `vn-run-app`, `vn-run-app-bg`, `vn-stop-app`, `vn-run`, `vn-jdk-current`, `vn-jdk-list`.
 
 ## Subagent Workflows
 

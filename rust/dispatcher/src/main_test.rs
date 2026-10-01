@@ -1248,7 +1248,6 @@ fn all_top_level_commands_have_command_help() {
         "make",
         "uninstall",
         "profile",
-        "exec",
         "compile",
         "test-compile",
         "compile-tests",
@@ -1747,32 +1746,6 @@ fn handles_help_command_in_frontend() {
 }
 
 #[test]
-fn rejects_git_exec_command() {
-    let error = parse_invocation(vec![
-        OsString::from("exec"),
-        OsString::from("--"),
-        OsString::from("git"),
-        OsString::from("status"),
-    ])
-    .unwrap_err();
-    assert_eq!(
-        error,
-        "makevn exec only supports Maven, Java, or repo-local executable commands; use native agent shell tools for git"
-    );
-}
-
-#[test]
-fn accepts_repo_local_exec_command() {
-    let action = parse_invocation(vec![
-        OsString::from("exec"),
-        OsString::from("--"),
-        OsString::from("./script.sh"),
-    ])
-    .unwrap();
-    assert!(matches!(action, Action::DispatchToBackend(_)));
-}
-
-#[test]
 fn metadata_parser_preserves_last_value_empty_fields_and_equals() {
     let content = "ignored\nunknown=value\ncommand=old\ncommand=test\nrepo=/repo\ncwd=\nlog_path=/log=a\nrelative_log_path=log\ncommand_display=mvn test\ntitle=Test\n";
     let metadata = super::parse_backend_metadata(content).unwrap();
@@ -1973,4 +1946,19 @@ fn maven_usage_lookup_keeps_all_supported_commands_and_options() {
         );
     }
     assert!(super::maven_command_help("doctor", "description", false).is_none());
+}
+
+#[test]
+fn rejects_removed_exec_command() {
+    assert!(super::command_help("exec").is_none());
+    assert_eq!(
+        parse_invocation(
+            ["exec", "--", "mvn", "-v"]
+                .into_iter()
+                .map(OsString::from)
+                .collect()
+        )
+        .unwrap_err(),
+        "Unknown command: exec"
+    );
 }

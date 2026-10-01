@@ -1,7 +1,7 @@
 MAKEVN_BIN ?= makevn
 MAKEVN_REPO_ROOT ?= $(CURDIR)
 
-.PHONY: vn-help vn-doctor vn-init vn-refresh vn-make-install vn-make-uninstall vn-uninstall vn-profile-refresh vn-compile vn-test-compile vn-compile-tests vn-validate vn-package vn-build vn-clean vn-test vn-verify-ut vn-verify-ut-coverage vn-verify-it vn-verify-it-coverage vn-verify vn-verify-changes vn-coverage vn-coverage-changes vn-pr-verify vn-mutation vn-docker-up vn-docker-down vn-docker-ps vn-docker-stats vn-docker-ps-required vn-karate-docker-up vn-karate-docker-down vn-karate-test vn-karate-all vn-run-app vn-run-app-bg vn-stop-app vn-run vn-jdk-current vn-jdk-list vn-exec
+.PHONY: vn-help vn-doctor vn-init vn-refresh vn-make-install vn-make-uninstall vn-uninstall vn-profile-refresh vn-compile vn-test-compile vn-compile-tests vn-validate vn-package vn-build vn-clean vn-test vn-verify-ut vn-verify-ut-coverage vn-verify-it vn-verify-it-coverage vn-verify vn-verify-changes vn-coverage vn-coverage-changes vn-pr-verify vn-mutation vn-docker-up vn-docker-down vn-docker-ps vn-docker-stats vn-docker-ps-required vn-karate-docker-up vn-karate-docker-down vn-karate-test vn-karate-all vn-run-app vn-run-app-bg vn-stop-app vn-run vn-jdk-current vn-jdk-list
 
 define makevn_run
 	@set +e; \
@@ -62,7 +62,6 @@ vn-help:
 	@printf '%s\n' '  make vn-run'
 	@printf '%s\n' '  make vn-jdk-current'
 	@printf '%s\n' '  make vn-jdk-list'
-	@printf '%s\n' '  make vn-exec MAKEVN_ARGS="-- mvn -v"'
 
 vn-doctor:
 	$(call makevn_run,doctor)
@@ -274,7 +273,3 @@ vn-jdk-current:
 
 vn-jdk-list:
 	$(call makevn_run,jdk list)
-
-vn-exec:
-	@test -n "$(strip $(MAKEVN_ARGS))" || { printf '%s\n' 'Usage: make vn-exec MAKEVN_ARGS="-- mvn -v"'; exit 1; }
-	$(call makevn_run,exec $(MAKEVN_ARGS))
