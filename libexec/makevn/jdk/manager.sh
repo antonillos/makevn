@@ -299,7 +299,7 @@ resolve_jdk_home() {
 resolve_declared_asdf_home() {
   local tool_versions_file="$1"
   local tool version rest
-  while read -r tool version rest; do
+  while read -r tool version rest || [[ -n "${tool}" ]]; do
     case "${tool}" in
       java|ivm-java)
         [[ "${version}" != */* && "${version}" != "." && "${version}" != ".." ]] || continue

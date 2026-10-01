@@ -15,7 +15,7 @@ mkdir -p "${JAVA_HOME}/bin" "${TMP}/repo/code" "${TMP}/repo/e2e/karate"
 printf '#!/usr/bin/env bash\necho '\''openjdk version "26.0.2.1"'\'' >&2\n' > "${JAVA_HOME}/bin/java"
 chmod +x "${JAVA_HOME}/bin/java"
 printf '<project/>\n' > "${TMP}/repo/code/pom.xml"
-printf 'ivm-java openjdk-21.0.10\n' > "${TMP}/repo/code/.tool-versions"
+printf 'ivm-java openjdk-21.0.10' > "${TMP}/repo/code/.tool-versions"
 printf 'ivm-java openjdk-21.0.4+tzdata2024b\n' > "${TMP}/repo/e2e/karate/.tool-versions"
 manager="${ROOT_DIR}/libexec/makevn/jdk/manager.sh"
 for context in code e2e/karate; do
@@ -49,7 +49,9 @@ actual="$(bash "${manager}" resolve-tool-versions "${TMP}/repo/code/.tool-versio
 [[ "${actual}" == "${HOME}/.asdf/installs/ivm-java/openjdk-21.0.10" ]]
 mkdir -p "${HOME}/.asdf/installs/java"
 mv "${HOME}/.asdf/installs/ivm-java/openjdk-21.0.10" "${HOME}/.asdf/installs/java/"
-printf 'java openjdk-21.0.10\n' > "${TMP}/repo/code/.tool-versions"
+# An unterminated final entry must beat another installed same-major JDK.
+cp -R "${HOME}/.asdf/installs/java/openjdk-21.0.10" "${HOME}/.asdf/installs/java/aaa-21.0.10"
+printf 'java openjdk-21.0.10'  > "${TMP}/repo/code/.tool-versions"
 actual="$(bash "${manager}" resolve-tool-versions "${TMP}/repo/code/.tool-versions")"
 [[ "${actual}" == "${HOME}/.asdf/installs/java/openjdk-21.0.10" ]]
 printf 'JDK discovery regression tests passed\n' 
