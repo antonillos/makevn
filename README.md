@@ -175,6 +175,7 @@ make -f .makevn/makevn.mk vn-doctor
 
 ## Documentation
 
+- [Changelog / releases](https://github.com/antonillos/makevn/releases)
 - [Install](docs/install.md)
 - [Agent install](docs/agent-install.md)
 - [AI agents](docs/agents.md)

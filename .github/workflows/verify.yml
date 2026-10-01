@@ -58,6 +58,8 @@ jobs:
       - name: Run sync workflow tests
         shell: bash
         run: node --test .github/scripts/sync-workflow.test.js
+      - name: Run release notes tests
+        run: python3 -m unittest discover -s test/release -v
       - name: Run release workflow tests
         shell: bash
         run: node --test .github/scripts/release-workflow.test.js

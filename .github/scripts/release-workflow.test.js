@@ -47,3 +47,14 @@ test("push-triggered releases retain prerelease status from the version suffix",
   assert.match(releaseWorkflow, /if \[\[ "\$\{\{ github\.event_name \}\}" == push && "\$SEMVER" == \*-\* \]\]; then\s+prerelease=true/);
   assert.match(releaseWorkflow, /printf 'prerelease=%s\\n' "\$prerelease" >> "\$GITHUB_OUTPUT"/);
 });
+
+
+test("release notes use generated changes and full tag history", () => {
+  const createRelease = releaseWorkflow.slice(releaseWorkflow.indexOf("  create-release:"));
+  assert.match(createRelease, /fetch-depth: 0/);
+  assert.match(createRelease, /python3 packaging\/release\/render-notes\.py/);
+  assert.match(createRelease, /--repository "\$REPOSITORY" --target "\$TARGET_REF" --output release-notes\.md/);
+  assert.ok(createRelease.indexOf("id: release-app-token") < createRelease.indexOf("name: Generate release notes"));
+  assert.ok(createRelease.indexOf("name: Generate release notes") < createRelease.indexOf("name: Create GitHub release"));
+  assert.doesNotMatch(createRelease, /brew install|asdf plugin add|curl -fsSL/);
+});

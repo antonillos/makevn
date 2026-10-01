@@ -331,49 +331,8 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ needs.validate-version.outputs.target-ref }}
+          fetch-depth: 0
           persist-credentials: false
-      - name: Generate release notes
-        shell: bash
-        run: |
-          set -euo pipefail
-          cat > release-notes.md <<'RELEASE'
-          # makevn ${{ needs.validate-version.outputs.version }}
-
-          ## Install
-
-          Homebrew:
-
-          ```bash
-          brew install antonillos/tap/makevn
-          ```
-
-          asdf:
-
-          ```bash
-          asdf plugin add makevn https://github.com/antonillos/asdf-makevn.git
-          asdf install makevn latest
-          MAKEVN_VERSION="$(asdf latest makevn | sed -n '$p')"
-          asdf set -u makevn "${MAKEVN_VERSION}"
-          ```
-
-          Fallback installer:
-
-          ```bash
-          curl -fsSL https://raw.githubusercontent.com/antonillos/makevn/main/packaging/install/install-release.sh | sh
-          ```
-
-          MCP server command:
-
-          ```text
-          makevn-mcp
-          ```
-
-          ## Assets
-
-          - Source archive for Homebrew/source builds
-          - Runtime archives for Linux x86_64, macOS x86_64, and macOS arm64
-          - SHA-256 checksum files for each archive
-          RELEASE
       - name: Generate release app token
         id: release-app-token
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
@@ -381,6 +340,17 @@ jobs:
           client-id: ${{ vars.MAKEVN_RELEASE_APP_CLIENT_ID }}
           private-key: ${{ secrets.MAKEVN_RELEASE_APP_PRIVATE_KEY }}
           permission-contents: write
+      - name: Generate release notes
+        env:
+          GH_TOKEN: ${{ steps.release-app-token.outputs.token }}
+          VERSION: ${{ needs.validate-version.outputs.version }}
+          TARGET_REF: ${{ needs.validate-version.outputs.target-ref }}
+          REPOSITORY: ${{ github.repository }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 packaging/release/render-notes.py "$VERSION" \
+            --repository "$REPOSITORY" --target "$TARGET_REF" --output release-notes.md
       - name: Create GitHub release
         env:
           GH_TOKEN: ${{ steps.release-app-token.outputs.token }}
