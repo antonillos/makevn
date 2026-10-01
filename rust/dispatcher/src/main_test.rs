@@ -1,23 +1,436 @@
 use super::{
-    command_help, command_supports_frontend_loader, dashboard_hint, detect_local_opencode_configs,
-    dim_text, format_resource_sample, insert_backend_option, install_opencode_agent_at,
-    install_root, install_root_with_override, parse_invocation, parse_mcp_invocation,
-    read_backend_metadata, spinner_hint, spinner_kitt_frame, split_command_segments,
-    strip_frontend_tail_flag, tail_status_lines, Action, BackendInvocation, BackendMetadata,
-    CommandSummary, McpAction, ResourceHistory, ResourceSample,
+    clear_tail_rows, command_help, command_suggestion_suffix, command_supports_frontend_loader,
+    dashboard_hint, detect_local_opencode_configs, dim_text, exit_code_from_status,
+    format_failure_summary, format_resource_sample_cpu, format_resource_sample_ram,
+    insert_backend_option, install_opencode_agent_at, install_root, install_root_with_override,
+    parse_invocation, parse_mcp_invocation, print_command_help, print_final_dashboard,
+    read_backend_metadata, read_failure_hint, register_signal_flag, spinner_hint,
+    spinner_resource_suffix, split_command_segments, strip_frontend_tail_flag,
+    strip_jsonc_comments, summary_from_backend_metadata, tail_command_help, tail_status_lines,
+    validate_maven_passthrough_args, Action, BackendDetailFile, BackendInvocation, BackendMetadata,
+    CommandSummary, InputEvent, McpAction, ResourceHistory, ResourceSample, ResourceSampler,
+    SpinnerRenderer, TtyModeGuard,
 };
 use std::env;
 use std::ffi::OsString;
 use std::fs;
+use std::fs::File;
 use std::io::Write;
+use std::os::fd::FromRawFd;
 #[cfg(unix)]
 use std::os::unix::fs::symlink;
 use std::path::Path;
 use std::process;
+use std::sync::atomic::AtomicBool;
+use std::sync::Arc;
 use std::sync::Mutex;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 static ENV_LOCK: Mutex<()> = Mutex::new(());
+
+fn format_resource_sample(sample: &ResourceSample, history: &ResourceHistory) -> String {
+    format!(
+        "{} | {}",
+        format_resource_sample_cpu(sample, history),
+        format_resource_sample_ram(sample, history)
+    )
+}
+
+#[test]
+fn spinner_resource_suffix_preserves_hint_with_and_without_metrics() {
+    assert_eq!(spinner_resource_suffix("", "interrupt"), "interrupt");
+    assert!(spinner_resource_suffix("CPU 10%", "interrupt").contains("CPU 10%"));
+    assert!(spinner_resource_suffix("CPU 10%", "interrupt").ends_with("interrupt"));
+}
+
+#[test]
+fn resource_history_only_records_new_sample_revisions() {
+    let mut history = ResourceHistory::new();
+    let sample = ResourceSample {
+        cpu_percent: 12.0,
+        rss_kb: 64,
+    };
+    assert_eq!(history.sync_sample(0, 0, Some(&sample)), 0);
+    assert!(history.cpu_percent.is_empty());
+    assert_eq!(history.sync_sample(0, 1, Some(&sample)), 1);
+    assert_eq!(history.cpu_percent, vec![12.0]);
+    assert_eq!(history.rss_kb, vec![64]);
+    assert_eq!(history.sync_sample(1, 2, None), 2);
+    assert_eq!(history.cpu_percent, vec![12.0]);
+}
+
+#[test]
+fn spinner_renderer_handles_tty_input_and_dashboard_lifecycle() {
+    let mut master_fd = -1;
+    let mut slave_fd = -1;
+    let rc = unsafe {
+        libc::openpty(
+            &mut master_fd,
+            &mut slave_fd,
+            std::ptr::null_mut(),
+            std::ptr::null_mut(),
+            std::ptr::null_mut(),
+        )
+    };
+    assert_eq!(rc, 0, "openpty failed: {}", std::io::Error::last_os_error());
+    let mut master = unsafe { File::from_raw_fd(master_fd) };
+    let tty = unsafe { File::from_raw_fd(slave_fd) };
+    let tty_guard = TtyModeGuard::new(&tty).unwrap();
+    let mut renderer = SpinnerRenderer {
+        tty,
+        tty_guard,
+        frame: 0,
+        frame_interval: Duration::ZERO,
+        next_frame_at: Instant::now(),
+        second_escape_deadline: None,
+        resource_sampler: ResourceSampler::new(),
+        resource_history: ResourceHistory::new(),
+        resource_history_revision: 0,
+        cpu_visual_load: 0.0,
+        ram_visual_load: 0.0,
+        resource_visual_load: 0.0,
+        rendered_block_line_widths: Vec::new(),
+    };
+
+    master.write_all(b"tT+-x\x1b\x1b").unwrap();
+    assert!(matches!(
+        renderer.poll_input().unwrap(),
+        InputEvent::StartTail
+    ));
+    assert!(matches!(
+        renderer.poll_input().unwrap(),
+        InputEvent::StartTail
+    ));
+    assert!(matches!(
+        renderer.poll_input().unwrap(),
+        InputEvent::IncreaseLines
+    ));
+    assert!(matches!(
+        renderer.poll_input().unwrap(),
+        InputEvent::DecreaseLines
+    ));
+    assert!(matches!(renderer.poll_input().unwrap(), InputEvent::None));
+    assert!(matches!(renderer.poll_input().unwrap(), InputEvent::None));
+    assert!(matches!(
+        renderer.poll_input().unwrap(),
+        InputEvent::Interrupt
+    ));
+
+    assert!(renderer
+        .frame_line_with_hint(0, "interrupt")
+        .unwrap()
+        .contains("interrupt"));
+    renderer.resource_sampler.sample_revision = 1;
+    let sample = ResourceSample {
+        cpu_percent: 10.0,
+        rss_kb: 32,
+    };
+    renderer.sync_resource_history(Some(&sample));
+    assert_eq!(renderer.resource_history.cpu_percent, vec![10.0]);
+    renderer.sync_resource_history(Some(&sample));
+    assert_eq!(renderer.resource_history.cpu_percent, vec![10.0]);
+
+    let metadata = BackendMetadata {
+        command: "verify".into(),
+        repo: "repo".into(),
+        cwd: "repo".into(),
+        log_path: "log".into(),
+        relative_log_path: "log".into(),
+        command_display: "verify".into(),
+        title: "Verify".into(),
+        context: None,
+    };
+    renderer
+        .render_dashboard(0, Duration::ZERO, &[], &[], &metadata, "interrupt")
+        .unwrap();
+    assert!(!renderer.rendered_block_line_widths.is_empty());
+    renderer.clear_dynamic_block().unwrap();
+    assert!(renderer.rendered_block_line_widths.is_empty());
+    renderer.clear_dynamic_block().unwrap();
+    renderer.rendered_block_line_widths.push(1000);
+    renderer.clear_dynamic_block().unwrap();
+
+    renderer.resource_sampler.last_sample_at = Some(Instant::now());
+    renderer.resource_sampler.last_sample = Some(sample);
+    renderer.next_frame_at = Instant::now() + Duration::from_millis(1);
+    assert!(renderer
+        .frame_line_with_hint(1, "interrupt")
+        .unwrap()
+        .contains("interrupt"));
+    renderer.render_frame_with_hint(1, "interrupt").unwrap();
+    renderer
+        .render_dashboard(1, Duration::ZERO, &[], &[], &metadata, "interrupt")
+        .unwrap();
+
+    let original_tty = std::mem::replace(&mut renderer.tty, File::open("/dev/null").unwrap());
+    assert!(matches!(renderer.poll_input().unwrap(), InputEvent::None));
+    renderer.tty = File::options().write(true).open("/dev/null").unwrap();
+    assert!(renderer.poll_input().is_err());
+    renderer.tty = original_tty;
+}
+
+#[test]
+fn known_command_help_can_be_printed() {
+    print_command_help("verify");
+}
+
+#[test]
+fn clear_tail_rows_erases_each_physical_row() {
+    let mut output = Vec::new();
+    clear_tail_rows(&mut output, 2).unwrap();
+    assert_eq!(output, b"\x1b[2A\r\x1b[2K\n\r\x1b[2K\n\r\x1b[2K\x1b[2A\r");
+}
+
+#[test]
+fn tail_command_help_covers_all_interactive_commands() {
+    for command in [
+        "docker-up",
+        "docker-down",
+        "docker-ps",
+        "docker-stats",
+        "karate-docker-up",
+        "karate-docker-down",
+    ] {
+        let (usage, description, options) = tail_command_help(command, "description").unwrap();
+        assert!(usage.contains(command));
+        assert_eq!(description, "description");
+        assert_eq!(options.len(), 1);
+    }
+    assert!(tail_command_help("verify", "description").is_none());
+}
+
+#[test]
+fn strips_jsonc_comments_without_changing_strings_or_unicode() {
+    let source = "{\"url\":\"https://example.test/a//b\",// line\n\"text\":\"🦀 \\\"/*keep*/\\\"\",/* block */\"name\":\"José\"}";
+    let expected = "{\"url\":\"https://example.test/a//b\",\n\"text\":\"🦀 \\\"/*keep*/\\\"\",\"name\":\"José\"}";
+
+    assert_eq!(strip_jsonc_comments(source), expected);
+}
+
+#[test]
+fn strips_jsonc_comments_at_eof_and_preserves_unterminated_strings() {
+    assert_eq!(strip_jsonc_comments("{}// trailing"), "{}");
+    assert_eq!(strip_jsonc_comments("{}/* trailing"), "{}");
+    assert_eq!(
+        strip_jsonc_comments("{\"key\":\"a\\\"//"),
+        "{\"key\":\"a\\\"//"
+    );
+    assert_eq!(strip_jsonc_comments("/"), "/");
+}
+
+#[test]
+fn maven_passthrough_accepts_option_values_and_separator() {
+    let command = OsString::from("verify");
+    assert!(validate_maven_passthrough_args(
+        &command,
+        &[
+            OsString::from("--tail"),
+            OsString::from("-f"),
+            OsString::from("pom.xml"),
+            OsString::from("--"),
+            OsString::from("custom-goal"),
+        ],
+    )
+    .is_ok());
+}
+
+#[test]
+fn maven_passthrough_rejects_bare_commands_before_separator() {
+    let command = OsString::from("verify");
+    let error =
+        validate_maven_passthrough_args(&command, &[OsString::from("verity-ut")]).unwrap_err();
+    assert!(error.contains("Extra Maven arguments for verify must follow '--'"));
+    assert!(error.contains("Did you mean 'verify-ut'?"));
+}
+
+#[test]
+fn install_root_honors_explicit_environment_override() {
+    let _guard = ENV_LOCK.lock().unwrap();
+    let original = env::var_os("MAKEVN_INSTALL_ROOT");
+    env::set_var("MAKEVN_INSTALL_ROOT", "/tmp/makevn-explicit-root");
+    let root = install_root(Path::new("/missing/makevn")).unwrap();
+    match original {
+        Some(value) => env::set_var("MAKEVN_INSTALL_ROOT", value),
+        None => env::remove_var("MAKEVN_INSTALL_ROOT"),
+    }
+    assert_eq!(root, Path::new("/tmp/makevn-explicit-root"));
+}
+
+#[cfg(unix)]
+#[test]
+fn signal_handlers_register_in_isolated_process() {
+    const CHILD_MARKER: &str = "MAKEVN_SIGNAL_REGISTRATION_TEST_CHILD";
+    if env::var_os(CHILD_MARKER).is_some() {
+        register_signal_flag(&Arc::new(AtomicBool::new(false))).unwrap();
+        return;
+    }
+
+    let output = process::Command::new(env::current_exe().unwrap())
+        .args([
+            "--exact",
+            "tests::signal_handlers_register_in_isolated_process",
+        ])
+        .env(CHILD_MARKER, "1")
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "isolated signal registration failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[test]
+fn resource_sampler_skips_zero_pid_and_reuses_recent_sample() {
+    let mut sampler = ResourceSampler::new();
+    assert!(sampler.sample(0).unwrap().is_none());
+    assert_eq!(sampler.revision(), 0);
+
+    let cached = ResourceSample {
+        cpu_percent: 12.5,
+        rss_kb: 2048,
+    };
+    sampler.last_sample_at = Some(std::time::Instant::now());
+    sampler.last_sample = Some(cached);
+    let sample = sampler.sample(u32::MAX).unwrap().unwrap();
+    assert_eq!(sample.cpu_percent, cached.cpu_percent);
+    assert_eq!(sample.rss_kb, cached.rss_kb);
+    assert_eq!(sampler.revision(), 0);
+}
+
+#[test]
+fn final_dashboard_prints_success_and_failure() {
+    print_final_dashboard(Duration::from_secs(1), &[], true).unwrap();
+    print_final_dashboard(Duration::from_secs(1), &[], false).unwrap();
+}
+
+#[test]
+fn detail_file_reads_nonempty_lines_and_handles_absence() {
+    let detail = BackendDetailFile::new().unwrap();
+    assert!(detail.read_lines().is_empty());
+    fs::write(detail.path(), "first\n\nsecond\n").unwrap();
+    assert_eq!(detail.read_lines(), vec!["first", "second"]);
+    detail.clear();
+    assert!(detail.read_lines().is_empty());
+}
+
+#[test]
+fn suggests_only_known_misspellings() {
+    assert_eq!(
+        command_suggestion_suffix(&OsString::from("verity-ut")),
+        " Did you mean 'verify-ut'?"
+    );
+    assert_eq!(
+        command_suggestion_suffix(&OsString::from("verity-it")),
+        " Did you mean 'verify-it'?"
+    );
+    assert!(command_suggestion_suffix(&OsString::from("verify")).is_empty());
+}
+
+#[test]
+fn failure_summary_handles_optional_details() {
+    assert_eq!(
+        format_failure_summary(2, None, None),
+        " exit 2 | check the log"
+    );
+    assert_eq!(
+        format_failure_summary(1, Some("3s"), Some("")),
+        " exit 1 | 3s | check the log"
+    );
+    assert_eq!(
+        format_failure_summary(7, Some("2s"), Some("Maven failed")),
+        " exit 7 | 2s | Maven failed"
+    );
+}
+
+#[test]
+fn failure_hint_reads_first_error_line() {
+    assert_eq!(read_failure_hint(None), None);
+    assert_eq!(
+        read_failure_hint(Some("/nonexistent/makevn-crap-test.log")),
+        None
+    );
+    let path = env::temp_dir().join(format!("makevn-failure-hint-{}", process::id()));
+    fs::write(
+        &path,
+        "info\n  Error: first problem\nError: second problem\n",
+    )
+    .unwrap();
+    assert_eq!(
+        read_failure_hint(path.to_str()),
+        Some(String::from("first problem"))
+    );
+    fs::write(&path, "no error here\n").unwrap();
+    assert_eq!(read_failure_hint(path.to_str()), None);
+    fs::remove_file(path).unwrap();
+}
+
+#[test]
+fn failure_hint_suggests_docker_runtime_recovery() {
+    let path = env::temp_dir().join(format!("makevn-docker-hint-{}", process::id()));
+    fs::write(&path, "Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?\n").unwrap();
+    let hint = read_failure_hint(path.to_str()).unwrap();
+    assert!(hint.contains("colima start"));
+    assert!(hint.contains("docker info"));
+    fs::remove_file(path).unwrap();
+}
+
+#[test]
+fn non_loader_summary_keeps_backend_log_path_for_recovery_hints() {
+    let metadata = super::BackendMetadata {
+        command: String::from("docker-up"),
+        repo: String::from("/repo"),
+        cwd: String::from("/repo"),
+        log_path: String::from("/repo/.makevn/logs/docker-up.log"),
+        relative_log_path: String::from(".makevn/logs/docker-up.log"),
+        command_display: String::from("makevn docker-up"),
+        title: String::from("docker-up"),
+        context: None,
+    };
+    let summary = summary_from_backend_metadata(1, String::from("0s"), "fallback", Some(&metadata));
+    assert_eq!(
+        summary.log_path.as_deref(),
+        Some(metadata.log_path.as_str())
+    );
+    assert_eq!(
+        summary.relative_log_path.as_deref(),
+        Some(metadata.relative_log_path.as_str())
+    );
+}
+
+#[test]
+fn exit_status_preserves_code_and_interrupt() {
+    #[cfg(unix)]
+    let shell = "/bin/sh";
+    #[cfg(not(unix))]
+    let shell = "sh";
+
+    let success = process::Command::new(shell)
+        .arg("-c")
+        .arg("exit 0")
+        .status()
+        .unwrap();
+    let failed = process::Command::new(shell)
+        .arg("-c")
+        .arg("exit 7")
+        .status()
+        .unwrap();
+    assert_eq!(exit_code_from_status(success, false), 0);
+    assert_eq!(exit_code_from_status(failed, false), 7);
+    assert_eq!(exit_code_from_status(success, true), 130);
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::ExitStatusExt;
+        assert_eq!(
+            exit_code_from_status(process::ExitStatus::from_raw(libc::SIGTERM), false),
+            130
+        );
+        assert_eq!(
+            exit_code_from_status(process::ExitStatus::from_raw(libc::SIGKILL), false),
+            1
+        );
+    }
+}
 
 fn current_repo_root() -> OsString {
     super::resolve_repo_root(None).unwrap().into_os_string()
@@ -85,6 +498,40 @@ fn install_root_prefers_current_executable_runtime_over_path() {
     assert_eq!(root, expected_root);
 }
 
+#[test]
+fn install_root_falls_back_to_path_runtime() {
+    let _guard = ENV_LOCK.lock().unwrap();
+    let unique_suffix = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let work_dir = env::temp_dir().join(format!(
+        "makevn-install-path-test-{}-{unique_suffix}",
+        process::id()
+    ));
+    let path_root = work_dir.join("from-path");
+    fs::create_dir_all(path_root.join("bin")).unwrap();
+    fs::create_dir_all(path_root.join("libexec/makevn")).unwrap();
+    fs::write(path_root.join("bin/makevn"), b"").unwrap();
+    fs::write(path_root.join("libexec/makevn/backend.sh"), b"").unwrap();
+
+    let original_path = env::var_os("PATH");
+    let original_install_root = env::var_os("MAKEVN_INSTALL_ROOT");
+    env::remove_var("MAKEVN_INSTALL_ROOT");
+    env::set_var("PATH", path_root.join("bin"));
+    let root = install_root(&work_dir.join("missing/bin/makevn")).unwrap();
+    match original_path {
+        Some(path) => env::set_var("PATH", path),
+        None => env::remove_var("PATH"),
+    }
+    match original_install_root {
+        Some(value) => env::set_var("MAKEVN_INSTALL_ROOT", value),
+        None => env::remove_var("MAKEVN_INSTALL_ROOT"),
+    }
+    assert_eq!(root, fs::canonicalize(&path_root).unwrap());
+    fs::remove_dir_all(work_dir).unwrap();
+}
+
 #[cfg(unix)]
 #[test]
 fn derives_install_root_from_resolved_binary_symlink() {
@@ -145,10 +592,10 @@ fn installs_opencode_agent_idempotently_and_preserves_other_entries() {
     fs::create_dir_all(&work_dir).unwrap();
     let config_path = work_dir.join("opencode.jsonc");
     fs::write(
-            &config_path,
-            "{\n  // existing config\n  \"theme\": \"dark\",\n  \"mcp\": {\"other\": {\"enabled\": true}}\n}\n",
-        )
-        .unwrap();
+        &config_path,
+        "{\n  // existing config\n  \"theme\": \"dark\",\n  \"mcp\": {\"other\": {\"enabled\": true}}\n}\n",
+    )
+    .unwrap();
 
     assert_eq!(install_opencode_agent_at(&work_dir).unwrap(), config_path);
     let backup = fs::read_to_string(work_dir.join("opencode.jsonc.makevn.bak")).unwrap();
@@ -245,16 +692,16 @@ fn final_dashboard_omits_ok_on_failure() {
 #[test]
 fn final_dashboard_shows_failure_summary() {
     let summary = CommandSummary {
-            title: String::from("mutation"),
-            duration: String::from("9m 34s"),
-            log_path: Some(String::from("/repo/.makevn/logs/mutation.log")),
-            relative_log_path: Some(String::from(".makevn/logs/mutation.log")),
-            exit_code: 130,
-            detail_lines: vec![
-                String::from("WARNING: Mutation testing (PIT) is VERY slow. This can take 30+ minutes depending on project size."),
-                String::from("PIT runs the full test suite multiple times against generated mutants."),
-            ],
-        };
+        title: String::from("mutation"),
+        duration: String::from("9m 34s"),
+        log_path: Some(String::from("/repo/.makevn/logs/mutation.log")),
+        relative_log_path: Some(String::from(".makevn/logs/mutation.log")),
+        exit_code: 130,
+        detail_lines: vec![
+            String::from("WARNING: Mutation testing (PIT) is VERY slow. This can take 30+ minutes depending on project size."),
+            String::from("PIT runs the full test suite multiple times against generated mutants."),
+        ],
+    };
 
     let lines = super::final_dashboard_lines(Duration::from_secs(574), &[summary], false);
 
@@ -801,7 +1248,6 @@ fn all_top_level_commands_have_command_help() {
         "make",
         "uninstall",
         "profile",
-        "exec",
         "compile",
         "test-compile",
         "compile-tests",
@@ -1035,6 +1481,31 @@ fn tail_window_restarts_after_log_truncation() {
     assert_eq!(tail_window.lines, vec![String::from("third")]);
 
     fs::remove_file(log_path).unwrap();
+}
+
+#[test]
+fn tail_window_finish_flushes_pending_unterminated_line() {
+    let log_path = env::temp_dir().join(format!("makevn-tail-finish-{}.log", process::id()));
+    let mut tail_window = super::LogTailWindow::new(log_path);
+    tail_window.pending.extend_from_slice(b"last line");
+    tail_window.finish().unwrap();
+    assert_eq!(tail_window.lines, vec![String::from("last line")]);
+    assert!(tail_window.pending.is_empty());
+}
+
+#[test]
+fn tail_window_clear_resets_rendered_state() {
+    let mut tail_window = super::LogTailWindow::new(
+        env::temp_dir().join(format!("makevn-tail-clear-{}.log", process::id())),
+    );
+    tail_window.clear().unwrap();
+    assert_eq!(tail_window.rendered_lines, 0);
+
+    tail_window.rendered_lines = 2;
+    tail_window.rendered_line_widths = vec![1, 1];
+    tail_window.clear().unwrap();
+    assert_eq!(tail_window.rendered_lines, 0);
+    assert!(tail_window.rendered_line_widths.is_empty());
 }
 
 #[test]
@@ -1275,27 +1746,219 @@ fn handles_help_command_in_frontend() {
 }
 
 #[test]
-fn rejects_git_exec_command() {
-    let error = parse_invocation(vec![
-        OsString::from("exec"),
-        OsString::from("--"),
-        OsString::from("git"),
-        OsString::from("status"),
-    ])
-    .unwrap_err();
+fn metadata_parser_preserves_last_value_empty_fields_and_equals() {
+    let content = "ignored\nunknown=value\ncommand=old\ncommand=test\nrepo=/repo\ncwd=\nlog_path=/log=a\nrelative_log_path=log\ncommand_display=mvn test\ntitle=Test\n";
+    let metadata = super::parse_backend_metadata(content).unwrap();
+    assert_eq!(metadata.command, "test");
+    assert_eq!(metadata.cwd, "");
+    assert_eq!(metadata.log_path, "/log=a");
+    assert_eq!(metadata.context, None);
+    let with_context = format!("{content}context=old\ncontext=karate\n");
     assert_eq!(
-            error,
-            "makevn exec only supports Maven, Java, or repo-local executable commands; use native agent shell tools for git"
+        super::parse_backend_metadata(&with_context)
+            .unwrap()
+            .context
+            .as_deref(),
+        Some("karate")
+    );
+    for key in [
+        "command",
+        "repo",
+        "cwd",
+        "log_path",
+        "relative_log_path",
+        "command_display",
+        "title",
+    ] {
+        let incomplete = content
+            .lines()
+            .filter(|line| !line.starts_with(&format!("{key}=")))
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(
+            super::parse_backend_metadata(&incomplete).is_none(),
+            "missing {key}"
         );
+    }
 }
 
 #[test]
-fn accepts_repo_local_exec_command() {
-    let action = parse_invocation(vec![
-        OsString::from("exec"),
-        OsString::from("--"),
-        OsString::from("./script.sh"),
-    ])
-    .unwrap();
-    assert!(matches!(action, Action::DispatchToBackend(_)));
+fn command_option_consumption_preserves_passthrough_and_values() {
+    let mut passthrough = false;
+    let mut expects_value = false;
+    assert!(!super::consume_command_option(
+        &"compile".into(),
+        &mut passthrough,
+        &mut expects_value
+    ));
+    assert!(super::consume_command_option(
+        &"--name".into(),
+        &mut passthrough,
+        &mut expects_value
+    ));
+    assert!(expects_value);
+    assert!(super::consume_command_option(
+        &"verify".into(),
+        &mut passthrough,
+        &mut expects_value
+    ));
+    assert!(!expects_value);
+    assert!(super::consume_command_option(
+        &"--".into(),
+        &mut passthrough,
+        &mut expects_value
+    ));
+    assert!(super::consume_command_option(
+        &"verify".into(),
+        &mut passthrough,
+        &mut expects_value
+    ));
+    assert!(passthrough);
+    assert_eq!(
+        split_command_segments(vec!["make".into(), "install".into(), "doctor".into()]).unwrap(),
+        vec![
+            ("make".into(), vec!["install".into()]),
+            ("doctor".into(), vec![])
+        ]
+    );
+}
+
+#[test]
+fn backend_invocation_preserves_tail_compact_and_forwarding() {
+    let args = vec!["--tail".into(), "--".into(), "--tail".into()];
+    let invocation =
+        super::build_backend_invocation(Path::new("/repo"), "test".into(), args, false, true)
+            .unwrap();
+    assert!(invocation.tail && invocation.compact && invocation.frontend_loader);
+    assert_eq!(
+        invocation.args,
+        vec![
+            OsString::from("test"),
+            "--repo".into(),
+            "/repo".into(),
+            "--compact".into(),
+            "--".into(),
+            "--tail".into()
+        ]
+    );
+    let plain =
+        super::build_backend_invocation(Path::new("/repo"), "doctor".into(), vec![], false, false)
+            .unwrap();
+    assert!(!plain.tail && !plain.frontend_loader && !plain.compact);
+    assert!(super::build_backend_invocation(
+        Path::new("/repo"),
+        "doctor".into(),
+        vec![],
+        true,
+        false
+    )
+    .unwrap_err()
+    .contains("not doctor"));
+    assert!(super::build_backend_invocation(
+        Path::new("/repo"),
+        "unknown".into(),
+        vec![],
+        false,
+        false
+    )
+    .is_err());
+}
+
+#[test]
+fn opencode_mcp_configuration_rejects_nonobject_fields() {
+    let path = Path::new("config.json");
+    let mut config = serde_json::json!([]);
+    assert!(super::configure_opencode_mcp(&mut config, path)
+        .unwrap_err()
+        .contains("must be a JSON object"));
+    let mut config = serde_json::json!({"mcp": false});
+    assert_eq!(
+        super::configure_opencode_mcp(&mut config, path).unwrap_err(),
+        "OpenCode config field 'mcp' must be a JSON object"
+    );
+    let mut config = serde_json::json!({"other": 42, "mcp": {"existing": {"enabled": true}}});
+    super::configure_opencode_mcp(&mut config, path).unwrap();
+    assert_eq!(config["other"], 42);
+    assert_eq!(config["mcp"]["existing"]["enabled"], true);
+    assert_eq!(
+        config["mcp"]["makevn"]["command"],
+        serde_json::json!(["makevn-mcp"])
+    );
+}
+
+#[test]
+fn docker_connection_hint_predicate_requires_docker_for_generic_errors() {
+    for message in [
+        "cannot connect to the docker daemon",
+        "is the docker daemon running",
+        "docker: error during connect",
+    ] {
+        assert!(super::docker_connection_failed(message));
+    }
+    for message in [
+        "error during connect",
+        "docker build failed",
+        "maven failed",
+    ] {
+        assert!(!super::docker_connection_failed(message));
+    }
+}
+
+#[test]
+fn spinner_background_and_pulse_handle_load_and_blank_frames() {
+    assert_eq!(super::spinner_background(None, 0, 0.0), " ");
+    for load in [0.0, 0.01, 0.5, 1.0] {
+        assert!(super::spinner_pulse_style("38;2;72;84;112", 30, load).contains('·'));
+        let background = super::spinner_background(Some("38;2;72;84;112"), 30, load);
+        assert!(!background.is_empty());
+    }
+}
+
+#[test]
+fn maven_usage_lookup_keeps_all_supported_commands_and_options() {
+    for command in [
+        "compile",
+        "test-compile",
+        "compile-tests",
+        "validate",
+        "package",
+        "build",
+        "clean",
+        "verify-ut",
+        "verify-ut-coverage",
+        "verify-it",
+        "verify-it-coverage",
+        "verify",
+        "verify-changes",
+        "pr-verify",
+    ] {
+        let (usage, description, options) =
+            super::maven_command_help(command, "description", false).unwrap();
+        assert!(usage.contains(&format!(" {command} [--tail]")));
+        assert_eq!(description, "description");
+        assert_eq!(options.len(), 3);
+        assert_eq!(
+            super::maven_command_help(command, "description", true)
+                .unwrap()
+                .2
+                .len(),
+            4
+        );
+    }
+    assert!(super::maven_command_help("doctor", "description", false).is_none());
+}
+
+#[test]
+fn rejects_removed_exec_command() {
+    assert!(super::command_help("exec").is_none());
+    assert_eq!(
+        parse_invocation(
+            ["exec", "--", "mvn", "-v"]
+                .into_iter()
+                .map(OsString::from)
+                .collect()
+        )
+        .unwrap_err(),
+        "Unknown command: exec"
+    );
 }

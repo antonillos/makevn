@@ -143,7 +143,6 @@ Run command family:
 - `run-app`
 - `run-app-bg`
 - `stop-app`
-- `exec`
 - `run`
 - `docker-up`
 - `docker-down`

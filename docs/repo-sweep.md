@@ -77,7 +77,7 @@ outer automation must continue after the report is written.
 - `repo_failure`: makevn invoked the target command, but the repository command failed
 - `environment_missing`: unresolved JDK, Maven, Docker, or local prerequisite
 - `expected_unavailable`: formatter, Checkstyle, Karate, Docker compose, coverage, or PIT is not declared by the repo
-- `slow_path`: intentionally skipped or bounded expensive work such as mutation testing, full Maven lifecycle checks, or exploratory `exec` probes
+- `slow_path`: intentionally skipped or bounded expensive work such as mutation testing, full Maven lifecycle checks
 - `ok`: command completed successfully
 
 ## Cache Knobs

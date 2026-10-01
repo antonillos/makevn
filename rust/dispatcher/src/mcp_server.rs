@@ -1,11 +1,8 @@
-use std::io::{self, BufRead, Read, Write};
+use std::io::{self, BufRead, Write};
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::Command;
 use std::thread;
-use std::time::{Duration, Instant};
-
-#[cfg(unix)]
-use std::os::unix::process::CommandExt;
+use std::time::Instant;
 
 use serde_json::{json, Map, Value};
 
@@ -191,16 +188,6 @@ const CLEAN_GENERATED_CONTRACT_TARGETS: ToolOption = ToolOption {
         "Clean stale generated sources from code-generation plugins (Avro, OpenAPI, Protobuf, etc.)",
     required: false,
 };
-const EXEC_TIMEOUT_SECONDS: ToolOption = ToolOption {
-    name: "timeout-seconds",
-    ty: "number",
-    description: "Maximum seconds to wait for exec commands, default 120, range 1-900",
-    required: false,
-};
-
-const EXEC_DEFAULT_TIMEOUT_SECONDS: u64 = 120;
-const EXEC_MAX_TIMEOUT_SECONDS: u64 = 900;
-
 const TOOL_SPECS: &[ToolSpec] = &[
     ToolSpec { name: "doctor", description: "Inspect a Java/Maven repository. Run this first to understand the repo setup.", command: &["doctor"], options: &[COMMON_REPO, COMPACT] },
     ToolSpec { name: "init", description: "Initialize makevn in a repository. Creates .makevn/ configuration directory.", command: &["init"], options: &[COMMON_REPO, DRY_RUN, ToolOption { name: "force", ty: "boolean", description: "Force reinitialization", required: false }, COMPACT] },
@@ -243,7 +230,6 @@ const TOOL_SPECS: &[ToolSpec] = &[
     ToolSpec { name: "run_app_bg", description: "Run the detected application in the background.", command: &["run-app-bg"], options: &[COMMON_REPO] },
     ToolSpec { name: "stop_app", description: "Stop the background application started by makevn.", command: &["stop-app"], options: &[COMMON_REPO] },
     ToolSpec { name: "run", description: "Run the detected application using repository defaults.", command: &["run"], options: &[COMMON_REPO] },
-    ToolSpec { name: "exec", description: "Run a bounded Maven, Java, or repo-local executable command with makevn's resolved repository environment. Prefer typed makevn tools for supported workflows; use native agent shell/git tools for git and gh operations. Do not use for interactive commands.", command: &["exec"], options: &[COMMON_REPO, ToolOption { name: "command", ty: "string", description: "The command to execute, e.g. 'mvn -v'", required: true }, ToolOption { name: "context", ty: "string", description: "Execution context: 'code' or 'karate'", required: false }, EXEC_TIMEOUT_SECONDS, COMPACT] },
     ToolSpec { name: "jdk_current", description: "Show the currently resolved JDK version.", command: &["jdk", "current"], options: &[COMMON_REPO] },
     ToolSpec { name: "jdk_list", description: "List discovered JDK installations.", command: &["jdk", "list"], options: &[COMMON_REPO] },
     ToolSpec { name: "mutation", description: "Run PIT mutation testing. Detects pitest-maven plugin automatically. WARNING: Very slow (30+ min for large projects).", command: &["mutation"], options: &[COMMON_REPO, MODULE, VERBOSE, COMPACT] },
@@ -335,9 +321,7 @@ fn handle_tool_call(makevn_bin: &Path, params: &Value) -> Result<ToolCallResult,
     push_tool_flags(&mut cmd_args, spec, &args)?;
 
     let start = Instant::now();
-    let output = if tool_name == "exec" {
-        run_makevn_with_timeout(makevn_bin, &cmd_args, exec_timeout_seconds(&args)?)?
-    } else {
+    let output: ToolOutput = {
         Command::new(makevn_bin)
             .args(&cmd_args)
             .env("NO_COLOR", "1")
@@ -360,23 +344,14 @@ fn handle_tool_call(makevn_bin: &Path, params: &Value) -> Result<ToolCallResult,
         }
         result.push_str(String::from_utf8_lossy(&output.stderr).trim());
     }
-    if output.timed_out {
-        if !result.is_empty() {
-            result.push('\n');
-        }
-        result.push_str(&format!("timed out after {}s", output.timeout_seconds));
-    } else if !output.status.success() {
+    if !output.status.success() {
         if !result.is_empty() {
             result.push('\n');
         }
         result.push_str(&format!("exit code {}", output.status.code().unwrap_or(-1)));
     }
 
-    let exit_code = if output.timed_out {
-        -1
-    } else {
-        output.status.code().unwrap_or(-1)
-    };
+    let exit_code = output.status.code().unwrap_or(-1);
 
     Ok(ToolCallResult {
         output: result,
@@ -428,11 +403,17 @@ fn execute_single_step(
     push_tool_flags(&mut cmd_args, spec, &step_args)?;
 
     let start = Instant::now();
-    let output = if step_tool == "exec" {
-        run_makevn_with_timeout(makevn_bin, &cmd_args, exec_timeout_seconds(&step_args)?)?
-    } else {
+    let output = execute_tool_process(makevn_bin, &cmd_args)?;
+    let duration_ms = start.elapsed().as_millis();
+
+    let (result, exit_code) = format_tool_output(&output);
+    Ok((result, exit_code, duration_ms))
+}
+
+fn execute_tool_process(makevn_bin: &Path, cmd_args: &[String]) -> Result<ToolOutput, String> {
+    let output: ToolOutput = {
         Command::new(makevn_bin)
-            .args(&cmd_args)
+            .args(cmd_args)
             .env("NO_COLOR", "1")
             .env("MAKEVN_COMPACT_OUTPUT", "1")
             .env("MAKEVN_AGENT_OUTPUT", "1")
@@ -441,8 +422,10 @@ fn execute_single_step(
             .map_err(|e| format!("failed to execute makevn: {e}"))?
             .into()
     };
-    let duration_ms = start.elapsed().as_millis();
+    Ok(output)
+}
 
+fn format_tool_output(output: &ToolOutput) -> (String, i32) {
     let mut result = String::new();
     if !output.stdout.is_empty() {
         result.push_str(String::from_utf8_lossy(&output.stdout).trim());
@@ -453,20 +436,10 @@ fn execute_single_step(
         }
         result.push_str(String::from_utf8_lossy(&output.stderr).trim());
     }
-    if output.timed_out {
-        if !result.is_empty() {
-            result.push('\n');
-        }
-        result.push_str(&format!("timed out after {}s", output.timeout_seconds));
-    }
 
-    let exit_code = if output.timed_out {
-        -1
-    } else {
-        output.status.code().unwrap_or(-1)
-    };
+    let exit_code = output.status.code().unwrap_or(-1);
 
-    Ok((result, exit_code, duration_ms))
+    (result, exit_code)
 }
 
 fn handle_composite_run(makevn_bin: &Path, args: &Map<String, Value>) -> Result<String, String> {
@@ -488,37 +461,22 @@ fn handle_composite_run(makevn_bin: &Path, args: &Map<String, Value>) -> Result<
             .as_str()
             .ok_or_else(|| String::from("each step must have a 'tool' field"))?;
 
-        match execute_single_step(makevn_bin, step, global_repo) {
-            Ok((output, exit_code, duration_ms)) => {
-                let step_result = json!({
-                    "step": i,
-                    "tool": step_tool,
-                    "exitCode": exit_code,
-                    "durationMs": duration_ms,
-                    "output": output,
-                });
-                results.push(step_result);
-
-                if exit_code != 0 {
-                    overall_exit_code = exit_code;
-                    if fail_fast {
-                        break;
-                    }
-                }
-            }
-            Err(err) => {
-                let step_result = json!({
-                    "step": i,
-                    "tool": step_tool,
-                    "exitCode": -1,
-                    "durationMs": 0,
-                    "output": err,
-                });
-                results.push(step_result);
-                overall_exit_code = -1;
-                if fail_fast {
-                    break;
-                }
+        let (output, exit_code, duration_ms) =
+            match execute_single_step(makevn_bin, step, global_repo) {
+                Ok(result) => result,
+                Err(error) => (error, -1, 0),
+            };
+        results.push(json!({
+            "step": i,
+            "tool": step_tool,
+            "exitCode": exit_code,
+            "durationMs": duration_ms,
+            "output": output,
+        }));
+        if exit_code != 0 {
+            overall_exit_code = exit_code;
+            if fail_fast {
+                break;
             }
         }
     }
@@ -600,8 +558,6 @@ struct ToolOutput {
     stdout: Vec<u8>,
     stderr: Vec<u8>,
     status: std::process::ExitStatus,
-    timed_out: bool,
-    timeout_seconds: u64,
 }
 
 impl From<std::process::Output> for ToolOutput {
@@ -610,112 +566,8 @@ impl From<std::process::Output> for ToolOutput {
             stdout: output.stdout,
             stderr: output.stderr,
             status: output.status,
-            timed_out: false,
-            timeout_seconds: 0,
         }
     }
-}
-
-fn exec_timeout_seconds(args: &Map<String, Value>) -> Result<u64, String> {
-    let Some(value) = args.get("timeout-seconds") else {
-        return Ok(EXEC_DEFAULT_TIMEOUT_SECONDS);
-    };
-    let Some(number) = value.as_u64() else {
-        return Err(String::from("timeout-seconds must be an integer number"));
-    };
-    if !(1..=EXEC_MAX_TIMEOUT_SECONDS).contains(&number) {
-        return Err(format!(
-            "timeout-seconds must be between 1 and {EXEC_MAX_TIMEOUT_SECONDS}"
-        ));
-    }
-    Ok(number)
-}
-
-fn run_makevn_with_timeout(
-    makevn_bin: &Path,
-    cmd_args: &[String],
-    timeout_seconds: u64,
-) -> Result<ToolOutput, String> {
-    let mut command = Command::new(makevn_bin);
-    command
-        .args(cmd_args)
-        .env("NO_COLOR", "1")
-        .env("MAKEVN_COMPACT_OUTPUT", "1")
-        .env("MAKEVN_AGENT_OUTPUT", "1")
-        .env("CI", "1")
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
-    #[cfg(unix)]
-    command.process_group(0);
-
-    let mut child = command
-        .spawn()
-        .map_err(|e| format!("failed to execute makevn: {e}"))?;
-
-    let stdout = child
-        .stdout
-        .take()
-        .ok_or_else(|| String::from("failed to capture makevn stdout"))?;
-    let stderr = child
-        .stderr
-        .take()
-        .ok_or_else(|| String::from("failed to capture makevn stderr"))?;
-    let stdout_reader = thread::spawn(move || read_all(stdout));
-    let stderr_reader = thread::spawn(move || read_all(stderr));
-    let deadline = Instant::now() + Duration::from_secs(timeout_seconds);
-
-    let (status, timed_out) = loop {
-        if let Some(status) = child
-            .try_wait()
-            .map_err(|e| format!("failed to wait for makevn: {e}"))?
-        {
-            break (status, false);
-        }
-        if Instant::now() >= deadline {
-            kill_makevn_child(&mut child);
-            let status = child
-                .wait()
-                .map_err(|e| format!("failed to wait for timed out makevn: {e}"))?;
-            break (status, true);
-        }
-        thread::sleep(Duration::from_millis(50));
-    };
-
-    let stdout = stdout_reader
-        .join()
-        .map_err(|_| String::from("failed to join stdout reader"))??;
-    let stderr = stderr_reader
-        .join()
-        .map_err(|_| String::from("failed to join stderr reader"))??;
-
-    Ok(ToolOutput {
-        stdout,
-        stderr,
-        status,
-        timed_out,
-        timeout_seconds,
-    })
-}
-
-#[cfg(unix)]
-fn kill_makevn_child(child: &mut std::process::Child) {
-    let pid = child.id() as i32;
-    unsafe {
-        libc::killpg(pid, libc::SIGKILL);
-    }
-}
-
-#[cfg(not(unix))]
-fn kill_makevn_child(child: &mut std::process::Child) {
-    let _ = child.kill();
-}
-
-fn read_all(mut reader: impl Read) -> Result<Vec<u8>, String> {
-    let mut buffer = Vec::new();
-    reader
-        .read_to_end(&mut buffer)
-        .map_err(|e| format!("failed to read makevn output: {e}"))?;
-    Ok(buffer)
 }
 
 fn push_tool_flags(
@@ -734,51 +586,42 @@ fn push_tool_flags(
             continue;
         };
 
-        match option.name {
-            "command" => {
-                value
-                    .as_str()
-                    .filter(|s| !s.is_empty())
-                    .ok_or_else(|| String::from("command must be a non-empty string"))?;
-                continue;
-            }
-            "apply"
-            | "clean-generated-contract-targets"
-            | "dry-run"
-            | "fast"
-            | "force"
-            | "verbose" => {
-                if value.as_bool().unwrap_or(false) {
-                    cmd_args.push(format!("--{}", option.name));
-                }
-            }
-            "threshold" | "overall-threshold" | "max-warnings" | "wait-seconds" => {
-                if let Some(number) = value.as_f64() {
-                    cmd_args.push(format!("--{}", option.name));
-                    cmd_args.push(format_number(number));
-                }
-            }
-            "timeout-seconds" => {
-                exec_timeout_seconds(args)?;
-            }
-            "base" | "compose" | "context" | "jacoco-xml" | "module" | "name" | "tag" => {
-                if let Some(text) = value.as_str().filter(|s| !s.is_empty()) {
-                    cmd_args.push(format!("--{}", option.name));
-                    cmd_args.push(text.into());
-                }
-            }
-            _ => {}
-        }
-    }
-    if let Some(command) = args
-        .get("command")
-        .and_then(|value| value.as_str())
-        .filter(|s| !s.is_empty())
-    {
-        cmd_args.push("--".into());
-        cmd_args.extend(command.split_whitespace().map(str::to_owned));
+        push_tool_option(cmd_args, option.name, value)?;
     }
     Ok(())
+}
+
+fn push_tool_option(cmd_args: &mut Vec<String>, name: &str, value: &Value) -> Result<(), String> {
+    match name {
+        "apply" | "clean-generated-contract-targets" | "dry-run" | "fast" | "force" | "verbose" => {
+            push_boolean_option(cmd_args, name, value)
+        }
+        "threshold" | "overall-threshold" | "max-warnings" | "wait-seconds" => {
+            push_value_option(cmd_args, name, value.as_f64().map(format_number))
+        }
+        "base" | "compose" | "jacoco-xml" | "module" | "name" | "tag" => {
+            push_value_option(cmd_args, name, nonempty_option_text(value))
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
+fn nonempty_option_text(value: &Value) -> Option<String> {
+    value.as_str().filter(|s| !s.is_empty()).map(str::to_owned)
+}
+
+fn push_boolean_option(cmd_args: &mut Vec<String>, name: &str, value: &Value) {
+    if value.as_bool().unwrap_or(false) {
+        cmd_args.push(format!("--{name}"));
+    }
+}
+
+fn push_value_option(cmd_args: &mut Vec<String>, name: &str, value: Option<String>) {
+    if let Some(value) = value {
+        cmd_args.push(format!("--{name}"));
+        cmd_args.push(value);
+    }
 }
 
 fn format_number(number: f64) -> String {

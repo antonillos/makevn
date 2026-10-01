@@ -170,7 +170,6 @@ const COMMAND_SEQUENCE_BREAKERS: &[&str] = &[
     "--tail",
     "--compact",
     "--name",
-    "--context",
     "--threshold",
     "--tag",
     "--compose",
@@ -460,24 +459,26 @@ fn detect_local_opencode_configs(repo_root: &Path) -> Vec<PathBuf> {
 }
 
 fn install_opencode_agent_config(config_path: &Path) -> Result<PathBuf, String> {
-    if let Some(parent) = config_path.parent() {
-        fs::create_dir_all(parent).map_err(|error| {
-            format!(
-                "failed to create OpenCode config directory {}: {error}",
-                parent.display()
-            )
-        })?;
-    }
-    let original = if config_path.is_file() {
-        fs::read_to_string(config_path)
-            .map_err(|error| format!("failed to read {}: {error}", config_path.display()))?
-    } else {
-        String::from("{}")
-    };
+    let original = read_opencode_config(config_path)?;
     let mut config: serde_json::Value = serde_json::from_str(&original)
         .or_else(|_| serde_json::from_str(&strip_jsonc_comments(&original)))
         .map_err(|error| format!("failed to parse {}: {error}", config_path.display()))?;
     let original_config = config.clone();
+    configure_opencode_mcp(&mut config, config_path)?;
+    if config == original_config {
+        return Ok(config_path.to_path_buf());
+    }
+    let updated = serde_json::to_string_pretty(&config)
+        .map_err(|error| format!("failed to serialize OpenCode config: {error}"))?;
+
+    write_opencode_config(config_path, &updated)?;
+    Ok(config_path.to_path_buf())
+}
+
+fn configure_opencode_mcp(
+    config: &mut serde_json::Value,
+    config_path: &Path,
+) -> Result<(), String> {
     let root = config.as_object_mut().ok_or_else(|| {
         format!(
             "OpenCode config must be a JSON object: {}",
@@ -498,12 +499,28 @@ fn install_opencode_agent_config(config_path: &Path) -> Result<PathBuf, String> 
             "timeout": 900000
         }),
     );
-    if config == original_config {
-        return Ok(config_path.to_path_buf());
-    }
-    let updated = serde_json::to_string_pretty(&config)
-        .map_err(|error| format!("failed to serialize OpenCode config: {error}"))?;
+    Ok(())
+}
 
+fn read_opencode_config(config_path: &Path) -> Result<String, String> {
+    if let Some(parent) = config_path.parent() {
+        fs::create_dir_all(parent).map_err(|error| {
+            format!(
+                "failed to create OpenCode config directory {}: {error}",
+                parent.display()
+            )
+        })?;
+    }
+    let original = if config_path.is_file() {
+        fs::read_to_string(config_path)
+            .map_err(|error| format!("failed to read {}: {error}", config_path.display()))?
+    } else {
+        String::from("{}")
+    };
+    Ok(original)
+}
+
+fn write_opencode_config(config_path: &Path, updated: &str) -> Result<(), String> {
     if config_path.is_file() {
         let backup_path = PathBuf::from(format!("{}.makevn.bak", config_path.display()));
         fs::copy(config_path, &backup_path)
@@ -515,50 +532,63 @@ fn install_opencode_agent_config(config_path: &Path) -> Result<PathBuf, String> 
         .map_err(|error| format!("failed to verify {}: {error}", config_path.display()))?;
     serde_json::from_str::<serde_json::Value>(&written)
         .map_err(|error| format!("written OpenCode config is invalid: {error}"))?;
-    Ok(config_path.to_path_buf())
+    Ok(())
 }
 
 fn strip_jsonc_comments(input: &str) -> String {
-    let mut output = String::with_capacity(input.len());
     let bytes = input.as_bytes();
+    let mut output = Vec::with_capacity(bytes.len());
     let mut index = 0;
     while index < bytes.len() {
-        if bytes[index] == b'"' {
-            output.push('"');
+        match bytes[index] {
+            b'"' => {
+                let end = jsonc_string_end(bytes, index + 1);
+                output.extend_from_slice(&bytes[index..end]);
+                index = end;
+            }
+            b'/' if bytes.get(index + 1) == Some(&b'/') => {
+                index = jsonc_line_comment_end(bytes, index + 2);
+            }
+            b'/' if bytes.get(index + 1) == Some(&b'*') => {
+                index = jsonc_block_comment_end(bytes, index + 2);
+            }
+            byte => {
+                output.push(byte);
+                index += 1;
+            }
+        }
+    }
+    String::from_utf8(output).expect("removing ASCII comment tokens preserves UTF-8")
+}
+
+fn jsonc_string_end(bytes: &[u8], mut index: usize) -> usize {
+    while index < bytes.len() {
+        if bytes[index] == b'\\' && index + 1 < bytes.len() {
+            index += 2;
+        } else if bytes[index] == b'"' {
+            return index + 1;
+        } else {
             index += 1;
-            while index < bytes.len() {
-                let character = bytes[index] as char;
-                output.push(character);
-                if character == '\\' && index + 1 < bytes.len() {
-                    index += 1;
-                    output.push(bytes[index] as char);
-                } else if character == '"' {
-                    index += 1;
-                    break;
-                }
-                index += 1;
-            }
-            continue;
         }
-        if bytes[index] == b'/' && index + 1 < bytes.len() && bytes[index + 1] == b'/' {
-            index += 2;
-            while index < bytes.len() && bytes[index] != b'\n' {
-                index += 1;
-            }
-            continue;
-        }
-        if bytes[index] == b'/' && index + 1 < bytes.len() && bytes[index + 1] == b'*' {
-            index += 2;
-            while index + 1 < bytes.len() && !(bytes[index] == b'*' && bytes[index + 1] == b'/') {
-                index += 1;
-            }
-            index = (index + 2).min(bytes.len());
-            continue;
-        }
-        output.push(bytes[index] as char);
+    }
+    bytes.len()
+}
+
+fn jsonc_line_comment_end(bytes: &[u8], mut index: usize) -> usize {
+    while index < bytes.len() && bytes[index] != b'\n' {
         index += 1;
     }
-    output
+    index
+}
+
+fn jsonc_block_comment_end(bytes: &[u8], mut index: usize) -> usize {
+    while index + 1 < bytes.len() {
+        if bytes[index] == b'*' && bytes[index + 1] == b'/' {
+            return index + 2;
+        }
+        index += 1;
+    }
+    bytes.len()
 }
 
 fn parse_mcp_invocation(args: Vec<OsString>) -> Result<McpAction, String> {
@@ -595,40 +625,21 @@ fn split_command_segments(args: Vec<OsString>) -> Result<Vec<(OsString, Vec<OsSt
             continue;
         }
 
-        if forwarding_passthrough_args {
+        if consume_command_option(
+            &arg,
+            &mut forwarding_passthrough_args,
+            &mut option_expects_value,
+        ) {
             current_args.push(arg);
             continue;
         }
 
-        if option_expects_value {
-            current_args.push(arg);
-            option_expects_value = false;
-            continue;
-        }
-
-        if arg == OsString::from("--") {
-            forwarding_passthrough_args = true;
+        if is_make_subcommand(current_command.as_ref(), &current_args, &arg) {
             current_args.push(arg);
             continue;
         }
 
-        if command_option_takes_value(&arg) {
-            current_args.push(arg);
-            option_expects_value = true;
-            continue;
-        }
-
-        if current_command.as_ref() == Some(&OsString::from("make"))
-            && current_args.is_empty()
-            && (arg == OsString::from("install") || arg == OsString::from("uninstall"))
-        {
-            current_args.push(arg);
-            continue;
-        }
-
-        if is_top_level_command(&arg)
-            && !COMMAND_SEQUENCE_BREAKERS.contains(&arg.to_string_lossy().as_ref())
-        {
+        if starts_command_segment(&arg) {
             segments.push((current_command.take().unwrap(), current_args));
             current_command = Some(arg);
             current_args = Vec::new();
@@ -640,6 +651,37 @@ fn split_command_segments(args: Vec<OsString>) -> Result<Vec<(OsString, Vec<OsSt
 
     segments.push((current_command.unwrap(), current_args));
     Ok(segments)
+}
+
+fn consume_command_option(
+    arg: &OsString,
+    passthrough: &mut bool,
+    expects_value: &mut bool,
+) -> bool {
+    if *passthrough || *expects_value {
+        *expects_value = false;
+        return true;
+    }
+    if arg == "--" {
+        *passthrough = true;
+        return true;
+    }
+    if command_option_takes_value(arg) {
+        *expects_value = true;
+        return true;
+    }
+    false
+}
+
+fn is_make_subcommand(command: Option<&OsString>, args: &[OsString], arg: &OsString) -> bool {
+    command == Some(&OsString::from("make"))
+        && args.is_empty()
+        && (arg == "install" || arg == "uninstall")
+}
+
+fn starts_command_segment(arg: &OsString) -> bool {
+    is_top_level_command(arg)
+        && !COMMAND_SEQUENCE_BREAKERS.contains(&arg.to_string_lossy().as_ref())
 }
 
 fn split_trailing_global_options(
@@ -700,7 +742,6 @@ fn validate_command(
         | "crap" | "crap-changes" | "docker-up" | "docker-down" | "docker-ps" | "docker-stats"
         | "docker-ps-required" | "karate-docker-up" | "karate-docker-down" | "run-app"
         | "run-app-bg" | "stop-app" | "run" => Ok(CommandValidation::Valid),
-        "exec" => validate_exec_args(trailing_args),
         "doctor" => {
             if let Some(extra_arg) = trailing_args.first() {
                 Err(format!("Unknown doctor option: {}", Lossy(extra_arg)))
@@ -812,31 +853,6 @@ fn command_suggestion_suffix(command: &OsString) -> String {
     }
 }
 
-fn validate_exec_args(trailing_args: &[OsString]) -> Result<CommandValidation, String> {
-    let Some(separator_index) = trailing_args.iter().position(|arg| arg == "--") else {
-        return Err(String::from("exec requires '--' before the command"));
-    };
-
-    let delegated_args = &trailing_args[(separator_index + 1)..];
-    let Some(delegated_command) = delegated_args.first() else {
-        return Err(String::from("No command provided to exec"));
-    };
-
-    let command_text = delegated_command.to_string_lossy();
-    if exec_command_is_allowed(command_text.as_ref()) {
-        return Ok(CommandValidation::Valid);
-    }
-
-    Err(format!(
-        "makevn exec only supports Maven, Java, or repo-local executable commands; use native agent shell tools for {}",
-        Lossy(delegated_command)
-    ))
-}
-
-fn exec_command_is_allowed(command: &str) -> bool {
-    matches!(command, "mvn" | "mvnw" | "./mvnw" | "java") || command.starts_with("./")
-}
-
 fn build_backend_invocations(
     repo_override: Option<OsString>,
     command_segments: Vec<(OsString, Vec<OsString>)>,
@@ -858,33 +874,50 @@ fn build_backend_invocations(
     let mut backend_invocations = Vec::with_capacity(command_segments.len());
 
     for (command, trailing_args) in command_segments {
-        validate_command(&command, &trailing_args)?;
-        let frontend_loader = command_supports_frontend_loader(&command);
-        let (trailing_args, command_tail) = strip_frontend_tail_flag(&command, trailing_args)?;
-        if global_tail && !frontend_loader {
-            return Err(format!(
-                "--tail is only supported for managed-log run commands, not {}",
-                Lossy(&command)
-            ));
-        }
-        let tail = command_tail || (global_tail && frontend_loader);
-        let mut backend_args = Vec::with_capacity(trailing_args.len() + 3);
-        backend_args.push(command);
-        backend_args.push(OsString::from("--repo"));
-        backend_args.push(repo_root.clone().into_os_string());
-        if global_compact {
-            backend_args.push(OsString::from("--compact"));
-        }
-        backend_args.extend(trailing_args);
-        backend_invocations.push(BackendInvocation {
-            args: backend_args,
-            frontend_loader,
-            tail,
-            compact: global_compact,
-        });
+        backend_invocations.push(build_backend_invocation(
+            &repo_root,
+            command,
+            trailing_args,
+            global_tail,
+            global_compact,
+        )?);
     }
 
     Ok(backend_invocations)
+}
+
+fn build_backend_invocation(
+    repo_root: &Path,
+    command: OsString,
+    trailing_args: Vec<OsString>,
+    global_tail: bool,
+    global_compact: bool,
+) -> Result<BackendInvocation, String> {
+    validate_command(&command, &trailing_args)?;
+    let frontend_loader = command_supports_frontend_loader(&command);
+    let (trailing_args, command_tail) = strip_frontend_tail_flag(&command, trailing_args)?;
+    if global_tail && !frontend_loader {
+        return Err(format!(
+            "--tail is only supported for managed-log run commands, not {}",
+            Lossy(&command)
+        ));
+    }
+    // Unsupported global tail was rejected above.
+    let tail = command_tail || global_tail;
+    let mut backend_args = Vec::with_capacity(trailing_args.len() + 3);
+    backend_args.push(command);
+    backend_args.push(OsString::from("--repo"));
+    backend_args.push(repo_root.as_os_str().to_owned());
+    if global_compact {
+        backend_args.push(OsString::from("--compact"));
+    }
+    backend_args.extend(trailing_args);
+    Ok(BackendInvocation {
+        args: backend_args,
+        frontend_loader,
+        tail,
+        compact: global_compact,
+    })
 }
 
 fn is_top_level_command(arg: &OsString) -> bool {
@@ -896,7 +929,6 @@ fn is_top_level_command(arg: &OsString) -> bool {
             | "make"
             | "uninstall"
             | "profile"
-            | "exec"
             | "compile"
             | "test-compile"
             | "compile-tests"
@@ -941,7 +973,6 @@ fn command_option_takes_value(arg: &OsString) -> bool {
     matches!(
         arg.to_string_lossy().as_ref(),
         "--name"
-            | "--context"
             | "--threshold"
             | "--max-warnings"
             | "--jacoco-xml"
@@ -1108,7 +1139,9 @@ fn dispatch_backend_invocations(
         let use_frontend_loader = backend_invocation.frontend_loader
             && !backend_invocation.compact
             && frontend_loader_is_available();
-        let metadata_file = if use_frontend_loader {
+        // Managed-log commands expose backend metadata, including in compact
+        // runs. State commands reject this internal option.
+        let metadata_file = if backend_invocation.frontend_loader {
             let metadata_file = BackendMetadataFile::new()?;
             insert_backend_option(
                 &mut backend_invocation.args,
@@ -1163,16 +1196,19 @@ fn dispatch_backend_invocations(
         } else {
             let elapsed_before = started_at.elapsed();
             let exit_code = run_backend_command(command, backend_path)?;
+            let metadata = metadata_file
+                .as_ref()
+                .map(|metadata_file| read_backend_metadata(metadata_file.path()))
+                .transpose()?
+                .flatten();
             BackendRunResult {
                 exit_code,
-                summary: CommandSummary {
-                    title: fallback_title.clone(),
-                    duration: format_duration(started_at.elapsed().saturating_sub(elapsed_before)),
-                    log_path: None,
-                    relative_log_path: None,
+                summary: summary_from_backend_metadata(
                     exit_code,
-                    detail_lines: Vec::new(),
-                },
+                    format_duration(started_at.elapsed().saturating_sub(elapsed_before)),
+                    &fallback_title,
+                    metadata.as_ref(),
+                ),
             }
         };
 
@@ -1266,8 +1302,36 @@ fn format_failure_summary(
     summary
 }
 
+fn summary_from_backend_metadata(
+    exit_code: i32,
+    duration: String,
+    fallback_title: &str,
+    metadata: Option<&BackendMetadata>,
+) -> CommandSummary {
+    CommandSummary {
+        title: metadata
+            .map(|metadata| metadata.title.clone())
+            .unwrap_or_else(|| fallback_title.to_owned()),
+        duration,
+        log_path: metadata.map(|metadata| metadata.log_path.clone()),
+        relative_log_path: metadata.map(|metadata| metadata.relative_log_path.clone()),
+        exit_code,
+        detail_lines: Vec::new(),
+    }
+}
+
+fn docker_connection_failed(lower: &str) -> bool {
+    lower.contains("cannot connect to the docker daemon")
+        || lower.contains("is the docker daemon running")
+        || lower.contains("error during connect") && lower.contains("docker")
+}
+
 fn read_failure_hint(log_path: Option<&str>) -> Option<String> {
     let content = fs::read_to_string(log_path?).ok()?;
+    let lower = content.to_ascii_lowercase();
+    if docker_connection_failed(&lower) {
+        return Some("Docker is unavailable. Start Docker Desktop or your Docker runtime (e.g. `colima start`), check `docker info`, then retry".to_owned());
+    }
     for line in content.lines() {
         let trimmed = line.trim();
         if let Some(error) = trimmed.strip_prefix("Error: ") {
@@ -1639,32 +1703,14 @@ fn read_backend_metadata(metadata_path: &Path) -> Result<Option<BackendMetadata>
         }
     };
 
-    let mut command = None;
-    let mut repo = None;
-    let mut cwd = None;
-    let mut log_path = None;
-    let mut relative_log_path = None;
-    let mut command_display = None;
-    let mut title = None;
-    let mut context = None;
+    Ok(parse_backend_metadata(&content))
+}
 
-    for line in content.lines() {
-        let Some((key, value)) = line.split_once('=') else {
-            continue;
-        };
-        match key {
-            "command" => command = Some(value.to_owned()),
-            "repo" => repo = Some(value.to_owned()),
-            "cwd" => cwd = Some(value.to_owned()),
-            "log_path" => log_path = Some(value.to_owned()),
-            "relative_log_path" => relative_log_path = Some(value.to_owned()),
-            "command_display" => command_display = Some(value.to_owned()),
-            "title" => title = Some(value.to_owned()),
-            "context" => context = Some(value.to_owned()),
-            _ => {}
-        }
-    }
-
+fn parse_backend_metadata(content: &str) -> Option<BackendMetadata> {
+    let fields: std::collections::HashMap<_, _> = content
+        .lines()
+        .filter_map(|line| line.split_once('='))
+        .collect();
     let (
         Some(command),
         Some(repo),
@@ -1674,28 +1720,27 @@ fn read_backend_metadata(metadata_path: &Path) -> Result<Option<BackendMetadata>
         Some(command_display),
         Some(title),
     ) = (
-        command,
-        repo,
-        cwd,
-        log_path,
-        relative_log_path,
-        command_display,
-        title,
+        fields.get("command"),
+        fields.get("repo"),
+        fields.get("cwd"),
+        fields.get("log_path"),
+        fields.get("relative_log_path"),
+        fields.get("command_display"),
+        fields.get("title"),
     )
     else {
-        return Ok(None);
+        return None;
     };
-
-    Ok(Some(BackendMetadata {
-        command,
-        repo,
-        cwd,
-        log_path,
-        relative_log_path,
-        command_display,
-        title,
-        context,
-    }))
+    Some(BackendMetadata {
+        command: (*command).to_owned(),
+        repo: (*repo).to_owned(),
+        cwd: (*cwd).to_owned(),
+        log_path: (*log_path).to_owned(),
+        relative_log_path: (*relative_log_path).to_owned(),
+        command_display: (*command_display).to_owned(),
+        title: (*title).to_owned(),
+        context: fields.get("context").map(|value| (*value).to_owned()),
+    })
 }
 
 fn backend_header_line(metadata: &BackendMetadata) -> String {
@@ -2365,20 +2410,24 @@ impl LogTailWindow {
             return Ok(());
         }
 
-        write!(io::stdout(), "\u{1b}[{}A", rows)?;
-        for index in 0..=rows {
-            write!(io::stdout(), "\r\u{1b}[2K")?;
-            if index < rows {
-                write!(io::stdout(), "\n")?;
-            }
-        }
-        write!(io::stdout(), "\u{1b}[{}A\r", rows)?;
-        io::stdout().flush()?;
+        clear_tail_rows(&mut io::stdout(), rows)?;
         self.rendered_lines = 0;
         self.rendered_width = terminal_width().max(8);
         self.rendered_line_widths.clear();
         Ok(())
     }
+}
+
+fn clear_tail_rows(writer: &mut impl Write, rows: usize) -> io::Result<()> {
+    write!(writer, "\u{1b}[{}A", rows)?;
+    for index in 0..=rows {
+        write!(writer, "\r\u{1b}[2K")?;
+        if index < rows {
+            write!(writer, "\n")?;
+        }
+    }
+    write!(writer, "\u{1b}[{}A\r", rows)?;
+    writer.flush()
 }
 
 fn physical_rows_for_width(line_widths: &[usize], terminal_width: usize) -> usize {
@@ -2416,11 +2465,6 @@ fn interpolate_color(cool: Rgb, warm: Rgb, load: f32) -> Rgb {
 
 fn rgb_code(color: Rgb) -> String {
     format!("38;2;{};{};{}", color.r, color.g, color.b)
-}
-
-#[cfg(test)]
-fn spinner_kitt_frame(frame_index: usize) -> String {
-    spinner_kitt_frame_with_load(frame_index, 0.0)
 }
 
 fn spinner_kitt_frame_with_load(frame_index: usize, load: f32) -> String {
@@ -2515,26 +2559,33 @@ fn spinner_kitt_frame_with_load(frame_index: usize, load: f32) -> String {
         if color_index >= 0 && (color_index as usize) < trail_colors.len() {
             output.push_str(&style(&rgb_code(trail_colors[color_index as usize]), "■"));
         } else {
-            match pulse_codes[frame_index % pulse_codes.len()] {
-                Some(code) if use_color() => {
-                    if load <= 0.01 {
-                        output.push_str(&style(code, "·"));
-                    } else {
-                        let cool = pulse_color(frame_index % pulse_codes.len());
-                        let warm = Rgb::new(72, 54, 48);
-                        output.push_str(&style(
-                            &rgb_code(interpolate_color(cool, warm, load * 0.55)),
-                            "·",
-                        ));
-                    }
-                }
-                Some(_) => output.push('.'),
-                None => output.push(' '),
-            }
+            output.push_str(&spinner_background(
+                pulse_codes[frame_index % pulse_codes.len()],
+                frame_index % pulse_codes.len(),
+                load,
+            ));
         }
     }
 
     output
+}
+
+fn spinner_background(code: Option<&str>, pulse_index: usize, load: f32) -> String {
+    match code {
+        Some(code) if use_color() => spinner_pulse_style(code, pulse_index, load),
+        Some(_) => ".".to_owned(),
+        None => " ".to_owned(),
+    }
+}
+
+fn spinner_pulse_style(code: &str, pulse_index: usize, load: f32) -> String {
+    if load <= 0.01 {
+        style(code, "·")
+    } else {
+        let cool = pulse_color(pulse_index);
+        let warm = Rgb::new(72, 54, 48);
+        style(&rgb_code(interpolate_color(cool, warm, load * 0.55)), "·")
+    }
 }
 
 fn pulse_color(index: usize) -> Rgb {
@@ -2606,21 +2657,10 @@ impl SpinnerRenderer {
     fn poll_input(&mut self) -> io::Result<InputEvent> {
         let mut buffer = [0_u8; 1];
         match self.tty.read(&mut buffer) {
-            Ok(1) if buffer[0] == 0x1b => {
-                let now = Instant::now();
-                if self
-                    .second_escape_deadline
-                    .is_some_and(|deadline| deadline > now)
-                {
-                    self.second_escape_deadline = None;
-                    return Ok(InputEvent::Interrupt);
-                }
-                self.second_escape_deadline = Some(now + Duration::from_secs(3));
-                Ok(InputEvent::None)
-            }
-            Ok(1) if buffer[0] == b't' || buffer[0] == b'T' => Ok(InputEvent::StartTail),
-            Ok(1) if buffer[0] == b'+' => Ok(InputEvent::IncreaseLines),
-            Ok(1) if buffer[0] == b'-' => Ok(InputEvent::DecreaseLines),
+            Ok(1) => Ok(decode_spinner_input(
+                buffer[0],
+                &mut self.second_escape_deadline,
+            )),
             Ok(_) => Ok(InputEvent::None),
             Err(error) if error.kind() == io::ErrorKind::WouldBlock => Ok(InputEvent::None),
             Err(error) => Err(error),
@@ -2654,10 +2694,7 @@ impl SpinnerRenderer {
     }
 
     fn frame_line_with_hint(&mut self, pid: u32, hint: &str) -> io::Result<String> {
-        let now = Instant::now();
-        if self.next_frame_at > now {
-            thread::sleep(self.next_frame_at - now);
-        }
+        wait_until_next_frame(self.next_frame_at);
 
         let resource_sample = self.resource_sampler.sample(pid).unwrap_or(None);
         self.sync_resource_history(resource_sample.as_ref());
@@ -2673,11 +2710,7 @@ impl SpinnerRenderer {
                 )
             })
             .unwrap_or_default();
-        let suffix = if resource_text.is_empty() {
-            hint.to_owned()
-        } else {
-            format!("{} {} {}", resource_text, dim_text("|"), hint)
-        };
+        let suffix = spinner_resource_suffix(&resource_text, hint);
 
         let line = format!(
             "{}  {}",
@@ -2698,10 +2731,7 @@ impl SpinnerRenderer {
         metadata: &BackendMetadata,
         hint: &str,
     ) -> io::Result<()> {
-        let now = Instant::now();
-        if self.next_frame_at > now {
-            thread::sleep(self.next_frame_at - now);
-        }
+        wait_until_next_frame(self.next_frame_at);
 
         let resource_sample = self.resource_sampler.sample(pid).unwrap_or(None);
         self.sync_resource_history(resource_sample.as_ref());
@@ -2717,11 +2747,7 @@ impl SpinnerRenderer {
                 )
             })
             .unwrap_or_default();
-        let spinner_suffix = if resource_text.is_empty() {
-            hint.to_owned()
-        } else {
-            format!("{} {} {}", resource_text, dim_text("|"), hint)
-        };
+        let spinner_suffix = spinner_resource_suffix(&resource_text, hint);
 
         let lines = dashboard_output_lines(
             global_elapsed,
@@ -2766,14 +2792,11 @@ impl SpinnerRenderer {
     }
 
     fn sync_resource_history(&mut self, sample: Option<&ResourceSample>) {
-        let revision = self.resource_sampler.revision();
-        if revision == self.resource_history_revision {
-            return;
-        }
-        self.resource_history_revision = revision;
-        if let Some(sample) = sample {
-            self.resource_history.push(*sample);
-        }
+        self.resource_history_revision = self.resource_history.sync_sample(
+            self.resource_history_revision,
+            self.resource_sampler.revision(),
+            sample,
+        );
     }
 
     fn frame_interval(&self) -> Duration {
@@ -2825,6 +2848,32 @@ impl SpinnerRenderer {
         }
         self.rendered_block_line_widths.clear();
         Ok(())
+    }
+}
+
+fn decode_spinner_input(byte: u8, escape_deadline: &mut Option<Instant>) -> InputEvent {
+    match byte {
+        0x1b => {
+            let now = Instant::now();
+            if escape_deadline.is_some_and(|deadline| deadline > now) {
+                *escape_deadline = None;
+                InputEvent::Interrupt
+            } else {
+                *escape_deadline = Some(now + Duration::from_secs(3));
+                InputEvent::None
+            }
+        }
+        b't' | b'T' => InputEvent::StartTail,
+        b'+' => InputEvent::IncreaseLines,
+        b'-' => InputEvent::DecreaseLines,
+        _ => InputEvent::None,
+    }
+}
+
+fn wait_until_next_frame(next_frame_at: Instant) {
+    let now = Instant::now();
+    if next_frame_at > now {
+        thread::sleep(next_frame_at - now);
     }
 }
 
@@ -2938,39 +2987,55 @@ impl ResourceHistory {
         push_ring_value(&mut self.cpu_percent, sample.cpu_percent, Self::WIDTH);
         push_ring_value(&mut self.rss_kb, sample.rss_kb, Self::WIDTH);
     }
+
+    fn sync_sample(
+        &mut self,
+        previous_revision: u64,
+        revision: u64,
+        sample: Option<&ResourceSample>,
+    ) -> u64 {
+        if revision == previous_revision {
+            return previous_revision;
+        }
+        if let Some(sample) = sample {
+            self.push(*sample);
+        }
+        revision
+    }
+}
+
+fn spinner_resource_suffix(resource_text: &str, hint: &str) -> String {
+    if resource_text.is_empty() {
+        hint.to_owned()
+    } else {
+        format!("{} {} {}", resource_text, dim_text("|"), hint)
+    }
 }
 
 fn read_resource_sample(root_pid: u32) -> io::Result<ResourceSample> {
     let output = process::Command::new("ps")
         .args(["-axo", "pid=,ppid=,%cpu=,rss="])
         .output()?;
-    if !output.status.success() {
-        return Ok(ResourceSample {
+    Ok(parse_ps_resource_sample(
+        root_pid,
+        output.status.success(),
+        &String::from_utf8_lossy(&output.stdout),
+    ))
+}
+
+fn parse_ps_resource_sample(root_pid: u32, success: bool, stdout: &str) -> ResourceSample {
+    if !success {
+        return ResourceSample {
             cpu_percent: 0.0,
             rss_kb: 0,
-        });
+        };
     }
 
-    let stdout = String::from_utf8_lossy(&output.stdout);
     let mut parent_by_pid = HashMap::new();
     let mut metrics_by_pid = HashMap::new();
 
     for line in stdout.lines() {
-        let fields = line.split_whitespace().collect::<Vec<_>>();
-        if fields.len() != 4 {
-            continue;
-        }
-
-        let Ok(pid) = fields[0].parse::<u32>() else {
-            continue;
-        };
-        let Ok(ppid) = fields[1].parse::<u32>() else {
-            continue;
-        };
-        let Ok(cpu_percent) = fields[2].replace(',', ".").parse::<f32>() else {
-            continue;
-        };
-        let Ok(rss_kb) = fields[3].parse::<u64>() else {
+        let Some((pid, ppid, cpu_percent, rss_kb)) = parse_ps_resource_row(line) else {
             continue;
         };
 
@@ -2978,11 +3043,19 @@ fn read_resource_sample(root_pid: u32) -> io::Result<ResourceSample> {
         metrics_by_pid.insert(pid, (cpu_percent, rss_kb));
     }
 
+    sum_descendant_metrics(root_pid, &parent_by_pid, &metrics_by_pid)
+}
+
+fn sum_descendant_metrics(
+    root_pid: u32,
+    parent_by_pid: &HashMap<u32, u32>,
+    metrics_by_pid: &HashMap<u32, (f32, u64)>,
+) -> ResourceSample {
     let mut descendants = HashSet::from([root_pid]);
     let mut changed = true;
     while changed {
         changed = false;
-        for (&pid, &ppid) in &parent_by_pid {
+        for (&pid, &ppid) in parent_by_pid {
             if descendants.contains(&ppid) && descendants.insert(pid) {
                 changed = true;
             }
@@ -2998,11 +3071,29 @@ fn read_resource_sample(root_pid: u32) -> io::Result<ResourceSample> {
         }
     }
 
-    Ok(ResourceSample {
+    ResourceSample {
         cpu_percent,
         rss_kb,
-    })
+    }
 }
+
+fn parse_ps_resource_row(line: &str) -> Option<(u32, u32, f32, u64)> {
+    let fields = line.split_whitespace().collect::<Vec<_>>();
+    if fields.len() != 4 {
+        return None;
+    }
+
+    Some((
+        fields[0].parse().ok()?,
+        fields[1].parse().ok()?,
+        fields[2].replace(',', ".").parse().ok()?,
+        fields[3].parse().ok()?,
+    ))
+}
+
+#[cfg(test)]
+#[path = "resource_sample_test.rs"]
+mod resource_sample_test;
 
 fn format_resource_metrics(
     sample: &ResourceSample,
@@ -3017,15 +3108,6 @@ fn format_resource_metrics(
         adaptive_metric_text(&cpu_text, cpu_load),
         dim_text("|"),
         adaptive_metric_text(&ram_text, ram_load)
-    )
-}
-
-#[cfg(test)]
-fn format_resource_sample(sample: &ResourceSample, history: &ResourceHistory) -> String {
-    format!(
-        "{} | {}",
-        format_resource_sample_cpu(sample, history),
-        format_resource_sample_ram(sample, history)
     )
 }
 
@@ -3321,7 +3403,6 @@ fn command_help(command: &str) -> Option<(&'static str, &'static str, &'static [
         "uninstall" => Some(("makevn [--repo PATH] uninstall [--dry-run]", "Remove makevn local repository state.", &["--dry-run  Show what would be removed"])),
         "refresh" => Some(("makevn [--repo PATH] refresh [--dry-run]", "Reinitialize makevn state from scratch. Removes stale state and runs init --force.", &["--dry-run  Show what would change without writing files"])),
         "profile" => Some(("makevn [--repo PATH] profile refresh", "Refresh detected repository profile information.", &[])),
-        "exec" => Some(("makevn [--repo PATH] exec [--context code|karate] -- COMMAND [ARGS...]", "Run an arbitrary command with makevn's resolved environment.", &["--context  Java context to use: code or karate"])),
         "compile" => maven_command_help("compile", "Compile project sources.", false),
         "test-compile" => maven_command_help("test-compile", "Compile project tests.", false),
         "compile-tests" => maven_command_help("compile-tests", "Compile project tests.", false),
@@ -3368,39 +3449,23 @@ fn maven_command_help(
     description: &'static str,
     clean_contract: bool,
 ) -> Option<(&'static str, &'static str, &'static [&'static str])> {
-    let usage = match command {
-        "compile" => "makevn [--repo PATH] [--compact] compile [--tail] [-- EXTRA_MAVEN_ARGS...]",
-        "test-compile" => {
-            "makevn [--repo PATH] [--compact] test-compile [--tail] [-- EXTRA_MAVEN_ARGS...]"
-        }
-        "compile-tests" => {
-            "makevn [--repo PATH] [--compact] compile-tests [--tail] [-- EXTRA_MAVEN_ARGS...]"
-        }
-        "validate" => "makevn [--repo PATH] [--compact] validate [--tail] [-- EXTRA_MAVEN_ARGS...]",
-        "package" => "makevn [--repo PATH] [--compact] package [--tail] [-- EXTRA_MAVEN_ARGS...]",
-        "build" => "makevn [--repo PATH] [--compact] build [--tail] [-- EXTRA_MAVEN_ARGS...]",
-        "clean" => "makevn [--repo PATH] [--compact] clean [--tail] [-- EXTRA_MAVEN_ARGS...]",
-        "verify-ut" => {
-            "makevn [--repo PATH] [--compact] verify-ut [--tail] [--clean-generated-contract-targets] [-- EXTRA_MAVEN_ARGS...]"
-        }
-        "verify-ut-coverage" => {
-            "makevn [--repo PATH] [--compact] verify-ut-coverage [--tail] [--clean-generated-contract-targets] [-- EXTRA_MAVEN_ARGS...]"
-        }
-        "verify-it" => {
-            "makevn [--repo PATH] [--compact] verify-it [--tail] [--clean-generated-contract-targets] [-- EXTRA_MAVEN_ARGS...]"
-        }
-        "verify-it-coverage" => {
-            "makevn [--repo PATH] [--compact] verify-it-coverage [--tail] [--clean-generated-contract-targets] [-- EXTRA_MAVEN_ARGS...]"
-        }
-        "verify" => "makevn [--repo PATH] [--compact] verify [--tail] [--clean-generated-contract-targets] [-- EXTRA_MAVEN_ARGS...]",
-        "verify-changes" => {
-            "makevn [--repo PATH] [--compact] verify-changes [--tail] [--clean-generated-contract-targets] [-- EXTRA_MAVEN_ARGS...]"
-        }
-        "pr-verify" => {
-            "makevn [--repo PATH] [--compact] pr-verify [--tail] [-- EXTRA_MAVEN_ARGS...]"
-        }
-        _ => return None,
-    };
+    let usages = [
+        ("compile", "makevn [--repo PATH] [--compact] compile [--tail] [-- EXTRA_MAVEN_ARGS...]"),
+        ("test-compile", "makevn [--repo PATH] [--compact] test-compile [--tail] [-- EXTRA_MAVEN_ARGS...]"),
+        ("compile-tests", "makevn [--repo PATH] [--compact] compile-tests [--tail] [-- EXTRA_MAVEN_ARGS...]"),
+        ("validate", "makevn [--repo PATH] [--compact] validate [--tail] [-- EXTRA_MAVEN_ARGS...]"),
+        ("package", "makevn [--repo PATH] [--compact] package [--tail] [-- EXTRA_MAVEN_ARGS...]"),
+        ("build", "makevn [--repo PATH] [--compact] build [--tail] [-- EXTRA_MAVEN_ARGS...]"),
+        ("clean", "makevn [--repo PATH] [--compact] clean [--tail] [-- EXTRA_MAVEN_ARGS...]"),
+        ("verify-ut", "makevn [--repo PATH] [--compact] verify-ut [--tail] [--clean-generated-contract-targets] [-- EXTRA_MAVEN_ARGS...]"),
+        ("verify-ut-coverage", "makevn [--repo PATH] [--compact] verify-ut-coverage [--tail] [--clean-generated-contract-targets] [-- EXTRA_MAVEN_ARGS...]"),
+        ("verify-it", "makevn [--repo PATH] [--compact] verify-it [--tail] [--clean-generated-contract-targets] [-- EXTRA_MAVEN_ARGS...]"),
+        ("verify-it-coverage", "makevn [--repo PATH] [--compact] verify-it-coverage [--tail] [--clean-generated-contract-targets] [-- EXTRA_MAVEN_ARGS...]"),
+        ("verify", "makevn [--repo PATH] [--compact] verify [--tail] [--clean-generated-contract-targets] [-- EXTRA_MAVEN_ARGS...]"),
+        ("verify-changes", "makevn [--repo PATH] [--compact] verify-changes [--tail] [--clean-generated-contract-targets] [-- EXTRA_MAVEN_ARGS...]"),
+        ("pr-verify", "makevn [--repo PATH] [--compact] pr-verify [--tail] [-- EXTRA_MAVEN_ARGS...]"),
+    ];
+    let usage = usages.iter().find(|(name, _)| *name == command)?.1;
     let base_options = &[
         "--tail     Start in interactive log tail mode",
         "--compact  Use compact non-interactive output",
@@ -3507,7 +3572,6 @@ fn print_help(with_header: bool) {
     println!("  makevn [--repo PATH] run-app-bg");
     println!("  makevn [--repo PATH] stop-app");
     println!("  makevn [--repo PATH] run");
-    println!("  makevn [--repo PATH] exec [--context code|karate] -- COMMAND [ARGS...]");
     println!("  makevn [--repo PATH] jdk current");
     println!("  makevn [--repo PATH] jdk list");
     println!();
@@ -3546,7 +3610,6 @@ fn print_help(with_header: bool) {
     println!("  makevn karate-test --tag @smoke");
     println!("  makevn run-app-bg");
     println!("  makevn stop-app");
-    println!("  makevn exec -- mvn -q -v");
     println!("  make -f .makevn/makevn.mk vn-doctor");
     println!();
     println!("Notes:");

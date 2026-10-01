@@ -825,40 +825,6 @@ EOF
   [[ "${output}" == *"Resolved code JAVA_HOME: ${java17_home}"* ]] || fail "doctor should resolve to the lowest compatible newer JDK when no exact match is installed"
 }
 
-test_exec_uses_compatible_newer_java_home() {
-  local repo="${TMP_ROOT}/exec-compatible-java"
-  local fake_home_root="${TMP_ROOT}/fake-exec-home"
-  local java17_home="${fake_home_root}/.sdkman/candidates/java/17.0.9-tem"
-
-  mkdir -p "${repo}" "${java17_home}/bin"
-  cat > "${repo}/pom.xml" <<'EOF'
-<project>
-  <modelVersion>4.0.0</modelVersion>
-  <groupId>com.example</groupId>
-  <artifactId>sample</artifactId>
-  <version>1.0.0</version>
-  <properties>
-    <maven.compiler.source>6</maven.compiler.source>
-    <maven.compiler.target>6</maven.compiler.target>
-  </properties>
-</project>
-EOF
-  cat > "${java17_home}/bin/java" <<'EOF'
-#!/usr/bin/env bash
-printf 'openjdk version "17.0.9" 2024-01-01\n' >&2
-EOF
-  chmod +x "${java17_home}/bin/java"
-  cat > "${repo}/print-java-home.sh" <<'EOF'
-#!/usr/bin/env bash
-printf '%s\n' "${JAVA_HOME}"
-EOF
-  chmod +x "${repo}/print-java-home.sh"
-
-  JAVA_HOME= MAKEVN_JDK_CANDIDATE_BASES="${fake_home_root}/.sdkman/candidates/java" HOME="${fake_home_root}" ${CLI} --repo "${repo}" exec -- ./print-java-home.sh > "${repo}/exec.out"
-
-  assert_contains "${repo}/exec.out" "${java17_home}"
-}
-
 test_doctor_reports_compatible_newer_tool_versions_java_home() {
   local repo="${TMP_ROOT}/doctor-compatible-tool-versions-java"
   local fake_home_root="${TMP_ROOT}/fake-doctor-tool-versions-home"
@@ -880,44 +846,6 @@ EOF
   [[ "${output}" == *"Compatible code JAVA_HOMEs: ${java21_home}"* ]] || fail "doctor should list compatible newer .tool-versions JDKs"
   [[ "${output}" == *"Code JDK recommendation: No exact JDK 17 detected from .tool-versions; using compatible newer JDK ${java21_home}"* ]] || fail "doctor should explain the compatible .tool-versions JDK fallback"
   [[ "${output}" == *"MAKEVN_CODE_JAVA_HOME=\"${java21_home}\""* ]] || fail "doctor should suggest pinning the compatible JDK"
-}
-
-test_exec_uses_compatible_newer_tool_versions_java_home() {
-  local repo="${TMP_ROOT}/exec-compatible-tool-versions-java"
-  local fake_home_root="${TMP_ROOT}/fake-exec-tool-versions-home"
-  local java21_home="${fake_home_root}/.sdkman/candidates/java/21.0.3-tem"
-
-  mkdir -p "${repo}" "${java21_home}/bin"
-  printf '<project/>\n' > "${repo}/pom.xml"
-  printf 'ivm-java zulu-17.0.9\n' > "${repo}/.tool-versions"
-  cat > "${java21_home}/bin/java" <<'EOF'
-#!/usr/bin/env bash
-printf 'openjdk version "21.0.3" 2024-01-01\n' >&2
-EOF
-  chmod +x "${java21_home}/bin/java"
-  cat > "${repo}/print-java-home.sh" <<'EOF'
-#!/usr/bin/env bash
-printf '%s\n' "${JAVA_HOME}"
-EOF
-  chmod +x "${repo}/print-java-home.sh"
-
-  JAVA_HOME= MAKEVN_JDK_CANDIDATE_BASES="${fake_home_root}/.sdkman/candidates/java" HOME="${fake_home_root}" ${CLI} --repo "${repo}" exec -- ./print-java-home.sh > "${repo}/exec.out"
-
-  assert_contains "${repo}/exec.out" "${java21_home}"
-}
-
-test_exec_rejects_git_and_shell_commands() {
-  local repo="${TMP_ROOT}/exec-rejects-non-java"
-  local output=""
-
-  mkdir -p "${repo}"
-  printf '<project/>\n' > "${repo}/pom.xml"
-
-  output="$(${CLI} --repo "${repo}" exec -- git status 2>&1 || true)"
-  [[ "${output}" == *"makevn exec only supports Maven, Java, or repo-local executable commands"* ]] || fail "expected git to be rejected by makevn exec"
-
-  output="$(${CLI} --repo "${repo}" exec -- bash -lc 'printf test' 2>&1 || true)"
-  [[ "${output}" == *"makevn exec only supports Maven, Java, or repo-local executable commands"* ]] || fail "expected shell wrappers to be rejected by makevn exec"
 }
 
 test_run_app_bg_disabled_without_executable_app() {
@@ -1730,11 +1658,6 @@ MAKEVN_CHECKSTYLE_GOAL=""
 EOF
   local build_output
   local package_output
-  cat > "${repo}/capture-java-home.sh" <<'EOF'
-#!/usr/bin/env bash
-printf '%s' "$JAVA_HOME" > exec-java-home.txt
-EOF
-  chmod +x "${repo}/capture-java-home.sh"
   PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" make install >/dev/null
   build_output="$(PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" build)"
   PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" test-compile >/dev/null
@@ -1751,7 +1674,6 @@ EOF
   make_output="$(PATH="${repo}/fake-bin:${PATH}" make -f .makevn/makevn.mk -C "${repo}" vn-test NAME=UserRepositoryTest FAST=true)"
   PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" test --name UserFlowIT >/dev/null
   PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" verify >/dev/null
-  PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" exec -- ./capture-java-home.sh >/dev/null
   PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" run >/dev/null
   [[ "${build_output}" == *"[ok] "* ]] || fail "expected build output to include success summary"
   [[ "${package_output}" == *"[ok] "* ]] || fail "expected vn-package output to include success summary"
@@ -1778,7 +1700,6 @@ EOF
   assert_contains "${repo}/.mvnw.log" "JAVA_HOME=${java_home}"
   assert_contains "${repo}/.mvnw.log" "LOCAL_CONTAINERS="
   assert_not_contains "${repo}/.mvnw.log" "LOCAL_CONTAINERS=TRUE"
-  assert_contains "${repo}/exec-java-home.txt" "${java_home}"
   assert_contains "${repo}/run.out" "run-ok"
   ${CLI} --repo "${repo}" uninstall >/dev/null
 }
@@ -1821,20 +1742,25 @@ EOF
   cat > "${repo}/cataloger-cli/mvnw" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
+[[ -f .mvn/wrapper/maven-wrapper.properties ]] || exit 42
+printf 'CWD=%s\n' "$PWD" >> .mvnw.log
 printf 'ARGS=%s\n' "$*" >> .mvnw.log
 printf 'JAVA_HOME=%s\n' "${JAVA_HOME:-}" >> .mvnw.log
 mkdir -p target/site/jacoco
 printf '<report/>\n' > target/site/jacoco/jacoco.xml
 EOF
   chmod +x "${repo}/cataloger-cli/mvnw"
+  mkdir -p "${repo}/cataloger-cli/.mvn/wrapper"
+  printf 'distributionUrl=unused\n' > "${repo}/cataloger-cli/.mvn/wrapper/maven-wrapper.properties"
 
   ${CLI} --repo "${repo}" test --name NestedTest >/dev/null
   ${CLI} --repo "${repo}" checkstyle --module cataloger-cli --verbose >/dev/null
 
-  assert_matches "${repo}/.mvnw.log" '^ARGS=-nsu -f .*/cataloger-cli/pom\.xml test -Dtest=com\.example\.NestedTest -Dfailsafe\.failIfNoSpecifiedTests=false -Dsurefire\.failIfNoSpecifiedTests=false -Dmaven\.build\.cache\.enabled=true -Dsurefire\.testFailureIgnore=false$'
-  assert_matches "${repo}/.mvnw.log" '^ARGS=-f .*/cataloger-cli/pom\.xml org\.apache\.maven\.plugins:maven-checkstyle-plugin:check -Dcheckstyle\.consoleOutput=true$'
-  assert_not_contains "${repo}/.mvnw.log" '-pl cataloger-cli'
-  assert_contains "${repo}/.mvnw.log" "JAVA_HOME=${java_home}"
+  assert_matches "${repo}/cataloger-cli/.mvnw.log" '^CWD=.*/nested-single-maven-project-routing/cataloger-cli$'
+  assert_matches "${repo}/cataloger-cli/.mvnw.log" '^ARGS=-nsu -f .*/cataloger-cli/pom\.xml test -Dtest=com\.example\.NestedTest -Dfailsafe\.failIfNoSpecifiedTests=false -Dsurefire\.failIfNoSpecifiedTests=false -Dmaven\.build\.cache\.enabled=true -Dsurefire\.testFailureIgnore=false$'
+  assert_matches "${repo}/cataloger-cli/.mvnw.log" '^ARGS=-f .*/cataloger-cli/pom\.xml org\.apache\.maven\.plugins:maven-checkstyle-plugin:check -Dcheckstyle\.consoleOutput=true$'
+  assert_not_contains "${repo}/cataloger-cli/.mvnw.log" '-pl cataloger-cli'
+  assert_contains "${repo}/cataloger-cli/.mvnw.log" "JAVA_HOME=${java_home}"
 }
 
 test_docker_commands() {
@@ -3690,9 +3616,14 @@ EOF
   cat > "${code_repo}/mvnw" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
+[[ -f .mvn/wrapper/maven-wrapper.properties ]] || exit 42
+printf 'CWD=%s\n' "$PWD" >> .mvnw.log
+printf 'LOCAL_CONTAINERS=%s\n' "${LOCAL_CONTAINERS:-}" >> .mvnw.log
 printf 'ARGS=%s\n' "$*" >> .mvnw.log
 EOF
   chmod +x "${code_repo}/mvnw"
+  mkdir -p "${code_repo}/.mvn/wrapper"
+  printf 'distributionUrl=unused\n' > "${code_repo}/.mvn/wrapper/maven-wrapper.properties"
   cat > "${repo}/.makevn/config" <<EOF
 MAKEVN_JAVA_HOME="${java_home}"
 MAKEVN_CODE_JAVA_HOME=""
@@ -3700,11 +3631,14 @@ MAKEVN_KARATE_JAVA_HOME=""
 MAKEVN_CODE_TOOL_VERSIONS=""
 MAKEVN_KARATE_TOOL_VERSIONS=""
 MAKEVN_RUN_CMD=""
+MAKEVN_LOCAL_CONTAINERS="TRUE"
 EOF
 
   ${CLI} --repo "${code_repo}" verify-changes >/dev/null
 
-  assert_matches "${repo}/.mvnw.log" '^ARGS=-nsu -f .*/code/pom\.xml -pl boot,jacoco-report-aggregate -am verify -Djacoco\.skip=false -DskipTests=false -Dmaven\.test\.failure\.ignore=false -Dmaven\.build\.cache\.enabled=false$'
+  assert_matches "${code_repo}/.mvnw.log" '^CWD=.*/verify-changes-nested-maven-base/code$'
+  assert_contains "${code_repo}/.mvnw.log" 'LOCAL_CONTAINERS=TRUE'
+  assert_matches "${code_repo}/.mvnw.log" '^ARGS=-nsu -f .*/code/pom\.xml -pl boot,jacoco-report-aggregate -am verify -Djacoco\.skip=false -DskipTests=false -Dmaven\.test\.failure\.ignore=false -Dmaven\.build\.cache\.enabled=false$'
 
   ${CLI} --repo "${repo}" uninstall >/dev/null
 }
@@ -4947,10 +4881,7 @@ main() {
   test_doctor_compose_prompt_does_not_chain_local_containers_prompt
   test_doctor_shows_progress_in_tty
   test_doctor_reports_compatible_newer_java_homes
-  test_exec_uses_compatible_newer_java_home
   test_doctor_reports_compatible_newer_tool_versions_java_home
-  test_exec_uses_compatible_newer_tool_versions_java_home
-  test_exec_rejects_git_and_shell_commands
   test_run_app_bg_disabled_without_executable_app
   test_standalone_mode
   test_strict_commands_require_git_root
@@ -5038,9 +4969,24 @@ main() {
   test_sequential_commands
   test_legacy_shell_entrypoint_sequential_commands
   test_mcp_tool_listing
+  test_removed_exec_rejected
   test_command_typo_rejected_before_backend
   test_command_failure_summary_omits_duplicate_elapsed
+  bash "${ROOT_DIR}/test/smoke/jdk_discovery_test.sh"
+  bash "${ROOT_DIR}/test/smoke/bash_crap_test.sh"
   printf 'Smoke tests passed\n'
+}
+
+test_removed_exec_rejected() {
+  local output
+  if output="$("${CLI}" --repo "${ROOT_DIR}" exec -- mvn -v 2>&1)"; then
+    fail "removed command must fail"
+  fi
+  [[ "${output}" == *"Unknown command: exec"* ]] || fail "expected unknown command"
+  if output="$(bash "${BACKEND}" exec --repo "${ROOT_DIR}" -- mvn -v 2>&1)"; then
+    fail "removed backend command must fail"
+  fi
+  [[ "${output}" == *"Unknown backend command: exec"* ]] || fail "expected unknown backend command"
 }
 
 main "$@"

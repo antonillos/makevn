@@ -23,11 +23,22 @@ jobs:
     concurrency:
       group: smart-merge-${{ github.repository }}-pr-${{ github.event.issue.number }}
       cancel-in-progress: false
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 65
     steps:
+      - name: Generate release app token for merge
+        id: merge-app-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
+        with:
+          client-id: ${{ vars.MAKEVN_RELEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.MAKEVN_RELEASE_APP_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
+          permission-workflows: write
       - name: Analyze and merge pull request
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          MERGE_APP_TOKEN: ${{ steps.merge-app-token.outputs.token }}
         with:
           github-token: ${{ github.token }}
           script: |
@@ -402,8 +413,6 @@ jobs:
               }
             }
 
-            const base = stack?.base.ref || pull.base.ref;
-            const head = pull.head.ref;
             const policies = targetPulls.map((target) => {
               const targetTitle = target.title.toLowerCase();
               const targetAuthor = target.user.login.toLowerCase();
@@ -507,7 +516,11 @@ jobs:
 
             let mergeRequest;
             try {
-              mergeRequest = await github.request(
+              // Keep validation and bot approval on GITHUB_TOKEN, but perform
+              // the merge with the release App so its push starts Verify,
+              // Release, and main-to-develop sync workflows normally.
+              const mergeGithub = getOctokit(process.env.MERGE_APP_TOKEN);
+              mergeRequest = await mergeGithub.request(
                 "PUT /repos/{owner}/{repo}/pulls/{pull_number}/merge-async",
                 mergeOptions
               );
@@ -595,54 +608,6 @@ jobs:
             });
             const verification = resultCommit.data.commit.verification;
 
-            // Pushes performed with GITHUB_TOKEN do not trigger downstream
-            // push workflows. Explicitly dispatch Release for release PRs so
-            // publishing does not depend on a manual workflow run.
-            const releaseMatch = head.match(/^release\/(v[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?)$/i);
-            if (base === "main" && releaseMatch) {
-              const version = releaseMatch[1];
-              try {
-                await github.rest.actions.createWorkflowDispatch({
-                  owner,
-                  repo,
-                  workflow_id: "release.yml",
-                  ref: "main",
-                  inputs: {
-                    version,
-                    prerelease: version.includes("-") ? "true" : "false",
-                    draft: "false",
-                  },
-                });
-                await comment(`🚀 Release workflow dispatched for \`${version}\`.`);
-              } catch (error) {
-                core.warning(`Could not dispatch Release for ${version}: ${error.message}`);
-                await comment(
-                  `⚠️ Merge completed, but Release could not be dispatched for \`${version}\`. ` +
-                  "Run the Release workflow manually."
-                );
-              }
-
-              // A Release dispatched with GITHUB_TOKEN does not reliably emit
-              // workflow_run for the sync workflow. Dispatch it explicitly so
-              // main is always synchronized back into develop after release.
-              try {
-                await github.rest.actions.createWorkflowDispatch({
-                  owner,
-                  repo,
-                  workflow_id: "sync-main-to-develop.yml",
-                  ref: "develop",
-                  request: githubApiRequest,
-                });
-                await comment("🔄 Main-to-develop sync dispatched after the release.");
-              } catch (error) {
-                core.warning(`Could not dispatch Main To Develop sync: ${error.message}`);
-                await comment(
-                  "⚠️ Release was dispatched, but Main To Develop sync could not be dispatched; " +
-                  "run the sync workflow manually."
-                );
-              }
-            }
-
             for (const target of targetPulls) {
               const targetHead = target.head.ref;
               const disposable =
@@ -656,7 +621,13 @@ jobs:
                     ref: `heads/${targetHead}`,
                   });
                 } catch (error) {
-                  core.warning(`Could not delete ${targetHead}: ${error.message}`);
+                  // GitHub may have already removed the head branch when
+                  // delete_branch_on_merge is enabled. Cleanup is idempotent.
+                  const alreadyDeleted = [404, 422].includes(error.status) &&
+                    /Reference does not exist/i.test(error.message);
+                  if (!alreadyDeleted) {
+                    core.warning(`Could not delete ${targetHead}: ${error.message}`);
+                  }
                 }
               }
             }

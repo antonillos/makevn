@@ -1,6 +1,35 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+makevn_print_doctor_java_details() {
+  if [[ -n "${MAKEVN_DOCTOR_CODE_JAVA_HOME_RECOMMENDATION}" ]]; then
+    makevn_print_item "Code JDK recommendation" "${MAKEVN_DOCTOR_CODE_JAVA_HOME_RECOMMENDATION}"
+  fi
+  if [[ -n "${MAKEVN_DOCTOR_CODE_JAVA_VERSION_LINE}" ]]; then
+    printf '  %s\n' "$(makevn_dim "${MAKEVN_DOCTOR_CODE_JAVA_VERSION_LINE}")"
+  fi
+  makevn_print_item "Resolved karate JAVA_HOME" "${MAKEVN_DOCTOR_KARATE_JAVA_HOME}"
+  if [[ -n "${MAKEVN_DOCTOR_KARATE_JAVA_VERSION_LINE}" ]]; then
+    printf '  %s\n' "$(makevn_dim "${MAKEVN_DOCTOR_KARATE_JAVA_VERSION_LINE}")"
+  fi
+  return 0
+}
+
+makevn_print_doctor_suggestions() {
+  printf '\n'
+  makevn_print_header "Suggested next step"
+  if [[ -n "${MAKEVN_DOCTOR_SUGGESTED_NEXT}" ]]; then
+    makevn_print_item "next" "${MAKEVN_DOCTOR_SUGGESTED_NEXT}"
+  fi
+  if [[ -n "${MAKEVN_DOCTOR_SUGGESTED_NOTE}" ]]; then
+    makevn_print_item "note" "${MAKEVN_DOCTOR_SUGGESTED_NOTE}"
+  fi
+  if [[ -n "${MAKEVN_DOCTOR_SUGGESTED_OPTIONAL}" ]]; then
+    makevn_print_item "optional" "${MAKEVN_DOCTOR_SUGGESTED_OPTIONAL}"
+  fi
+  return 0
+}
+
 print_doctor() {
   local repo_root="$1"
 
@@ -46,16 +75,7 @@ print_doctor() {
   makevn_print_item "Verify profile" "${MAKEVN_DOCTOR_VERIFY_PROFILE}"
   makevn_print_item "Resolved code JAVA_HOME" "${MAKEVN_DOCTOR_CODE_JAVA_HOME}"
   makevn_print_item "Compatible code JAVA_HOMEs" "${MAKEVN_DOCTOR_COMPATIBLE_CODE_JAVA_HOMES}"
-  if [[ -n "${MAKEVN_DOCTOR_CODE_JAVA_HOME_RECOMMENDATION}" ]]; then
-    makevn_print_item "Code JDK recommendation" "${MAKEVN_DOCTOR_CODE_JAVA_HOME_RECOMMENDATION}"
-  fi
-  if [[ -n "${MAKEVN_DOCTOR_CODE_JAVA_VERSION_LINE}" ]]; then
-    printf '  %s\n' "$(makevn_dim "${MAKEVN_DOCTOR_CODE_JAVA_VERSION_LINE}")"
-  fi
-  makevn_print_item "Resolved karate JAVA_HOME" "${MAKEVN_DOCTOR_KARATE_JAVA_HOME}"
-  if [[ -n "${MAKEVN_DOCTOR_KARATE_JAVA_VERSION_LINE}" ]]; then
-    printf '  %s\n' "$(makevn_dim "${MAKEVN_DOCTOR_KARATE_JAVA_VERSION_LINE}")"
-  fi
+  makevn_print_doctor_java_details
   makevn_print_item "Run command configured" "${MAKEVN_DOCTOR_RUN_CONFIGURED}"
   makevn_print_item "Docker compose file" "${MAKEVN_DOCTOR_COMPOSE_FILE}"
   makevn_print_item "Docker e2e compose file" "${MAKEVN_DOCTOR_E2E_COMPOSE_FILE}"
@@ -68,15 +88,5 @@ print_doctor() {
     printf '  %s\n' "$(makevn_dim "goal: ${MAKEVN_DOCTOR_MUTATION_GOAL}")"
   fi
 
-  printf '\n'
-  makevn_print_header "Suggested next step"
-  if [[ -n "${MAKEVN_DOCTOR_SUGGESTED_NEXT}" ]]; then
-    makevn_print_item "next" "${MAKEVN_DOCTOR_SUGGESTED_NEXT}"
-  fi
-  if [[ -n "${MAKEVN_DOCTOR_SUGGESTED_NOTE}" ]]; then
-    makevn_print_item "note" "${MAKEVN_DOCTOR_SUGGESTED_NOTE}"
-  fi
-  if [[ -n "${MAKEVN_DOCTOR_SUGGESTED_OPTIONAL}" ]]; then
-    makevn_print_item "optional" "${MAKEVN_DOCTOR_SUGGESTED_OPTIONAL}"
-  fi
+  makevn_print_doctor_suggestions
 }

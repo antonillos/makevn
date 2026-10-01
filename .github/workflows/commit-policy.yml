@@ -35,7 +35,7 @@ concurrency:
 jobs:
   commits:
     name: Conventional Commits and signatures
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 10
     steps:
       # API metadata only: no checkout, PR code execution, signing key or CRAP.

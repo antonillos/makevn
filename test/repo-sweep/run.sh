@@ -821,7 +821,6 @@ while IFS= read -r repo_path; do
   run_tool "${repo_name}" clone "${clone_path}" profile_refresh '{}' "${fake_bin}" "${clone_doctor}" || true
   run_tool "${repo_name}" clone "${clone_path}" jdk_current '{}' "${fake_bin}" "${clone_doctor}" || true
   run_tool "${repo_name}" clone "${clone_path}" jdk_list '{}' "${fake_bin}" "${clone_doctor}" || true
-  run_tool "${repo_name}" clone "${clone_path}" exec '{"command": "mvn -v", "context": "code"}' "${fake_bin}" "${clone_doctor}" || true
   run_tool "${repo_name}" clone "${clone_path}" make_install '{}' "${fake_bin}" "${clone_doctor}" || true
   run_make_check "${repo_name}" "${clone_path}" make_vn_doctor || true
   run_tool "${repo_name}" clone "${clone_path}" make_uninstall '{}' "${fake_bin}" "${clone_doctor}" || true

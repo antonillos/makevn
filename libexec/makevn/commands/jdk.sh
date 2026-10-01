@@ -4,17 +4,16 @@ set -euo pipefail
 cmd_jdk_current() {
   local repo_root="$1"
   local maven_base_path
-  local code_tool_versions=""
-  local karate_tool_versions=""
-  local jdk_manager
+  local context java_home
 
   print_command_intro "${repo_root}" "jdk current"
-
   maven_base_path="$(makevn_detect_maven_base_path "${repo_root}" || true)"
-  code_tool_versions="$(makevn_detect_code_tool_versions "${repo_root}" "${maven_base_path}" || true)"
-  karate_tool_versions="$(makevn_detect_karate_tool_versions "${repo_root}" || true)"
-  jdk_manager="$(makevn_jdk_manager_script)"
-  bash "${jdk_manager}" current-contexts "${code_tool_versions}" "${karate_tool_versions}"
+  echo "Global JAVA_HOME: ${JAVA_HOME:-not set}"
+  for context in code karate; do
+    java_home="$(makevn_effective_java_home "${repo_root}" "${context}" "${maven_base_path}" || true)"
+    printf '\nEffective %s JDK: %s\n' "${context}" "${java_home:-unresolved}"
+    [[ -z "${java_home}" ]] || makevn_java_version_line "${java_home}"
+  done
 }
 
 cmd_jdk_list() {
