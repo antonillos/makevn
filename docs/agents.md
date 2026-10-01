@@ -207,7 +207,6 @@ MCP equivalents for OpenCode agents:
 | `makevn run-app-bg` | `makevn_run_app_bg` |
 | `makevn stop-app` | `makevn_stop_app` |
 | `makevn run` | `makevn_run` |
-| `makevn exec -- COMMAND` | `makevn_exec` with `command: COMMAND`; use only as a bounded escape hatch for commands that need makevn's resolved environment |
 | `makevn jdk current` | `makevn_jdk_current` |
 | `makevn jdk list` | `makevn_jdk_list` |
 
@@ -260,11 +259,9 @@ repository has a clear boot-test Docker signal. If they reach Maven without
 starting Docker, do not add `docker-up` manually unless `doctor`, `.makevn/config`,
 or the human confirms that boot services are required.
 
-### Docker: Never use `makevn exec` for container operations
+### Docker: Use dedicated container commands
 
-Agents must **never** use `makevn exec` to run raw `docker` or `docker compose`
-commands. The `docker-*` and `karate-docker-*` subcommands are the only
-supported interface for container lifecycle management:
+The `docker-*` and `karate-docker-*` subcommands are the supported interface for container lifecycle management:
 
 - `makevn docker-up` — start all boot compose services
 - `makevn docker-down` — stop all boot compose services
@@ -279,8 +276,7 @@ supported interface for container lifecycle management:
 support targeting a single service. If only one service needs to be started
 (such as a single dependency service for local development without the full stack),
 use `makevn docker-up` to start everything — the lifecycle guarantees a clean
-state regardless. Do not fall back to `docker compose up -d <service>` or
-`makevn exec -- docker compose ...`; those bypass `makevn`'s compose file
+state regardless. Do not fall back to `docker compose up -d <service>`; that bypasses `makevn`'s compose file
 resolution, override detection, and logging.
 
 Karate tests need the real application running. For a manual chain, agents should
@@ -294,21 +290,9 @@ such as `make docker-up` or `make docker-ps-required`. Use
 `make -f .makevn/makevn.mk vn-docker-*` or `vn-karate-*` only when explicitly validating make
 integration.
 
-### Git: Prefer native agent tools over `makevn exec`
+### Git: Use native agent tools
 
-Agents should use their native shell/git tools for Git inspection and commit
-workflows. Do not route routine commands such as `git status`, `git diff`,
-`git log`, or `git commit` through `makevn exec`; the MCP wrapper adds context
-and should be reserved for commands that specifically need makevn's resolved Java
-repository environment.
-
-`makevn_exec` has a bounded timeout for safety. Use its `timeout-seconds`
-argument only when the default is inappropriate, and do not use it for
-interactive commands.
-
-`makevn exec` is intentionally narrow: it only accepts `mvn`, `mvnw`, `java`,
-or repo-local executable paths such as `./script.sh`. It rejects `git`, `gh`,
-Docker commands, shell wrappers like `sh -c`/`bash -lc`, and Python helpers.
+Use native shell/git tools for Git inspection and commit workflows.
 
 ## Generic Workflow
 
@@ -365,7 +349,7 @@ Inside OpenCode, the intended flow is:
 2. run `makevn doctor` or use the `doctor` MCP tool
 3. initialize only if needed
 4. prefer `makevn ... --json` when machine-readable output is available and helps with decision making
-5. run `makevn build`, `makevn test`, `makevn verify`, or `makevn exec -- ...`
+5. run `makevn build`, `makevn test`, or `makevn verify`
 6. avoid IDE-specific instructions unless the user explicitly asks for them
 
 When using the MCP tools directly, use the explicit `makevn_*` tool names and

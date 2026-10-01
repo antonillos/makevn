@@ -59,7 +59,6 @@ Usage:
   makevn [--repo PATH] run-app-bg
   makevn [--repo PATH] stop-app
   makevn [--repo PATH] run
-  makevn [--repo PATH] exec [--context code|karate] -- COMMAND [ARGS...]
   makevn [--repo PATH] jdk current
   makevn [--repo PATH] jdk list
   makevn [--repo PATH] mutation [--module MODULE] [--verbose]
@@ -103,7 +102,6 @@ Examples:
   makevn karate-test --tag @smoke
   makevn run-app-bg
   makevn stop-app
-  makevn exec -- mvn -q -v
   make -f .makevn/makevn.mk vn-doctor
 
 Notes:
@@ -125,7 +123,7 @@ print_command_intro() {
 
 makevn_cli_is_top_level_command() {
   case "$1" in
-    help|doctor|init|make|uninstall|profile|exec|compile|test-compile|compile-tests|validate|package|clean|build|test|verify-ut|verify-ut-coverage|verify-it|verify-it-coverage|verify|verify-changes-preview|verify-changes|coverage|coverage-changes|crap|crap-changes|pr-verify|format|checkstyle|docker-up|docker-down|docker-ps|docker-stats|docker-ps-required|karate-docker-up|karate-docker-down|karate-test|karate-all|run-app|run-app-bg|stop-app|run|jdk|mutation)
+    help|doctor|init|make|uninstall|profile|compile|test-compile|compile-tests|validate|package|clean|build|test|verify-ut|verify-ut-coverage|verify-it|verify-it-coverage|verify|verify-changes-preview|verify-changes|coverage|coverage-changes|crap|crap-changes|pr-verify|format|checkstyle|docker-up|docker-down|docker-ps|docker-stats|docker-ps-required|karate-docker-up|karate-docker-down|karate-test|karate-all|run-app|run-app-bg|stop-app|run|jdk|mutation)
       return 0
       ;;
   esac
@@ -134,7 +132,7 @@ makevn_cli_is_top_level_command() {
 
 makevn_cli_option_takes_value() {
   case "$1" in
-    --name|--context|--threshold|--overall-threshold|--max-warnings|--jacoco-xml|--base|--tag|--compose|--module)
+    --name|--threshold|--overall-threshold|--max-warnings|--jacoco-xml|--base|--tag|--compose|--module)
       return 0
       ;;
   esac
@@ -226,8 +224,6 @@ source "${SCRIPT_DIR}/commands/init.sh"
 source "${SCRIPT_DIR}/commands/refresh.sh"
 # shellcheck source=/dev/null
 source "${SCRIPT_DIR}/commands/profile.sh"
-# shellcheck source=/dev/null
-source "${SCRIPT_DIR}/commands/exec.sh"
 # shellcheck source=/dev/null
 source "${SCRIPT_DIR}/commands/maven.sh"
 # shellcheck source=/dev/null
@@ -349,9 +345,6 @@ case "${COMMAND}" in
         makevn_die "Usage: makevn profile refresh"
         ;;
     esac
-    ;;
-  exec)
-    cmd_exec "${REPO_ROOT}" "$@"
     ;;
   compile)
     cmd_compile "${REPO_ROOT}" "$@"
