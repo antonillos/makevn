@@ -28,6 +28,14 @@ output="$(bash "${manager}" list)"
 output="$("${ROOT_DIR}/bin/makevn" --repo "${TMP}/repo" jdk current)"
 [[ "${output}" == *"Effective code JDK: ${ASDF_DATA_DIR}/installs/ivm-java/openjdk-21.0.10"* ]]
 [[ "${output}" == *"Effective karate JDK: ${ASDF_DATA_DIR}/installs/ivm-java/openjdk-21.0.4+tzdata2024b"* ]]
+# Windows JDKs discovered under WSL may expose only java.exe.
+for version in 21.0.10 '21.0.4+tzdata2024b'; do
+  home="${ASDF_DATA_DIR}/installs/ivm-java/openjdk-${version}"
+  mv "${home}/bin/java" "${home}/bin/java.exe"
+done
+output="$("${ROOT_DIR}/bin/makevn" --repo "${TMP}/repo" jdk current)"
+[[ "${output}" == *'openjdk version "21.0.10"'* ]]
+[[ "${output}" == *'openjdk version "21.0.4"'* ]]
 mkdir -p "${TMP}/repo/.makevn"
 printf 'MAKEVN_CODE_JAVA_HOME="%s"\nMAKEVN_KARATE_JAVA_HOME="%s"\n' "${JAVA_HOME}" "${JAVA_HOME}" > "${TMP}/repo/.makevn/config"
 output="$("${ROOT_DIR}/bin/makevn" --repo "${TMP}/repo" jdk current)"

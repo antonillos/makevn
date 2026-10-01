@@ -151,7 +151,11 @@ makevn_effective_java_home() {
 
 makevn_java_version_line() {
   local java_home="$1"
-  "${java_home}/bin/java" -version 2>&1 | sed -n '1p'
+  local java_cmd="${java_home}/bin/java"
+  if [[ ! -x "${java_cmd}" && -x "${java_home}/bin/java.exe" ]]; then
+    java_cmd="${java_home}/bin/java.exe"
+  fi
+  "${java_cmd}" -version 2>&1 | sed -n '1p'
 }
 
 makevn_maven_executable() {
