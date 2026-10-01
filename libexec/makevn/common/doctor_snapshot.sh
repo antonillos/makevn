@@ -262,7 +262,7 @@ makevn_collect_doctor_snapshot() {
   code_java_home="$(MAKEVN_RESOLVE_COMPATIBLE_JAVA_FIRST=1 makevn_effective_java_home "${repo_root}" code "${maven_base_path}" || true)"
   if [[ -n "${code_tool_versions_java_version}" ]]; then
     code_exact_java_home="$(makevn_resolve_java_version_home "${code_tool_versions_java_version}" || true)"
-    if [[ -z "${code_exact_java_home}" ]]; then
+    if [[ -z "${code_exact_java_home}" && -z "${MAKEVN_CODE_JAVA_HOME:-}" ]]; then
       compatible_code_java_homes="$(makevn_compatible_java_homes_csv "${code_tool_versions_java_version}" || true)"
       if [[ -n "${code_java_home}" ]]; then
         code_java_home_recommendation="No exact JDK ${code_tool_versions_java_version} detected from .tool-versions; using compatible newer JDK ${code_java_home}. To pin it, set MAKEVN_CODE_JAVA_HOME=\"${code_java_home}\" in .makevn/config."

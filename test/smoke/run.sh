@@ -5053,6 +5053,7 @@ main() {
   test_mcp_tool_listing
   test_command_typo_rejected_before_backend
   test_command_failure_summary_omits_duplicate_elapsed
+  bash "${ROOT_DIR}/test/smoke/jdk_discovery_test.sh"
   bash "${ROOT_DIR}/test/smoke/bash_crap_test.sh"
   printf 'Smoke tests passed\n'
 }

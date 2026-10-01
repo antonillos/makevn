@@ -12,7 +12,7 @@ extract_tool_versions_jdk_major() {
   local major
 
   [[ -f "${tool_versions_file}" ]] || return 1
-  configured_jdk="$(awk '$1 == "ivm-java" { print $2; exit }' "${tool_versions_file}")"
+  configured_jdk="$(awk '($1 == "ivm-java" || $1 == "java") { print $2; exit }' "${tool_versions_file}")"
   [[ -n "${configured_jdk}" ]] || return 1
   major="$(printf '%s\n' "${configured_jdk}" | sed -E 's/.*-([0-9]+)(\..*)?$/\1/')"
   [[ "${major}" =~ ^[0-9]+$ ]] || return 1
@@ -21,7 +21,8 @@ extract_tool_versions_jdk_major() {
 
 candidate_bases=(
   "$HOME/.sdkman/candidates/java"
-  "$HOME/.asdf/installs/java"
+  "${ASDF_DATA_DIR:-$HOME/.asdf}/installs/java"
+  "${ASDF_DATA_DIR:-$HOME/.asdf}/installs/ivm-java"
   "$HOME/.jenv/versions"
   "/Library/Java/JavaVirtualMachines"
   "$HOME/Library/Java/JavaVirtualMachines"
@@ -295,6 +296,20 @@ resolve_jdk_home() {
   return 1
 }
 
+resolve_declared_asdf_home() {
+  local tool_versions_file="$1"
+  local tool version rest
+  while read -r tool version rest || [[ -n "${tool}" ]]; do
+    case "${tool}" in
+      java|ivm-java)
+        [[ "${version}" != */* && "${version}" != "." && "${version}" != ".." ]] || continue
+        try_resolve_home "${ASDF_DATA_DIR:-$HOME/.asdf}/installs/${tool}/${version}" && return 0
+        ;;
+    esac
+  done < "${tool_versions_file}"
+  return 1
+}
+
 resolve_tool_versions_home() {
   local tool_versions_file="$1"
   local resolved_major
@@ -307,7 +322,7 @@ resolve_tool_versions_home() {
   fi
   JDK_VERSION="${resolved_major}"
   JDK_HOME_ARG=""
-  if ! resolved_home="$(resolve_jdk_home)"; then
+  if ! resolved_home="$(resolve_declared_asdf_home "${tool_versions_file}" || resolve_jdk_home)"; then
     resolved_home="$(resolve_compatible_version_home "${resolved_major}" || true)"
     if [[ -z "${resolved_home}" ]]; then
       JDK_VERSION="${previous_jdk_version}"
