@@ -707,3 +707,20 @@ Standalone `run-app-bg` can still start without a health URL, but warns that
 only process liveness was checked, not HTTP readiness. Use `karate-test`
 directly for an externally managed application. HTTP readiness does not
 validate JSON health status, application semantics, or Kafka availability.
+
+
+### Doctor health configuration prompts
+
+For an initialized runnable application without an explicit health URL,
+interactive `makevn doctor` asks to confirm/correct a detected URL or enter
+one when detection finds none. The input is prefilled with the detected URL or a suggested URL using the
+application port/context and /health. Suggestions are explicitly unverified;
+Enter confirms and saves the editable value, while typing skip leaves configuration
+unchanged. Earlier compose
+or LOCAL_CONTAINERS questions do not suppress the health question.
+
+Nonempty input must use HTTP(S) without whitespace and is saved safely in
+`.makevn/config`. Existing explicit URLs are preserved without prompting.
+Without a terminal, doctor never requests input and reports how to configure
+missing readiness. `profile refresh` remains automatic and noninteractive;
+`init --force` does not force these prompts or overwrite existing config.

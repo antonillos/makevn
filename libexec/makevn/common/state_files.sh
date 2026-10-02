@@ -170,19 +170,22 @@ makevn_update_config_app_health_url() {
   local repo_root="$1"
   local app_health_url="$2"
   local config_path
+  local config_line
   config_path="$(makevn_config_path "${repo_root}")"
 
   if [[ ! -f "${config_path}" ]]; then
     return 1
   fi
 
+  printf -v config_line 'MAKEVN_APP_HEALTH_URL=%q' "${app_health_url}"
+
   if grep -q '^MAKEVN_APP_HEALTH_URL=' "${config_path}"; then
     local tmp_file
     tmp_file="$(mktemp)"
-    awk -v val="${app_health_url}" 'BEGIN{q="\""} /^MAKEVN_APP_HEALTH_URL=/ { print "MAKEVN_APP_HEALTH_URL=" q val q; next } { print }' "${config_path}" > "${tmp_file}"
+    MAKEVN_CONFIG_HEALTH_LINE="${config_line}" awk '/^MAKEVN_APP_HEALTH_URL=/ { print ENVIRON["MAKEVN_CONFIG_HEALTH_LINE"]; next } { print }' "${config_path}" > "${tmp_file}"
     mv "${tmp_file}" "${config_path}"
   else
-    printf 'MAKEVN_APP_HEALTH_URL=%q\n' "${app_health_url}" >> "${config_path}"
+    printf '%s\n' "${config_line}" >> "${config_path}"
   fi
 }
 
