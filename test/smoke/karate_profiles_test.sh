@@ -51,6 +51,8 @@ cmp "${tmp}/before" "${tmp}/.makevn/config"
   unset MAKEVN_KARATE_APP_PROFILES SPRING_PROFILES_ACTIVE
   : > "${tmp}/.makevn/config"
   printf 'SPRING_PROFILES_ACTIVE: other\n' > "${tmp}/.github/workflows/karate-other.yml"
+  makevn_doctor_karate_profiles "${tmp}" yes </dev/null 2>/dev/null
+  [[ ${MAKEVN_DOCTOR_KARATE_APP_PROFILES} == 'unresolved (explicit selection required)' ]]
   makevn_detect_maven_base_path() { echo /fake/code; }
   makevn_detect_app_runnable() { return 0; }
   makevn_app_health_url() { echo http://localhost/health; }
