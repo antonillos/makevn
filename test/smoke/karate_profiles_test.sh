@@ -7,7 +7,7 @@ source "${ROOT_DIR}/libexec/makevn/commands/run.sh"
 tmp="$(mktemp -d)"
 trap 'rm -rf "${tmp}"' EXIT
 mkdir -p "${tmp}/.github/workflows" "${tmp}/.makevn"
-printf 'SPRING_PROFILES_ACTIVE: standalone,local\n' > "${tmp}/.github/workflows/karate.yml"
+printf 'jobs:\n  karate:\n    env:\n      SPRING_PROFILES_ACTIVE: standalone,local\n' > "${tmp}/.github/workflows/karate.yml"
 printf '# user config\n' > "${tmp}/.makevn/config"
 makevn_resolve_karate_profiles "${tmp}"
 [[ ${MAKEVN_EFFECTIVE_KARATE_APP_PROFILES} == standalone,local ]]
@@ -50,7 +50,7 @@ cmp "${tmp}/before" "${tmp}/.makevn/config"
 (
   unset MAKEVN_KARATE_APP_PROFILES SPRING_PROFILES_ACTIVE
   : > "${tmp}/.makevn/config"
-  printf 'SPRING_PROFILES_ACTIVE: other\n' > "${tmp}/.github/workflows/karate-other.yml"
+  printf 'jobs:\n  karate:\n    env:\n      SPRING_PROFILES_ACTIVE: other\n' > "${tmp}/.github/workflows/karate-other.yml"
   makevn_doctor_karate_profiles "${tmp}" yes </dev/null 2>/dev/null
   [[ ${MAKEVN_DOCTOR_KARATE_APP_PROFILES} == 'unresolved (explicit selection required)' ]]
   makevn_detect_maven_base_path() { echo /fake/code; }

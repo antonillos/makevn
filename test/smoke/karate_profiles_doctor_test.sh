@@ -6,7 +6,7 @@ trap 'rm -rf "${tmp}"' EXIT
 mkdir -p "${tmp}/src/main/java" "${tmp}/.github/workflows"
 printf '<project><modelVersion>4.0.0</modelVersion><groupId>example</groupId><artifactId>app</artifactId><version>1</version></project>\n' > "${tmp}/pom.xml"
 printf 'public class Application { public static void main(String[] args) {} }\n' > "${tmp}/src/main/java/Application.java"
-printf 'SPRING_PROFILES_ACTIVE: standalone,local\n' > "${tmp}/.github/workflows/karate.yml"
+printf 'jobs:\n  karate:\n    env:\n      SPRING_PROFILES_ACTIVE: standalone,local\n' > "${tmp}/.github/workflows/karate.yml"
 "${ROOT_DIR}/bin/makevn" --repo "${tmp}" init > /dev/null
 printf 'MAKEVN_APP_HEALTH_URL="http://localhost/health"\n' >> "${tmp}/.makevn/config"
 cp "${tmp}/.makevn/config" "${tmp}/original"
