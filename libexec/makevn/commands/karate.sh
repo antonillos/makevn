@@ -114,7 +114,9 @@ cmd_karate_test() {
 
   karate_base_path="$(makevn_detect_karate_base_path "${repo_root}" || true)"
   [[ -n "${karate_base_path}" ]] || makevn_die "No Karate Maven project detected. Expected e2e/karate/pom.xml or karate/pom.xml."
-  cmd_docker_ps_required "${repo_root}" --compose karate
+  if [[ "${MAKEVN_KARATE_CONTAINERS_CHECKED:-}" != "yes" ]]; then
+    cmd_docker_ps_required "${repo_root}" --compose karate
+  fi
 
   maven_executable="$(makevn_maven_executable "${repo_root}" "${karate_base_path}")"
   cli_flags_value="$(makevn_maven_cli_flags_for_command "${repo_root}" test)"
@@ -136,6 +138,31 @@ cmd_karate_test() {
   MAKEVN_COMPACT_OUTPUT=1 makevn_run_logged_in_context "${repo_root}" karate "${karate_base_path}" karate-test karate-test karate-test "${maven_args[@]}"
 }
 
+# Record actual completion, not metadata transitions (which may repeat).
+makevn_run_karate_phase() (
+  local phase="$1"
+  shift
+  if [[ -n "${MAKEVN_BACKEND_PHASE_DIR:-}" ]]; then
+    local record="${MAKEVN_BACKEND_PHASE_DIR}/${phase}"
+    local started="${SECONDS}"
+    [[ -z "${MAKEVN_BACKEND_DETAIL_OUT:-}" ]] || : > "${MAKEVN_BACKEND_DETAIL_OUT}"
+    local title="${1#cmd_}" repo="$2"
+    title="${title//_/-}"
+    trap '
+      rc=$?
+      if grep -Fqx "title=${title}" "${MAKEVN_BACKEND_METADATA_OUT}" 2>/dev/null; then
+        cp "${MAKEVN_BACKEND_METADATA_OUT}" "${record}"
+      else
+        printf "command=%s\nrepo=%s\ncwd=%s\nlog_path=\nrelative_log_path=\ncommand_display=%s\ntitle=%s\n" "${title}" "${repo}" "${repo}" "${title}" "${title}" > "${record}"
+      fi
+      printf "\nduration_seconds=%s\nexit_code=%s\n" "$((SECONDS - started))" "${rc}" >> "${record}"
+      [[ -z "${MAKEVN_BACKEND_DETAIL_OUT:-}" ]] || cp "${MAKEVN_BACKEND_DETAIL_OUT}" "${record}.detail"
+      exit "${rc}"
+    ' EXIT
+  fi
+  "$@"
+)
+
 cmd_karate_all() {
   local repo_root="$1"
   local test_rc=0
@@ -156,19 +183,20 @@ cmd_karate_all() {
   health_timeout="${MAKEVN_APP_HEALTH_TIMEOUT:-60}"
   makevn_validate_app_health_timeout "${health_timeout}"
 
-  cmd_karate_docker_up "${repo_root}"
+  makevn_run_karate_phase 1 cmd_karate_docker_up "${repo_root}"
 
   if [[ "${SKIP_PACKAGE:-false}" == "false" ]]; then
-    cmd_package "${repo_root}"
+    makevn_run_karate_phase 2 cmd_package "${repo_root}"
   else
     printf '%s\n' "$(makevn_dim "Skipping package step (SKIP_PACKAGE=true)")"
   fi
 
-  cmd_run_app_bg "${repo_root}" "${health_url}" "${health_timeout}"
+  makevn_run_karate_phase 3 cmd_run_app_bg "${repo_root}" "${health_url}" "${health_timeout}"
   trap 'cmd_stop_app "'"${repo_root}"'" >/dev/null 2>&1 || true' EXIT INT TERM
 
+  makevn_run_karate_phase 4 cmd_docker_ps_required "${repo_root}" --compose karate
   set +e
-  cmd_karate_test "${repo_root}" "$@"
+  MAKEVN_KARATE_CONTAINERS_CHECKED=yes makevn_run_karate_phase 5 cmd_karate_test "${repo_root}" "$@"
   test_rc=$?
   set -e
 

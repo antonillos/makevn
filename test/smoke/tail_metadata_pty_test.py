@@ -35,6 +35,16 @@ def backend(args):
             if time.monotonic() > deadline:
                 raise TimeoutError(f'No terminal acknowledgement for stage {index}')
             time.sleep(0.02)
+        if index != 2:
+            phase_index = [1, 2, 3, 3, 4, 5][index]
+            code = int(os.environ.get('MAKEVN_TEST_PHASE_EXIT', '0')) if index == 5 else 0
+            record = Path(os.environ['MAKEVN_BACKEND_PHASE_DIR']) / str(phase_index)
+            record.write_text(pending_content(values) + f'duration_seconds=1\nexit_code={code}\n')
+    sys.exit(int(os.environ.get('MAKEVN_TEST_PHASE_EXIT', '0')))
+
+
+def pending_content(values):
+    return ''.join(f'{key}={value}\n' for key, value in values.items())
 
 
 class Screen:
@@ -93,7 +103,7 @@ class Screen:
         return [''.join(self.rows.get(row, [])) for row in range(max(self.rows, default=0) + 1)]
 
 
-def verify(binary):
+def verify(binary, exit_code=0, tail_enabled=True):
     with tempfile.TemporaryDirectory(prefix='makevn-tail-metadata-') as folder:
         repo = Path(folder)
         backend_path = repo / 'libexec/makevn/backend.sh'
@@ -104,6 +114,7 @@ def verify(binary):
         if pid == 0:
             os.environ['MAKEVN_INSTALL_ROOT'] = str(repo)
             os.environ['NO_COLOR'] = '1'
+            os.environ['MAKEVN_TEST_PHASE_EXIT'] = str(exit_code)
             os.execv(binary, [binary, '--repo', str(repo), 'karate-all'])
         fcntl.ioctl(fd, termios.TIOCSWINSZ, struct.pack('HHHH', 80, 200, 0, 0))
         screen = Screen()
@@ -133,15 +144,20 @@ def verify(binary):
 
         try:
             until(lambda: any('makevn karate-docker-up' in line for line in screen.lines()))
-            os.write(fd, b't')
-            until(lambda: any('tailing log:' in line for line in screen.lines()))
-            os.write(fd, b'++')
+            if tail_enabled:
+                os.write(fd, b't')
+                until(lambda: any('tailing log:' in line for line in screen.lines()))
+                os.write(fd, b'++')
             settle()
             phases = ['karate-docker-up', 'package', 'run-app-bg', 'run-app-bg',
                       'docker-ps-required', 'karate-test']
             for index, phase in enumerate(phases):
                 def complete_phase():
                     lines = screen.lines()
+                    if not tail_enabled:
+                        return ((repo / 'stage').read_text() == str(index)
+                                and any(f'makevn {phase}' in line for line in lines)
+                                and (index == 0 or any('karate-docker-up |' in line for line in lines)))
                     notices = [row for row, line in enumerate(lines) if 'tailing log:' in line]
                     return (any(f'LOG_STAGE_{index}' in line for line in lines)
                             and any(f'makevn {phase}' in line for line in lines)
@@ -152,13 +168,16 @@ def verify(binary):
                 lines = screen.lines()
                 assert sum('Working for ' in line for line in lines) == 1, '\n'.join(lines)
                 assert sum(f'makevn {phase}' in line for line in lines) == 1, '\n'.join(lines)
-                assert sum('tailing log:' in line for line in lines) == 1, '\n'.join(lines)
-                notice_row = next(row for row, line in enumerate(lines) if 'tailing log:' in line)
-                assert screen.row - notice_row - 1 == 6, f'row={screen.row} notice={notice_row}\n' + '\n'.join(lines)
-                if index == 3:
-                    assert sum('LOG_STAGE_2' in line for line in lines) == 1, '\n'.join(lines)
-                if index and index != 3:
-                    assert not any(f'LOG_STAGE_{index - 1}' in line for line in lines), '\n'.join(lines)
+                if tail_enabled:
+                    assert sum('tailing log:' in line for line in lines) == 1, '\n'.join(lines)
+                    notice_row = next(row for row, line in enumerate(lines) if 'tailing log:' in line)
+                    assert screen.row - notice_row - 1 == 6, f'row={screen.row} notice={notice_row}\n' + '\n'.join(lines)
+                    if index > 0:
+                        assert any('karate-docker-up |' in line and '1s' in line for line in lines), '\n'.join(lines)
+                    if index == 3:
+                        assert sum('LOG_STAGE_2' in line for line in lines) == 1, '\n'.join(lines)
+                    if index and index != 3:
+                        assert not any(f'LOG_STAGE_{index - 1}' in line for line in lines), '\n'.join(lines)
                 (repo / f'ack-{index}').touch()
             deadline = time.monotonic() + 15
             while time.monotonic() < deadline:
@@ -169,7 +188,10 @@ def verify(binary):
             else:
                 raise TimeoutError('Dispatcher did not finish')
             _, status = os.waitpid(pid, 0)
-            assert os.waitstatus_to_exitcode(status) == 0
+            assert os.waitstatus_to_exitcode(status) == exit_code
+            final = screen.lines()
+            for phase in dict.fromkeys(phases):
+                assert any(f'{phase} |' in line and f'{phase}.log' in line for line in final), '\n'.join(final)
             assert not any('Working for ' in line for line in screen.lines())
         finally:
             os.close(fd)
@@ -185,6 +207,8 @@ if sys.argv[1] == '--backend':
     backend(sys.argv[2:])
 elif Path(sys.argv[1]).is_file():
     verify(str(Path(sys.argv[1]).resolve()))
+    verify(str(Path(sys.argv[1]).resolve()), 42)
+    verify(str(Path(sys.argv[1]).resolve()), 42, False)
     print('Tail metadata PTY regression tests passed')
 else:
     print('Tail metadata PTY test skipped: Rust dispatcher not built')

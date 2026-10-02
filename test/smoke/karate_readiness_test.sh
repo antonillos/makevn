@@ -82,6 +82,7 @@ test_karate_preflight_and_lifecycle() (
   makevn_load_config() { :; }
   makevn_app_health_url() { printf '%s' "${url}"; }
   cmd_karate_docker_up() { echo docker >>"${TMP_ROOT}/steps"; }
+  cmd_docker_ps_required() { :; }
   cmd_package() { echo package >>"${TMP_ROOT}/steps"; }
   cmd_run_app_bg() {
     assert_equal "$2" http://resolved/health

@@ -2053,3 +2053,34 @@ fn tail_window_reads_same_path_replacement_even_when_it_has_regrown() {
     }
     fs::remove_file(path).unwrap();
 }
+
+#[test]
+fn karate_phase_records_preserve_order_status_duration_and_own_details() {
+    let phases = super::BackendPhaseFiles::new().unwrap();
+    for (index, title, code) in [
+        (1, "karate-docker-up", 0),
+        (3, "run-app-bg", 0),
+        (5, "karate-test", 42),
+    ] {
+        fs::write(phases.0.join(index.to_string()), format!("command={title}\nrepo=/repo\ncwd=/repo\nlog_path=/repo/{title}.log\nrelative_log_path={title}.log\ncommand_display=makevn {title}\ntitle={title}\nduration_seconds=7\nexit_code={code}\n")).unwrap();
+        fs::write(
+            phases.0.join(format!("{index}.detail")),
+            format!("details for {title}\n"),
+        )
+        .unwrap();
+    }
+    // A record being published is not yet a completed phase.
+    fs::write(phases.0.join("4"), "command=docker-ps-required\n").unwrap();
+    let summaries = phases.read();
+    assert_eq!(summaries.len(), 3);
+    assert_eq!(summaries[0].title, "karate-docker-up");
+    assert_eq!(summaries[1].title, "run-app-bg");
+    assert_eq!(summaries[2].title, "karate-test");
+    assert_eq!(summaries[2].exit_code, 42);
+    assert_eq!(summaries[2].duration, "7s");
+    assert_eq!(
+        summaries[2].relative_log_path.as_deref(),
+        Some("karate-test.log")
+    );
+    assert_eq!(summaries[2].detail_lines, vec!["details for karate-test"]);
+}

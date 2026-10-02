@@ -514,3 +514,8 @@ Nonempty input must use HTTP(S) without whitespace and is saved safely in
 Without a terminal, doctor never requests input and reports how to configure
 missing readiness. `profile refresh` remains automatic and noninteractive;
 `init --force` does not force these prompts or overwrite existing config.
+
+The interactive `karate-all` dashboard retains completed phases above the active
+phase, including each phase's status, elapsed time and log path. The final
+summary preserves the same history on success and failure. Startup details
+belong to `run-app-bg`, not `karate-test`; phases not executed are not listed.
