@@ -8,10 +8,18 @@ PATTERN = re.compile(r'(?:--spring\.profiles\.active=|\bSPRING_PROFILES_ACTIVE\s
 VALID = re.compile(r'[A-Za-z0-9_.-]+(?:,[A-Za-z0-9_.-]+)*\Z')
 
 
+KARATE_TOKEN = re.compile(r'(?<![a-z0-9])karate(?![a-z0-9])', re.I)
+KARATE_COMMAND = re.compile(
+    r'^\s*(?:-\s*)?(?:run:\s*)?(?:\./)?(?:makevn\s+karate-(?:test|all)\b'
+    r'|mvnw?\b[^\n]*\s-f\s+[\"\']?[^\s\"\']*karate/pom\.xml)', re.I)
+
+
 def labelled_karate(lines):
-    return any(re.search(r'^\s*(?:-\s*)?(?:name|uses):.*karate', line, re.I)
-               or re.search(r'\b(?:mvn|mvnw|makevn)\b.*karate', line, re.I)
-               for _, line in lines)
+    for _, line in lines:
+        label = re.match(r'^\s*(?:-\s*)?(?:name|uses):\s*(.*)', line)
+        if (label and KARATE_TOKEN.search(label[1])) or KARATE_COMMAND.search(line):
+            return True
+    return False
 
 
 def karate_scope_lines(text):
@@ -58,7 +66,7 @@ def karate_scope_lines(text):
         steps = [step_lines[a:b] for a, b in
                  zip(step_starts, step_starts[1:] + [len(step_lines)])]
         job_id = job[0][1].strip().split(':', 1)[0].strip("\"'")
-        if 'karate' not in job_id.lower() and not labelled_karate(prefix + [item for step in steps for item in step]):
+        if not KARATE_TOKEN.search(job_id) and not labelled_karate(prefix + [item for step in steps for item in step]):
             continue
         eligible.extend(prefix)
         for step in steps:

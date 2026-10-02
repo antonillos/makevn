@@ -74,6 +74,33 @@ class ProfilesTest(unittest.TestCase):
         self.assertEqual(result['profiles'], '')
         self.assertNotIn('unit-test', result['candidates'])
 
+    def test_unit_class_names_and_echoes_are_not_karate_commands(self):
+        for command in ['mvn -Dtest=KarateConfigurationTest test',
+                        'echo mvn -f e2e/karate/pom.xml test']:
+            with self.subTest(command=command):
+                self.workflow('verify.yml', f"""jobs:
+  unit:
+    env:
+      SPRING_PROFILES_ACTIVE: unit-test
+    steps:
+      - name: Unit tests
+        run: {command}
+  karate:
+    steps:
+      - run: makevn karate-test
+""", raw=True)
+                self.assertEqual(module.detect(self.repo)['status'], 'missing')
+
+    def test_explicit_karate_command_identifies_generic_job(self):
+        self.workflow('verify.yml', """jobs:
+  verify:
+    steps:
+      - name: Start application
+        run: java -jar app.jar --spring.profiles.active=local
+      - run: ./mvnw -f e2e/karate/pom.xml test
+""", raw=True)
+        self.assertEqual(module.detect(self.repo)['profiles'], 'local')
+
     def test_unit_job_does_not_conflict_with_karate_job(self):
         self.workflow('verify.yml', """jobs:
   unit:
