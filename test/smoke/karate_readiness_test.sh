@@ -61,7 +61,10 @@ test_wait_retries_and_deadline() (
   SECONDS=0
   if makevn_wait_app_health http://localhost/health 5 >"${TMP_ROOT}/wait" 2>&1; then exit 1; fi
   assert_equal "${SECONDS}" 5
-  grep -Fq 'did not pass within 5s' "${TMP_ROOT}/wait"
+  grep -Fq 'MAKEVN_APP_HEALTH_TIMEOUT=120' "${TMP_ROOT}/wait"
+  grep -Fq 'check the health URL and HTTP response' "${TMP_ROOT}/wait"
+  ! grep -Fq 'Error:' "${TMP_ROOT}/wait"
+  grep -Fq 'did not respond with HTTP 2xx within 5s' "${TMP_ROOT}/wait"
 )
 test_wait_exited_process() (
   makevn_app_process_exited() { return 0; }

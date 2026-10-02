@@ -219,7 +219,10 @@ makevn_wait_app_health() {
     sleep 1
   done
 
-  makevn_report_app_startup_failure "App health check did not pass within ${timeout_seconds}s: ${health_url}" "${log_file}"
+  makevn_report_run_detail "Timeout: the application did not respond with HTTP 2xx within ${timeout_seconds}s: ${health_url}"
+  makevn_report_run_detail "Readiness was not verified; this does not establish an application failure."
+  makevn_report_run_detail "If startup needs more time, increase MAKEVN_APP_HEALTH_TIMEOUT in .makevn/config (for example: MAKEVN_APP_HEALTH_TIMEOUT=120). Also check the health URL and HTTP response."
+  [[ -z "${log_file}" ]] || makevn_report_run_detail "Full application log: ${log_file}"
   return 1
 }
 

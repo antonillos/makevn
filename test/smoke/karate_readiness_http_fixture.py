@@ -46,11 +46,13 @@ try:
     for status in (301, 404, 503):
         result = wait_for(str(status), 1)
         assert result.returncode != 0
-        assert "did not pass within 1s" in result.stderr
+        assert "did not respond with HTTP 2xx within 1s" in result.stdout
+        assert "MAKEVN_APP_HEALTH_TIMEOUT=120" in result.stdout
     started = time.monotonic()
     result = wait_for("hang", 1)
     assert result.returncode != 0
-    assert "did not pass within 1s" in result.stderr
+    assert "did not respond with HTTP 2xx within 1s" in result.stdout
+    assert "MAKEVN_APP_HEALTH_TIMEOUT=120" in result.stdout
     assert time.monotonic() - started < 2.5
 finally:
     server.shutdown()
