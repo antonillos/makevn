@@ -37,6 +37,10 @@ try:
                 token, response = responses[next_response]
                 found = output.find(token.encode(), scan_from)
                 if found >= 0:
+                    # Readline must enter editing mode and install its prefilled
+                    # value before Ctrl-U is sent (otherwise canonical input
+                    # consumes Ctrl-U before Readline sees it).
+                    time.sleep(0.15)
                     payload = b"\x15" + response.encode() if response else b""
                     os.write(fd, payload + b"\n")
                     scan_from = len(output)

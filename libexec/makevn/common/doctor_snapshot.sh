@@ -19,15 +19,15 @@ makevn_read_editable_default() {
     fi
   fi
 
-  printf '%s' "${prompt}" >&2
-  if [[ -t 0 ]]; then
-    if (( BASH_VERSINFO[0] >= 4 )); then
-      read -r -e -i "${default_value}" value || return 1
-    else
-      read -r value || return 1
-    fi
+  if [[ -t 0 ]] && (( BASH_VERSINFO[0] >= 4 )); then
+    read -r -e -i "${default_value}" -p "${prompt}" value || return 1
   else
-    read -r value </dev/tty || return 1
+    printf '%s' "${prompt}" >&2
+    if [[ -t 0 ]]; then
+      read -r value || return 1
+    else
+      read -r value </dev/tty || return 1
+    fi
   fi
   value="$(makevn_trim "${value}")"
   [[ -n "${value}" ]] || value="${default_value}"

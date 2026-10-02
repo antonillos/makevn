@@ -4736,6 +4736,7 @@ main() {
   test_doctor_health_skip_and_noninteractive
   test_doctor_health_invalid_and_explicit_url
   test_doctor_health_confirms_suggested_default
+  test_doctor_health_readline_fallback
   test_doctor_health_config_roundtrip
   test_doctor_local_containers_prompt_also_prompts_health
   test_doctor_compose_prompt_does_not_chain_local_containers_prompt

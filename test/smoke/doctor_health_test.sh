@@ -160,6 +160,19 @@ test_doctor_health_confirms_suggested_default() {
   assert_contains "${repo}/.makevn/config" 'http://localhost:18082/sample/health'
 }
 
+test_doctor_health_readline_fallback() {
+  local repo="${TMP_ROOT}/doctor-health-readline"
+  local output="${TMP_ROOT}/doctor-health-readline.out"
+  doctor_health_fixture "${repo}"
+  mkdir -p "${repo}/fake-bin"
+  printf '#!/usr/bin/env bash\nexit 1\n' >"${repo}/fake-bin/zsh"
+  chmod +x "${repo}/fake-bin/zsh"
+  PATH="${repo}/fake-bin:${PATH}" doctor_health_pty "${repo}" "${output}" '[ ["Health URL [", "skip"] ]'
+  assert_not_contains "${repo}/.makevn/config" 'MAKEVN_APP_HEALTH_URL='
+  PATH="${repo}/fake-bin:${PATH}" doctor_health_pty "${repo}" "${output}" '[ ["Health URL [", "http://localhost:18090/ready"] ]'
+  assert_contains "${repo}/.makevn/config" 'http://localhost:18090/ready'
+}
+
 test_doctor_health_config_roundtrip() (
   source "${ROOT_DIR}/libexec/makevn/common.sh"
   local repo="${TMP_ROOT}/doctor-health-config-roundtrip"
@@ -187,6 +200,7 @@ if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
   test_doctor_health_skip_and_noninteractive
   test_doctor_health_invalid_and_explicit_url
   test_doctor_health_confirms_suggested_default
+  test_doctor_health_readline_fallback
   test_doctor_health_config_roundtrip
   test_doctor_local_containers_prompt_also_prompts_health
   printf 'Doctor health prompt tests passed\n'
