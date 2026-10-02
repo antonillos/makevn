@@ -6,6 +6,7 @@ use std::fs::{self, File};
 use std::io::{self, IsTerminal, Read, Seek, SeekFrom, Write};
 use std::mem::MaybeUninit;
 use std::os::fd::AsRawFd;
+use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
 use std::process;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -2289,6 +2290,15 @@ impl LogTailWindow {
     }
 
     fn read_available(&mut self) -> io::Result<()> {
+        if let (Some(file), Ok(current)) = (&self.file, fs::metadata(&self.path)) {
+            let opened = file.metadata()?;
+            if (opened.dev(), opened.ino()) != (current.dev(), current.ino()) {
+                self.file = None;
+                self.offset = 0;
+                self.pending.clear();
+                self.lines.clear();
+            }
+        }
         if self.file.is_none() {
             match File::open(&self.path) {
                 Ok(file) => self.file = Some(file),

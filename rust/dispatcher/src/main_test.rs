@@ -2025,3 +2025,31 @@ fn rejects_removed_exec_command() {
         "Unknown command: exec"
     );
 }
+
+#[test]
+fn tail_window_reads_same_path_replacement_even_when_it_has_regrown() {
+    let suffix = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let path = env::temp_dir().join(format!("makevn-replaced-{}-{suffix}", process::id()));
+    let replacement = path.with_extension("new");
+    for content in ["new\n", "new\nlonger output\n"] {
+        fs::write(&path, "old\n").unwrap();
+        let mut tail = super::LogTailWindow::new(path.clone());
+        tail.read_available().unwrap();
+        tail.rendered_lines = 7;
+        fs::write(&replacement, content).unwrap();
+        fs::rename(&replacement, &path).unwrap();
+        tail.read_available().unwrap();
+        assert_eq!(
+            tail.lines,
+            content.lines().map(String::from).collect::<Vec<_>>()
+        );
+        assert_eq!(tail.offset, content.len() as u64);
+        assert_eq!(tail.rendered_lines, 7);
+        tail.read_available().unwrap();
+        assert_eq!(tail.lines.len(), content.lines().count());
+    }
+    fs::remove_file(path).unwrap();
+}

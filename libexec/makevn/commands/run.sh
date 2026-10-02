@@ -413,6 +413,8 @@ makevn_start_app_background() {
 
   (
     cd "${repo_root}"
+    local log_header
+    log_header="$(mktemp "${log_dir}/app.log.XXXXXX")"
     {
       printf "started: %s\n" "$(date "+%Y-%m-%d %H:%M:%S")"
       printf "java_home: %s\n" "${java_home}"
@@ -430,7 +432,8 @@ makevn_start_app_background() {
         printf "command: %s\n" "$(makevn_quote_command env JAVA_HOME="${java_home}" java -jar "${jar_file}")"
       fi
       printf '\n'
-    } > "${log_file}" 2>&1
+    } > "${log_header}" 2>&1
+    mv -f "${log_header}" "${log_file}"
     if [[ -n "${local_containers}" ]]; then
       exec env JAVA_HOME="${java_home}" PATH="${java_home}/bin:${PATH}" LOCAL_CONTAINERS="${local_containers}" java -jar "${jar_file}" >> "${log_file}" 2>&1
     fi
