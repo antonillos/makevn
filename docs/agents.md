@@ -519,3 +519,13 @@ The interactive `karate-all` dashboard retains completed phases above the active
 phase, including each phase's status, elapsed time and log path. The final
 summary preserves the same history on success and failure. Startup details
 belong to `run-app-bg`, not `karate-test`; phases not executed are not listed.
+
+Before local Karate verification, run `makevn doctor` and inspect the effective
+Karate application profiles, their source and any CI candidates. Prefer a
+project-specific `MAKEVN_KARATE_APP_PROFILES="standalone,local"` in
+`.makevn/config` when these profiles are required by that project's CI.
+`SPRING_PROFILES_ACTIVE` overrides that setting. Do not assume these profile
+names for other repositories. Noninteractive agents must not wait for a prompt:
+use an explicit approved setting/override when detection is ambiguous; report
+unresolved workflow expressions rather than evaluating them. `profile refresh`
+updates detected profile metadata, not user configuration.

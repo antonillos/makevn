@@ -378,6 +378,7 @@ makevn_start_app_background() {
   if ! makevn_frontend_owns_loader; then
     print_command_intro "${repo_root}" "${mode}"
   fi
+  makevn_report_run_detail "Spring application profiles: ${SPRING_PROFILES_ACTIVE:-application defaults} (${MAKEVN_EFFECTIVE_KARATE_APP_PROFILES_SOURCE:-inherited environment / application defaults})"
   makevn_ensure_app_jar "${repo_root}" "${maven_base_path}" "${boot_module}"
   jar_file="${MAKEVN_ENSURED_APP_JAR:-}"
   jar_main_class="$(makevn_app_jar_manifest_value "${jar_file}" "Main-Class" || true)"
@@ -418,6 +419,8 @@ makevn_start_app_background() {
     {
       printf "started: %s\n" "$(date "+%Y-%m-%d %H:%M:%S")"
       printf "java_home: %s\n" "${java_home}"
+      printf "spring_profiles_active: %s\n" "${SPRING_PROFILES_ACTIVE:-application defaults}"
+      printf "spring_profiles_source: %s\n" "${MAKEVN_EFFECTIVE_KARATE_APP_PROFILES_SOURCE:-inherited environment / application defaults}"
       printf "jar: %s\n" "${jar_file}"
       if [[ -n "${jar_main_class}" ]]; then
         printf "main_class: %s\n" "${jar_main_class}"

@@ -27,6 +27,9 @@ cmd_profile_refresh() {
     makevn_print_item "updated" ".makevn/makevn.mk"
   fi
   makevn_print_item "cache source" "${MAKEVN_DETECTED_MAVEN_CACHE_SOURCE:-unresolved}"
+  makevn_print_item "Karate app profiles" "${MAKEVN_DETECTED_KARATE_APP_PROFILES:-not resolved}"
+  makevn_print_item "Karate profiles source" "${MAKEVN_DETECTED_KARATE_APP_PROFILES_SOURCE:-none}"
+  makevn_print_item "Karate profiles candidates" "${MAKEVN_DETECTED_KARATE_APP_PROFILES_CANDIDATES:-none}"
   makevn_print_item "workflows" "${MAKEVN_DETECTED_WORKFLOW_FILES:-none}"
   [[ -f "${profile_path}" ]] || makevn_die "Profile refresh failed: ${profile_path} was not created"
 }

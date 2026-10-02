@@ -403,6 +403,7 @@ makevn_collect_doctor_snapshot() {
   [[ -n "${MAKEVN_RUN_CMD:-}" ]] && run_configured="yes"
 
   makevn_resolve_doctor_app_health_url "${repo_root}" "${app_runnable}"
+  makevn_doctor_karate_profiles "${repo_root}" "${app_runnable}"
 
   if [[ -n "${MAKEVN_MIN_COVERAGE_THRESHOLD:-}" ]]; then
     detected_coverage_threshold="${MAKEVN_MIN_COVERAGE_THRESHOLD} (from config)"
@@ -531,6 +532,9 @@ makevn_print_doctor_json() {
   printf '    "detected_maven_cli_flags": "%s",\n' "$(makevn_json_escape "${MAKEVN_DOCTOR_DETECTED_MAVEN_CLI_FLAGS}")"
   printf '    "detected_maven_prop_flags": "%s",\n' "$(makevn_json_escape "${MAKEVN_DOCTOR_DETECTED_MAVEN_PROP_FLAGS}")"
   printf '    "detected_maven_cache": "%s",\n' "$(makevn_json_escape "${MAKEVN_DOCTOR_DETECTED_MAVEN_CACHE_SOURCE}")"
+  printf '    "karate_app_profiles": "%s",\n' "$(makevn_json_escape "${MAKEVN_DOCTOR_KARATE_APP_PROFILES}")"
+  printf '    "karate_app_profiles_source": "%s",\n' "$(makevn_json_escape "${MAKEVN_DOCTOR_KARATE_APP_PROFILES_SOURCE}")"
+  printf '    "karate_app_profiles_candidates": "%s",\n' "$(makevn_json_escape "${MAKEVN_DOCTOR_KARATE_APP_PROFILES_CANDIDATES}")"
   printf '    "detected_app_health_url": "%s",\n' "$(makevn_json_escape "${MAKEVN_DOCTOR_DETECTED_APP_HEALTH_URL}")"
   printf '    "detected_coverage_activation": "%s",\n' "$(makevn_json_escape "${MAKEVN_DOCTOR_DETECTED_COVERAGE_ACTIVATION}")"
   printf '    "jacoco_report_layout": "%s",\n' "$(makevn_json_escape "${MAKEVN_DOCTOR_JACOCO_REPORT_LAYOUT}")"

@@ -724,3 +724,11 @@ Nonempty input must use HTTP(S) without whitespace and is saved safely in
 Without a terminal, doctor never requests input and reports how to configure
 missing readiness. `profile refresh` remains automatic and noninteractive;
 `init --force` does not force these prompts or overwrite existing config.
+
+For `karate-all`, inspect `makevn doctor` for effective application Spring
+profiles and their CI source. Selection precedence is `SPRING_PROFILES_ACTIVE`
+(explicit empty is respected), `.makevn/config` `MAKEVN_KARATE_APP_PROFILES`,
+then unambiguous literal Karate CI detection. No global `standalone,local`
+default exists. Noninteractive execution does not prompt or write user config;
+resolve ambiguous/dynamic candidates explicitly. The setting affects only the
+managed Karate application, not the test JVM or standalone application commands.

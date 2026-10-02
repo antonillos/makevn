@@ -589,3 +589,26 @@ Nonempty input must use HTTP(S) without whitespace and is saved safely in
 Without a terminal, doctor never requests input and reports how to configure
 missing readiness. `profile refresh` remains automatic and noninteractive;
 `init --force` does not force these prompts or overwrite existing config.
+
+### Karate application Spring profiles
+
+`karate-all` selects application profiles in this order:
+`SPRING_PROFILES_ACTIVE` (including an explicit empty override), then
+`MAKEVN_KARATE_APP_PROFILES` in `.makevn/config`, then unambiguous literal
+profiles detected in Karate CI workflows. For example:
+
+```bash
+MAKEVN_KARATE_APP_PROFILES="standalone,local"
+```
+
+This setting applies only to the application started by `karate-all`, not to
+standalone `run-app-bg` or the Karate Maven JVM. `doctor` reports the effective
+profiles, source and candidates; `profile refresh` refreshes the detection cache.
+An initialized interactive Karate repository can confirm an editable prefilled
+value in `doctor`; Enter confirms it and `skip` leaves configuration unchanged.
+Without a detected value the prefilled value is `skip`, not a guessed global
+Spring profile. Noninteractive agents/CI never receive this prompt or silently
+write `.makevn/config`. Ambiguous/dynamic workflow profiles need an explicit
+selection before `karate-all` proceeds. Without any CI profile evidence,
+application defaults remain available. HTTP readiness does not verify that
+profile-dependent functionality or Kafka is enabled.

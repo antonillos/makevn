@@ -4836,6 +4836,9 @@ main() {
   python3 "${ROOT_DIR}/test/smoke/tail_metadata_pty_test.py" "${ROOT_DIR}/target/release/makevn"
   bash "${ROOT_DIR}/test/smoke/karate_readiness_test.sh"
   bash "${ROOT_DIR}/test/smoke/karate_phase_records_test.sh"
+  python3 "${ROOT_DIR}/test/smoke/karate_profiles_test.py"
+  bash "${ROOT_DIR}/test/smoke/karate_profiles_test.sh"
+  bash "${ROOT_DIR}/test/smoke/karate_profiles_doctor_test.sh"
   bash "${ROOT_DIR}/test/smoke/jdk_discovery_test.sh"
   bash "${ROOT_DIR}/test/smoke/bash_crap_test.sh"
   printf 'Smoke tests passed\n'

@@ -28,3 +28,6 @@ source "${MAKEVN_LIBEXEC_DIR}/common/java_maven.sh"
 source "${MAKEVN_LIBEXEC_DIR}/common/state_files.sh"
 # shellcheck source=/dev/null
 source "${MAKEVN_LIBEXEC_DIR}/common/generated_contract.sh"
+
+# shellcheck source=/dev/null
+source "${MAKEVN_LIBEXEC_DIR}/common/karate_profiles.sh"

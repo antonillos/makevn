@@ -183,6 +183,18 @@ cmd_karate_all() {
   health_timeout="${MAKEVN_APP_HEALTH_TIMEOUT:-60}"
   makevn_validate_app_health_timeout "${health_timeout}"
 
+  makevn_resolve_karate_profiles "${repo_root}"
+  if [[ "${MAKEVN_DETECTED_KARATE_APP_PROFILES_STATUS}" == ambiguous && -z "${SPRING_PROFILES_ACTIVE+x}" && -z "${MAKEVN_KARATE_APP_PROFILES:-}" ]]; then
+    makevn_die "Ambiguous Karate Spring profiles: ${MAKEVN_DETECTED_KARATE_APP_PROFILES_CANDIDATES}. Configure MAKEVN_KARATE_APP_PROFILES in .makevn/config or set SPRING_PROFILES_ACTIVE explicitly."
+  fi
+  if [[ "${MAKEVN_EFFECTIVE_KARATE_APP_PROFILES_SOURCE}" == config* && ! "${MAKEVN_EFFECTIVE_KARATE_APP_PROFILES}" =~ ^[A-Za-z0-9_.-]+(,[A-Za-z0-9_.-]+)*$ ]]; then
+    makevn_die "Invalid MAKEVN_KARATE_APP_PROFILES: use a comma-separated list of literal Spring profile names."
+  fi
+  makevn_report_run_detail "Karate application profiles: ${MAKEVN_EFFECTIVE_KARATE_APP_PROFILES:-application defaults} (${MAKEVN_EFFECTIVE_KARATE_APP_PROFILES_SOURCE})"
+  if [[ -z "${MAKEVN_EFFECTIVE_KARATE_APP_PROFILES}" ]]; then
+    makevn_report_run_detail "No explicit Karate profiles selected. If CI requires profiles, configure MAKEVN_KARATE_APP_PROFILES in .makevn/config."
+  fi
+
   makevn_run_karate_phase 1 cmd_karate_docker_up "${repo_root}"
 
   if [[ "${SKIP_PACKAGE:-false}" == "false" ]]; then
@@ -191,7 +203,11 @@ cmd_karate_all() {
     printf '%s\n' "$(makevn_dim "Skipping package step (SKIP_PACKAGE=true)")"
   fi
 
-  makevn_run_karate_phase 3 cmd_run_app_bg "${repo_root}" "${health_url}" "${health_timeout}"
+  if [[ -n "${MAKEVN_EFFECTIVE_KARATE_APP_PROFILES}" ]]; then
+    SPRING_PROFILES_ACTIVE="${MAKEVN_EFFECTIVE_KARATE_APP_PROFILES}" makevn_run_karate_phase 3 cmd_run_app_bg "${repo_root}" "${health_url}" "${health_timeout}"
+  else
+    makevn_run_karate_phase 3 cmd_run_app_bg "${repo_root}" "${health_url}" "${health_timeout}"
+  fi
   trap 'cmd_stop_app "'"${repo_root}"'" >/dev/null 2>&1 || true' EXIT INT TERM
 
   makevn_run_karate_phase 4 cmd_docker_ps_required "${repo_root}" --compose karate
