@@ -6,6 +6,7 @@ use std::fs::{self, File};
 use std::io::{self, IsTerminal, Read, Seek, SeekFrom, Write};
 use std::mem::MaybeUninit;
 use std::os::fd::AsRawFd;
+use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
 use std::process;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -185,6 +186,49 @@ struct BackendMetadataFile {
 #[derive(Debug)]
 struct BackendDetailFile {
     path: PathBuf,
+}
+
+// Completion records survive metadata changes and are scoped to one invocation.
+struct BackendPhaseFiles(PathBuf);
+
+impl BackendPhaseFiles {
+    fn new() -> Result<Self, String> {
+        let temporary = BackendDetailFile::new()?;
+        let path = temporary.path().with_extension("phases");
+        fs::create_dir(&path).map_err(|error| error.to_string())?;
+        Ok(Self(path))
+    }
+
+    fn read(&self) -> Vec<CommandSummary> {
+        (1..=5)
+            .filter_map(|index| {
+                let path = self.0.join(index.to_string());
+                let content = fs::read_to_string(&path).ok()?;
+                let metadata = parse_backend_metadata(&content)?;
+                let value = |key: &str| content.lines().find_map(|line| line.strip_prefix(key));
+                let seconds = value("duration_seconds=")?.parse().ok()?;
+                let exit_code = value("exit_code=")?.parse().ok()?;
+                let mut summary = summary_from_backend_metadata(
+                    exit_code,
+                    format_duration(Duration::from_secs(seconds)),
+                    "karate-all",
+                    Some(&metadata),
+                );
+                summary.detail_lines = fs::read_to_string(path.with_extension("detail"))
+                    .unwrap_or_default()
+                    .lines()
+                    .map(str::to_owned)
+                    .collect();
+                Some(summary)
+            })
+            .collect()
+    }
+}
+
+impl Drop for BackendPhaseFiles {
+    fn drop(&mut self) {
+        let _ = fs::remove_dir_all(&self.0);
+    }
 }
 
 #[derive(Debug)]
@@ -1153,7 +1197,15 @@ fn dispatch_backend_invocations(
             None
         };
 
+        let phase_files = if fallback_title == "karate-all" {
+            Some(BackendPhaseFiles::new()?)
+        } else {
+            None
+        };
         let mut command = process::Command::new("bash");
+        if let Some(phases) = &phase_files {
+            command.env("MAKEVN_BACKEND_PHASE_DIR", &phases.0);
+        }
         command.arg(backend_path);
         command.args(&backend_invocation.args);
         command.env("MAKEVN_BIN_PATH", current_exe);
@@ -1185,6 +1237,7 @@ fn dispatch_backend_invocations(
                 &completed_summaries,
                 renderer.as_mut(),
                 detail_file.as_ref(),
+                phase_files.as_ref(),
             );
             if let Some(renderer) = renderer.as_mut() {
                 renderer.clear_line();
@@ -1225,7 +1278,18 @@ fn dispatch_backend_invocations(
         let failure_hint = read_failure_hint(run_result.summary.log_path.as_deref());
         let mut summary = run_result.summary;
         summary.detail_lines = detail_lines;
-        completed_summaries.push(summary);
+        let phases = phase_files
+            .as_ref()
+            .map(|files| files.read())
+            .unwrap_or_default();
+        let needs_fallback = phases
+            .last()
+            .map(|phase| phase.exit_code != last_exit_code)
+            .unwrap_or(true);
+        completed_summaries.extend(phases);
+        if needs_fallback {
+            completed_summaries.push(summary);
+        }
 
         if last_exit_code != 0 {
             if let Some(r) = renderer.as_mut() {
@@ -1360,6 +1424,7 @@ fn run_backend_with_loader(
     completed_summaries: &[CommandSummary],
     mut renderer: Option<&mut SpinnerRenderer>,
     detail_file: Option<&BackendDetailFile>,
+    phase_files: Option<&BackendPhaseFiles>,
 ) -> Result<BackendRunResult, String> {
     let started_at = Instant::now();
     let mut child = command.spawn().map_err(|error| {
@@ -1424,16 +1489,21 @@ fn run_backend_with_loader(
     }
 
     loop {
+        let mut live_summaries = completed_summaries.to_vec();
+        if let Some(phases) = phase_files {
+            live_summaries.extend(phases.read());
+        }
+        let completed_summaries = live_summaries.as_slice();
         if let Some(metadata_file) = metadata_file {
             let latest_metadata = read_backend_metadata(metadata_file.path())?;
             if latest_metadata.is_some() && latest_metadata != metadata {
                 metadata = latest_metadata;
-                if let Some(renderer) = renderer.as_mut() {
-                    renderer.clear_frame_line();
-                }
                 if tail_active {
                     if let Some(metadata) = metadata.as_ref() {
-                        tail_window = Some(LogTailWindow::new(PathBuf::from(&metadata.log_path)));
+                        LogTailWindow::follow_log(
+                            &mut tail_window,
+                            PathBuf::from(&metadata.log_path),
+                        );
                     }
                 }
             }
@@ -1441,7 +1511,7 @@ fn run_backend_with_loader(
 
         if let Some(df) = detail_file {
             let latest = df.read_lines();
-            if latest.len() != current_detail_lines.len() {
+            if latest != current_detail_lines {
                 current_detail_lines = latest;
             }
         }
@@ -2244,6 +2314,24 @@ impl LogTailWindow {
         }
     }
 
+    fn follow_log(window: &mut Option<Self>, path: PathBuf) {
+        let window = window.get_or_insert_with(|| Self::new(path.clone()));
+        window.switch_log(path);
+    }
+
+    fn switch_log(&mut self, path: PathBuf) {
+        if self.path == path {
+            return;
+        }
+        self.path = path;
+        self.file = None;
+        self.offset = 0;
+        self.pending.clear();
+        self.lines.clear();
+        // Keep the painted rows and chosen height: the next render must erase
+        // the previous phase before drawing the new log in the same block.
+    }
+
     fn set_prefix_lines(&mut self, prefix_lines: Vec<String>) {
         self.prefix_lines = prefix_lines;
     }
@@ -2271,6 +2359,15 @@ impl LogTailWindow {
     }
 
     fn read_available(&mut self) -> io::Result<()> {
+        if let (Some(file), Ok(current)) = (&self.file, fs::metadata(&self.path)) {
+            let opened = file.metadata()?;
+            if (opened.dev(), opened.ino()) != (current.dev(), current.ino()) {
+                self.file = None;
+                self.offset = 0;
+                self.pending.clear();
+                self.lines.clear();
+            }
+        }
         if self.file.is_none() {
             match File::open(&self.path) {
                 Ok(file) => self.file = Some(file),

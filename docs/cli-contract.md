@@ -552,3 +552,63 @@ For AI agents, the intended preference order is:
 2. use `--json` when structured decisions are needed
 3. avoid `--tail` unless a human explicitly requests an interactive local view
 4. use the skill for workflow policy, not for parsing CLI output
+
+
+### Strict Karate HTTP readiness
+
+`makevn karate-all` requires a configured or detected application health URL
+before starting Docker or packaging. Set `MAKEVN_APP_HEALTH_URL` in
+`.makevn/config` when detection cannot identify the correct endpoint.
+Resolution remains config, then persisted profile, then generic detection.
+
+Only HTTP 2xx verifies readiness; redirects and other statuses are retried.
+`MAKEVN_APP_HEALTH_TIMEOUT` defaults to 60 seconds and must be an integer
+between 1 and 2147483647 (without leading zeros). Requests have a 2-second
+connection limit and a 5-second total limit, capped by the remaining deadline.
+Timeout or application exit prevents Karate from running and preserves the
+application log under `.makevn/app/app.log`.
+
+Standalone `run-app-bg` can still start without a health URL, but warns that
+only process liveness was checked, not HTTP readiness. Use `karate-test`
+directly for an externally managed application. HTTP readiness does not
+validate JSON health status, application semantics, or Kafka availability.
+
+
+### Doctor health configuration prompts
+
+For an initialized runnable application without an explicit health URL,
+interactive `makevn doctor` asks to confirm/correct a detected URL or enter
+one when detection finds none. The input is prefilled with the detected URL or a suggested URL using the
+application port/context and /health. Suggestions are explicitly unverified;
+Enter confirms and saves the editable value, while typing skip leaves configuration
+unchanged. Earlier compose
+or LOCAL_CONTAINERS questions do not suppress the health question.
+
+Nonempty input must use HTTP(S) without whitespace and is saved safely in
+`.makevn/config`. Existing explicit URLs are preserved without prompting.
+Without a terminal, doctor never requests input and reports how to configure
+missing readiness. `profile refresh` remains automatic and noninteractive;
+`init --force` does not force these prompts or overwrite existing config.
+
+### Karate application Spring profiles
+
+`karate-all` selects application profiles in this order:
+`SPRING_PROFILES_ACTIVE` (including an explicit empty override), then
+`MAKEVN_KARATE_APP_PROFILES` in `.makevn/config`, then unambiguous literal
+profiles detected in Karate CI workflows. For example:
+
+```bash
+MAKEVN_KARATE_APP_PROFILES="standalone,local"
+```
+
+This setting applies only to the application started by `karate-all`, not to
+standalone `run-app-bg` or the Karate Maven JVM. `doctor` reports the effective
+profiles, source and candidates; `profile refresh` refreshes the detection cache.
+An initialized interactive Karate repository can confirm an editable prefilled
+value in `doctor`; Enter confirms it and `skip` leaves configuration unchanged.
+Without a detected value the prefilled value is `skip`, not a guessed global
+Spring profile. Noninteractive agents/CI never receive this prompt or silently
+write `.makevn/config`. Ambiguous/dynamic workflow profiles need an explicit
+selection before `karate-all` proceeds. Without any CI profile evidence,
+application defaults remain available. HTTP readiness does not verify that
+profile-dependent functionality or Kafka is enabled.

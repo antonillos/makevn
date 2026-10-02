@@ -488,155 +488,6 @@ EOF
   [[ "${output}" == *"Code Java version: 8"* ]] || fail "doctor should resolve Java version from maven-compiler-plugin source/target"
 }
 
-test_doctor_does_not_invent_health_check() {
-  local repo="${TMP_ROOT}/doctor-no-health"
-  local output
-
-  mkdir -p "${repo}/src/main/resources"
-  cat > "${repo}/pom.xml" <<'EOF'
-<project>
-  <modelVersion>4.0.0</modelVersion>
-  <groupId>com.example</groupId>
-  <artifactId>sample</artifactId>
-  <version>1.0.0</version>
-</project>
-EOF
-  cat > "${repo}/src/main/resources/application.yml" <<'EOF'
-server:
-  port: 18080
-EOF
-
-  output="$(${CLI} --repo "${repo}" doctor)"
-
-  [[ "${output}" == *"Detected app health URL: not detected"* ]] || fail "doctor should not invent an app health URL"
-}
-
-test_doctor_detects_actuator_health_check() {
-  local repo="${TMP_ROOT}/doctor-actuator-health"
-  local output
-
-  mkdir -p "${repo}/src/main/resources"
-  cat > "${repo}/pom.xml" <<'EOF'
-<project>
-  <modelVersion>4.0.0</modelVersion>
-  <groupId>com.example</groupId>
-  <artifactId>sample</artifactId>
-  <version>1.0.0</version>
-  <dependencies>
-    <dependency>
-      <groupId>org.springframework.boot</groupId>
-      <artifactId>spring-boot-starter-actuator</artifactId>
-    </dependency>
-  </dependencies>
-</project>
-EOF
-  cat > "${repo}/src/main/resources/application.yml" <<'EOF'
-server:
-  port: 18080
-EOF
-
-  output="$(${CLI} --repo "${repo}" doctor)"
-
-  [[ "${output}" == *"Detected app health URL: http://localhost:18080/actuator/health"* ]] || fail "doctor should detect Actuator health URL"
-}
-
-test_doctor_local_containers_prompt_does_not_chain_health_prompt() {
-  local repo="${TMP_ROOT}/doctor-local-containers-health-pty"
-  local output_file="${TMP_ROOT}/doctor-local-containers-health-pty.out"
-
-  mkdir -p "${repo}/.github/workflows" "${repo}/src/main/resources"
-  cat > "${repo}/pom.xml" <<'EOF'
-<project>
-  <dependencies>
-    <dependency>
-      <groupId>org.testcontainers</groupId>
-      <artifactId>testcontainers</artifactId>
-    </dependency>
-    <dependency>
-      <groupId>org.springframework.boot</groupId>
-      <artifactId>spring-boot-starter-actuator</artifactId>
-    </dependency>
-  </dependencies>
-</project>
-EOF
-  cat > "${repo}/src/main/resources/application.yml" <<'EOF'
-server:
-  port: 18080
-EOF
-  cat > "${repo}/.github/workflows/integration.yml" <<'EOF'
-jobs:
-  integration:
-    steps:
-      - run: mvn -B verify -DskipUTs
-EOF
-
-  ${CLI} --repo "${repo}" init >/dev/null
-
-  python3 - "${CLI}" "${repo}" "${output_file}" <<'PY'
-import os
-import pty
-import select
-import signal
-import sys
-import time
-
-cli, repo, output_file = sys.argv[1:4]
-cmd = [cli, '--repo', repo, 'doctor']
-
-pid, fd = pty.fork()
-if pid == 0:
-    os.execv(cmd[0], cmd)
-
-output = bytearray()
-sent_choice = False
-status = None
-start = time.time()
-
-while True:
-    readable, _, _ = select.select([fd], [], [], 0.1)
-    if fd in readable:
-        try:
-            chunk = os.read(fd, 4096)
-        except OSError:
-            break
-        if not chunk:
-            break
-        output.extend(chunk)
-        if not sent_choice and b'Enter number [1-2]:' in output:
-            os.write(fd, b'1\n')
-            sent_choice = True
-
-    try:
-        waited = os.waitpid(pid, os.WNOHANG)
-    except ChildProcessError:
-        break
-    if waited != (0, 0):
-        status = waited[1]
-        break
-    if time.time() - start > 5:
-        os.kill(pid, signal.SIGTERM)
-        time.sleep(0.2)
-        try:
-            os.kill(pid, signal.SIGKILL)
-        except ProcessLookupError:
-            pass
-        status = 124 << 8
-        break
-
-if status is None:
-    status = os.waitpid(pid, 0)[1]
-
-with open(output_file, 'wb') as fh:
-    fh.write(output)
-
-raise SystemExit(os.waitstatus_to_exitcode(status))
-PY
-
-  assert_contains "${output_file}" "Saved to .makevn/config (MAKEVN_LOCAL_CONTAINERS)."
-  assert_contains "${output_file}" "LOCAL_CONTAINERS default: TRUE"
-  assert_not_contains "${output_file}" "Health URL ["
-}
-
 test_doctor_compose_prompt_does_not_chain_local_containers_prompt() {
   local repo="${TMP_ROOT}/doctor-compose-local-containers-pty"
   local output_file="${TMP_ROOT}/doctor-compose-local-containers-pty.out"
@@ -2129,6 +1980,7 @@ EOF
 #!/usr/bin/env bash
 set -euo pipefail
 printf 'curl %s\n' "\$*" >> "${repo}/.curl.log"
+printf 200
 exit 0
 EOF
   chmod +x "${repo}/fake-bin/curl"
@@ -2430,6 +2282,7 @@ EOF
   cat > "${repo}/fake-bin/curl" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
+printf 200
 exit 0
 EOF
   chmod +x "${repo}/fake-bin/curl"
@@ -2515,6 +2368,7 @@ EOF
   cat > "${repo}/fake-bin/curl" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
+printf 200
 exit 0
 EOF
   chmod +x "${repo}/fake-bin/curl"
@@ -2637,6 +2491,7 @@ MAKEVN_CODE_TOOL_VERSIONS=""
 MAKEVN_KARATE_TOOL_VERSIONS=""
 MAKEVN_RUN_CMD=""
 MAKEVN_APP_HEALTH_TIMEOUT=5
+MAKEVN_APP_HEALTH_URL="http://localhost:18081/health"
 EOF
 
   PATH="${repo}/fake-bin:${PATH}" run_pty_command "${output_file}" "${rust_cli}" --repo "${repo}" karate-all || true
@@ -4877,7 +4732,13 @@ main() {
   test_doctor_resolves_java_version_from_compiler_plugin_source
   test_doctor_does_not_invent_health_check
   test_doctor_detects_actuator_health_check
-  test_doctor_local_containers_prompt_does_not_chain_health_prompt
+  test_doctor_missing_health_prompt
+  test_doctor_health_skip_and_noninteractive
+  test_doctor_health_invalid_and_explicit_url
+  test_doctor_health_confirms_suggested_default
+  test_doctor_health_readline_fallback
+  test_doctor_health_config_roundtrip
+  test_doctor_local_containers_prompt_also_prompts_health
   test_doctor_compose_prompt_does_not_chain_local_containers_prompt
   test_doctor_shows_progress_in_tty
   test_doctor_reports_compatible_newer_java_homes
@@ -4972,6 +4833,12 @@ main() {
   test_removed_exec_rejected
   test_command_typo_rejected_before_backend
   test_command_failure_summary_omits_duplicate_elapsed
+  python3 "${ROOT_DIR}/test/smoke/tail_metadata_pty_test.py" "${ROOT_DIR}/target/release/makevn"
+  bash "${ROOT_DIR}/test/smoke/karate_readiness_test.sh"
+  bash "${ROOT_DIR}/test/smoke/karate_phase_records_test.sh"
+  python3 "${ROOT_DIR}/test/smoke/karate_profiles_test.py"
+  bash "${ROOT_DIR}/test/smoke/karate_profiles_test.sh"
+  bash "${ROOT_DIR}/test/smoke/karate_profiles_doctor_test.sh"
   bash "${ROOT_DIR}/test/smoke/jdk_discovery_test.sh"
   bash "${ROOT_DIR}/test/smoke/bash_crap_test.sh"
   printf 'Smoke tests passed\n'
@@ -4988,5 +4855,7 @@ test_removed_exec_rejected() {
   fi
   [[ "${output}" == *"Unknown backend command: exec"* ]] || fail "expected unknown backend command"
 }
+
+source "${ROOT_DIR}/test/smoke/doctor_health_test.sh"
 
 main "$@"

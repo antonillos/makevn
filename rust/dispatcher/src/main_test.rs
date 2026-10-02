@@ -1454,6 +1454,69 @@ fn reads_backend_metadata_file() {
 }
 
 #[test]
+fn tail_window_same_log_metadata_update_preserves_reader_and_painted_rows() {
+    let path = env::temp_dir().join(format!("makevn-tail-same-log-{}.log", process::id()));
+    fs::write(&path, "first\npartial").unwrap();
+    let mut window = None;
+    super::LogTailWindow::follow_log(&mut window, path.clone());
+    let tail = window.as_mut().unwrap();
+    tail.adjust_lines(3);
+    tail.read_available().unwrap();
+    tail.rendered_lines = 8;
+    tail.rendered_line_widths = vec![10; 8];
+    let offset = tail.offset;
+
+    super::LogTailWindow::follow_log(&mut window, path.clone());
+    let tail = window.as_mut().unwrap();
+    assert_eq!(tail.offset, offset);
+    assert!(tail.file.is_some());
+    assert_eq!(tail.lines, vec!["first"]);
+    assert_eq!(tail.pending, b"partial");
+    assert_eq!(tail.visible_lines, 7);
+    assert_eq!(tail.rendered_lines, 8);
+    assert_eq!(tail.rendered_line_widths, vec![10; 8]);
+    tail.read_available().unwrap();
+    assert_eq!(
+        tail.lines,
+        vec!["first"],
+        "metadata updates must not replay logs"
+    );
+    fs::remove_file(path).unwrap();
+}
+
+#[test]
+fn tail_window_phase_change_resets_log_but_preserves_painted_rows_and_height() {
+    let old_path = env::temp_dir().join(format!("makevn-tail-old-phase-{}.log", process::id()));
+    let new_path = env::temp_dir().join(format!("makevn-tail-new-phase-{}.log", process::id()));
+    fs::write(&old_path, "old phase\npending").unwrap();
+    fs::write(&new_path, "new phase\n").unwrap();
+    let mut window = None;
+    super::LogTailWindow::follow_log(&mut window, old_path.clone());
+    let tail = window.as_mut().unwrap();
+    tail.read_available().unwrap();
+    tail.adjust_lines(2);
+    tail.rendered_lines = 7;
+    tail.rendered_width = 100;
+    tail.rendered_line_widths = vec![15; 7];
+
+    super::LogTailWindow::follow_log(&mut window, new_path.clone());
+    let tail = window.as_mut().unwrap();
+    assert_eq!(tail.path, new_path);
+    assert!(tail.file.is_none());
+    assert_eq!(tail.offset, 0);
+    assert!(tail.pending.is_empty());
+    assert!(tail.lines.is_empty());
+    assert_eq!(tail.visible_lines, 6);
+    assert_eq!(tail.rendered_lines, 7);
+    assert_eq!(tail.rendered_width, 100);
+    assert_eq!(tail.rendered_line_widths, vec![15; 7]);
+    tail.read_available().unwrap();
+    assert_eq!(tail.lines, vec!["new phase"]);
+    fs::remove_file(old_path).unwrap();
+    fs::remove_file(new_path).unwrap();
+}
+
+#[test]
 fn tail_window_restarts_after_log_truncation() {
     let unique_suffix = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -1961,4 +2024,63 @@ fn rejects_removed_exec_command() {
         .unwrap_err(),
         "Unknown command: exec"
     );
+}
+
+#[test]
+fn tail_window_reads_same_path_replacement_even_when_it_has_regrown() {
+    let suffix = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let path = env::temp_dir().join(format!("makevn-replaced-{}-{suffix}", process::id()));
+    let replacement = path.with_extension("new");
+    for content in ["new\n", "new\nlonger output\n"] {
+        fs::write(&path, "old\n").unwrap();
+        let mut tail = super::LogTailWindow::new(path.clone());
+        tail.read_available().unwrap();
+        tail.rendered_lines = 7;
+        fs::write(&replacement, content).unwrap();
+        fs::rename(&replacement, &path).unwrap();
+        tail.read_available().unwrap();
+        assert_eq!(
+            tail.lines,
+            content.lines().map(String::from).collect::<Vec<_>>()
+        );
+        assert_eq!(tail.offset, content.len() as u64);
+        assert_eq!(tail.rendered_lines, 7);
+        tail.read_available().unwrap();
+        assert_eq!(tail.lines.len(), content.lines().count());
+    }
+    fs::remove_file(path).unwrap();
+}
+
+#[test]
+fn karate_phase_records_preserve_order_status_duration_and_own_details() {
+    let phases = super::BackendPhaseFiles::new().unwrap();
+    for (index, title, code) in [
+        (1, "karate-docker-up", 0),
+        (3, "run-app-bg", 0),
+        (5, "karate-test", 42),
+    ] {
+        fs::write(phases.0.join(index.to_string()), format!("command={title}\nrepo=/repo\ncwd=/repo\nlog_path=/repo/{title}.log\nrelative_log_path={title}.log\ncommand_display=makevn {title}\ntitle={title}\nduration_seconds=7\nexit_code={code}\n")).unwrap();
+        fs::write(
+            phases.0.join(format!("{index}.detail")),
+            format!("details for {title}\n"),
+        )
+        .unwrap();
+    }
+    // A record being published is not yet a completed phase.
+    fs::write(phases.0.join("4"), "command=docker-ps-required\n").unwrap();
+    let summaries = phases.read();
+    assert_eq!(summaries.len(), 3);
+    assert_eq!(summaries[0].title, "karate-docker-up");
+    assert_eq!(summaries[1].title, "run-app-bg");
+    assert_eq!(summaries[2].title, "karate-test");
+    assert_eq!(summaries[2].exit_code, 42);
+    assert_eq!(summaries[2].duration, "7s");
+    assert_eq!(
+        summaries[2].relative_log_path.as_deref(),
+        Some("karate-test.log")
+    );
+    assert_eq!(summaries[2].detail_lines, vec!["details for karate-test"]);
 }

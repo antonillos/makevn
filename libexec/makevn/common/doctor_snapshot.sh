@@ -7,8 +7,8 @@ makevn_read_editable_default() {
   local value=""
 
   if command -v zsh >/dev/null 2>&1 && [[ -r /dev/tty && -w /dev/tty ]]; then
-    if value="$(MAKEVN_READ_PROMPT="${prompt}" zsh -fc '
-      value=""
+    if value="$(MAKEVN_READ_PROMPT="${prompt}" MAKEVN_READ_DEFAULT="${default_value}" zsh -fc '
+      value="${MAKEVN_READ_DEFAULT}"
       vared -p "${MAKEVN_READ_PROMPT}" value < /dev/tty > /dev/tty
       print -r -- "${value}"
     ')"; then
@@ -19,11 +19,15 @@ makevn_read_editable_default() {
     fi
   fi
 
-  printf '%s' "${prompt}" >&2
-  if [[ -t 0 ]]; then
-    read -r value
+  if [[ -t 0 ]] && (( BASH_VERSINFO[0] >= 4 )); then
+    read -r -e -i "${default_value}" -p "${prompt}" value || return 1
   else
-    read -r value </dev/tty
+    printf '%s' "${prompt}" >&2
+    if [[ -t 0 ]]; then
+      read -r value || return 1
+    else
+      read -r value </dev/tty || return 1
+    fi
   fi
   value="$(makevn_trim "${value}")"
   [[ -n "${value}" ]] || value="${default_value}"
@@ -62,6 +66,59 @@ makevn_doctor_progress() {
   [[ -t 2 ]] || return 0
   [[ -z "${MAKEVN_BACKEND_DETAIL_OUT:-}" ]] || return 0
   printf '%s %s\n' "$(makevn_dim '…')" "${message}" >&2
+}
+
+# Updates the caller-local detected_app_health_url without affecting other prompts.
+makevn_resolve_doctor_app_health_url() {
+  local repo_root="$1"
+  local app_runnable="$2"
+
+  makevn_load_config "${repo_root}"
+  if [[ -n "${MAKEVN_APP_HEALTH_URL:-}" ]]; then
+    detected_app_health_url="${MAKEVN_APP_HEALTH_URL} (from config)"
+    return 0
+  fi
+  [[ "${app_runnable}" == "yes" ]] || return 0
+  [[ -f "$(makevn_config_path "${repo_root}")" && -t 0 && -t 2 ]] || return 0
+  makevn_prompt_doctor_app_health_url "${repo_root}"
+}
+
+makevn_doctor_suggest_app_health_url() {
+  local maven_base_path="$1"
+  local port=""
+  local context_path=""
+
+  port="$(makevn_detect_app_port "${maven_base_path}")"
+  context_path="$(makevn_detect_app_context_path "${maven_base_path}")"
+  context_path="/${context_path#/}"
+  printf 'http://localhost:%s%s/health\n' "${port}" "${context_path%/}"
+}
+
+# Updates the caller-local detected_app_health_url only after a confirmed input.
+makevn_prompt_doctor_app_health_url() {
+  local repo_root="$1"
+  local health_input=""
+  local default_health_url="${detected_app_health_url}"
+
+  printf '\n' >&2
+  if [[ -n "${default_health_url}" ]]; then
+    printf '%s\n' "$(makevn_warn "Detected app health URL: ${default_health_url}")" >&2
+  else
+    default_health_url="$(makevn_doctor_suggest_app_health_url "${maven_base_path}")"
+    printf '%s\n' "No application health URL detected. Suggested URL (not verified): ${default_health_url}" >&2
+  fi
+  printf '%s\n' 'Edit the URL or press Enter to confirm it; type skip to leave configuration unchanged.' >&2
+  while true; do
+    health_input="$(makevn_read_editable_default "Health URL [${default_health_url}]: " "${default_health_url}")" || return 0
+    [[ "${health_input}" != "skip" ]] || return 0
+    if [[ "${health_input}" =~ ^https?://[^[:space:]]+$ ]]; then
+      makevn_update_config_app_health_url "${repo_root}" "${health_input}"
+      detected_app_health_url="${health_input}"
+      printf '%s\n' "$(makevn_dim "Saved to .makevn/config (MAKEVN_APP_HEALTH_URL).")" >&2
+      return 0
+    fi
+    printf '%s\n' 'Invalid health URL. Use http:// or https:// without whitespace.' >&2
+  done
 }
 
 makevn_collect_doctor_snapshot() {
@@ -345,20 +402,8 @@ makevn_collect_doctor_snapshot() {
   fi
   [[ -n "${MAKEVN_RUN_CMD:-}" ]] && run_configured="yes"
 
-  # Resolve app health URL: config > detected > interactive prompt
-  makevn_load_config "${repo_root}"
-  if [[ -n "${MAKEVN_APP_HEALTH_URL:-}" ]]; then
-    detected_app_health_url="${MAKEVN_APP_HEALTH_URL} (from config)"
-  elif [[ -n "${detected_app_health_url}" && -f "$(makevn_config_path "${repo_root}")" && "${prompted_interactively}" != "yes" && -t 0 && -t 2 ]]; then
-    printf '\n' >&2
-    printf '%s\n' "$(makevn_warn "Detected app health URL: ${detected_app_health_url}")" >&2
-    printf '%s\n' "  Is this correct? If not, enter the correct URL (or press Enter to keep it)." >&2
-    local _health_input=""
-    _health_input="$(makevn_read_editable_default "Health URL [${detected_app_health_url}]: " "${detected_app_health_url}")"
-    detected_app_health_url="${_health_input}"
-    makevn_update_config_app_health_url "${repo_root}" "${detected_app_health_url}"
-    printf '%s\n' "$(makevn_dim "Saved to .makevn/config (MAKEVN_APP_HEALTH_URL).")" >&2
-  fi
+  makevn_resolve_doctor_app_health_url "${repo_root}" "${app_runnable}"
+  makevn_doctor_karate_profiles "${repo_root}" "${app_runnable}"
 
   if [[ -n "${MAKEVN_MIN_COVERAGE_THRESHOLD:-}" ]]; then
     detected_coverage_threshold="${MAKEVN_MIN_COVERAGE_THRESHOLD} (from config)"
@@ -462,6 +507,9 @@ makevn_collect_doctor_snapshot() {
       [[ -n "${MAKEVN_DOCTOR_SUGGESTED_OPTIONAL}" ]] || MAKEVN_DOCTOR_SUGGESTED_OPTIONAL="makevn init"
       ;;
   esac
+  if [[ "${app_runnable}" == "yes" && -z "${detected_app_health_url}" ]]; then
+    MAKEVN_DOCTOR_SUGGESTED_NOTE="Application HTTP readiness is not configured. Set MAKEVN_APP_HEALTH_URL in .makevn/config or run makevn doctor in an interactive terminal after initialization. karate-all requires this URL."
+  fi
 }
 
 makevn_print_doctor_json() {
@@ -484,6 +532,9 @@ makevn_print_doctor_json() {
   printf '    "detected_maven_cli_flags": "%s",\n' "$(makevn_json_escape "${MAKEVN_DOCTOR_DETECTED_MAVEN_CLI_FLAGS}")"
   printf '    "detected_maven_prop_flags": "%s",\n' "$(makevn_json_escape "${MAKEVN_DOCTOR_DETECTED_MAVEN_PROP_FLAGS}")"
   printf '    "detected_maven_cache": "%s",\n' "$(makevn_json_escape "${MAKEVN_DOCTOR_DETECTED_MAVEN_CACHE_SOURCE}")"
+  printf '    "karate_app_profiles": "%s",\n' "$(makevn_json_escape "${MAKEVN_DOCTOR_KARATE_APP_PROFILES}")"
+  printf '    "karate_app_profiles_source": "%s",\n' "$(makevn_json_escape "${MAKEVN_DOCTOR_KARATE_APP_PROFILES_SOURCE}")"
+  printf '    "karate_app_profiles_candidates": "%s",\n' "$(makevn_json_escape "${MAKEVN_DOCTOR_KARATE_APP_PROFILES_CANDIDATES}")"
   printf '    "detected_app_health_url": "%s",\n' "$(makevn_json_escape "${MAKEVN_DOCTOR_DETECTED_APP_HEALTH_URL}")"
   printf '    "detected_coverage_activation": "%s",\n' "$(makevn_json_escape "${MAKEVN_DOCTOR_DETECTED_COVERAGE_ACTIVATION}")"
   printf '    "jacoco_report_layout": "%s",\n' "$(makevn_json_escape "${MAKEVN_DOCTOR_JACOCO_REPORT_LAYOUT}")"

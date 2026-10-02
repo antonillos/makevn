@@ -477,3 +477,55 @@ See also:
 
 - `docs/cli-contract.md`
 - `docs/backend-contract.md`
+
+
+### Strict Karate HTTP readiness
+
+`makevn karate-all` requires a configured or detected application health URL
+before starting Docker or packaging. Set `MAKEVN_APP_HEALTH_URL` in
+`.makevn/config` when detection cannot identify the correct endpoint.
+Resolution remains config, then persisted profile, then generic detection.
+
+Only HTTP 2xx verifies readiness; redirects and other statuses are retried.
+`MAKEVN_APP_HEALTH_TIMEOUT` defaults to 60 seconds and must be an integer
+between 1 and 2147483647 (without leading zeros). Requests have a 2-second
+connection limit and a 5-second total limit, capped by the remaining deadline.
+Timeout or application exit prevents Karate from running and preserves the
+application log under `.makevn/app/app.log`.
+
+Standalone `run-app-bg` can still start without a health URL, but warns that
+only process liveness was checked, not HTTP readiness. Use `karate-test`
+directly for an externally managed application. HTTP readiness does not
+validate JSON health status, application semantics, or Kafka availability.
+
+
+### Doctor health configuration prompts
+
+For an initialized runnable application without an explicit health URL,
+interactive `makevn doctor` asks to confirm/correct a detected URL or enter
+one when detection finds none. The input is prefilled with the detected URL or a suggested URL using the
+application port/context and /health. Suggestions are explicitly unverified;
+Enter confirms and saves the editable value, while typing skip leaves configuration
+unchanged. Earlier compose
+or LOCAL_CONTAINERS questions do not suppress the health question.
+
+Nonempty input must use HTTP(S) without whitespace and is saved safely in
+`.makevn/config`. Existing explicit URLs are preserved without prompting.
+Without a terminal, doctor never requests input and reports how to configure
+missing readiness. `profile refresh` remains automatic and noninteractive;
+`init --force` does not force these prompts or overwrite existing config.
+
+The interactive `karate-all` dashboard retains completed phases above the active
+phase, including each phase's status, elapsed time and log path. The final
+summary preserves the same history on success and failure. Startup details
+belong to `run-app-bg`, not `karate-test`; phases not executed are not listed.
+
+Before local Karate verification, run `makevn doctor` and inspect the effective
+Karate application profiles, their source and any CI candidates. Prefer a
+project-specific `MAKEVN_KARATE_APP_PROFILES="standalone,local"` in
+`.makevn/config` when these profiles are required by that project's CI.
+`SPRING_PROFILES_ACTIVE` overrides that setting. Do not assume these profile
+names for other repositories. Noninteractive agents must not wait for a prompt:
+use an explicit approved setting/override when detection is ambiguous; report
+unresolved workflow expressions rather than evaluating them. `profile refresh`
+updates detected profile metadata, not user configuration.
