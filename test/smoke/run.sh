@@ -4833,6 +4833,7 @@ main() {
   test_removed_exec_rejected
   test_command_typo_rejected_before_backend
   test_command_failure_summary_omits_duplicate_elapsed
+  python3 "${ROOT_DIR}/test/smoke/tail_metadata_pty_test.py" "${ROOT_DIR}/target/release/makevn"
   bash "${ROOT_DIR}/test/smoke/karate_readiness_test.sh"
   bash "${ROOT_DIR}/test/smoke/jdk_discovery_test.sh"
   bash "${ROOT_DIR}/test/smoke/bash_crap_test.sh"

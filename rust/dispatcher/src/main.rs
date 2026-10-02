@@ -1428,12 +1428,12 @@ fn run_backend_with_loader(
             let latest_metadata = read_backend_metadata(metadata_file.path())?;
             if latest_metadata.is_some() && latest_metadata != metadata {
                 metadata = latest_metadata;
-                if let Some(renderer) = renderer.as_mut() {
-                    renderer.clear_frame_line();
-                }
                 if tail_active {
                     if let Some(metadata) = metadata.as_ref() {
-                        tail_window = Some(LogTailWindow::new(PathBuf::from(&metadata.log_path)));
+                        LogTailWindow::follow_log(
+                            &mut tail_window,
+                            PathBuf::from(&metadata.log_path),
+                        );
                     }
                 }
             }
@@ -2242,6 +2242,24 @@ impl LogTailWindow {
             rendered_width: terminal_width().max(8),
             rendered_line_widths: Vec::new(),
         }
+    }
+
+    fn follow_log(window: &mut Option<Self>, path: PathBuf) {
+        let window = window.get_or_insert_with(|| Self::new(path.clone()));
+        window.switch_log(path);
+    }
+
+    fn switch_log(&mut self, path: PathBuf) {
+        if self.path == path {
+            return;
+        }
+        self.path = path;
+        self.file = None;
+        self.offset = 0;
+        self.pending.clear();
+        self.lines.clear();
+        // Keep the painted rows and chosen height: the next render must erase
+        // the previous phase before drawing the new log in the same block.
     }
 
     fn set_prefix_lines(&mut self, prefix_lines: Vec<String>) {

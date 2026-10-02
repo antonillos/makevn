@@ -1454,6 +1454,69 @@ fn reads_backend_metadata_file() {
 }
 
 #[test]
+fn tail_window_same_log_metadata_update_preserves_reader_and_painted_rows() {
+    let path = env::temp_dir().join(format!("makevn-tail-same-log-{}.log", process::id()));
+    fs::write(&path, "first\npartial").unwrap();
+    let mut window = None;
+    super::LogTailWindow::follow_log(&mut window, path.clone());
+    let tail = window.as_mut().unwrap();
+    tail.adjust_lines(3);
+    tail.read_available().unwrap();
+    tail.rendered_lines = 8;
+    tail.rendered_line_widths = vec![10; 8];
+    let offset = tail.offset;
+
+    super::LogTailWindow::follow_log(&mut window, path.clone());
+    let tail = window.as_mut().unwrap();
+    assert_eq!(tail.offset, offset);
+    assert!(tail.file.is_some());
+    assert_eq!(tail.lines, vec!["first"]);
+    assert_eq!(tail.pending, b"partial");
+    assert_eq!(tail.visible_lines, 7);
+    assert_eq!(tail.rendered_lines, 8);
+    assert_eq!(tail.rendered_line_widths, vec![10; 8]);
+    tail.read_available().unwrap();
+    assert_eq!(
+        tail.lines,
+        vec!["first"],
+        "metadata updates must not replay logs"
+    );
+    fs::remove_file(path).unwrap();
+}
+
+#[test]
+fn tail_window_phase_change_resets_log_but_preserves_painted_rows_and_height() {
+    let old_path = env::temp_dir().join(format!("makevn-tail-old-phase-{}.log", process::id()));
+    let new_path = env::temp_dir().join(format!("makevn-tail-new-phase-{}.log", process::id()));
+    fs::write(&old_path, "old phase\npending").unwrap();
+    fs::write(&new_path, "new phase\n").unwrap();
+    let mut window = None;
+    super::LogTailWindow::follow_log(&mut window, old_path.clone());
+    let tail = window.as_mut().unwrap();
+    tail.read_available().unwrap();
+    tail.adjust_lines(2);
+    tail.rendered_lines = 7;
+    tail.rendered_width = 100;
+    tail.rendered_line_widths = vec![15; 7];
+
+    super::LogTailWindow::follow_log(&mut window, new_path.clone());
+    let tail = window.as_mut().unwrap();
+    assert_eq!(tail.path, new_path);
+    assert!(tail.file.is_none());
+    assert_eq!(tail.offset, 0);
+    assert!(tail.pending.is_empty());
+    assert!(tail.lines.is_empty());
+    assert_eq!(tail.visible_lines, 6);
+    assert_eq!(tail.rendered_lines, 7);
+    assert_eq!(tail.rendered_width, 100);
+    assert_eq!(tail.rendered_line_widths, vec![15; 7]);
+    tail.read_available().unwrap();
+    assert_eq!(tail.lines, vec!["new phase"]);
+    fs::remove_file(old_path).unwrap();
+    fs::remove_file(new_path).unwrap();
+}
+
+#[test]
 fn tail_window_restarts_after_log_truncation() {
     let unique_suffix = SystemTime::now()
         .duration_since(UNIX_EPOCH)
