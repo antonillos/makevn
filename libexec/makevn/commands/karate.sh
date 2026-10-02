@@ -13,22 +13,6 @@ makevn_collect_karate_compose_args() {
   fi
 }
 
-makevn_wait_app_health() {
-  local health_url="$1"
-  local timeout_seconds="${2:-120}"
-  local elapsed=0
-
-  while (( elapsed < timeout_seconds )); do
-    if curl -fsS "${health_url}" >/dev/null 2>&1; then
-      return 0
-    fi
-    sleep 2
-    elapsed=$((elapsed + 2))
-  done
-
-  makevn_die "App health check did not pass within ${timeout_seconds}s: ${health_url}"
-}
-
 cmd_karate_docker_down() {
   local repo_root="$1"
   local compose_file=""
@@ -156,6 +140,8 @@ cmd_karate_all() {
   local repo_root="$1"
   local test_rc=0
   local maven_base_path=""
+  local health_url=""
+  local health_timeout=""
 
   shift
 
@@ -163,6 +149,12 @@ cmd_karate_all() {
   if ! makevn_detect_app_runnable "${repo_root}" "${maven_base_path}"; then
     makevn_die "karate-all is disabled: no executable application was detected for run-app-bg. Use karate-test directly when tests do not need a local app."
   fi
+
+  makevn_load_config "${repo_root}"
+  health_url="$(makevn_app_health_url "${repo_root}" "${maven_base_path}" || true)"
+  [[ -n "${health_url}" ]] || makevn_die "karate-all requires application HTTP readiness. Configure MAKEVN_APP_HEALTH_URL in .makevn/config, then retry."
+  health_timeout="${MAKEVN_APP_HEALTH_TIMEOUT:-60}"
+  makevn_validate_app_health_timeout "${health_timeout}"
 
   cmd_karate_docker_up "${repo_root}"
 
@@ -172,7 +164,7 @@ cmd_karate_all() {
     printf '%s\n' "$(makevn_dim "Skipping package step (SKIP_PACKAGE=true)")"
   fi
 
-  cmd_run_app_bg "${repo_root}"
+  cmd_run_app_bg "${repo_root}" "${health_url}" "${health_timeout}"
   trap 'cmd_stop_app "'"${repo_root}"'" >/dev/null 2>&1 || true' EXIT INT TERM
 
   set +e

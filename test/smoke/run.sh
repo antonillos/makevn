@@ -2129,6 +2129,7 @@ EOF
 #!/usr/bin/env bash
 set -euo pipefail
 printf 'curl %s\n' "\$*" >> "${repo}/.curl.log"
+printf 200
 exit 0
 EOF
   chmod +x "${repo}/fake-bin/curl"
@@ -2430,6 +2431,7 @@ EOF
   cat > "${repo}/fake-bin/curl" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
+printf 200
 exit 0
 EOF
   chmod +x "${repo}/fake-bin/curl"
@@ -2515,6 +2517,7 @@ EOF
   cat > "${repo}/fake-bin/curl" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
+printf 200
 exit 0
 EOF
   chmod +x "${repo}/fake-bin/curl"
@@ -2637,6 +2640,7 @@ MAKEVN_CODE_TOOL_VERSIONS=""
 MAKEVN_KARATE_TOOL_VERSIONS=""
 MAKEVN_RUN_CMD=""
 MAKEVN_APP_HEALTH_TIMEOUT=5
+MAKEVN_APP_HEALTH_URL="http://localhost:18081/health"
 EOF
 
   PATH="${repo}/fake-bin:${PATH}" run_pty_command "${output_file}" "${rust_cli}" --repo "${repo}" karate-all || true
@@ -4972,6 +4976,7 @@ main() {
   test_removed_exec_rejected
   test_command_typo_rejected_before_backend
   test_command_failure_summary_omits_duplicate_elapsed
+  bash "${ROOT_DIR}/test/smoke/karate_readiness_test.sh"
   bash "${ROOT_DIR}/test/smoke/jdk_discovery_test.sh"
   bash "${ROOT_DIR}/test/smoke/bash_crap_test.sh"
   printf 'Smoke tests passed\n'

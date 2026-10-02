@@ -166,31 +166,57 @@ makevn_app_process_exited() {
   [[ "${process_state}" == "gone" || "${process_state}" == "zombie" ]]
 }
 
+makevn_validate_app_health_timeout() {
+  local timeout_seconds="$1"
+
+  if [[ ! "${timeout_seconds}" =~ ^[1-9][0-9]*$ ]] ||
+    [[ ${#timeout_seconds} -gt 10 ]] ||
+    (( timeout_seconds > 2147483647 )); then
+    makevn_die "MAKEVN_APP_HEALTH_TIMEOUT must be a positive integer between 1 and 2147483647 seconds."
+  fi
+}
+
+makevn_probe_app_health() {
+  local health_url="$1"
+  local remaining="$2"
+  local request_timeout=5
+  local connect_timeout=2
+  local http_status=""
+
+  (( remaining >= request_timeout )) || request_timeout="${remaining}"
+  (( remaining >= connect_timeout )) || connect_timeout="${remaining}"
+  http_status="$(curl --disable --silent --show-error --output /dev/null --write-out '%{http_code}' \
+    --connect-timeout "${connect_timeout}" --max-time "${request_timeout}" \
+    "${health_url}" 2>/dev/null)" || return 1
+  [[ "${http_status}" =~ ^2[0-9][0-9]$ ]]
+}
+
 makevn_wait_app_health() {
   local health_url="$1"
-  local timeout_seconds="${2:-30}"
+  local timeout_seconds="${2:-60}"
   local app_pid="${3:-}"
   local log_file="${4:-}"
-  local elapsed=0
+  local deadline=$((SECONDS + timeout_seconds))
+  local remaining=0
 
-  while (( elapsed < timeout_seconds )); do
-    if curl -fsS "${health_url}" >/dev/null 2>&1; then
+  makevn_report_run_detail "Waiting for HTTP 2xx readiness: ${health_url} (timeout: ${timeout_seconds}s)"
+  while (( SECONDS < deadline )); do
+    if [[ -n "${app_pid}" ]] && makevn_app_process_exited "${app_pid}"; then
+      MAKEVN_APP_PROCESS_EXITED="yes"
+      makevn_report_app_startup_failure "Application process exited during startup. Check the log: ${log_file}" "${log_file}"
+      return 1
+    fi
+    remaining=$((deadline - SECONDS))
+    (( remaining > 0 )) || break
+    if makevn_probe_app_health "${health_url}" "${remaining}"; then
+      if (( SECONDS >= deadline )); then
+        break
+      fi
+      makevn_report_run_detail "HTTP readiness verified: ${health_url}"
       return 0
     fi
-    if [[ -n "${app_pid}" ]]; then
-      if makevn_app_process_exited "${app_pid}"; then
-        MAKEVN_APP_PROCESS_EXITED="yes"
-        sleep 0.1
-        if [[ -n "${log_file}" ]]; then
-          makevn_report_app_startup_failure "Application process exited during startup. Check the log: ${log_file}" "${log_file}"
-        else
-          makevn_report_app_startup_failure "Application process exited during startup."
-        fi
-        return 1
-      fi
-    fi
+    (( SECONDS < deadline )) || break
     sleep 1
-    elapsed=$((elapsed + 1))
   done
 
   makevn_report_app_startup_failure "App health check did not pass within ${timeout_seconds}s: ${health_url}" "${log_file}"
@@ -285,6 +311,8 @@ makevn_ensure_app_jar() {
 makevn_start_app_background() {
   local repo_root="$1"
   local mode="$2"
+  local resolved_health_url="${3:-}"
+  local health_timeout="${4:-}"
   local maven_base_path=""
   local boot_module=""
   local java_home=""
@@ -308,6 +336,10 @@ makevn_start_app_background() {
   if ! makevn_detect_app_runnable "${repo_root}" "${maven_base_path}"; then
     makevn_die "run-app is disabled: no executable application was detected. Add an application main class, executable packaging plugin, or configure MAKEVN_RUN_CMD for 'makevn run'."
   fi
+  makevn_load_config "${repo_root}"
+  health_url="${resolved_health_url:-$(makevn_app_health_url "${repo_root}" "${maven_base_path}" || true)}"
+  health_timeout="${health_timeout:-${MAKEVN_APP_HEALTH_TIMEOUT:-60}}"
+  makevn_validate_app_health_timeout "${health_timeout}"
   boot_module="$(makevn_detect_boot_module_name "${repo_root}")"
   java_home="$(makevn_effective_java_home "${repo_root}" code "${maven_base_path}" || true)"
   [[ -n "${java_home}" ]] || makevn_die "Could not resolve code JDK. Run 'makevn doctor' or configure .makevn/config first."
@@ -347,7 +379,6 @@ makevn_start_app_background() {
   jar_file="${MAKEVN_ENSURED_APP_JAR:-}"
   jar_main_class="$(makevn_app_jar_manifest_value "${jar_file}" "Main-Class" || true)"
   jar_start_class="$(makevn_app_jar_manifest_value "${jar_file}" "Start-Class" || true)"
-  health_url="$(makevn_app_health_url "${repo_root}" "${maven_base_path}" || true)"
   makevn_print_item "jar" "${jar_file}"
   if [[ -n "${jar_main_class}" ]]; then
     makevn_print_item "Main-Class" "${jar_main_class}"
@@ -357,9 +388,10 @@ makevn_start_app_background() {
   fi
   if [[ -n "${health_url}" ]]; then
     makevn_print_item "health" "${health_url}"
+    makevn_print_item "health timeout" "${health_timeout}s"
   else
     makevn_print_item "health" "not configured"
-    makevn_report_run_detail "$(makevn_warn "No application health check configured or detected; startup readiness will only verify that the process stays alive briefly.")"
+    makevn_report_run_detail "$(makevn_warn "No application health check configured or detected; only process liveness will be checked; HTTP readiness is not verified.")"
   fi
   if [[ -n "${local_containers}" ]]; then
     makevn_print_item "LOCAL_CONTAINERS" "${local_containers}"
@@ -408,7 +440,7 @@ makevn_start_app_background() {
   MAKEVN_APP_PROCESS_EXITED=""
   set +e
   if [[ -n "${health_url}" ]]; then
-    makevn_wait_app_health "${health_url}" "${MAKEVN_APP_HEALTH_TIMEOUT:-60}" "${app_pid}" "${log_file}"
+    makevn_wait_app_health "${health_url}" "${health_timeout}" "${app_pid}" "${log_file}"
   else
     makevn_wait_app_started_without_health "${MAKEVN_APP_STARTUP_GRACE_SECONDS:-3}" "${app_pid}" "${log_file}"
   fi
@@ -430,14 +462,14 @@ makevn_start_app_background() {
     if [[ -n "${health_url}" ]]; then
       printf '%s\n' "$(makevn_accent "ok application is ready")"
     else
-      printf '%s\n' "$(makevn_accent "ok application started without health check")"
+      printf '%s\n' "$(makevn_accent "ok application started without health check (process alive; HTTP readiness not verified)")"
     fi
   fi
 }
 
 cmd_run_app_bg() {
   local repo_root="$1"
-  makevn_start_app_background "${repo_root}" run-app-bg
+  makevn_start_app_background "${repo_root}" run-app-bg "${2:-}" "${3:-}"
 }
 
 cmd_run_app() {

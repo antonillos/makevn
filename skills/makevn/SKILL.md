@@ -687,3 +687,23 @@ The skill has been applied correctly if:
 - the selected mode matches the repo shape
 - `makevn uninstall` cleanly removes the local integration
 - the agent can use the installed `makevn` binary directly without inventing IDE-specific actions
+
+
+### Strict Karate HTTP readiness
+
+`makevn karate-all` requires a configured or detected application health URL
+before starting Docker or packaging. Set `MAKEVN_APP_HEALTH_URL` in
+`.makevn/config` when detection cannot identify the correct endpoint.
+Resolution remains config, then persisted profile, then generic detection.
+
+Only HTTP 2xx verifies readiness; redirects and other statuses are retried.
+`MAKEVN_APP_HEALTH_TIMEOUT` defaults to 60 seconds and must be an integer
+between 1 and 2147483647 (without leading zeros). Requests have a 2-second
+connection limit and a 5-second total limit, capped by the remaining deadline.
+Timeout or application exit prevents Karate from running and preserves the
+application log under `.makevn/app/app.log`.
+
+Standalone `run-app-bg` can still start without a health URL, but warns that
+only process liveness was checked, not HTTP readiness. Use `karate-test`
+directly for an externally managed application. HTTP readiness does not
+validate JSON health status, application semantics, or Kafka availability.
