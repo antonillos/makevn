@@ -56,7 +56,7 @@ test_wait_retries_and_deadline() (
   SECONDS=0
   makevn_wait_app_health http://localhost/health 5 >"${TMP_ROOT}/wait"
   assert_equal "${calls}" 3
-  grep -Fq 'HTTP readiness verified' "${TMP_ROOT}/wait"
+  grep -Fq 'HTTP 2xx verified' "${TMP_ROOT}/wait"
   makevn_probe_app_health() { SECONDS=$((SECONDS + $2)); return 1; }
   SECONDS=0
   if makevn_wait_app_health http://localhost/health 5 >"${TMP_ROOT}/wait" 2>&1; then exit 1; fi
@@ -115,3 +115,16 @@ test_wait_exited_process
 test_karate_preflight_and_lifecycle
 python3 "${ROOT_DIR}/test/smoke/karate_readiness_http_fixture.py" "${ROOT_DIR}"
 printf 'Karate readiness tests passed\n'
+
+# The managed dashboard replaces waiting status, preserving unrelated details.
+(
+  export MAKEVN_BACKEND_DETAIL_OUT="${TMP_ROOT}/compact-details"
+  printf 'profiles: standalone,local (config)\n' > "${MAKEVN_BACKEND_DETAIL_OUT}"
+  makevn_probe_app_health() { return 0; }
+  makevn_wait_app_health http://localhost/health 120
+  grep -Fq 'profiles: standalone,local (config)' "${MAKEVN_BACKEND_DETAIL_OUT}"
+  grep -Fq 'health URL: http://localhost/health' "${MAKEVN_BACKEND_DETAIL_OUT}"
+  grep -Fq 'readiness: HTTP 2xx verified | timeout: 120s' "${MAKEVN_BACKEND_DETAIL_OUT}"
+  [[ $(grep -c '^readiness:' "${MAKEVN_BACKEND_DETAIL_OUT}") == 1 ]]
+  ! grep -q 'waiting for' "${MAKEVN_BACKEND_DETAIL_OUT}"
+)

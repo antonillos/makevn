@@ -42,7 +42,7 @@ def wait_for(path, timeout):
 try:
     result = wait_for("retry", 5)
     assert result.returncode == 0, result.stderr
-    assert "HTTP readiness verified" in result.stdout
+    assert "HTTP 2xx verified" in result.stdout
     for status in (301, 404, 503):
         result = wait_for(str(status), 1)
         assert result.returncode != 0
