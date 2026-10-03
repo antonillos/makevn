@@ -662,13 +662,16 @@ output remains plain and never enters this terminal protocol.
 
 ### Docker live resource telemetry
 
-Interactive Docker phases display `containers` CPU/RAM from the running
+Interactive Docker phases display `ctr` CPU/RAM from the running
 containers of the backend-resolved Compose project, not the waiting CLI process.
 The same Compose executable, base/override files and working directory select the
 project; telemetry never falls back to all containers when the selection is empty.
 Sampling is asynchronous, refreshes approximately every two seconds, and bounds
 each read-only CLI probe to three seconds. Missing, partial, expired, or failed
-samples show `containers cpu — | ram —`, not an invented zero. A genuine idle
+samples show `—` in the existing CPU/RAM value columns, not an invented zero.
+The `ctr` scope label shares the CPU metric color; unavailable metrics and retained
+history are dimmed. Graphs keep their six-column layout and advance every two
+seconds, recording missing samples as gaps and aging previous data out. A genuine idle
 sample may still show zero. Maven/application phases keep their process-tree
 telemetry, and histories reset when the source changes.
 

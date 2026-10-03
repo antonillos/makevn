@@ -4,6 +4,7 @@ import fcntl
 import os
 from pathlib import Path
 import pty
+import re
 import select
 import signal
 import struct
@@ -25,7 +26,7 @@ while (( $# )); do
 done
 printf 'command=docker-up\\nrepo=%s\\ncwd=%s\\nlog_path=%s/log\\nrelative_log_path=log\\ncommand_display=docker-up\\ntitle=docker-up\\n' "$repo" "$repo" "$repo" > "$metadata"
 printf '%s\\ndocker\\ncompose\\n-f\\ncustom.yml\\n' "$repo" > "$MAKEVN_FRONTEND_RESOURCE_SCOPE_OUT"
-sleep 5
+sleep 7
 ''')
         docker = root / 'docker'
         docker.write_text('''#!/bin/sh
@@ -33,6 +34,8 @@ if [ "$1" = compose ]; then
  printf '0123456789ab\\n'
 else
  case "$*" in *0123456789ab*) ;; *) exit 9;; esac
+ [ ! -f "$0.sampled" ] || exit 1
+ touch "$0.sampled"
  sleep 1
  printf '%s\\n' '{"CPUPerc":"12.5%","MemUsage":"4MiB / 8GiB"}'
 fi
@@ -66,10 +69,13 @@ fi
             _, status = os.waitpid(pid, 0)
             text = transcript.decode(errors='replace')
             assert os.waitstatus_to_exitcode(status) == 0, text
-            assert 'containers cpu — | ram —' in text, text
-            assert 'containers cpu' in text and '13%' in text and '4 MiB' in text, text
+            assert 'ctr cpu            — | ram             —' in text, text
+            assert 'ctr cpu' in text and '13%' in text and '4 MiB' in text, text
+            # Missing data retains the graph, but time keeps moving it left.
+            missing_graphs = re.findall(r'ctr cpu [^\r\n]*— \| ram ([ ▇]{6})  +—', text)
+            assert len({graph for graph in missing_graphs if '▇' in graph}) >= 2, text
             # The slow stats subprocess must not pause loader animation.
-            assert text.count('containers cpu — | ram —') > 3, text
+            assert text.count('ctr cpu            — | ram             —') > 3, text
         finally:
             if status is None:
                 os.kill(pid, signal.SIGKILL)

@@ -3025,8 +3025,11 @@ impl SpinnerRenderer {
                     self.ram_visual_load,
                 )
             })
-            .unwrap_or_default();
-        let resource_text = self.resource_sampler.scoped_text(resource_text);
+            .unwrap_or_else(|| self.unavailable_resource_text());
+        let resource_text = self.resource_sampler.scoped_text(
+            resource_text,
+            resource_sample.is_some().then_some(self.cpu_visual_load),
+        );
         let suffix = spinner_resource_suffix(&resource_text, hint);
 
         let line = format!(
@@ -3067,8 +3070,11 @@ impl SpinnerRenderer {
                     self.ram_visual_load,
                 )
             })
-            .unwrap_or_default();
-        let resource_text = self.resource_sampler.scoped_text(resource_text);
+            .unwrap_or_else(|| self.unavailable_resource_text());
+        let resource_text = self.resource_sampler.scoped_text(
+            resource_text,
+            resource_sample.is_some().then_some(self.cpu_visual_load),
+        );
         let spinner_suffix = spinner_resource_suffix(&resource_text, hint);
 
         let lines = dashboard_output_lines(
@@ -3127,7 +3133,19 @@ impl SpinnerRenderer {
         self.resource_visual_load += (target_load - self.resource_visual_load) * 0.06;
     }
 
+    fn unavailable_resource_text(&self) -> String {
+        if self.resource_sampler.docker.is_some() {
+            format_unavailable_resource_metrics(&self.resource_history)
+        } else {
+            String::new()
+        }
+    }
+
     fn sync_resource_history(&mut self, sample: Option<&ResourceSample>) {
+        if self.resource_sampler.docker.is_some() {
+            self.resource_history.tick(Instant::now(), sample);
+            return;
+        }
         self.resource_history_revision = self.resource_history.sync_sample(
             self.resource_history_revision,
             self.resource_sampler.revision(),
@@ -3331,16 +3349,19 @@ impl ResourceSampler {
         Ok(self.last_sample)
     }
 
-    fn scoped_text(&self, text: String) -> String {
-        if self.docker.is_some() {
-            if text.is_empty() {
-                "containers cpu — | ram —".to_owned()
-            } else {
-                format!("containers {text}")
-            }
+    fn scoped_text(&self, text: String, cpu_load: Option<f32>) -> String {
+        if self.docker.is_none() {
+            return text;
+        }
+        let label = cpu_load
+            .map(|load| adaptive_metric_text("ctr", load))
+            .unwrap_or_else(|| dim_text("ctr"));
+        let metrics = if text.is_empty() {
+            format_unavailable_resource_metrics(&ResourceHistory::new())
         } else {
             text
-        }
+        };
+        format!("{label} {metrics}")
     }
 
     fn revision(&self) -> u64 {
@@ -3349,8 +3370,9 @@ impl ResourceSampler {
 }
 
 struct ResourceHistory {
-    cpu_percent: Vec<f32>,
-    rss_kb: Vec<u64>,
+    cpu_percent: Vec<Option<f32>>,
+    rss_kb: Vec<Option<u64>>,
+    last_tick: Option<Instant>,
 }
 
 impl ResourceHistory {
@@ -3360,12 +3382,40 @@ impl ResourceHistory {
         Self {
             cpu_percent: Vec::with_capacity(Self::WIDTH),
             rss_kb: Vec::with_capacity(Self::WIDTH),
+            last_tick: None,
         }
     }
 
     fn push(&mut self, sample: ResourceSample) {
-        push_ring_value(&mut self.cpu_percent, sample.cpu_percent, Self::WIDTH);
-        push_ring_value(&mut self.rss_kb, sample.rss_kb, Self::WIDTH);
+        self.push_slot(Some(&sample));
+    }
+
+    fn push_slot(&mut self, sample: Option<&ResourceSample>) {
+        push_ring_value(
+            &mut self.cpu_percent,
+            sample.map(|s| s.cpu_percent),
+            Self::WIDTH,
+        );
+        push_ring_value(&mut self.rss_kb, sample.map(|s| s.rss_kb), Self::WIDTH);
+    }
+
+    // The Docker graph is a time axis, not a count of asynchronous probe results.
+    fn tick(&mut self, now: Instant, sample: Option<&ResourceSample>) {
+        let Some(previous) = self.last_tick else {
+            self.last_tick = Some(now);
+            self.push_slot(sample);
+            return;
+        };
+        let ticks =
+            now.duration_since(previous).as_secs() / ResourceSampler::SAMPLE_INTERVAL.as_secs();
+        if ticks == 0 {
+            return;
+        }
+        for _ in 1..ticks.min(Self::WIDTH as u64) {
+            self.push_slot(None);
+        }
+        self.push_slot(sample);
+        self.last_tick = Some(previous + ResourceSampler::SAMPLE_INTERVAL * ticks as u32);
     }
 
     fn sync_sample(
@@ -3491,6 +3541,12 @@ fn format_resource_metrics(
     )
 }
 
+fn format_unavailable_resource_metrics(history: &ResourceHistory) -> String {
+    let cpu = sparkline_f32(&history.cpu_percent, ResourceHistory::WIDTH, 250.0);
+    let ram = sparkline_u64(&history.rss_kb, ResourceHistory::WIDTH);
+    dim_text(&format!("cpu {cpu} {:>5} | ram {ram}  {:>5}", "—", "—"))
+}
+
 fn format_resource_sample_cpu(sample: &ResourceSample, history: &ResourceHistory) -> String {
     let cpu_sparkline = sparkline_f32(&history.cpu_percent, ResourceHistory::WIDTH, 250.0);
     format!(
@@ -3513,28 +3569,36 @@ fn push_ring_value<T>(values: &mut Vec<T>, value: T, max_len: usize) {
     values.push(value);
 }
 
-fn sparkline_f32(values: &[f32], width: usize, max_value: f32) -> String {
+fn sparkline_f32(values: &[Option<f32>], width: usize, max_value: f32) -> String {
     if values.is_empty() {
         return " ".repeat(width);
     }
     let normalized = values
         .iter()
-        .map(|value| (value / max_value).clamp(0.0, 1.0))
+        .map(|value| {
+            value
+                .map(|v| (v / max_value).clamp(0.0, 1.0))
+                .unwrap_or(f32::NAN)
+        })
         .collect::<Vec<_>>();
     sparkline_from_normalized(&normalized, width)
 }
 
-fn sparkline_u64(values: &[u64], width: usize) -> String {
+fn sparkline_u64(values: &[Option<u64>], width: usize) -> String {
     if values.is_empty() {
         return " ".repeat(width);
     }
-    let peak = values.iter().copied().max().unwrap_or(0);
+    let peak = values.iter().flatten().copied().max().unwrap_or(0);
     if peak == 0 {
         return " ".repeat(width);
     }
     let normalized = values
         .iter()
-        .map(|value| (*value as f32 / peak as f32).clamp(0.0, 1.0))
+        .map(|value| {
+            value
+                .map(|v| (v as f32 / peak as f32).clamp(0.0, 1.0))
+                .unwrap_or(f32::NAN)
+        })
         .collect::<Vec<_>>();
     sparkline_from_normalized(&normalized, width)
 }
@@ -3548,7 +3612,7 @@ fn sparkline_from_normalized(values: &[f32], width: usize) -> String {
     }
     for value in values {
         let index = ((*value * (SPARKS.len() - 1) as f32).round() as usize).min(SPARKS.len() - 1);
-        sparkline.push(SPARKS[index]);
+        sparkline.push(if value.is_nan() { ' ' } else { SPARKS[index] });
     }
     sparkline
 }
