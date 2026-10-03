@@ -212,11 +212,19 @@ fn tool_call_forwards_arguments_and_reports_process_failure() {
     drop(script);
     fs::set_permissions(&bin, fs::Permissions::from_mode(0o700)).unwrap();
 
-    let result = super::handle_tool_call(
-        &bin,
-        &json!({"name": "doctor", "arguments": {"repo": "/tmp/example"}}),
-    )
-    .unwrap();
+    let params = json!({"name": "doctor", "arguments": {"repo": "/tmp/example"}});
+    let mut result = super::handle_tool_call(&bin, &params);
+    // A concurrent test's fork can briefly inherit the fixture's write descriptor
+    // before exec closes it. Linux rejects execution during that ETXTBSY window.
+    // Retry only that transient fixture error; preserve every other failure.
+    for _ in 0..20 {
+        if !matches!(&result, Err(error) if error.contains("Text file busy (os error 26)")) {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(10));
+        result = super::handle_tool_call(&bin, &params);
+    }
+    let result = result.unwrap();
     assert_eq!(result.exit_code, 7);
     assert!(result
         .output

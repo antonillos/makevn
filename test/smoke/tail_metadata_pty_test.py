@@ -114,6 +114,9 @@ def verify(binary, exit_code=0, tail_enabled=True):
         if pid == 0:
             os.environ['MAKEVN_INSTALL_ROOT'] = str(repo)
             os.environ['NO_COLOR'] = '1'
+            os.environ['TERM'] = 'xterm-256color'
+            os.environ.pop('MAKEVN_AGENT_OUTPUT', None)
+            os.environ.pop('MAKEVN_COMPACT_OUTPUT', None)
             os.environ['MAKEVN_TEST_PHASE_EXIT'] = str(exit_code)
             os.execv(binary, [binary, '--repo', str(repo), 'karate-all'])
         fcntl.ioctl(fd, termios.TIOCSWINSZ, struct.pack('HHHH', 80, 200, 0, 0))

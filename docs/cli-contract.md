@@ -612,3 +612,51 @@ write `.makevn/config`. Ambiguous/dynamic workflow profiles need an explicit
 selection before `karate-all` proceeds. Without any CI profile evidence,
 application defaults remain available. HTTP readiness does not verify that
 profile-dependent functionality or Kafka is enabled.
+
+### Compact doctor initialization advice
+
+`makevn doctor --compact` performs repository analysis but prints only setup
+status, repository support and next-step advice. It does not prompt or refresh
+the persisted profile. Missing manifests recommend `makevn init`; incomplete
+state (missing config, profile or state.json) and manifests with a different or
+unknown makevn version recommend `makevn init --force`. Current initialization
+requires no reinitialization. Unsupported repositories retain the warning rather
+than receiving automatic adoption advice. Detailed doctor and backend JSON share
+the same initialization classification and recommendation.
+
+Doctor records the full installed version (including its build date) in
+`.makevn/doctor-version` after successful analysis when `.makevn/` already exists.
+A different build or missing record is reported explicitly; the current invocation
+reanalyzes the repository. Backend JSON exposes `doctor_build` with current and
+previous versions and `current`, `changed` or `unknown` status. This record is
+separate from the init manifest: repeating doctor does not clear stale init state.
+No state directory is created for an uninitialized repository just to save this
+record. Compact doctor writes this analysis stamp, but not config or profile.
+
+### Compact output versus interactive presentation
+
+Compact controls report size, not the audience. Only when stdin, stdout and
+stderr are terminals and `TERM` is not `dumb` does the Rust frontend show
+telemetry and the loader, including for doctor and init. Human compact runs retain
+the green success marker unless `NO_COLOR` is set. State-command output is
+preserved, and doctor pauses the loader before interactive configuration prompts.
+
+Agent/non-TTY execution remains plain: no animation, telemetry or ANSI sequences.
+`MAKEVN_AGENT_OUTPUT=1` explicitly disables interactive presentation even in a
+PTY; inherited `MAKEVN_COMPACT_OUTPUT=1` (used by MCP) also retains agent-safe
+behavior. An empty next-step section is omitted.
+
+State commands reuse the same `render_dashboard` and final results renderer as
+Karate: `Working for`, completed phases, the active command, and `Worked for`
+with results and the green success marker. Doctor reports its real inspection
+phases (including profile refresh only when executed). The detailed repository
+fields are retained under the reporting phase rather than discarded by stdout
+capture. Compact limits the report fields; it does not introduce a separate
+telemetry layout. Agent/non-TTY invocations still show no phase history or TUI.
+
+Interactive prompt handling is a pause/resume cycle: the frontend clears the
+whole live dashboard and restores normal terminal input before showing a
+question. Once the complete question/validation loop finishes (including skip),
+it restores the same loader with the existing phase history and elapsed time.
+No redraws or input polling occur while the prompt is active. Agent compact
+output remains plain and never enters this terminal protocol.

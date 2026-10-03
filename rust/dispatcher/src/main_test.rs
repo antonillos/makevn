@@ -78,7 +78,8 @@ fn spinner_renderer_handles_tty_input_and_dashboard_lifecycle() {
     let tty_guard = TtyModeGuard::new(&tty).unwrap();
     let mut renderer = SpinnerRenderer {
         tty,
-        tty_guard,
+        tty_guard: Some(tty_guard),
+        paused: false,
         frame: 0,
         frame_interval: Duration::ZERO,
         next_frame_at: Instant::now(),
@@ -970,7 +971,7 @@ fn parses_global_compact_prefix_for_command_sequence() {
 }
 
 #[test]
-fn compact_disables_dashboard_loader_usage() {
+fn compact_keeps_final_report_brief() {
     let invocations = vec![BackendInvocation {
         args: vec![OsString::from("compile")],
         frontend_loader: true,
@@ -2083,4 +2084,164 @@ fn karate_phase_records_preserve_order_status_duration_and_own_details() {
         Some("karate-test.log")
     );
     assert_eq!(summaries[2].detail_lines, vec!["details for karate-test"]);
+}
+
+#[test]
+fn doctor_accepts_compact_after_command() {
+    let action = parse_invocation(vec![
+        "--repo".into(),
+        current_repo_root(),
+        "doctor".into(),
+        "--compact".into(),
+    ])
+    .unwrap();
+    let Action::DispatchToBackend(invocations) = action else {
+        panic!("expected backend dispatch")
+    };
+    assert!(invocations[0].compact);
+    assert!(invocations[0].args.contains(&OsString::from("--compact")));
+}
+
+#[test]
+fn terminal_presentation_never_leaks_into_agent_or_piped_output() {
+    assert!(super::interactive_presentation(
+        true, true, true, false, false
+    ));
+    assert!(!super::interactive_presentation(
+        true, true, true, true, false
+    ));
+    assert!(!super::interactive_presentation(
+        false, true, true, false, false
+    ));
+    assert!(!super::interactive_presentation(
+        true, false, true, false, false
+    ));
+    assert!(!super::interactive_presentation(
+        true, true, false, false, false
+    ));
+    assert!(!super::interactive_presentation(
+        true, true, true, false, true
+    ));
+}
+
+#[test]
+fn state_metadata_reuses_dashboard_without_empty_log_suffix() {
+    let path = std::env::temp_dir().join(format!("makevn-state-metadata-{}", std::process::id()));
+    super::write_state_metadata(&path, "doctor", &OsString::from("/repo")).unwrap();
+    let metadata = super::read_backend_metadata(&path).unwrap().unwrap();
+    let summary = super::summary_from_backend_metadata(0, "1s".into(), "doctor", Some(&metadata));
+    assert_eq!(summary.title, "doctor");
+    assert_eq!(summary.log_path, None);
+    assert_eq!(summary.relative_log_path, None);
+    std::fs::remove_file(path).unwrap();
+}
+
+#[test]
+fn completion_records_include_state_phases_beyond_karate_five() {
+    let files = super::BackendPhaseFiles::new().unwrap();
+    for index in [6, 2, 1] {
+        let path = files.0.join(index.to_string());
+        super::write_state_metadata(&path, &format!("phase-{index}"), &OsString::from("/repo"))
+            .unwrap();
+        use std::io::Write;
+        let mut record = std::fs::OpenOptions::new().append(true).open(path).unwrap();
+        writeln!(record, "duration_seconds=1\nexit_code=0").unwrap();
+    }
+    assert_eq!(
+        files
+            .read()
+            .iter()
+            .map(|phase| phase.title.clone())
+            .collect::<Vec<_>>(),
+        vec!["phase-1", "phase-2", "phase-6"]
+    );
+}
+
+#[test]
+fn paused_dashboard_does_not_overwrite_interactive_prompt() {
+    let mut renderer = SpinnerRenderer {
+        tty: File::open("/dev/null").unwrap(),
+        tty_guard: None,
+        paused: true,
+        frame: 0,
+        frame_interval: std::time::Duration::ZERO,
+        next_frame_at: std::time::Instant::now(),
+        second_escape_deadline: None,
+        resource_sampler: ResourceSampler::new(),
+        resource_history: ResourceHistory::new(),
+        resource_history_revision: 0,
+        cpu_visual_load: 0.0,
+        ram_visual_load: 0.0,
+        resource_visual_load: 0.0,
+        rendered_block_line_widths: Vec::new(),
+    };
+    let metadata = BackendMetadata {
+        command: "doctor".into(),
+        repo: "/repo".into(),
+        cwd: "/repo".into(),
+        log_path: String::new(),
+        relative_log_path: String::new(),
+        command_display: "makevn doctor".into(),
+        title: "doctor".into(),
+        context: None,
+    };
+    assert!(!renderer.current_metadata_hint(&metadata).contains("tail"));
+    renderer
+        .render_dashboard(0, std::time::Duration::ZERO, &[], &[], &metadata, "")
+        .unwrap();
+    assert_eq!(renderer.frame, 0);
+    renderer.render_frame_with_hint(0, "").unwrap();
+    assert_eq!(renderer.frame, 0);
+}
+
+#[test]
+fn resume_after_prompt_restores_loader_input_without_resetting_history() {
+    let mut master_fd = -1;
+    let mut slave_fd = -1;
+    assert_eq!(
+        unsafe {
+            libc::openpty(
+                &mut master_fd,
+                &mut slave_fd,
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+            )
+        },
+        0
+    );
+    let _master = unsafe { File::from_raw_fd(master_fd) };
+    let tty = unsafe { File::from_raw_fd(slave_fd) };
+    let original = super::get_termios(slave_fd).unwrap();
+    let mut renderer = SpinnerRenderer {
+        tty,
+        tty_guard: None,
+        paused: true,
+        frame: 42,
+        frame_interval: std::time::Duration::ZERO,
+        next_frame_at: std::time::Instant::now(),
+        second_escape_deadline: None,
+        resource_sampler: ResourceSampler::new(),
+        resource_history: ResourceHistory::new(),
+        resource_history_revision: 0,
+        cpu_visual_load: 0.0,
+        ram_visual_load: 0.0,
+        resource_visual_load: 0.0,
+        rendered_block_line_widths: Vec::new(),
+    };
+    for _ in 0..2 {
+        renderer.resume().unwrap();
+        assert!(!renderer.paused && renderer.tty_guard.is_some());
+        assert_eq!(
+            super::get_termios(slave_fd).unwrap().c_lflag & libc::ICANON,
+            0
+        );
+        assert_eq!(renderer.frame, 42);
+        renderer.pause();
+        assert!(renderer.paused && renderer.tty_guard.is_none());
+        assert_eq!(
+            super::get_termios(slave_fd).unwrap().c_lflag & (libc::ICANON | libc::ECHO),
+            original.c_lflag & (libc::ICANON | libc::ECHO)
+        );
+    }
 }

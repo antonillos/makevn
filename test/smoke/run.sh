@@ -959,6 +959,7 @@ test_mcp_tool_listing() {
   assert_contains "${output_file}" '"name":"verify_ut_coverage"'
   assert_contains "${output_file}" '"name":"verify_changes_preview"'
   assert_contains "${output_file}" '"name":"jdk_list"'
+  python3 "${ROOT_DIR}/test/smoke/doctor_mcp_test.py" "${prefix}/bin/makevn-mcp"
 }
 
 test_init_does_not_touch_existing_makefile() {
@@ -1309,7 +1310,7 @@ MAKEVN_KARATE_TOOL_VERSIONS=""
 MAKEVN_RUN_CMD=""
 EOF
 
-  run_pty_command "${output_file}" "${compact_cli}" --repo "${repo}" --compact compile
+  MAKEVN_AGENT_OUTPUT=1 run_pty_command "${output_file}" "${compact_cli}" --repo "${repo}" --compact compile
 
   [[ "$(tr -d '\r' < "${output_file}")" == *"[..] makevn compile |"* ]] || fail "expected compact tty output to include plain compact header"
   [[ "$(tr -d '\r' < "${output_file}")" == *"log: .makevn/logs/compile.log"* ]] || fail "expected compact tty output to include log path"
@@ -4307,8 +4308,15 @@ EOF
 
   output="$("${fail_cli}" --repo "${repo}" compile 2>&1 || true)"
 
-  [[ "${output}" == *"Worked  for "* ]] || fail "expected dashboard elapsed to be present"
-  [[ "${output}" == *"[fail] exit 7 | check the log"* ]] || fail "expected compact failure summary without duplicate elapsed"
+  [[ "${output}" != *"Worked  for "* ]] || fail "non-TTY failure must not include a dashboard"
+  [[ "${output}" != *$'\033['* ]] || fail "non-TTY failure must not include ANSI"
+  [[ "${output}" =~ \[fail\]\ exit\ 7\ \|\ [0-9]+s\ \|\ check\ the\ log ]] || fail "expected plain failure with elapsed once"
+
+  local output_file="${repo}/failure-tty.out"
+  TERM=xterm-256color NO_COLOR=1 run_pty_command "${output_file}" "${fail_cli}" --repo "${repo}" compile || true
+  output="$(tr -d '\r' < "${output_file}")"
+  [[ "${output}" == *"Worked  for "* ]] || fail "expected human TTY dashboard elapsed"
+  [[ "${output}" == *"[fail] exit 7 | check the log"* ]] || fail "expected TTY failure without duplicate elapsed"
   if [[ "${output}" =~ \[fail\]\ exit\ 7\ \|\ [0-9]+s\ \|\ check\ the\ log ]]; then
     fail "expected failure summary not to repeat elapsed after dashboard"
   fi
@@ -4841,6 +4849,9 @@ main() {
   bash "${ROOT_DIR}/test/smoke/karate_profiles_doctor_test.sh"
   bash "${ROOT_DIR}/test/smoke/jdk_discovery_test.sh"
   bash "${ROOT_DIR}/test/smoke/bash_crap_test.sh"
+  bash "${ROOT_DIR}/test/smoke/doctor_compact_test.sh"
+  bash "${ROOT_DIR}/test/smoke/state_progress_test.sh"
+  python3 "${ROOT_DIR}/test/smoke/interactive_doctor_test.py" "${ROOT_DIR}/target/release/makevn"
   printf 'Smoke tests passed\n'
 }
 

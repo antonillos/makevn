@@ -16,7 +16,7 @@ from the terminal without IDE-specific setup. Agents in OpenCode should prefer
 'makevn' commands over editor-specific instructions.
 
 Usage:
-  makevn [--repo PATH] [--compact] doctor
+  makevn [--repo PATH] doctor [--compact]
   makevn [--repo PATH] [--compact] init [--dry-run] [--force]
   makevn [--repo PATH] refresh [--dry-run]
   makevn [--repo PATH] [--compact] make install [--dry-run]
@@ -105,7 +105,7 @@ Examples:
   make -f .makevn/makevn.mk vn-doctor
 
 Notes:
-  - '--compact' forces agent-style compact output even in a TTY.
+  - '--compact' shortens reports; MAKEVN_AGENT_OUTPUT=1 disables TTY presentation for agents.
   - Non-interactive runs are compact by default: full logs stay under '.makevn/logs/'.
   - 'doctor' inspects the repository before and after initialization.
   - 'init' always creates '.makevn/' without touching root makefiles.
@@ -251,8 +251,7 @@ while [[ $# -gt 0 ]]; do
       shift 2
       ;;
     --compact)
-      export MAKEVN_COMPACT_OUTPUT=1
-      export NO_COLOR=1
+      makevn_enable_compact_output
       shift
       ;;
     --help|-h)

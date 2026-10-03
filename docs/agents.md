@@ -10,13 +10,13 @@ The skill is meant to teach agents to:
 
 - inspect the repo before changing anything
 - select the least invasive mode
-- preserve compatibility with existing `Makefile` or `GNUmakefile`
+- leave existing `Makefile` or `GNUmakefile` untouched unless optional Make integration is explicitly requested
 - prefer `makevn uninstall` over heuristic cleanup
 - operate the repository through terminal commands that also work from OpenCode and Codex
 - treat `makevn` as the primary interface instead of relying on IDE actions
 - prefer `--json` when it is available for the command being used
 - avoid `--tail` unless a human explicitly requests an interactive local log view
-- prefer compact runs so the agent sees plain summaries and short failure excerpts instead of colors, loaders, or full Maven logs
+- prefer compact runs so the agent sees plain summaries and short failure excerpts instead of colors, loaders, or full Maven logs; when running in a PTY, set `MAKEVN_AGENT_OUTPUT=1` to explicitly retain agent-safe output
 - use direct `makevn ...` subcommands by default instead of inventing bare
   root `make` targets
 
@@ -39,28 +39,27 @@ Agents must use these command sequences exactly unless the human asks for a
 different scope. Do not replace them with raw `mvn`, repository-local scripts,
 or guessed root `make` targets.
 
-Initial inspection:
+Initial inspection (brief, noninteractive analysis):
 
 ```bash
-makevn doctor
+makevn doctor --compact
 ```
 
-Initialize only when `doctor` reports missing, stale, or uninitialized makevn
-state:
+Follow the reported `next` command: `makevn init` for missing initialization,
+`makevn init --force` for incomplete state or a different/unknown installed
+makevn version. Initialized, current state needs neither command. Force preserves
+existing user configuration. Compact doctor does not prompt or refresh the
+persisted profile; ordinary doctor retains detailed output and interactive setup.
+Older manifests without `makevn_version` need a one-time `init --force`.
 
-```bash
-makevn init
-makevn doctor
-```
+Initialization freshness is independent of optional Make integration.
+`makevn make install` and `makevn make uninstall` do not refresh initialization
+or change its recorded build; only init can do so. Existing Makefile targets
+are not part of the agent execution contract.
 
-Refresh stale state after a makevn upgrade (when the installed binary version
-differs from the version in `.makevn/manifest`, or when `doctor` shows
-incomplete configuration despite `.makevn/` existing):
-
-```bash
-makevn refresh
-makevn doctor
-```
+MCP doctor also emits a plain `Init recommendation`: `makevn_init (force: false)`,
+`makevn_init (force: true)`, or `none (already up to date)`. These are
+recommendations only; doctor does not automatically initialize the repository.
 
 Changed-code verification without a full coverage gate:
 
