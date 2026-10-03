@@ -39,3 +39,32 @@ fn failed_ps_command_has_zero_metrics() {
     assert_eq!(sample.cpu_percent, 0.0);
     assert_eq!(sample.rss_kb, 0);
 }
+
+#[test]
+fn docker_source_is_explicit_and_missing_data_never_falls_back_to_client_cpu() {
+    let mut sampler = super::ResourceSampler::new();
+    sampler.configure_docker("verify", None);
+    assert_eq!(sampler.scoped_text("cpu 20%".to_owned()), "cpu 20%");
+    sampler.configure_docker(
+        "docker-up",
+        Some(std::path::PathBuf::from("/nonexistent/makevn.resources")),
+    );
+    assert_eq!(
+        sampler.scoped_text(String::new()),
+        "containers cpu — | ram —"
+    );
+    assert_eq!(
+        sampler.scoped_text("cpu 5% | ram 4 MiB".to_owned()),
+        "containers cpu 5% | ram 4 MiB"
+    );
+    assert!(sampler.sample(std::process::id()).unwrap().is_none());
+    let revision = sampler.revision();
+    sampler.configure_docker(
+        "docker-up",
+        Some(std::path::PathBuf::from("/nonexistent/makevn.resources")),
+    );
+    assert_eq!(sampler.revision(), revision);
+    sampler.configure_docker("verify", None);
+    assert!(sampler.docker.is_none());
+    assert!(sampler.last_sample.is_none());
+}

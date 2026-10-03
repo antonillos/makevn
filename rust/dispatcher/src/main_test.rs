@@ -26,7 +26,7 @@ use std::sync::Arc;
 use std::sync::Mutex;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-static ENV_LOCK: Mutex<()> = Mutex::new(());
+pub(super) static ENV_LOCK: Mutex<()> = Mutex::new(());
 
 fn format_resource_sample(sample: &ResourceSample, history: &ResourceHistory) -> String {
     format!(
@@ -92,6 +92,14 @@ fn spinner_renderer_handles_tty_input_and_dashboard_lifecycle() {
         resource_visual_load: 0.0,
         rendered_block_line_widths: Vec::new(),
     };
+
+    renderer.configure_resource_source(
+        "docker-up",
+        Some(std::path::PathBuf::from("/nonexistent/makevn.resources")),
+    );
+    assert!(renderer.resource_history.cpu_percent.is_empty());
+    renderer.configure_resource_source("verify", None);
+    renderer.configure_resource_source("verify", None);
 
     master.write_all(b"tT+-x\x1b\x1b").unwrap();
     assert!(matches!(

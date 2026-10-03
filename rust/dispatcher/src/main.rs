@@ -20,6 +20,7 @@ use std::os::unix::process::{CommandExt, ExitStatusExt};
 #[cfg(unix)]
 use signal_hook::consts::signal::{SIGINT, SIGTERM};
 
+mod docker_resources;
 mod mcp_server;
 
 fn main() {
@@ -1077,6 +1078,7 @@ impl BackendMetadataFile {
 impl Drop for BackendMetadataFile {
     fn drop(&mut self) {
         let _ = fs::remove_file(&self.path);
+        let _ = fs::remove_file(self.path.with_extension("resources"));
     }
 }
 
@@ -1238,6 +1240,12 @@ fn dispatch_backend_invocations(
             if let Some(metadata) = &metadata_file {
                 command.env("MAKEVN_FRONTEND_STATE_METADATA_OUT", metadata.path());
             }
+        }
+        if let Some(metadata) = metadata_file.as_ref().filter(|_| use_frontend_loader) {
+            command.env(
+                "MAKEVN_FRONTEND_RESOURCE_SCOPE_OUT",
+                metadata.path().with_extension("resources"),
+            );
         }
         if !loader_available {
             command.env("NO_COLOR", "1");
@@ -1500,6 +1508,12 @@ fn run_backend_with_loader(
     prompt_sync: Option<&BackendDetailFile>,
 ) -> Result<BackendRunResult, String> {
     let started_at = Instant::now();
+    if let Some(renderer) = renderer.as_mut() {
+        renderer.configure_resource_source(
+            fallback_title,
+            metadata_file.map(|m| m.path().with_extension("resources")),
+        );
+    }
     let mut child = command.spawn().map_err(|error| {
         format!(
             "failed to launch backend {}: {error}",
@@ -1606,6 +1620,12 @@ fn run_backend_with_loader(
             }
         }
 
+        if let (Some(renderer), Some(metadata)) = (renderer.as_mut(), metadata.as_ref()) {
+            renderer.configure_resource_source(
+                &metadata.command,
+                metadata_file.map(|m| m.path().with_extension("resources")),
+            );
+        }
         if let Some(df) = detail_file {
             let latest = df.read_lines();
             if latest != current_detail_lines {
@@ -2953,6 +2973,7 @@ impl SpinnerRenderer {
                 )
             })
             .unwrap_or_default();
+        let resource_text = self.resource_sampler.scoped_text(resource_text);
         let suffix = spinner_resource_suffix(&resource_text, hint);
 
         let line = format!(
@@ -2994,6 +3015,7 @@ impl SpinnerRenderer {
                 )
             })
             .unwrap_or_default();
+        let resource_text = self.resource_sampler.scoped_text(resource_text);
         let spinner_suffix = spinner_resource_suffix(&resource_text, hint);
 
         let lines = dashboard_output_lines(
@@ -3027,6 +3049,18 @@ impl SpinnerRenderer {
         self.frame += 1;
         self.next_frame_at = Instant::now() + self.frame_interval();
         Ok(())
+    }
+
+    fn configure_resource_source(&mut self, title: &str, scope: Option<PathBuf>) {
+        let revision = self.resource_sampler.revision();
+        self.resource_sampler.configure_docker(title, scope);
+        if revision != self.resource_sampler.revision() {
+            self.resource_history = ResourceHistory::new();
+            self.resource_history_revision = self.resource_sampler.revision();
+            self.cpu_visual_load = 0.0;
+            self.ram_visual_load = 0.0;
+            self.resource_visual_load = 0.0;
+        }
     }
 
     fn update_resource_visuals(&mut self, sample: Option<&ResourceSample>) {
@@ -3173,6 +3207,8 @@ struct ResourceSample {
 }
 
 struct ResourceSampler {
+    docker: Option<docker_resources::DockerSampler>,
+    docker_scope: Option<(String, PathBuf)>,
     last_sample_at: Option<Instant>,
     last_sample: Option<ResourceSample>,
     sample_revision: u64,
@@ -3183,13 +3219,36 @@ impl ResourceSampler {
 
     fn new() -> Self {
         Self {
+            docker: None,
+            docker_scope: None,
             last_sample_at: None,
             last_sample: None,
             sample_revision: 0,
         }
     }
 
+    fn configure_docker(&mut self, title: &str, scope: Option<PathBuf>) {
+        let scope = scope
+            .filter(|_| docker_resources::is_docker_phase(title))
+            .map(|path| (title.to_owned(), path));
+        if scope == self.docker_scope {
+            return;
+        }
+        self.last_sample = None;
+        self.last_sample_at = None;
+        self.sample_revision += 1;
+        self.docker = scope
+            .as_ref()
+            .map(|(_, path)| docker_resources::DockerSampler::new(path.clone()));
+        self.docker_scope = scope;
+    }
+
     fn sample(&mut self, pid: u32) -> io::Result<Option<ResourceSample>> {
+        if let Some(docker) = self.docker.as_mut() {
+            let (sample, changed) = docker.poll();
+            self.sample_revision += u64::from(changed);
+            return Ok(sample);
+        }
         if pid == 0 {
             return Ok(None);
         }
@@ -3208,6 +3267,18 @@ impl ResourceSampler {
         self.last_sample = Some(sample);
         self.sample_revision += 1;
         Ok(self.last_sample)
+    }
+
+    fn scoped_text(&self, text: String) -> String {
+        if self.docker.is_some() {
+            if text.is_empty() {
+                "containers cpu — | ram —".to_owned()
+            } else {
+                format!("containers {text}")
+            }
+        } else {
+            text
+        }
     }
 
     fn revision(&self) -> u64 {

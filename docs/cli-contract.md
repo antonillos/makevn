@@ -655,3 +655,21 @@ question. Once the complete question/validation loop finishes (including skip),
 it restores the same loader with the existing phase history and elapsed time.
 No redraws or input polling occur while the prompt is active. Agent compact
 output remains plain and never enters this terminal protocol.
+
+### Docker live resource telemetry
+
+Interactive Docker phases display `containers` CPU/RAM from the running
+containers of the backend-resolved Compose project, not the waiting CLI process.
+The same Compose executable, base/override files and working directory select the
+project; telemetry never falls back to all containers when the selection is empty.
+Sampling is asynchronous, refreshes approximately every two seconds, and bounds
+each read-only CLI probe to three seconds. Missing, partial, expired, or failed
+samples show `containers cpu — | ram —`, not an invented zero. A genuine idle
+sample may still show zero. Maven/application phases keep their process-tree
+telemetry, and histories reset when the source changes.
+
+This measures container workloads, not the Docker daemon/VM, image downloads,
+volume pruning, or overall host CPU. While no project containers are running,
+container metrics are unavailable. Docker commands with no resolved Compose
+project also show unavailable live telemetry. Standalone `docker-stats` output
+retains its existing all-containers contract; its live loader uses project scope.
