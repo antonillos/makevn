@@ -1520,6 +1520,9 @@ fn run_backend_with_loader(
     prompt_sync: Option<&BackendDetailFile>,
 ) -> Result<BackendRunResult, String> {
     let started_at = Instant::now();
+    if let Some(renderer) = renderer.as_mut() {
+        renderer.begin_backend();
+    }
     let mut child = command.spawn().map_err(|error| {
         format!(
             "failed to launch backend {}: {error}",
@@ -2900,6 +2903,11 @@ impl SpinnerRenderer {
             resource_visual_load: 0.0,
             rendered_block_line_widths: Vec::new(),
         })
+    }
+
+    // Reset command-local state without erasing the retained terminal block.
+    fn begin_backend(&mut self) {
+        self.second_escape_deadline = None;
     }
 
     fn pause(&mut self) {

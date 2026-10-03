@@ -2343,3 +2343,39 @@ fn large_backend_output_is_replayed_in_bounded_chunks() {
     );
     fs::remove_file(path).unwrap();
 }
+
+fn renderer_for_backend_boundary() -> SpinnerRenderer {
+    SpinnerRenderer {
+        tty: File::open("/dev/null").unwrap(),
+        tty_guard: None,
+        paused: false,
+        frame: 17,
+        frame_interval: Duration::ZERO,
+        next_frame_at: Instant::now(),
+        second_escape_deadline: Some(Instant::now() + Duration::from_secs(3)),
+        resource_sampler: ResourceSampler::new(),
+        resource_history: ResourceHistory::new(),
+        resource_history_revision: 0,
+        cpu_visual_load: 0.0,
+        ram_visual_load: 0.0,
+        resource_visual_load: 0.0,
+        rendered_block_line_widths: vec![12, 30, 80],
+    }
+}
+
+#[test]
+fn backend_boundary_resets_escape_confirmation_without_clearing_dashboard() {
+    let mut renderer = renderer_for_backend_boundary();
+    renderer.begin_backend();
+    assert!(renderer.second_escape_deadline.is_none());
+    assert_eq!(renderer.rendered_block_line_widths, [12, 30, 80]);
+    assert_eq!(renderer.frame, 17);
+    assert!(matches!(
+        super::decode_spinner_input(0x1b, &mut renderer.second_escape_deadline),
+        InputEvent::None
+    ));
+    assert!(matches!(
+        super::decode_spinner_input(0x1b, &mut renderer.second_escape_deadline),
+        InputEvent::Interrupt
+    ));
+}
