@@ -27,11 +27,12 @@ def backend(args):
     metadata.write_text(f'command={title}\nrepo={repo}\ncwd={repo}\n'
                         f'log_path={repo / "log"}\nrelative_log_path=log\n'
                         f'command_display=makevn {title}\ntitle={title}\n')
+    (repo / 'log').write_text(f'{title} log output\n')
     Path(os.environ['MAKEVN_BACKEND_DETAIL_OUT']).write_text('PRESERVED_DETAIL\n')
     time.sleep(0.4)
 
 
-def verify(binary):
+def verify(binary, tail_enabled=False):
     with tempfile.TemporaryDirectory() as folder:
         repo = Path(folder)
         script = repo / 'libexec/makevn/backend.sh'
@@ -47,7 +48,10 @@ def verify(binary):
             os.environ.update(MAKEVN_INSTALL_ROOT=str(repo), NO_COLOR='1', TERM='xterm')
             os.environ.pop('MAKEVN_AGENT_OUTPUT', None)
             os.environ.pop('MAKEVN_COMPACT_OUTPUT', None)
-            os.execv(binary, [binary, '--repo', str(repo), 'docker-up', 'docker-ps-required'])
+            args = [binary, '--repo', str(repo), 'docker-up', 'docker-ps-required']
+            if tail_enabled:
+                args.append('--tail')
+            os.execv(binary, args)
         fcntl.ioctl(fd, termios.TIOCSWINSZ, struct.pack('HHHH', 80, 200, 0, 0))
         screen = Screen()
         decoder = codecs.getincrementaldecoder('utf-8')(errors='replace')
@@ -90,4 +94,5 @@ if __name__ == '__main__':
         backend(sys.argv[2:])
     else:
         verify(str(Path(sys.argv[1]).resolve()))
+        verify(str(Path(sys.argv[1]).resolve()), True)
         print('dashboard transition PTY: ok')

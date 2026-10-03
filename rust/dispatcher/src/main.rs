@@ -1815,7 +1815,8 @@ fn run_backend_with_loader(
         }
 
         if let Some(renderer) = renderer.as_mut() {
-            if !tail_active {
+            // Tail owns the screen only after metadata identifies its log.
+            if !tail_active || metadata.is_none() {
                 let hint = match metadata.as_ref() {
                     Some(metadata) if metadata.log_path.is_empty() => {
                         renderer.current_spinner_hint()
