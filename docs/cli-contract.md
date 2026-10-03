@@ -615,7 +615,7 @@ profile-dependent functionality or Kafka is enabled.
 
 ### Compact doctor initialization advice
 
-`makevn --compact doctor` performs repository analysis but prints only setup
+`makevn doctor --compact` performs repository analysis but prints only setup
 status, repository support and next-step advice. It does not prompt or refresh
 the persisted profile. Missing manifests recommend `makevn init`; incomplete
 state (missing config, profile or state.json) and manifests with a different or

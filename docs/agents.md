@@ -42,7 +42,7 @@ or guessed root `make` targets.
 Initial inspection (brief, noninteractive analysis):
 
 ```bash
-makevn --compact doctor
+makevn doctor --compact
 ```
 
 Follow the reported `next` command: `makevn init` for missing initialization,

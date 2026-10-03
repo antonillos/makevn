@@ -2084,3 +2084,19 @@ fn karate_phase_records_preserve_order_status_duration_and_own_details() {
     );
     assert_eq!(summaries[2].detail_lines, vec!["details for karate-test"]);
 }
+
+#[test]
+fn doctor_accepts_compact_after_command() {
+    let action = parse_invocation(vec![
+        "--repo".into(),
+        current_repo_root(),
+        "doctor".into(),
+        "--compact".into(),
+    ])
+    .unwrap();
+    let Action::DispatchToBackend(invocations) = action else {
+        panic!("expected backend dispatch")
+    };
+    assert!(invocations[0].compact);
+    assert!(invocations[0].args.contains(&OsString::from("--compact")));
+}

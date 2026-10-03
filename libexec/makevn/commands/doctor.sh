@@ -36,6 +36,10 @@ print_doctor() {
   shift
   while [[ $# -gt 0 ]]; do
     case "$1" in
+      --compact)
+        export MAKEVN_COMPACT_OUTPUT=1 NO_COLOR=1
+        shift
+        ;;
       *)
         makevn_die "Unknown doctor option: $1"
         ;;
