@@ -1,21 +1,13 @@
 # Example: Existing Makefile
 
-Repository shape:
-
-- `pom.xml` present
-- `Makefile` already exists
-
-Recommended flow:
+A repository with `pom.xml` and a user-owned Makefile uses the same standalone flow:
 
 ```bash
 makevn doctor
 makevn init
-makevn make install
-make -f .makevn/makevn.mk vn-doctor
+makevn verify
 ```
 
-Only use this if the user explicitly wants to edit the existing makefile:
-
-```bash
-makevn make install
-```
+makevn does not interpret, execute, or add targets to that Makefile.
+For an old generated integration, preview `makevn init --force --dry-run`, then
+apply with `makevn init --force`; modified artifacts require manual resolution.

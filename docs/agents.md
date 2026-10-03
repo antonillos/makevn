@@ -10,7 +10,7 @@ The skill is meant to teach agents to:
 
 - inspect the repo before changing anything
 - select the least invasive mode
-- leave existing `Makefile` or `GNUmakefile` untouched unless optional Make integration is explicitly requested
+- preserve user-owned `Makefile` and `GNUmakefile` content; retire only recognized legacy generated artifacts
 - prefer `makevn uninstall` over heuristic cleanup
 - operate the repository through terminal commands that also work from OpenCode and Codex
 - treat `makevn` as the primary interface instead of relying on IDE actions
@@ -52,10 +52,7 @@ existing user configuration. Compact doctor does not prompt or refresh the
 persisted profile; ordinary doctor retains detailed output and interactive setup.
 Older manifests without `makevn_version` need a one-time `init --force`.
 
-Initialization freshness is independent of optional Make integration.
-`makevn make install` and `makevn make uninstall` do not refresh initialization
-or change its recorded build; only init can do so. Existing Makefile targets
-are not part of the agent execution contract.
+Only initialization changes its recorded build. Existing Makefile targets are not part of the agent execution contract.
 
 MCP doctor also emits a plain `Init recommendation`: `makevn_init (force: false)`,
 `makevn_init (force: true)`, or `none (already up to date)`. These are
@@ -164,8 +161,6 @@ MCP equivalents for OpenCode agents:
 | `makevn refresh` | `makevn_init` with `force: true` (use after makevn upgrades to reinitialize stale state) |
 | `makevn uninstall` | `makevn_uninstall` |
 | `makevn profile refresh` | `makevn_profile_refresh` |
-| `makevn make install` | `makevn_make_install` |
-| `makevn make uninstall` | `makevn_make_uninstall` |
 | `makevn validate` | `makevn_validate` |
 | `makevn compile` | `makevn_compile` |
 | `makevn test-compile` | `makevn_test_compile` |
@@ -282,13 +277,6 @@ Karate tests need the real application running. For a manual chain, agents shoul
 use `makevn run-app-bg` before `makevn karate-test` and always finish with
 `makevn stop-app`. For the full flow, `makevn karate-all` owns that lifecycle.
 
-The optional make integration exposes namespaced `vn-*` targets only. Agents should
-run public Docker CLI commands as `makevn docker-up`, `makevn docker-down`,
-`makevn docker-ps`, `makevn docker-stats`, or `makevn docker-ps-required`, not as bare root targets
-such as `make docker-up` or `make docker-ps-required`. Use
-`make -f .makevn/makevn.mk vn-docker-*` or `vn-karate-*` only when explicitly validating make
-integration.
-
 ### Git: Use native agent tools
 
 Use native shell/git tools for Git inspection and commit workflows.
@@ -298,9 +286,8 @@ Use native shell/git tools for Git inspection and commit workflows.
 1. Load the `makevn` skill in the agent environment.
 2. Run `makevn doctor` in the target repo.
 3. If `makevn doctor` reports that the repo is not initialized, run `makevn init` before continuing with adoption or verification work.
-4. Use `makevn make install` only when the user explicitly wants Make integration.
-5. Validate the result.
-6. Use `makevn uninstall` to revert.
+4. Validate the result.
+5. Use `makevn uninstall` to revert.
 
 When JSON output exists for the command being used, agents should prefer it over parsing prose.
 
@@ -477,7 +464,6 @@ See also:
 - `docs/cli-contract.md`
 - `docs/backend-contract.md`
 
-
 ### Strict Karate HTTP readiness
 
 `makevn karate-all` requires a configured or detected application health URL
@@ -496,7 +482,6 @@ Standalone `run-app-bg` can still start without a health URL, but warns that
 only process liveness was checked, not HTTP readiness. Use `karate-test`
 directly for an externally managed application. HTTP readiness does not
 validate JSON health status, application semantics, or Kafka availability.
-
 
 ### Doctor health configuration prompts
 

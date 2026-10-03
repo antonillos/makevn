@@ -386,3 +386,10 @@ fn removed_exec_is_not_advertised_or_available_in_workflows() {
         assert!(result.output.contains("unknown makevn tool in step: exec"));
     }
 }
+
+#[test]
+fn retired_make_tools_are_not_registered() {
+    assert!(!TOOL_SPECS.iter().any(|s| s.name == "make_install"
+        || s.name == "make_uninstall"
+        || s.command.first() == Some(&"make")));
+}

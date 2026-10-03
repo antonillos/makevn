@@ -55,17 +55,9 @@ The intended product shape is also simple:
 - the binary should be usable directly by humans and agents
 - the skill should teach workflow policy rather than acting as a mandatory runtime layer
 
-## Make Is Optional, Not Mandatory
+## Independent of Make
 
-`makevn` is not trying to force a root `Makefile` into every repository.
-
-Instead it keeps initialization and Make adoption separate:
-
-- `makevn init`
-- `makevn make install`
-- `makevn make uninstall`
-
-This keeps the core path small for agents while still allowing `make`-based adoption where useful.
+makevn never executes or interprets repository Make targets. User-owned Makefiles remain independent.
 
 ## Small Public Contract
 
@@ -73,8 +65,6 @@ The public contract should stay small and explainable:
 
 - `makevn doctor`
 - `makevn init`
-- `makevn make install`
-- `makevn make uninstall`
 - `makevn uninstall`
 - `makevn build`
 - `makevn test`

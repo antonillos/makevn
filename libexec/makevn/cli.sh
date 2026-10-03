@@ -19,8 +19,6 @@ Usage:
   makevn [--repo PATH] doctor [--compact]
   makevn [--repo PATH] [--compact] init [--dry-run] [--force]
   makevn [--repo PATH] refresh [--dry-run]
-  makevn [--repo PATH] [--compact] make install [--dry-run]
-  makevn [--repo PATH] [--compact] make uninstall [--dry-run]
   makevn [--repo PATH] [--compact] uninstall [--dry-run]
   makevn [--repo PATH] [--compact] profile refresh
   makevn [--repo PATH] [--compact] compile [-- EXTRA_MAVEN_ARGS...]
@@ -66,8 +64,6 @@ Usage:
 Examples:
   makevn doctor
   makevn init
-  makevn make install
-  makevn make uninstall
   makevn profile refresh
   makevn compile
   makevn test-compile
@@ -102,15 +98,12 @@ Examples:
   makevn karate-test --tag @smoke
   makevn run-app-bg
   makevn stop-app
-  make -f .makevn/makevn.mk vn-doctor
 
 Notes:
   - '--compact' shortens reports; MAKEVN_AGENT_OUTPUT=1 disables TTY presentation for agents.
   - Non-interactive runs are compact by default: full logs stay under '.makevn/logs/'.
   - 'doctor' inspects the repository before and after initialization.
-  - 'init' always creates '.makevn/' without touching root makefiles.
-  - 'make install' adds optional 'vn-*' targets by updating one existing makefile or creating a minimal root Makefile.
-  - 'make uninstall' removes only the Make integration and keeps '.makevn/' intact.
+  - 'init' creates '.makevn/'; forced initialization safely retires legacy generated artifacts.
 EOF
 }
 
@@ -123,7 +116,7 @@ print_command_intro() {
 
 makevn_cli_is_top_level_command() {
   case "$1" in
-    help|doctor|init|make|uninstall|profile|compile|test-compile|compile-tests|validate|package|clean|build|test|verify-ut|verify-ut-coverage|verify-it|verify-it-coverage|verify|verify-changes-preview|verify-changes|coverage|coverage-changes|crap|crap-changes|pr-verify|format|checkstyle|docker-up|docker-down|docker-ps|docker-stats|docker-ps-required|karate-docker-up|karate-docker-down|karate-test|karate-all|run-app|run-app-bg|stop-app|run|jdk|mutation)
+    help|doctor|init|uninstall|profile|compile|test-compile|compile-tests|validate|package|clean|build|test|verify-ut|verify-ut-coverage|verify-it|verify-it-coverage|verify|verify-changes-preview|verify-changes|coverage|coverage-changes|crap|crap-changes|pr-verify|format|checkstyle|docker-up|docker-down|docker-ps|docker-stats|docker-ps-required|karate-docker-up|karate-docker-down|karate-test|karate-all|run-app|run-app-bg|stop-app|run|jdk|mutation)
       return 0
       ;;
   esac
@@ -181,6 +174,7 @@ makevn_cli_dispatch_sequence_if_needed() {
   local segment=""
 
   [[ ${#args[@]} -gt 0 ]] || return 1
+  makevn_cli_is_top_level_command "${args[0]}" || [[ "${args[0]}" == refresh ]] || makevn_die "Unknown command: ${args[0]}"
 
   for arg in "${args[@]}"; do
     if [[ ${#current[@]} -eq 0 ]]; then
@@ -189,11 +183,6 @@ makevn_cli_dispatch_sequence_if_needed() {
     fi
 
     if makevn_cli_consume_sequence_option "${arg}"; then
-      continue
-    fi
-
-    if [[ "${current[0]}" == "make" && ${#current[@]} -eq 1 && ( "${arg}" == "install" || "${arg}" == "uninstall" ) ]]; then
-      current+=("${arg}")
       continue
     fi
 
@@ -211,7 +200,7 @@ makevn_cli_dispatch_sequence_if_needed() {
 
   for segment in "${segments[@]}"; do
     eval "set -- ${segment}"
-    "${BASH_SOURCE[0]}" --repo "${repo_root}" "$@"
+    "${BASH_SOURCE[0]}" --repo "${repo_root}" "$@" || exit $?
   done
   exit 0
 }
@@ -313,22 +302,6 @@ case "${COMMAND}" in
     ;;
   init)
     cmd_init "${REPO_ROOT}" "$@"
-    ;;
-  make)
-    SUBCOMMAND="${1:-}"
-    case "${SUBCOMMAND}" in
-      install)
-        shift
-        cmd_make_install "${REPO_ROOT}" "$@"
-        ;;
-      uninstall)
-        shift
-        cmd_make_uninstall "${REPO_ROOT}" "$@"
-        ;;
-      *)
-        makevn_die "Usage: makevn make install|uninstall"
-        ;;
-    esac
     ;;
   uninstall)
     cmd_uninstall "${REPO_ROOT}" "$@"
