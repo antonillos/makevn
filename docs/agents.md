@@ -561,3 +561,15 @@ names for other repositories. Noninteractive agents must not wait for a prompt:
 use an explicit approved setting/override when detection is ambiguous; report
 unresolved workflow expressions rather than evaluating them. `profile refresh`
 updates detected profile metadata, not user configuration.
+
+
+### Formatter recovery diagnostics
+Test failure output includes the explicit MCP suggestion
+`makevn_format` with `apply: true`, as well as `makevn format --apply`.
+AMIGA's `File '…' has not been previously formatted` is a formatting
+prerequisite failure. The standalone whole-project apply command is supported;
+`--file` is not yet supported for AMIGA and must not be suggested for it.
+
+If CLI supports `--file` but MCP does not expose `file`, check the installed
+`makevn-mcp` path/version and restart/reload the MCP session after upgrading.
+Do not interpret a cached tool schema as evidence that CLI lacks the option.

@@ -117,11 +117,9 @@ makevn_collect_test_names() {
 makevn_run_all_tests() {
   local repo_root="$1"
   local rc=0
-  if [[ ${#extra_args[@]} -gt 0 ]]; then
-    makevn_run_maven_goal "${repo_root}" test test test "${extra_args[@]}"
-    rc=$?
+  if makevn_run_maven_goal "${repo_root}" test test test "${extra_args[@]}"; then
+    rc=0
   else
-    makevn_run_maven_goal "${repo_root}" test test test
     rc=$?
   fi
   if [[ ${rc} -ne 0 ]]; then

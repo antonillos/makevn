@@ -36,6 +36,6 @@ makevn_hint_format_failure() {
       ;;
     *) printf '  makevn format --apply\n' >&2 ;;
   esac
-  printf '%s\n' 'For a supported single-file formatter: makevn format --apply --file PATH' >&2
+  printf '%s\n' 'MCP suggestion: makevn_format with apply: true (add file only for a supported single-file formatter).' >&2
   printf '%s\n' 'Do not add formatter skip flags or edit .mvn/maven.config/.makevn/config to bypass validation. Rerun the original test after formatting.' >&2
 }

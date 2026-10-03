@@ -4740,6 +4740,7 @@ main() {
   bash "${ROOT_DIR}/test/smoke/karate_profiles_doctor_test.sh"
   bash "${ROOT_DIR}/test/smoke/jdk_discovery_test.sh"
   bash "${ROOT_DIR}/test/smoke/formatting_test.sh"
+  bash "${ROOT_DIR}/test/smoke/formatting_recovery_test.sh"
   bash "${ROOT_DIR}/test/smoke/bash_crap_test.sh"
   bash "${ROOT_DIR}/test/smoke/standalone_contract_test.sh"
   bash "${ROOT_DIR}/test/smoke/doctor_compact_test.sh"

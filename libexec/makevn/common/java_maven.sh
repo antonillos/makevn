@@ -522,10 +522,13 @@ makevn_run_selected_test() {
     rm -f "${maven_base_path}/${module_path}/target/failsafe-reports/failsafe-summary.xml"
   fi
 
-  set +e
-  MAKEVN_COMPACT_OUTPUT=1 makevn_run_logged_in_context "${repo_root}" code "${maven_base_path}" "${log_name}" test "${title}" "${maven_args[@]}"
-  rc=$?
-  set -e
+  # Logging restores errexit internally. Catch the delegated status before it
+  # can terminate the shell and suppress recovery hints.
+  if MAKEVN_COMPACT_OUTPUT=1 makevn_run_logged_in_context "${repo_root}" code "${maven_base_path}" "${log_name}" test "${title}" "${maven_args[@]}"; then
+    rc=0
+  else
+    rc=$?
+  fi
   if [[ ${rc} -ne 0 ]]; then
     local logs_dir_hint
     logs_dir_hint="$(makevn_logs_dir "${repo_root}")"

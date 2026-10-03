@@ -143,3 +143,15 @@ and the [makevn skill](../skills/makevn/SKILL.md).
 ./build-rust-dispatcher.sh
 ./target/release/makevn-mcp
 ```
+
+
+### Formatter recovery diagnostics
+Test failure output includes the explicit MCP suggestion
+`makevn_format` with `apply: true`, as well as `makevn format --apply`.
+AMIGA's `File '…' has not been previously formatted` is a formatting
+prerequisite failure. The standalone whole-project apply command is supported;
+`--file` is not yet supported for AMIGA and must not be suggested for it.
+
+If CLI supports `--file` but MCP does not expose `file`, check the installed
+`makevn-mcp` path/version and restart/reload the MCP session after upgrading.
+Do not interpret a cached tool schema as evidence that CLI lacks the option.
