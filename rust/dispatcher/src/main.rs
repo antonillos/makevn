@@ -3207,6 +3207,7 @@ struct ResourceSample {
 }
 
 struct ResourceSampler {
+    last_pid: Option<u32>,
     last_sample_at: Option<Instant>,
     last_sample: Option<ResourceSample>,
     sample_revision: u64,
@@ -3217,6 +3218,7 @@ impl ResourceSampler {
 
     fn new() -> Self {
         Self {
+            last_pid: None,
             last_sample_at: None,
             last_sample: None,
             sample_revision: 0,
@@ -3224,6 +3226,11 @@ impl ResourceSampler {
     }
 
     fn sample(&mut self, pid: u32) -> io::Result<Option<ResourceSample>> {
+        if self.last_pid != Some(pid) {
+            self.last_pid = Some(pid);
+            self.last_sample_at = None;
+            self.last_sample = None;
+        }
         if pid == 0 {
             return Ok(None);
         }

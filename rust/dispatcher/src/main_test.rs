@@ -291,6 +291,7 @@ fn resource_sampler_skips_zero_pid_and_reuses_recent_sample() {
         cpu_percent: 12.5,
         rss_kb: 2048,
     };
+    sampler.last_pid = Some(u32::MAX);
     sampler.last_sample_at = Some(std::time::Instant::now());
     sampler.last_sample = Some(cached);
     let sample = sampler.sample(u32::MAX).unwrap().unwrap();
