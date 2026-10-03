@@ -26,4 +26,22 @@ makevn_hint_format_failure "${tmp}" "${tmp}/absent" 2>"${tmp}/hint"
 [[ ! -s "${tmp}/hint" ]]
 if (cmd_format "${tmp}" --file Test.java) 2>"${tmp}/error"; then exit 1; fi
 grep -Fq 'Unknown format option: --file' "${tmp}/error"
+
+mkdir -p "${tmp}/.makevn"
+cat > "${tmp}/pom.xml" <<'POM'
+<project><build><plugins><plugin><groupId>com.example</groupId><artifactId>company-format-maven-plugin</artifactId><executions><execution><goals><goal>check</goal></goals></execution></executions></plugin></plugins></build></project>
+POM
+printf '%s\n' '[ERROR] Failed to execute goal com.example:company-format-maven-plugin:1.0:check' > "${tmp}/log"
+makevn_hint_format_failure "${tmp}" "${tmp}/log" 2>"${tmp}/hint"
+grep -Fq 'makevn format --apply' "${tmp}/hint"
+printf 'MAKEVN_FORMAT_CHECK_GOAL="com.example:custom-gate:verify-style"\n' > "${tmp}/.makevn/config"
+printf '%s\n' '[ERROR] Failed to execute goal com.example:custom-gate:2.0:verify-style' > "${tmp}/log"
+makevn_hint_format_failure "${tmp}" "${tmp}/log" 2>"${tmp}/hint"
+grep -Fq 'makevn format --apply' "${tmp}/hint"
+printf '%s\n' '[INFO] --- com.example:custom-gate:2.0:verify-style ---' 'Tests run: 1, Failures: 1' > "${tmp}/log"
+makevn_hint_format_failure "${tmp}" "${tmp}/log" 2>"${tmp}/hint"
+[[ ! -s "${tmp}/hint" ]]
+printf '%s\n' '[ERROR] Failed to execute goal org.other:custom-gate:2.0:verify-style' > "${tmp}/log"
+makevn_hint_format_failure "${tmp}" "${tmp}/log" 2>"${tmp}/hint"
+[[ ! -s "${tmp}/hint" ]]
 echo 'formatting detection tests passed'
