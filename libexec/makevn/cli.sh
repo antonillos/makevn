@@ -42,7 +42,7 @@ Usage:
   makevn [--repo PATH] crap-changes [--base REF]
   makevn [--repo PATH] crap install-analyzer
   makevn [--repo PATH] pr-verify [-- EXTRA_MAVEN_ARGS...]
-  makevn [--repo PATH] format [--apply] [-- EXTRA_MAVEN_ARGS...]
+  makevn [--repo PATH] format [--apply] [--file PATH] [-- EXTRA_MAVEN_ARGS...]
   makevn [--repo PATH] checkstyle [--module MODULE] [--verbose] [-- EXTRA_MAVEN_ARGS...]
   makevn [--repo PATH] docker-up [--tail]
   makevn [--repo PATH] docker-down [--tail]

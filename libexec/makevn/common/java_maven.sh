@@ -530,6 +530,7 @@ makevn_run_selected_test() {
     local logs_dir_hint
     logs_dir_hint="$(makevn_logs_dir "${repo_root}")"
     makevn_hint_stale_generated_sources_if_needed "${logs_dir_hint}/${log_name}.log"
+    makevn_hint_format_failure "${repo_root}" "${logs_dir_hint}/${log_name}.log"
     return ${rc}
   fi
 

@@ -680,3 +680,15 @@ volume pruning, or overall host CPU. While no project containers are running,
 container metrics are unavailable. Docker commands with no resolved Compose
 project also show unavailable live telemetry. Standalone `docker-stats` output
 retains its existing all-containers contract; its live loader uses project scope.
+
+### Formatting failures
+Formatting validation failures are not test assertion failures. Run
+`makevn format --apply`, then rerun the original test. Never add formatter
+skip flags or modify `.mvn/maven.config` / `.makevn/config` to bypass validation.
+
+`makevn format --apply --file module/src/main/java/Example.java` limits
+Spotless to one existing file (absolute or repository-relative). Without
+`--apply`, it checks that file. Other plugins, including AMIGA, currently
+reject `--file` explicitly: use the whole-project command instead.
+Extra Maven arguments cannot be combined with `--file`, so they cannot
+override its scope. The owning module is selected without reactor recursion.

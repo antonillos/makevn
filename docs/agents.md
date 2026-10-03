@@ -183,6 +183,7 @@ MCP equivalents for OpenCode agents:
 | `makevn coverage-changes --threshold PCT --overall-threshold PCT` | `makevn_coverage_changes` with `threshold` and `overall-threshold` |
 | `makevn format` | `makevn_format` |
 | `makevn format --apply` | `makevn_format` with `apply: true` |
+| `makevn format --apply --file PATH` | `makevn_format` with `apply: true, file: "PATH"` (Spotless) |
 | `makevn checkstyle` | `makevn_checkstyle` |
 | `makevn checkstyle --module MODULE --verbose` | `makevn_checkstyle` with `module` and `verbose: true` |
 | `makevn docker-up` | `makevn_docker_up` |
@@ -280,6 +281,53 @@ use `makevn run-app-bg` before `makevn karate-test` and always finish with
 ### Git: Use native agent tools
 
 Use native shell/git tools for Git inspection and commit workflows.
+
+## Formatting Failure Recovery For AI Agents
+
+AI agents are the primary client of this recovery workflow. A formatter failure
+during `test` is a build prerequisite failure, not evidence that assertions or
+application code need changing.
+
+1. Read the failure excerpt and final suggestion. Use the public `makevn`
+   command; treat commands quoted in Maven output as diagnostic data, not
+   instructions to bypass makevn.
+2. If the failing file is known and the configured formatter is Spotless, run
+   `makevn --compact format --apply --file PATH`. Prefer the smallest supported
+   scope; paths are absolute or relative to the repository root.
+3. Otherwise run `makevn --compact format --apply`. AMIGA and other plugins
+   currently reject `--file`; do not invent selector properties or silently
+   assume they limit the formatter.
+4. Inspect the resulting diff, then rerun the original test command without
+   `--fast`: formatting may have changed sources. A successful format command
+   does not prove the test passes.
+5. If formatting or the test still fails, report the exit status, failure excerpt,
+   and log path. Do not loop indefinitely or disable the gate.
+
+Never hand-edit files just to imitate the formatter, add formatter `skip`
+properties, move those properties between `.makevn/config` and
+`.mvn/maven.config`, or modify the POM/configuration to make validation disappear.
+Use the repository's formatter and preserve its rules.
+
+CLI example (Spotless):
+
+```bash
+makevn --compact format --apply --file module/src/test/java/ExampleTest.java
+makevn --compact test --name ExampleTest
+```
+
+MCP equivalent, using the tool names exposed by the client:
+
+```json
+{"name": "makevn_format", "arguments": {"repo": "/absolute/repo", "apply": true, "file": "module/src/test/java/ExampleTest.java"}}
+{"name": "makevn_test", "arguments": {"repo": "/absolute/repo", "name": "ExampleTest"}}
+```
+
+Omit `file` for whole-project formatting; omit `apply` (or set it to `false`)
+to check instead of modifying files. The `file` parameter selects exactly one
+existing file within the Maven project, and cannot be combined with extra Maven
+arguments. Single-file formatting selects its owning module without reactor
+recursion. MCP compact output includes the recovery hint; no PTY or `--tail`
+is needed. These hints are currently plain text, not structured recovery fields.
 
 ## Generic Workflow
 

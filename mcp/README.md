@@ -120,6 +120,23 @@ Interpretation rules:
   the MCP session. MCP tools are listed when the server starts and may be cached
   by the client.
 
+## Formatting recovery
+
+When a test fails formatter validation, call `makevn_format` with `apply: true`,
+then rerun the same test without `fast: true`. For Spotless, pass `file` to
+format exactly one existing repository-relative or absolute file:
+
+```json
+{"name": "makevn_format", "arguments": {"repo": "/absolute/repo", "apply": true, "file": "module/src/test/java/ExampleTest.java"}}
+```
+
+Omit `file` for AMIGA or other unsupported single-file plugins. Do not edit
+configuration, add skip flags, or manually imitate formatting to bypass the
+failure. Recovery hints are plain text in compact tool output, not structured
+JSON fields. Inspect the diff and verify the original test actually passes.
+See [the agent recovery workflow](../docs/agents.md#formatting-failure-recovery-for-ai-agents)
+and the [makevn skill](../skills/makevn/SKILL.md).
+
 ## Development
 
 ```bash
