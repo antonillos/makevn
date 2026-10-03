@@ -10,7 +10,7 @@ The skill is meant to teach agents to:
 
 - inspect the repo before changing anything
 - select the least invasive mode
-- preserve compatibility with existing `Makefile` or `GNUmakefile`
+- leave existing `Makefile` or `GNUmakefile` untouched unless optional Make integration is explicitly requested
 - prefer `makevn uninstall` over heuristic cleanup
 - operate the repository through terminal commands that also work from OpenCode and Codex
 - treat `makevn` as the primary interface instead of relying on IDE actions
@@ -51,6 +51,11 @@ makevn version. Initialized, current state needs neither command. Force preserve
 existing user configuration. Compact doctor does not prompt or refresh the
 persisted profile; ordinary doctor retains detailed output and interactive setup.
 Older manifests without `makevn_version` need a one-time `init --force`.
+
+Initialization freshness is independent of optional Make integration.
+`makevn make install` and `makevn make uninstall` do not refresh initialization
+or change its recorded build; only init can do so. Existing Makefile targets
+are not part of the agent execution contract.
 
 MCP doctor also emits a plain `Init recommendation`: `makevn_init (force: false)`,
 `makevn_init (force: true)`, or `none (already up to date)`. These are

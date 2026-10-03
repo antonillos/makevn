@@ -18,7 +18,31 @@ sed 's/^makevn_version=.*/makevn_version=old/' "${TMP}/.makevn/manifest" >"${TMP
 mv "${TMP}/manifest" "${TMP}/.makevn/manifest"
 output="$("${CLI}" --repo "${TMP}" doctor --compact)"
 [[ "${output}" == *'status: stale'* && "${output}" == *'next: makevn init --force'* ]]
+# Optional Make changes must not claim that initialization was refreshed.
+printf 'custom:\n\t@echo untouched\n' > "${TMP}/Makefile"
+cp "${TMP}/Makefile" "${TMP}/Makefile.before"
+for stored_version in old ''; do
+  sed '/^makevn_version=/d' "${TMP}/.makevn/manifest" > "${TMP}/manifest"
+  if [[ -n "${stored_version}" ]]; then
+    printf 'makevn_version=%s\n' "${stored_version}" >> "${TMP}/manifest"
+  fi
+  mv "${TMP}/manifest" "${TMP}/.makevn/manifest"
+  cp "${TMP}/.makevn/profile.env" "${TMP}/profile.before"
+  for action in install uninstall; do
+    "${CLI}" --repo "${TMP}" make "${action}" >/dev/null
+    [[ "$(sed -n 's/^makevn_version=//p' "${TMP}/.makevn/manifest")" == "${stored_version}" ]]
+    output="$("${CLI}" --repo "${TMP}" doctor --compact)"
+    [[ "${output}" == *'status: stale'* && "${output}" == *'next: makevn init --force'* ]]
+    cmp "${TMP}/profile.before" "${TMP}/.makevn/profile.env"
+  done
+  sed '/^[[:space:]]*$/d' "${TMP}/Makefile" > "${TMP}/Makefile.after"
+  cmp "${TMP}/Makefile.before" "${TMP}/Makefile.after"
+done
+cp "${TMP}/Makefile" "${TMP}/Makefile.after"
 "${CLI}" --repo "${TMP}" init --force >/dev/null
+cmp "${TMP}/Makefile.after" "${TMP}/Makefile"
+output="$("${CLI}" --repo "${TMP}" doctor --compact)"
+[[ "${output}" == *'status: initialized'* && "${output}" != *'next: makevn init'* ]]
 for file in config profile.env state.json; do
   cp "${TMP}/.makevn/${file}" "${TMP}/saved"
   rm "${TMP}/.makevn/${file}"

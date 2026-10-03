@@ -272,11 +272,12 @@ makevn_write_manifest() {
   local repo_root="$1"
   local managed_makefile="$2"
   local generated_root_makefile="$3"
+  local initialization_version="${4-${MAKEVN_VERSION}}"
   local manifest_path
 
   manifest_path="$(makevn_manifest_path "${repo_root}")"
   cat > "${manifest_path}" <<EOF
-makevn_version=${MAKEVN_VERSION}
+makevn_version=${initialization_version}
 managed_makefile=${managed_makefile}
 generated_root_makefile=${generated_root_makefile}
 generated_at=$(makevn_now_utc)
@@ -287,8 +288,10 @@ makevn_update_manifest_make_integration() {
   local repo_root="$1"
   local managed_makefile="$2"
   local generated_root_makefile="$3"
+  local initialization_version
+  initialization_version="$(makevn_manifest_value "${repo_root}" makevn_version || true)"
 
-  makevn_write_manifest "${repo_root}" "${managed_makefile}" "${generated_root_makefile}"
+  makevn_write_manifest "${repo_root}" "${managed_makefile}" "${generated_root_makefile}" "${initialization_version}"
   makevn_write_state_json "${repo_root}" "${managed_makefile}" "${generated_root_makefile}"
 }
 
