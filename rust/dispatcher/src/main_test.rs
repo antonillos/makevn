@@ -2292,3 +2292,54 @@ fn replay_backend_output_handles_missing_empty_and_nonempty_files() {
     super::replay_backend_output(&path, None, true);
     fs::remove_file(path).unwrap();
 }
+
+struct CountingOutput {
+    bytes: u64,
+    largest_write: usize,
+}
+
+impl Write for CountingOutput {
+    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+        self.bytes += bytes.len() as u64;
+        self.largest_write = self.largest_write.max(bytes.len());
+        Ok(bytes.len())
+    }
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+#[test]
+fn large_backend_output_is_replayed_in_bounded_chunks() {
+    let path = env::temp_dir().join(format!(
+        "makevn-stream-{}-{}",
+        process::id(),
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    let mut output = CountingOutput {
+        bytes: 0,
+        largest_write: 0,
+    };
+    assert!(super::stream_backend_output(&path, None, &mut output).is_err());
+    let file = File::create(&path).unwrap();
+    assert_eq!(
+        super::stream_backend_output(&path, None, &mut output).unwrap(),
+        0
+    );
+    let length = 16 * 1024 * 1024;
+    file.set_len(length).unwrap();
+    assert_eq!(
+        super::stream_backend_output(&path, None, &mut output).unwrap(),
+        length
+    );
+    assert_eq!(output.bytes, length);
+    assert!(
+        output.largest_write <= 64 * 1024,
+        "unbounded write: {}",
+        output.largest_write
+    );
+    fs::remove_file(path).unwrap();
+}

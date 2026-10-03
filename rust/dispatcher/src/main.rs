@@ -1414,18 +1414,26 @@ fn dispatch_backend_invocations(
 
 // Only external output needs to take ownership of the live terminal block.
 fn replay_backend_output(path: &Path, renderer: Option<&mut SpinnerRenderer>, stderr: bool) {
-    let Ok(output) = fs::read(path) else { return };
-    if output.is_empty() {
-        return;
+    if stderr {
+        let _ = stream_backend_output(path, renderer, &mut io::stderr().lock());
+    } else {
+        let _ = stream_backend_output(path, renderer, &mut io::stdout().lock());
+    }
+}
+
+fn stream_backend_output(
+    path: &Path,
+    renderer: Option<&mut SpinnerRenderer>,
+    output: &mut impl Write,
+) -> io::Result<u64> {
+    let mut file = File::open(path)?;
+    if file.metadata()?.len() == 0 {
+        return Ok(0);
     }
     if let Some(renderer) = renderer {
         renderer.clear_line();
     }
-    if stderr {
-        let _ = io::stderr().write_all(&output);
-    } else {
-        let _ = io::stdout().write_all(&output);
-    }
+    io::copy(&mut file, output)
 }
 
 fn format_failure_summary(
