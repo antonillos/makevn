@@ -2908,6 +2908,12 @@ impl SpinnerRenderer {
     // Reset command-local state without erasing the retained terminal block.
     fn begin_backend(&mut self) {
         self.second_escape_deadline = None;
+        self.resource_sampler = ResourceSampler::new();
+        self.resource_history = ResourceHistory::new();
+        self.resource_history_revision = 0;
+        self.cpu_visual_load = 0.0;
+        self.ram_visual_load = 0.0;
+        self.resource_visual_load = 0.0;
     }
 
     fn pause(&mut self) {

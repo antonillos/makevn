@@ -2379,3 +2379,42 @@ fn backend_boundary_resets_escape_confirmation_without_clearing_dashboard() {
         InputEvent::Interrupt
     ));
 }
+
+#[test]
+fn backend_boundary_resets_telemetry_history_and_smoothed_loads() {
+    let mut renderer = renderer_for_backend_boundary();
+    let previous = ResourceSample {
+        cpu_percent: 200.0,
+        rss_kb: 1024 * 1024,
+    };
+    renderer.resource_sampler.last_pid = Some(99);
+    renderer.resource_sampler.last_sample_at = Some(Instant::now());
+    renderer.resource_sampler.last_sample = Some(previous);
+    renderer.resource_sampler.sample_revision = 5;
+    for _ in 0..5 {
+        renderer.resource_history.push(previous);
+    }
+    renderer.resource_history_revision = 5;
+    renderer.cpu_visual_load = 0.8;
+    renderer.ram_visual_load = 0.7;
+    renderer.resource_visual_load = 0.9;
+    renderer.begin_backend();
+    assert!(renderer.resource_sampler.last_pid.is_none());
+    assert!(renderer.resource_sampler.last_sample.is_none());
+    assert!(renderer.resource_sampler.last_sample_at.is_none());
+    assert_eq!(renderer.resource_sampler.revision(), 0);
+    assert!(renderer.resource_history.cpu_percent.is_empty());
+    assert!(renderer.resource_history.rss_kb.is_empty());
+    assert_eq!(renderer.resource_history_revision, 0);
+    assert_eq!(renderer.cpu_visual_load, 0.0);
+    assert_eq!(renderer.ram_visual_load, 0.0);
+    assert_eq!(renderer.resource_visual_load, 0.0);
+    assert_eq!(renderer.frame, 17);
+    assert_eq!(renderer.rendered_block_line_widths, [12, 30, 80]);
+    renderer.resource_history.push(ResourceSample {
+        cpu_percent: 2.0,
+        rss_kb: 64,
+    });
+    assert_eq!(renderer.resource_history.cpu_percent, [2.0]);
+    assert_eq!(renderer.resource_history.rss_kb, [64]);
+}
