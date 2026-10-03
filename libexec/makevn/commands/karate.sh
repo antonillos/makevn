@@ -36,6 +36,8 @@ cmd_karate_docker_down() {
     compose_args+=("${arg}")
   done < <(makevn_collect_karate_compose_args "${compose_file}" "${compose_override_file}")
 
+  makevn_publish_compose_resources "${repo_root}" "${docker_compose_cmd}" "${compose_file}" "${compose_override_file}"
+
   makevn_run_logged "${repo_root}" karate-docker-down karate-docker-down karate-docker-down bash -c '
     "$@" down -v --remove-orphans
     docker volume prune -f
@@ -65,6 +67,8 @@ cmd_karate_docker_up() {
   while IFS= read -r arg; do
     compose_args+=("${arg}")
   done < <(makevn_collect_karate_compose_args "${compose_file}" "${compose_override_file}")
+
+  makevn_publish_compose_resources "${repo_root}" "${docker_compose_cmd}" "${compose_file}" "${compose_override_file}"
 
   if [[ -n "${profile}" ]]; then
     makevn_run_logged "${repo_root}" karate-docker-up karate-docker-up karate-docker-up bash -c '

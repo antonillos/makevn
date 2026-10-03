@@ -26,7 +26,7 @@ use std::sync::Arc;
 use std::sync::Mutex;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-static ENV_LOCK: Mutex<()> = Mutex::new(());
+pub(super) static ENV_LOCK: Mutex<()> = Mutex::new(());
 
 fn format_resource_sample(sample: &ResourceSample, history: &ResourceHistory) -> String {
     format!(
@@ -53,10 +53,10 @@ fn resource_history_only_records_new_sample_revisions() {
     assert_eq!(history.sync_sample(0, 0, Some(&sample)), 0);
     assert!(history.cpu_percent.is_empty());
     assert_eq!(history.sync_sample(0, 1, Some(&sample)), 1);
-    assert_eq!(history.cpu_percent, vec![12.0]);
-    assert_eq!(history.rss_kb, vec![64]);
+    assert_eq!(history.cpu_percent, vec![Some(12.0)]);
+    assert_eq!(history.rss_kb, vec![Some(64)]);
     assert_eq!(history.sync_sample(1, 2, None), 2);
-    assert_eq!(history.cpu_percent, vec![12.0]);
+    assert_eq!(history.cpu_percent, vec![Some(12.0)]);
 }
 
 #[test]
@@ -93,6 +93,14 @@ fn spinner_renderer_handles_tty_input_and_dashboard_lifecycle() {
         rendered_block_line_widths: Vec::new(),
     };
 
+    renderer.configure_resource_source(
+        "docker-up",
+        Some(std::path::PathBuf::from("/nonexistent/makevn.resources")),
+    );
+    assert!(renderer.resource_history.cpu_percent.is_empty());
+    renderer.configure_resource_source("verify", None);
+    renderer.configure_resource_source("verify", None);
+
     master.write_all(b"tT+-x\x1b\x1b").unwrap();
     assert!(matches!(
         renderer.poll_input().unwrap(),
@@ -127,9 +135,9 @@ fn spinner_renderer_handles_tty_input_and_dashboard_lifecycle() {
         rss_kb: 32,
     };
     renderer.sync_resource_history(Some(&sample));
-    assert_eq!(renderer.resource_history.cpu_percent, vec![10.0]);
+    assert_eq!(renderer.resource_history.cpu_percent, vec![Some(10.0)]);
     renderer.sync_resource_history(Some(&sample));
-    assert_eq!(renderer.resource_history.cpu_percent, vec![10.0]);
+    assert_eq!(renderer.resource_history.cpu_percent, vec![Some(10.0)]);
 
     let metadata = BackendMetadata {
         command: "verify".into(),
@@ -2415,6 +2423,111 @@ fn backend_boundary_resets_telemetry_history_and_smoothed_loads() {
         cpu_percent: 2.0,
         rss_kb: 64,
     });
-    assert_eq!(renderer.resource_history.cpu_percent, [2.0]);
-    assert_eq!(renderer.resource_history.rss_kb, [64]);
+    assert_eq!(renderer.resource_history.cpu_percent, [Some(2.0)]);
+    assert_eq!(renderer.resource_history.rss_kb, [Some(64)]);
+}
+
+#[test]
+fn backend_boundary_selects_docker_source_after_reset_and_clears_it_for_verify() {
+    let mut renderer = renderer_for_backend_boundary();
+    renderer.begin_backend();
+    renderer.configure_resource_source(
+        "docker-up",
+        Some(std::path::PathBuf::from("/nonexistent/makevn.resources")),
+    );
+    assert!(renderer.resource_sampler.docker.is_some());
+    assert!(renderer
+        .resource_sampler
+        .sample(std::process::id())
+        .unwrap()
+        .is_none());
+    assert_eq!(
+        renderer.resource_sampler.scoped_text(String::new(), None),
+        format!(
+            "ctr {}",
+            super::format_unavailable_resource_metrics(&ResourceHistory::new())
+        )
+    );
+    renderer.begin_backend();
+    renderer.configure_resource_source("verify", None);
+    assert!(renderer.resource_sampler.docker.is_none());
+    assert!(renderer.resource_sampler.last_pid.is_none());
+    assert_eq!(
+        renderer
+            .resource_sampler
+            .scoped_text("cpu 2%".into(), Some(0.0)),
+        "cpu 2%"
+    );
+    assert_eq!(renderer.rendered_block_line_widths, [12, 30, 80]);
+    assert_eq!(renderer.frame, 17);
+}
+
+#[test]
+fn docker_history_advances_at_two_second_ticks_with_missing_slots() {
+    let mut history = ResourceHistory::new();
+    let now = Instant::now();
+    let sample = ResourceSample {
+        cpu_percent: 250.0,
+        rss_kb: 1024,
+    };
+    history.tick(now, Some(&sample));
+    history.tick(now + Duration::from_millis(1999), None);
+    assert_eq!(history.cpu_percent, [Some(250.0)]);
+    history.tick(now + Duration::from_secs(2), None);
+    assert_eq!(history.cpu_percent, [Some(250.0), None]);
+    assert_eq!(history.rss_kb, [Some(1024), None]);
+    assert_eq!(
+        super::sparkline_f32(&history.cpu_percent, 6, 250.0),
+        "    ▇ "
+    );
+    let missing = super::format_unavailable_resource_metrics(&history);
+    assert!(missing.contains('▇'));
+    assert!(missing.contains('—'));
+    history.tick(now + Duration::from_secs(4), Some(&sample));
+    assert_eq!(history.cpu_percent, [Some(250.0), None, Some(250.0)]);
+    assert_eq!(
+        super::sparkline_f32(&history.cpu_percent, 6, 250.0),
+        "   ▇ ▇"
+    );
+    history.tick(now + Duration::from_secs(16), None);
+    assert_eq!(history.cpu_percent, [None; 6]);
+    assert_eq!(history.rss_kb, [None; 6]);
+}
+
+#[test]
+fn missing_docker_metrics_keep_graph_and_value_columns() {
+    let mut history = ResourceHistory::new();
+    let sample = ResourceSample {
+        cpu_percent: 250.0,
+        rss_kb: 4096,
+    };
+    history.push(sample);
+    let available = format_resource_sample(&sample, &history);
+    let unavailable = super::format_unavailable_resource_metrics(&history);
+    assert_eq!(
+        super::visible_char_count(&available),
+        super::visible_char_count(&unavailable)
+    );
+    assert_eq!(
+        super::visible_char_count(available.split('|').next().unwrap()),
+        super::visible_char_count(unavailable.split('|').next().unwrap())
+    );
+    assert!(unavailable.contains("cpu"));
+    assert!(unavailable.contains("ram"));
+}
+
+#[test]
+fn docker_scope_label_uses_cpu_color_and_dims_when_unavailable() {
+    let mut sampler = ResourceSampler::new();
+    sampler.configure_docker("docker-up", Some("/nonexistent/makevn.resources".into()));
+    let metrics = super::adaptive_metric_text("cpu 20%", 0.4);
+    assert_eq!(
+        sampler.scoped_text(metrics.clone(), Some(0.4)),
+        format!("{} {}", super::adaptive_metric_text("ctr", 0.4), metrics)
+    );
+    let unavailable = super::format_unavailable_resource_metrics(&ResourceHistory::new());
+    assert_eq!(
+        sampler.scoped_text(unavailable.clone(), None),
+        format!("{} {}", dim_text("ctr"), unavailable)
+    );
 }

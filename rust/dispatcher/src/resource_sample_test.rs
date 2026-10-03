@@ -41,6 +41,41 @@ fn failed_ps_command_has_zero_metrics() {
 }
 
 #[test]
+fn docker_source_is_explicit_and_missing_data_never_falls_back_to_client_cpu() {
+    let mut sampler = super::ResourceSampler::new();
+    sampler.configure_docker("verify", None);
+    assert_eq!(
+        sampler.scoped_text("cpu 20%".to_owned(), Some(0.0)),
+        "cpu 20%"
+    );
+    sampler.configure_docker(
+        "docker-up",
+        Some(std::path::PathBuf::from("/nonexistent/makevn.resources")),
+    );
+    assert_eq!(
+        sampler.scoped_text(String::new(), None),
+        format!(
+            "ctr {}",
+            super::format_unavailable_resource_metrics(&super::ResourceHistory::new())
+        )
+    );
+    assert_eq!(
+        sampler.scoped_text("cpu 5% | ram 4 MiB".to_owned(), Some(0.0)),
+        "ctr cpu 5% | ram 4 MiB"
+    );
+    assert!(sampler.sample(std::process::id()).unwrap().is_none());
+    let revision = sampler.revision();
+    sampler.configure_docker(
+        "docker-up",
+        Some(std::path::PathBuf::from("/nonexistent/makevn.resources")),
+    );
+    assert_eq!(sampler.revision(), revision);
+    sampler.configure_docker("verify", None);
+    assert!(sampler.docker.is_none());
+    assert!(sampler.last_sample.is_none());
+}
+
+#[test]
 fn sampler_cache_is_keyed_by_backend_pid() {
     let mut sampler = super::ResourceSampler::new();
     sampler.last_pid = Some(u32::MAX);
