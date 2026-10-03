@@ -61,7 +61,6 @@ The installed binary is the canonical interface for:
 
 - humans
 - AI agents
-- optional `make` integration through generated `vn-*` targets
 
 The AI skill is guidance, not a required runtime dependency.
 
@@ -117,8 +116,6 @@ in OpenCode without requiring a Maven repository.
 makevn doctor
 makevn init [--dry-run] [--force]
 makevn refresh [--dry-run]
-makevn make install [--dry-run]
-makevn make uninstall [--dry-run]
 makevn uninstall [--dry-run]
 makevn profile refresh
 ```
@@ -357,10 +354,8 @@ Minimum envelope:
 
 Recommended command-specific fields:
 
-- `doctor`: `supported`, `current_makevn_status`, `make_integration_status`, `maven_base_path`, `makefiles`, `detected_profile`, `jdk`
+- `doctor`: `supported`, `current_makevn_status`, `maven_base_path`, `detected_profile`, `jdk`
 - `init`: `dry_run`, `created`, `updated`, `would_create`, `would_update`
-- `make install`: `dry_run`, `created`, `updated`, `would_create`, `would_update`
-- `make uninstall`: `dry_run`, `removed`, `updated`, `would_remove`, `would_update`
 - `uninstall`: `dry_run`, `removed`, `updated`, `would_remove`, `would_update`, `managed_assets`
 - `profile refresh`: `profile_path`, `cache_source`, `workflow_files`
 - `jdk current`: `global_java_home`, `code`, `karate`

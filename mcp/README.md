@@ -106,8 +106,12 @@ Tool mapping for common commands:
 Interpretation rules:
 
 - `makevn_init` is safe to run when doctor indicates the repository needs local
-  makevn state. It does not install root Makefile integration; that is a separate
-  `makevn_make_install` operation.
+  makevn state. It creates standalone state; `force` refreshes initialization while
+  preserving user configuration. Neither mode inspects or removes legacy Make
+  artifacts: `.makevn/makevn.mk` and root Makefile includes remain untouched.
+  Remove old includes and generated artifacts manually as appropriate; see
+  [integration guidance](../docs/integration.md). Uninstall removes `.makevn/`,
+  so clean up old Makefile references to it manually as well.
 - `makevn_verify_changes` owns Maven module selection. Agents should not add
   their own `-pl`, `-am`, or `-f` flags unless explicitly debugging makevn.
 - `makevn_coverage_changes` is a gate. Exit code `1` can be the expected result

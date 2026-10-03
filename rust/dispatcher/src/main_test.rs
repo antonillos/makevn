@@ -1023,25 +1023,15 @@ fn parses_command_sequence_with_options_per_command() {
 }
 
 #[test]
-fn keeps_make_uninstall_as_make_subcommand() {
-    let repo_root = current_repo_root();
-    let action =
-        parse_invocation(vec![OsString::from("make"), OsString::from("uninstall")]).unwrap();
-
-    assert_eq!(
-        action,
-        Action::DispatchToBackend(vec![BackendInvocation {
-            args: vec![
-                OsString::from("make"),
-                OsString::from("--repo"),
-                repo_root,
-                OsString::from("uninstall"),
-            ],
-            frontend_loader: false,
-            tail: false,
-            compact: false,
-        }])
-    );
+fn rejects_retired_make_commands() {
+    for args in [
+        vec!["make", "install"],
+        vec!["make", "uninstall"],
+        vec!["make", "--help"],
+    ] {
+        let error = parse_invocation(args.into_iter().map(OsString::from).collect()).unwrap_err();
+        assert!(error.contains("Unknown command: make"), "{error}");
+    }
 }
 
 #[test]
@@ -1246,7 +1236,6 @@ fn all_top_level_commands_have_command_help() {
         "help",
         "doctor",
         "init",
-        "make",
         "uninstall",
         "profile",
         "compile",
@@ -1879,9 +1868,9 @@ fn command_option_consumption_preserves_passthrough_and_values() {
     ));
     assert!(passthrough);
     assert_eq!(
-        split_command_segments(vec!["make".into(), "install".into(), "doctor".into()]).unwrap(),
+        split_command_segments(vec!["init".into(), "--force".into(), "doctor".into()]).unwrap(),
         vec![
-            ("make".into(), vec!["install".into()]),
+            ("init".into(), vec!["--force".into()]),
             ("doctor".into(), vec![])
         ]
     );

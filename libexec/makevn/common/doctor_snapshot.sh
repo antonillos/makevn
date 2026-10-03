@@ -202,11 +202,8 @@ makevn_collect_doctor_snapshot() {
   local code_java_version_line=""
   local karate_java_version_line=""
   local run_configured="no"
-  local existing_makefile="no"
-  local existing_gnumakefile="no"
   local current_status="not initialized"
   local repo_support_status=""
-  local make_integration_status="not installed"
   local profile_path=""
   local profile_status="not generated"
   local detected_workflow_files=""
@@ -421,11 +418,6 @@ makevn_collect_doctor_snapshot() {
     [[ -n "${_cached_crap_jar}" && -f "${_cached_crap_jar}" ]] && crap_analyzer="${_cached_crap_jar} (managed)"
   fi
 
-  [[ -f "${repo_root}/Makefile" ]] && existing_makefile="${repo_root}/Makefile"
-  [[ -f "${repo_root}/GNUmakefile" ]] && existing_gnumakefile="${repo_root}/GNUmakefile"
-  if [[ -f "$(makevn_manifest_path "${repo_root}")" ]]; then
-    make_integration_status="$(makevn_make_integration_status "${repo_root}")"
-  fi
   profile_path="$(makevn_profile_path "${repo_root}")"
   [[ -f "${profile_path}" ]] && profile_status="${profile_path}"
 
@@ -503,8 +495,6 @@ makevn_collect_doctor_snapshot() {
   MAKEVN_DOCTOR_REPO_ROOT="${repo_root}"
   MAKEVN_DOCTOR_JAVA_MAVEN_REPO="$(if [[ -n "${maven_base_path}" ]]; then printf yes; else printf no; fi)"
   MAKEVN_DOCTOR_MAVEN_BASE_PATH="${maven_base_path:-unresolved}"
-  MAKEVN_DOCTOR_EXISTING_MAKEFILE="${existing_makefile}"
-  MAKEVN_DOCTOR_EXISTING_GNUMAKEFILE="${existing_gnumakefile}"
   MAKEVN_DOCTOR_EXISTING_STATE_DIR="$(if [[ -d "$(makevn_state_dir "${repo_root}")" ]]; then printf yes; else printf no; fi)"
   MAKEVN_DOCTOR_CURRENT_STATUS="${current_status}"
   MAKEVN_DOCTOR_CODE_TOOL_VERSIONS="${code_tool_versions:-unresolved}"
@@ -545,7 +535,6 @@ makevn_collect_doctor_snapshot() {
   MAKEVN_DOCTOR_RUN_CONFIGURED="${run_configured}"
   MAKEVN_DOCTOR_PROFILE_STATUS="${profile_status}"
   MAKEVN_DOCTOR_REPO_SUPPORT_STATUS="${repo_support_status}"
-  MAKEVN_DOCTOR_MAKE_INTEGRATION_STATUS="${make_integration_status}"
   MAKEVN_DOCTOR_COMPOSE_FILE="${compose_file}"
   MAKEVN_DOCTOR_E2E_COMPOSE_FILE="${e2e_compose_file}"
   local_containers_preference="$(makevn_effective_local_containers "${repo_root}" "${verify_it_local_containers_default}")"
@@ -566,12 +555,6 @@ makevn_collect_doctor_snapshot() {
     esac
   elif [[ "${current_status}" != "initialized" ]]; then
     MAKEVN_DOCTOR_SUGGESTED_NEXT="makevn init --force"
-  else
-    case "${make_integration_status}" in
-      include:*|bootstrap:*)
-        MAKEVN_DOCTOR_SUGGESTED_OPTIONAL="makevn make uninstall"
-        ;;
-    esac
   fi
 
   case "${repo_support_status}" in
@@ -600,8 +583,6 @@ makevn_print_doctor_json() {
   printf '    "repo_root": "%s",\n' "$(makevn_json_escape "${MAKEVN_DOCTOR_REPO_ROOT}")"
   printf '    "java_maven_repo": "%s",\n' "$(makevn_json_escape "${MAKEVN_DOCTOR_JAVA_MAVEN_REPO}")"
   printf '    "maven_base_path": "%s",\n' "$(makevn_json_escape "${MAKEVN_DOCTOR_MAVEN_BASE_PATH}")"
-  printf '    "existing_makefile": "%s",\n' "$(makevn_json_escape "${MAKEVN_DOCTOR_EXISTING_MAKEFILE}")"
-  printf '    "existing_gnumakefile": "%s",\n' "$(makevn_json_escape "${MAKEVN_DOCTOR_EXISTING_GNUMAKEFILE}")"
   printf '    "existing_makevn": "%s",\n' "$(makevn_json_escape "${MAKEVN_DOCTOR_EXISTING_STATE_DIR}")"
   printf '    "current_makevn_status": "%s",\n' "$(makevn_json_escape "${MAKEVN_DOCTOR_CURRENT_STATUS}")"
   printf '    "code_tool_versions": "%s",\n' "$(makevn_json_escape "${MAKEVN_DOCTOR_CODE_TOOL_VERSIONS}")"
@@ -637,7 +618,6 @@ makevn_print_doctor_json() {
   printf '    "local_containers_default": "%s",\n' "$(makevn_json_escape "${MAKEVN_DOCTOR_LOCAL_CONTAINERS}")"
   printf '    "persisted_profile": "%s",\n' "$(makevn_json_escape "${MAKEVN_DOCTOR_PROFILE_STATUS}")"
   printf '    "repository_support_status": "%s",\n' "$(makevn_json_escape "${MAKEVN_DOCTOR_REPO_SUPPORT_STATUS}")"
-  printf '    "make_integration_status": "%s",\n' "$(makevn_json_escape "${MAKEVN_DOCTOR_MAKE_INTEGRATION_STATUS}")"
   printf '    "mutation_available": "%s",\n' "$(makevn_json_escape "${MAKEVN_DOCTOR_MUTATION_AVAILABLE}")"
   printf '    "mutation_goal": "%s"\n' "$(makevn_json_escape "${MAKEVN_DOCTOR_MUTATION_GOAL}")"
   printf '  },\n'

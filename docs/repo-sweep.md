@@ -23,7 +23,7 @@ test/repo-sweep/run.sh --profile full /path/to/repositories
 
 Profiles:
 
-- `quick`: MCP contract, `doctor`, `init`, JDK, Make integration, read-only Docker probes, and capability classification.
+- `quick`: MCP contract, `doctor`, `init`, JDK, standalone initialization, read-only Docker probes, and capability classification.
 - `full`: `quick` plus Maven build/test/coverage command groups with bounded timeouts.
 - `destructive`: `full` plus Docker/Karate lifecycle commands against temporary clones only.
 

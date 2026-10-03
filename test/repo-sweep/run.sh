@@ -25,7 +25,7 @@ Usage: test/repo-sweep/run.sh [--profile quick|full|destructive] [REPO_OR_ROOT]
        test/repo-sweep/run.sh --cleanup ARTIFACTS_OR_REPORT_DIR
 
 Profiles:
-  quick        MCP contract, init/adoption, JDK, make integration, classifiers
+  quick        MCP contract, init/adoption, JDK, standalone workflows, classifiers
   full         quick + build/test/coverage command groups and read-only probes
   destructive  full + docker/karate lifecycle probes against the cloned repo
 
@@ -547,24 +547,6 @@ run_tool() {
   return 1
 }
 
-run_make_check() {
-  local repo_name="$1"
-  local repo_path="$2"
-  local command_name="$3"
-
-  if [[ ! -f "${repo_path}/.makevn/makevn.mk" ]]; then
-    record_skip "${repo_name}" clone "${command_name}" expected_unavailable "missing .makevn/makevn.mk"
-    return 0
-  fi
-
-  if PATH="${INSTALL_BIN_DIR}:${PATH}" make -f "${repo_path}/.makevn/makevn.mk" -C "${repo_path}" MAKEVN_BIN="${MAKEVN_BIN}" vn-doctor >/dev/null 2>&1; then
-    record "${repo_name}" clone "${command_name}" ok ok "vn-doctor succeeded"
-    return 0
-  fi
-
-  record "${repo_name}" clone "${command_name}" fail product_bug "vn-doctor failed"
-  return 1
-}
 
 doctor_has() {
   local output="$1"
@@ -821,9 +803,6 @@ while IFS= read -r repo_path; do
   run_tool "${repo_name}" clone "${clone_path}" profile_refresh '{}' "${fake_bin}" "${clone_doctor}" || true
   run_tool "${repo_name}" clone "${clone_path}" jdk_current '{}' "${fake_bin}" "${clone_doctor}" || true
   run_tool "${repo_name}" clone "${clone_path}" jdk_list '{}' "${fake_bin}" "${clone_doctor}" || true
-  run_tool "${repo_name}" clone "${clone_path}" make_install '{}' "${fake_bin}" "${clone_doctor}" || true
-  run_make_check "${repo_name}" "${clone_path}" make_vn_doctor || true
-  run_tool "${repo_name}" clone "${clone_path}" make_uninstall '{}' "${fake_bin}" "${clone_doctor}" || true
 
   if doctor_indicates "${clone_doctor}" format; then
     run_tool "${repo_name}" clone "${clone_path}" format '{}' "${fake_bin}" "${clone_doctor}" || true

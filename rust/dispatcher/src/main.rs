@@ -686,11 +686,6 @@ fn split_command_segments(args: Vec<OsString>) -> Result<Vec<(OsString, Vec<OsSt
             continue;
         }
 
-        if is_make_subcommand(current_command.as_ref(), &current_args, &arg) {
-            current_args.push(arg);
-            continue;
-        }
-
         if starts_command_segment(&arg) {
             segments.push((current_command.take().unwrap(), current_args));
             current_command = Some(arg);
@@ -725,12 +720,6 @@ fn consume_command_option(
     false
 }
 
-fn is_make_subcommand(command: Option<&OsString>, args: &[OsString], arg: &OsString) -> bool {
-    command == Some(&OsString::from("make"))
-        && args.is_empty()
-        && (arg == "install" || arg == "uninstall")
-}
-
 fn starts_command_segment(arg: &OsString) -> bool {
     is_top_level_command(arg)
         && !COMMAND_SEQUENCE_BREAKERS.contains(&arg.to_string_lossy().as_ref())
@@ -759,9 +748,10 @@ fn validate_command(
     command: &OsString,
     trailing_args: &[OsString],
 ) -> Result<CommandValidation, String> {
-    if trailing_args
-        .iter()
-        .any(|arg| matches!(arg.to_string_lossy().as_ref(), "--help" | "-h"))
+    if is_top_level_command(command)
+        && trailing_args
+            .iter()
+            .any(|arg| matches!(arg.to_string_lossy().as_ref(), "--help" | "-h"))
     {
         return Ok(CommandValidation::Valid);
     }
@@ -801,12 +791,6 @@ fn validate_command(
                 Ok(CommandValidation::Valid)
             }
         }
-        "make" => match trailing_args.first().map(|arg| arg.to_string_lossy()) {
-            Some(subcommand) if subcommand == "install" || subcommand == "uninstall" => {
-                Ok(CommandValidation::Valid)
-            }
-            _ => Err(String::from("Usage: makevn make install|uninstall")),
-        },
         "profile" => match trailing_args.first().map(|arg| arg.to_string_lossy()) {
             Some(subcommand) if subcommand == "refresh" => Ok(CommandValidation::ProfileRefresh),
             _ => Err(String::from("Usage: makevn profile refresh")),
@@ -978,7 +962,6 @@ fn is_top_level_command(arg: &OsString) -> bool {
         "help"
             | "doctor"
             | "init"
-            | "make"
             | "uninstall"
             | "profile"
             | "compile"
@@ -3663,9 +3646,8 @@ fn command_help(command: &str) -> Option<(&'static str, &'static str, &'static [
         "agent" => Some(("makevn agent install opencode", "Install the makevn MCP server in the global OpenCode configuration.", &[])),
         "doctor" => Some(("makevn [--repo PATH] doctor [--compact]", "Inspect repository setup and makevn configuration.", &["--compact  Print brief, noninteractive setup advice"])),
         "init" => Some(("makevn [--repo PATH] init [--dry-run] [--force]", "Initialize .makevn configuration for the repository.", &["--dry-run  Show what would change without writing files", "--force    Refresh existing generated files"])),
-        "make" => Some(("makevn [--repo PATH] make install|uninstall [--dry-run]", "Install or remove optional vn-* Make targets.", &["--dry-run  Show what would change without writing files"])),
         "uninstall" => Some(("makevn [--repo PATH] uninstall [--dry-run]", "Remove makevn local repository state.", &["--dry-run  Show what would be removed"])),
-        "refresh" => Some(("makevn [--repo PATH] refresh [--dry-run]", "Reinitialize makevn state from scratch. Removes stale state and runs init --force.", &["--dry-run  Show what would change without writing files"])),
+        "refresh" => Some(("makevn [--repo PATH] refresh [--dry-run]", "Refresh initialization while preserving user configuration.", &["--dry-run  Show what would change without writing files"])),
         "profile" => Some(("makevn [--repo PATH] profile refresh", "Refresh detected repository profile information.", &[])),
         "compile" => maven_command_help("compile", "Compile project sources.", false),
         "test-compile" => maven_command_help("test-compile", "Compile project tests.", false),
@@ -3786,8 +3768,6 @@ fn print_help(with_header: bool) {
     println!("  makevn [--repo PATH] doctor");
     println!("  makevn [--repo PATH] init [--dry-run] [--force]");
     println!("  makevn [--repo PATH] refresh [--dry-run]");
-    println!("  makevn [--repo PATH] make install [--dry-run]");
-    println!("  makevn [--repo PATH] make uninstall [--dry-run]");
     println!("  makevn [--repo PATH] uninstall [--dry-run]");
     println!("  makevn [--repo PATH] profile refresh");
     println!("  makevn [--repo PATH] [--compact] compile [--tail] [-- EXTRA_MAVEN_ARGS...]");
@@ -3842,8 +3822,6 @@ fn print_help(with_header: bool) {
     println!("Examples:");
     println!("  makevn doctor");
     println!("  makevn init");
-    println!("  makevn make install");
-    println!("  makevn make uninstall");
     println!("  makevn profile refresh");
     println!("  makevn compile");
     println!("  makevn test-compile");
@@ -3874,13 +3852,10 @@ fn print_help(with_header: bool) {
     println!("  makevn karate-test --tag @smoke");
     println!("  makevn run-app-bg");
     println!("  makevn stop-app");
-    println!("  make -f .makevn/makevn.mk vn-doctor");
     println!();
     println!("Notes:");
     println!("  - 'doctor' inspects the repository before and after initialization.");
-    println!("  - 'init' always creates '.makevn/' without touching root makefiles.");
-    println!("  - 'make install' adds optional 'vn-*' targets by updating one existing makefile or creating a minimal root Makefile.");
-    println!("  - 'make uninstall' removes only the Make integration and keeps '.makevn/' intact.");
+    println!("  - 'init' creates '.makevn/' without inspecting or modifying root Makefiles.");
     println!("  - '--compact' shortens reports; MAKEVN_AGENT_OUTPUT=1 disables TTY presentation for agents.");
     println!("  - '--tail' starts managed-log commands in tail mode; without it, press 't' while a command is running to tail the current log.");
     println!("  - 'makevn-mcp' starts the MCP server over stdio (Model Context Protocol).");

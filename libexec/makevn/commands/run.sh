@@ -97,20 +97,6 @@ makevn_app_health_url() {
   makevn_detect_app_health_url "${maven_base_path}" || return 1
 }
 
-makevn_repo_has_legacy_local_containers_default() {
-  local repo_root="$1"
-  local makefile=""
-
-  for makefile in "${repo_root}/GNUmakefile" "${repo_root}/Makefile"; do
-    [[ -f "${makefile}" ]] || continue
-    grep -q 'LOCAL_TEST[[:space:]]*?=[[:space:]]*TRUE' "${makefile}" || continue
-    grep -q 'export[[:space:]]\+LOCAL_CONTAINERS[[:space:]]*:=' "${makefile}" || continue
-    return 0
-  done
-
-  return 1
-}
-
 makevn_effective_app_local_containers() {
   local repo_root="$1"
 
@@ -121,10 +107,6 @@ makevn_effective_app_local_containers() {
   fi
   if [[ -n "${MAKEVN_LOCAL_CONTAINERS+x}" ]]; then
     printf '%s\n' "${MAKEVN_LOCAL_CONTAINERS}"
-    return 0
-  fi
-  if makevn_repo_has_legacy_local_containers_default "${repo_root}"; then
-    printf '%s\n' "${LOCAL_TEST:-TRUE}"
     return 0
   fi
 

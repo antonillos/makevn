@@ -81,8 +81,6 @@ print_doctor() {
   makevn_print_item "Repo root" "${MAKEVN_DOCTOR_REPO_ROOT}"
   makevn_print_item "Java Maven repo" "${MAKEVN_DOCTOR_JAVA_MAVEN_REPO}"
   makevn_print_item "Maven base path" "${MAKEVN_DOCTOR_MAVEN_BASE_PATH}"
-  makevn_print_item "Existing Makefile" "${MAKEVN_DOCTOR_EXISTING_MAKEFILE}"
-  makevn_print_item "Existing GNUmakefile" "${MAKEVN_DOCTOR_EXISTING_GNUMAKEFILE}"
   makevn_print_item "Existing .makevn/" "${MAKEVN_DOCTOR_EXISTING_STATE_DIR}"
   makevn_print_item "Current makevn status" "${MAKEVN_DOCTOR_CURRENT_STATUS}"
   makevn_print_item "Code .tool-versions" "${MAKEVN_DOCTOR_CODE_TOOL_VERSIONS}"
@@ -118,7 +116,6 @@ print_doctor() {
   makevn_print_item "LOCAL_CONTAINERS default" "${MAKEVN_DOCTOR_LOCAL_CONTAINERS}"
   makevn_print_item "Persisted profile" "${MAKEVN_DOCTOR_PROFILE_STATUS}"
   makevn_print_item "Repository support status" "${MAKEVN_DOCTOR_REPO_SUPPORT_STATUS}"
-  makevn_print_item "Make integration status" "${MAKEVN_DOCTOR_MAKE_INTEGRATION_STATUS}"
   makevn_print_item "Mutation testing (PIT)" "${MAKEVN_DOCTOR_MUTATION_AVAILABLE}"
   if [[ "${MAKEVN_DOCTOR_MUTATION_AVAILABLE}" == "yes" && -n "${MAKEVN_DOCTOR_MUTATION_GOAL}" ]]; then
     makevn_print_detail_line "  goal: ${MAKEVN_DOCTOR_MUTATION_GOAL}"
