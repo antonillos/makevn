@@ -10,6 +10,7 @@ for error in   'AJF validate: AJF Formatter plugin failed.'   'AJF verify: AJF s
   makevn_hint_format_failure "${tmp}" "${tmp}/log" 2>"${tmp}/hint"
   grep -Fxq '  makevn format --apply' "${tmp}/hint"
   grep -Fq 'MCP suggestion: makevn_format with apply: true.' "${tmp}/hint"
+  grep -Fq 'without --fast' "${tmp}/hint"
   grep -Fq 'Do not add formatter skip flags' "${tmp}/hint"
   ! grep -Fq -- '--file' "${tmp}/hint"
 done

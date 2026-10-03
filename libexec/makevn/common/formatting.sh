@@ -7,5 +7,5 @@ makevn_hint_format_failure() {
   printf '\n%s\n' 'Hint: formatting validation failed, not a test assertion. Run:' >&2
   printf '%s\n' '  makevn format --apply' >&2
   printf '%s\n' 'MCP suggestion: makevn_format with apply: true.' >&2
-  printf '%s\n' 'Do not add formatter skip flags or edit .mvn/maven.config/.makevn/config to bypass validation. Rerun the original test after formatting.' >&2
+  printf '%s\n' 'Do not add formatter skip flags or edit .mvn/maven.config/.makevn/config to bypass validation. Rerun the original test without --fast after formatting so changed sources are recompiled.' >&2
 }

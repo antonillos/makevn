@@ -31,6 +31,7 @@ for selection in all ExampleIT ExampleTest; do
   set -e
   [[ "${rc}" == 7 ]] || { cat "${tmp}/output"; echo "expected exit 7, got ${rc}"; exit 1; }
   grep -Fq 'MCP suggestion: makevn_format with apply: true' "${tmp}/output" || { cat "${tmp}/output"; exit 1; }
+  grep -Fq 'without --fast' "${tmp}/output"
   grep -Fq 'Do not add formatter skip flags' "${tmp}/output"
 done
 # The separate whole-project AMIGA command works.
@@ -59,6 +60,7 @@ assert not responses[2]["result"].get("isError", False), responses[2]
 text = "\n".join(c.get("text", "") for c in responses[3]["result"]["content"])
 assert "MCP suggestion: makevn_format with apply: true" in text, text
 assert "exit code 7" in text, text
+assert "without --fast" in text, text
 MCP
 fi
 echo 'formatting recovery integration tests passed'
