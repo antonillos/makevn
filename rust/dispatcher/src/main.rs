@@ -3866,7 +3866,7 @@ fn command_help(command: &str) -> Option<(&'static str, &'static str, &'static [
         "crap" => Some(("makevn [--repo PATH] crap [install-analyzer] [--jacoco-xml PATH] [--threshold SCORE] [--max-warnings COUNT]", "Calculate Java CRAP metrics from existing JaCoCo XML coverage.", &["install-analyzer  Download and verify the pinned crap4java release", "--jacoco-xml      Use a specific existing JaCoCo XML report", "--threshold       CRAP score warning threshold (default: 8)", "--max-warnings    Fail when the warning count exceeds this ratchet"])),
         "crap-changes" => Some(("makevn [--repo PATH] crap-changes [--base REF]", "Show CRAP for changed production Java methods using existing JaCoCo coverage.", &["--base  Override the detected base branch/ref"])),
         "pr-verify" => maven_command_help("pr-verify", "Run a local PR-style verification flow.", false),
-        "format" => Some(("makevn [--repo PATH] [--compact] format [--tail] [--apply] [--file PATH] [-- EXTRA_MAVEN_ARGS...]", "Check or apply code formatting.", &["--tail     Start in interactive log tail mode", "--compact  Use compact non-interactive output", "--apply    Apply formatting changes", "--file PATH  Limit formatting to one file (supported plugins only)"])),
+        "format" => Some(("makevn [--repo PATH] [--compact] format [--tail] [--apply] [-- EXTRA_MAVEN_ARGS...]", "Check or apply code formatting.", &["--tail     Start in interactive log tail mode", "--compact  Use compact non-interactive output", "--apply    Apply formatting changes", "--file PATH  Limit formatting to one file (supported plugins only)"])),
         "checkstyle" => Some(("makevn [--repo PATH] [--compact] checkstyle [--tail] [--module MODULE] [--verbose] [-- EXTRA_MAVEN_ARGS...]", "Run Checkstyle code style checks.", &["--tail     Start in interactive log tail mode", "--compact  Use compact non-interactive output", "--module   Maven module to check", "--verbose  Print detailed output"])),
         "docker-up" => tail_command_help("docker-up", "Start boot Docker services."),
         "docker-down" => tail_command_help("docker-down", "Stop boot Docker services."),
@@ -3995,7 +3995,7 @@ fn print_help(with_header: bool) {
     println!("  makevn [--repo PATH] crap install-analyzer");
     println!("  makevn [--repo PATH] [--compact] pr-verify [--tail] [-- EXTRA_MAVEN_ARGS...]");
     println!(
-        "  makevn [--repo PATH] [--compact] format [--tail] [--apply] [--file PATH] [-- EXTRA_MAVEN_ARGS...]"
+        "  makevn [--repo PATH] [--compact] format [--tail] [--apply] [-- EXTRA_MAVEN_ARGS...]"
     );
     println!(
         "  makevn [--repo PATH] [--compact] checkstyle [--tail] [--module MODULE] [--verbose] [-- EXTRA_MAVEN_ARGS...]"

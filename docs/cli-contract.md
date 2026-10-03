@@ -682,13 +682,11 @@ project also show unavailable live telemetry. Standalone `docker-stats` output
 retains its existing all-containers contract; its live loader uses project scope.
 
 ### Formatting failures
-Formatting validation failures are not test assertion failures. Run
-`makevn format --apply`, then rerun the original test. Never add formatter
-skip flags or modify `.mvn/maven.config` / `.makevn/config` to bypass validation.
 
-`makevn format --apply --file module/src/main/java/Example.java` limits
-Spotless to one existing file (absolute or repository-relative). Without
-`--apply`, it checks that file. Other plugins, including AMIGA, currently
-reject `--file` explicitly: use the whole-project command instead.
-Extra Maven arguments cannot be combined with `--file`, so they cannot
-override its scope. The owning module is selected without reactor recursion.
+Formatting validation failures during tests emit a recovery hint:
+`makevn format --apply` (MCP: `makevn_format` with `apply: true`).
+Plain `makevn format` checks; `--apply` corrects formatting using the
+repository's plugin. There is no single-file option.
+Preserve the original failure exit code, inspect the formatter diff, and rerun
+the original test without `--fast`. Never add skip flags or edit Maven/makevn
+configuration to bypass validation.

@@ -375,7 +375,6 @@ cmd_pr_verify() {
 cmd_format() {
   local repo_root="$1"
   local apply=false
-  local file=""
   local maven_base_path=""
   local goal=""
   local -a extra_args
@@ -384,12 +383,6 @@ cmd_format() {
   extra_args=()
   while [[ $# -gt 0 ]]; do
     case "$1" in
-      --file)
-        [[ $# -ge 2 && -n "$2" && "$2" != --* ]] || makevn_die "Missing value for --file"
-        [[ -z "${file}" ]] || makevn_die "--file accepts exactly one file"
-        file="$2"
-        shift 2
-        ;;
       --apply)
         apply=true
         shift
@@ -408,11 +401,6 @@ cmd_format() {
   maven_base_path="$(makevn_detect_maven_base_path "${repo_root}" || true)"
   [[ -n "${maven_base_path}" ]] || makevn_die "No Maven project detected in ${repo_root}"
   goal="$(makevn_format_goal_for_project "${repo_root}" "${maven_base_path}" "${apply}")"
-  if [[ -n "${file}" ]]; then
-    [[ ${#extra_args[@]} -eq 0 ]] || makevn_die "--file cannot be combined with extra Maven args"
-    makevn_format_single_file "${repo_root}" "${maven_base_path}" "${goal}" "${file}"
-    return $?
-  fi
 
   if [[ ${#extra_args[@]} -gt 0 ]]; then
     makevn_run_maven_goal "${repo_root}" "${goal}" format format "${extra_args[@]}"

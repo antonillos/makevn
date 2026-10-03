@@ -122,18 +122,17 @@ Interpretation rules:
 
 ## Formatting recovery
 
-When a test fails formatter validation, call `makevn_format` with `apply: true`,
-then rerun the same test without `fast: true`. For Spotless, pass `file` to
-format exactly one existing repository-relative or absolute file:
+When tests fail formatter validation (including AMIGA's unformatted Java files
+or unsorted POMs), the final hint recommends `makevn_format` with `apply: true`:
 
 ```json
-{"name": "makevn_format", "arguments": {"repo": "/absolute/repo", "apply": true, "file": "module/src/test/java/ExampleTest.java"}}
+{"name": "makevn_format", "arguments": {"repo": "/absolute/repo", "apply": true}}
 ```
 
-Omit `file` for AMIGA or other unsupported single-file plugins. Do not edit
-configuration, add skip flags, or manually imitate formatting to bypass the
-failure. Recovery hints are plain text in compact tool output, not structured
-JSON fields. Inspect the diff and verify the original test actually passes.
+Formatting runs at project scope; there is no `file` parameter.
+Inspect the diff, then rerun the same test without `fast: true`.
+Do not add skip flags, change configuration, or manually imitate formatting
+to bypass validation. Recovery hints are plain text, not structured JSON fields.
 See [the agent recovery workflow](../docs/agents.md#formatting-failure-recovery-for-ai-agents)
 and the [makevn skill](../skills/makevn/SKILL.md).
 
@@ -143,15 +142,3 @@ and the [makevn skill](../skills/makevn/SKILL.md).
 ./build-rust-dispatcher.sh
 ./target/release/makevn-mcp
 ```
-
-
-### Formatter recovery diagnostics
-Test failure output includes the explicit MCP suggestion
-`makevn_format` with `apply: true`, as well as `makevn format --apply`.
-AMIGA's `File '…' has not been previously formatted` is a formatting
-prerequisite failure. The standalone whole-project apply command is supported;
-`--file` is not yet supported for AMIGA and must not be suggested for it.
-
-If CLI supports `--file` but MCP does not expose `file`, check the installed
-`makevn-mcp` path/version and restart/reload the MCP session after upgrading.
-Do not interpret a cached tool schema as evidence that CLI lacks the option.

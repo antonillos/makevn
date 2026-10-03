@@ -33,7 +33,7 @@ for selection in all ExampleIT ExampleTest; do
   grep -Fq 'MCP suggestion: makevn_format with apply: true' "${tmp}/output" || { cat "${tmp}/output"; exit 1; }
   grep -Fq 'Do not add formatter skip flags' "${tmp}/output"
 done
-# The separate whole-project AMIGA command works; --file is not supported.
+# The separate whole-project AMIGA command works.
 bash "${ROOT}/libexec/makevn/cli.sh" --repo "${tmp}" --compact format --apply >"${tmp}/output" 2>&1
 grep -Fq '[ok]' "${tmp}/output"
 
@@ -54,7 +54,7 @@ result = subprocess.run([binary], input="".join(json.dumps(r) + "\n" for r in re
 responses = {r["id"]: r for r in map(json.loads, result.stdout.splitlines()) if "id" in r}
 tools = responses[1]["result"]["tools"]
 formatter = next(t for t in tools if t["name"] == "format")
-assert "file" in formatter["inputSchema"]["properties"]
+assert "file" not in formatter["inputSchema"]["properties"]
 assert not responses[2]["result"].get("isError", False), responses[2]
 text = "\n".join(c.get("text", "") for c in responses[3]["result"]["content"])
 assert "MCP suggestion: makevn_format with apply: true" in text, text
