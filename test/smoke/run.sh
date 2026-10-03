@@ -4841,6 +4841,7 @@ main() {
   bash "${ROOT_DIR}/test/smoke/karate_profiles_doctor_test.sh"
   bash "${ROOT_DIR}/test/smoke/jdk_discovery_test.sh"
   bash "${ROOT_DIR}/test/smoke/bash_crap_test.sh"
+  bash "${ROOT_DIR}/test/smoke/doctor_compact_test.sh"
   printf 'Smoke tests passed\n'
 }
 

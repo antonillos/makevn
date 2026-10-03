@@ -276,6 +276,7 @@ makevn_write_manifest() {
 
   manifest_path="$(makevn_manifest_path "${repo_root}")"
   cat > "${manifest_path}" <<EOF
+makevn_version=${MAKEVN_VERSION}
 managed_makefile=${managed_makefile}
 generated_root_makefile=${generated_root_makefile}
 generated_at=$(makevn_now_utc)

@@ -39,28 +39,18 @@ Agents must use these command sequences exactly unless the human asks for a
 different scope. Do not replace them with raw `mvn`, repository-local scripts,
 or guessed root `make` targets.
 
-Initial inspection:
+Initial inspection (brief, noninteractive analysis):
 
 ```bash
-makevn doctor
+makevn --compact doctor
 ```
 
-Initialize only when `doctor` reports missing, stale, or uninitialized makevn
-state:
-
-```bash
-makevn init
-makevn doctor
-```
-
-Refresh stale state after a makevn upgrade (when the installed binary version
-differs from the version in `.makevn/manifest`, or when `doctor` shows
-incomplete configuration despite `.makevn/` existing):
-
-```bash
-makevn refresh
-makevn doctor
-```
+Follow the reported `next` command: `makevn init` for missing initialization,
+`makevn init --force` for incomplete state or a different/unknown installed
+makevn version. Initialized, current state needs neither command. Force preserves
+existing user configuration. Compact doctor does not prompt or refresh the
+persisted profile; ordinary doctor retains detailed output and interactive setup.
+Older manifests without `makevn_version` need a one-time `init --force`.
 
 Changed-code verification without a full coverage gate:
 

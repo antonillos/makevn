@@ -44,6 +44,16 @@ print_doctor() {
 
   print_command_intro "${repo_root}" doctor
   makevn_collect_doctor_snapshot "${repo_root}"
+  if [[ "${MAKEVN_DOCTOR_BUILD_STATUS}" != "current" ]]; then
+    makevn_print_item "Doctor build" "${MAKEVN_DOCTOR_BUILD_STATUS}: ${MAKEVN_DOCTOR_PREVIOUS_VERSION} -> ${MAKEVN_VERSION}; repository reanalyzed"
+  fi
+
+  if [[ "${MAKEVN_COMPACT_OUTPUT:-}" == "1" ]]; then
+    makevn_print_item "Current makevn status" "${MAKEVN_DOCTOR_CURRENT_STATUS}"
+    makevn_print_item "Repository support status" "${MAKEVN_DOCTOR_REPO_SUPPORT_STATUS}"
+    makevn_print_doctor_suggestions
+    return 0
+  fi
 
   makevn_print_header "Repository analysis"
   makevn_print_item "Repo root" "${MAKEVN_DOCTOR_REPO_ROOT}"

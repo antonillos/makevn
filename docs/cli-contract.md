@@ -612,3 +612,23 @@ write `.makevn/config`. Ambiguous/dynamic workflow profiles need an explicit
 selection before `karate-all` proceeds. Without any CI profile evidence,
 application defaults remain available. HTTP readiness does not verify that
 profile-dependent functionality or Kafka is enabled.
+
+### Compact doctor initialization advice
+
+`makevn --compact doctor` performs repository analysis but prints only setup
+status, repository support and next-step advice. It does not prompt or refresh
+the persisted profile. Missing manifests recommend `makevn init`; incomplete
+state (missing config, profile or state.json) and manifests with a different or
+unknown makevn version recommend `makevn init --force`. Current initialization
+requires no reinitialization. Unsupported repositories retain the warning rather
+than receiving automatic adoption advice. Detailed doctor and backend JSON share
+the same initialization classification and recommendation.
+
+Doctor records the full installed version (including its build date) in
+`.makevn/doctor-version` after successful analysis when `.makevn/` already exists.
+A different build or missing record is reported explicitly; the current invocation
+reanalyzes the repository. Backend JSON exposes `doctor_build` with current and
+previous versions and `current`, `changed` or `unknown` status. This record is
+separate from the init manifest: repeating doctor does not clear stale init state.
+No state directory is created for an uninitialized repository just to save this
+record. Compact doctor writes this analysis stamp, but not config or profile.
