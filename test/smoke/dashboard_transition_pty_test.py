@@ -72,7 +72,7 @@ def verify(binary):
                     assert 'Working for' in lines, lines
                     assert 'PRESERVED_DETAIL' in lines, lines
                     assert '[✓] docker-up' in lines, lines
-                    assert 'makevn docker-ps-required (starting)' in lines, lines
+                    assert '[•] makevn docker-ps-required (starting)' in lines, lines
                     assert 'makevn docker-up' not in lines, lines
                     assert 't tail' not in lines, lines
                     checked = True

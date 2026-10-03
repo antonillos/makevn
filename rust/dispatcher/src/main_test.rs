@@ -1586,7 +1586,7 @@ fn tail_status_lines_put_completed_commands_above_running_tail() {
 
     assert_eq!(lines[0], "Working for 13s >");
     assert_eq!(lines[1], "[✓] format | 6s | .makevn/logs/format.log");
-    assert_eq!(lines[2], ":: makevn checkstyle");
+    assert_eq!(lines[2], "[•] makevn checkstyle");
     assert_eq!(lines[3], " └ tailing log: .makevn/logs/checkstyle.log");
 }
 
@@ -1596,7 +1596,7 @@ fn tail_window_places_loader_above_tailed_log() {
     let mut tail_window = super::LogTailWindow::new(log_path);
     tail_window.set_prefix_lines(vec![
         String::from("Working for 1s >"),
-        String::from(":: makevn compile"),
+        String::from("[•] makevn compile"),
         String::from("-> tailing log: .makevn/logs/compile.log"),
     ]);
     tail_window.set_loader_line(Some(String::from("........  esc interrupt")));
@@ -1605,7 +1605,7 @@ fn tail_window_places_loader_above_tailed_log() {
     let lines = tail_window.rendered_output_lines(120, 1);
 
     assert_eq!(lines[0], "Working for 1s >");
-    assert_eq!(lines[1], ":: makevn compile");
+    assert_eq!(lines[1], "[•] makevn compile");
     assert_eq!(lines[2], "........  esc interrupt");
     assert_eq!(lines[3], "-> tailing log: .makevn/logs/compile.log");
     assert_eq!(
@@ -1654,7 +1654,7 @@ fn dashboard_shows_summaries_and_current_details() {
     assert_eq!(lines[2], "│ worked");
     assert_eq!(
         lines[3],
-        ":: makevn coverage-changes | .makevn/logs/coverage-changes.log"
+        "[•] makevn coverage-changes | .makevn/logs/coverage-changes.log"
     );
     assert_eq!(lines[4], "│ coverage-changes detail");
     assert!(lines[5].contains("interrupt"));
@@ -1710,7 +1710,7 @@ fn final_dashboard_does_not_prefix_box_detail_lines() {
 }
 
 #[test]
-fn running_command_line_uses_flat_prefix_for_logged_commands() {
+fn running_command_line_uses_fixed_marker_for_logged_commands() {
     let metadata = BackendMetadata {
         command: String::from("verify"),
         repo: String::from("/repo"),
@@ -1724,7 +1724,7 @@ fn running_command_line_uses_flat_prefix_for_logged_commands() {
 
     assert_eq!(
         super::running_command_line(&metadata),
-        ":: makevn verify | .makevn/logs/verify.log"
+        "[•] makevn verify | .makevn/logs/verify.log"
     );
 }
 
@@ -2239,6 +2239,14 @@ fn resume_after_prompt_restores_loader_input_without_resetting_history() {
 fn pending_dashboard_marks_previous_command_completed_and_next_starting() {
     let metadata = super::pending_backend_metadata("docker-ps-required");
     assert_eq!(metadata.command_display, "makevn docker-ps-required");
+    assert_eq!(
+        super::running_command_line(&metadata),
+        "[•] makevn docker-ps-required (starting)"
+    );
+    assert_eq!(
+        super::backend_header_line(&metadata),
+        "[•] makevn docker-ps-required (starting)"
+    );
     assert!(metadata.log_path.is_empty());
     let summary = CommandSummary {
         title: "docker-up".to_owned(),

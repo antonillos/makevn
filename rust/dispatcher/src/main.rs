@@ -1945,7 +1945,7 @@ fn parse_backend_metadata(content: &str) -> Option<BackendMetadata> {
 fn backend_header_line(metadata: &BackendMetadata) -> String {
     format!(
         "{} {}",
-        dim_text("::"),
+        warn_text("[•]"),
         accent_text(&format!("makevn {}", metadata.title))
     )
 }
@@ -2067,13 +2067,13 @@ fn running_command_line(metadata: &BackendMetadata) -> String {
     if metadata.relative_log_path.is_empty() {
         format!(
             "{} {}",
-            dim_text("->"),
+            warn_text("[•]"),
             accent_text(&format!("makevn {}", metadata.title))
         )
     } else {
         format!(
             "{} {} {} {}",
-            dim_text("::"),
+            warn_text("[•]"),
             accent_text(&format!("makevn {}", metadata.title)),
             dim_text("|"),
             dim_text(&metadata.relative_log_path)
