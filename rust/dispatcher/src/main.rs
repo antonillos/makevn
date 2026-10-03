@@ -1177,12 +1177,10 @@ fn dispatch_backend_invocations(
             .unwrap_or_else(|| String::from("command"));
         let use_frontend_loader = loader_available;
         let state_command = !backend_invocation.frontend_loader;
-        drop(renderer.take());
-        renderer = if use_frontend_loader {
-            SpinnerRenderer::new_with_input(true).ok()
-        } else {
-            None
-        };
+        // Keep the live block across commands, including metadata startup waits.
+        if use_frontend_loader && renderer.is_none() {
+            renderer = SpinnerRenderer::new_with_input(true).ok();
+        }
         let captured_stdout =
             if use_frontend_loader && (state_command || backend_invocation.compact) {
                 Some(BackendStderrFile::new()?)
@@ -1287,18 +1285,16 @@ fn dispatch_backend_invocations(
                 phase_files.as_ref(),
                 prompt_sync.as_ref(),
             );
-            if let Some(renderer) = renderer.as_mut() {
-                renderer.clear_line();
-            }
             if !state_command {
                 if let Some(output) = &captured_stdout {
-                    if let Ok(mut output) = File::open(output.path()) {
-                        let _ = io::copy(&mut output, &mut io::stdout());
-                    }
+                    replay_backend_output(output.path(), renderer.as_mut(), false);
                 }
             }
-            if let Ok(mut stderr) = File::open(stderr_file.path()) {
-                let _ = io::copy(&mut stderr, &mut io::stderr());
+            replay_backend_output(stderr_file.path(), renderer.as_mut(), true);
+            if result.is_err() {
+                if let Some(renderer) = renderer.as_mut() {
+                    renderer.clear_line();
+                }
             }
             result?
         } else {
@@ -1414,6 +1410,22 @@ fn dispatch_backend_invocations(
         );
     }
     Ok(last_exit_code)
+}
+
+// Only external output needs to take ownership of the live terminal block.
+fn replay_backend_output(path: &Path, renderer: Option<&mut SpinnerRenderer>, stderr: bool) {
+    let Ok(output) = fs::read(path) else { return };
+    if output.is_empty() {
+        return;
+    }
+    if let Some(renderer) = renderer {
+        renderer.clear_line();
+    }
+    if stderr {
+        let _ = io::stderr().write_all(&output);
+    } else {
+        let _ = io::stdout().write_all(&output);
+    }
 }
 
 fn format_failure_summary(
@@ -1544,8 +1556,10 @@ fn run_backend_with_loader(
     }
 
     if let Some(metadata) = metadata.as_ref() {
-        if let Some(renderer) = renderer.as_mut() {
-            renderer.clear_frame_line();
+        if tail_active {
+            if let Some(renderer) = renderer.as_mut() {
+                renderer.clear_frame_line();
+            }
         }
         if tail_active {
             tail_window = Some(LogTailWindow::new(PathBuf::from(&metadata.log_path)));
@@ -1629,8 +1643,10 @@ fn run_backend_with_loader(
                     }
                 }
                 if let Some(metadata) = metadata.as_ref() {
-                    if let Some(renderer) = renderer.as_mut() {
-                        renderer.clear_frame_line();
+                    if tail_active {
+                        if let Some(renderer) = renderer.as_mut() {
+                            renderer.clear_frame_line();
+                        }
                     }
                     if tail_active {
                         tail_window = Some(LogTailWindow::new(PathBuf::from(&metadata.log_path)));
@@ -1669,9 +1685,6 @@ fn run_backend_with_loader(
                         .map_err(|error| format!("failed to clear tailed log: {error}"))?;
                 }
             }
-            if let Some(renderer) = renderer.as_mut() {
-                renderer.clear_line();
-            }
             return Ok(summarize_backend_exit(
                 status,
                 started_at.elapsed(),
@@ -1707,8 +1720,10 @@ fn run_backend_with_loader(
             }
 
             if let Some(metadata) = metadata.as_ref() {
-                if let Some(renderer) = renderer.as_mut() {
-                    renderer.clear_frame_line();
+                if tail_active {
+                    if let Some(renderer) = renderer.as_mut() {
+                        renderer.clear_frame_line();
+                    }
                 }
                 if tail_active {
                     tail_window = Some(LogTailWindow::new(PathBuf::from(&metadata.log_path)));
@@ -1848,10 +1863,6 @@ fn run_backend_with_loader(
                 .clear()
                 .map_err(|error| format!("failed to clear tailed log: {error}"))?;
         }
-    }
-
-    if let Some(renderer) = renderer.as_mut() {
-        renderer.clear_line();
     }
 
     let status = child
@@ -2933,6 +2944,9 @@ impl SpinnerRenderer {
         let line = status_line_text_for_width(&line, terminal_width().max(8));
         write!(io::stdout(), "\r\u{1b}[2K{}", line)?;
         io::stdout().flush()?;
+        if let Some(width) = self.rendered_block_line_widths.last_mut() {
+            *width = visible_char_count(&line);
+        }
         Ok(())
     }
 
@@ -3012,16 +3026,18 @@ impl SpinnerRenderer {
             .map(|line| status_line_text_for_width(line, render_width))
             .collect::<Vec<_>>();
 
+        let mut stdout = io::stdout().lock();
         self.clear_dynamic_block()?;
+        let mut replacement = String::new();
         for (index, line) in lines.iter().enumerate() {
             if index + 1 == lines.len() {
-                write!(io::stdout(), "\r\u{1b}[2K{}", line)?;
+                replacement.push_str(&format!("\r\u{1b}[2K{line}"));
             } else {
-                writeln!(io::stdout(), "\r\u{1b}[2K{}", line)?;
+                replacement.push_str(&format!("\r\u{1b}[2K{line}\n"));
             }
         }
-
-        io::stdout().flush()?;
+        stdout.write_all(replacement.as_bytes())?;
+        stdout.flush()?;
         self.rendered_block_line_widths =
             lines.iter().map(|line| visible_char_count(line)).collect();
         self.frame += 1;
