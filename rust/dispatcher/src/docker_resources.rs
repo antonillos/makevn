@@ -112,19 +112,34 @@ fn container_ids(output: &str) -> Vec<&str> {
         .collect()
 }
 
-fn bounded_output(mut command: Command, stop: &AtomicBool) -> io::Result<String> {
+fn bounded_output(command: Command, stop: &AtomicBool) -> io::Result<String> {
     let temporary = BackendStderrFile::new().map_err(io::Error::other)?;
     let file = File::create(temporary.path())?;
-    let mut child = command
+    let mut child = spawn_capture(command, &file)?;
+    let status = wait_capture(&mut child, stop)?;
+    if !status.success() {
+        return Err(io::Error::other("container telemetry unavailable"));
+    }
+    read_capture(temporary.path())
+}
+
+fn spawn_capture(mut command: Command, file: &File) -> io::Result<std::process::Child> {
+    command
         .stdout(file.try_clone()?)
         .stderr(Stdio::null())
         .stdin(Stdio::null())
         .process_group(0)
-        .spawn()?;
+        .spawn()
+}
+
+fn wait_capture(
+    child: &mut std::process::Child,
+    stop: &AtomicBool,
+) -> io::Result<std::process::ExitStatus> {
     let started = Instant::now();
-    let status = loop {
+    loop {
         if let Some(status) = child.try_wait()? {
-            break status;
+            return Ok(status);
         }
         if stop.load(Ordering::Relaxed) || started.elapsed() > Duration::from_secs(3) {
             unsafe {
@@ -137,11 +152,11 @@ fn bounded_output(mut command: Command, stop: &AtomicBool) -> io::Result<String>
             ));
         }
         thread::sleep(Duration::from_millis(25));
-    };
-    if !status.success() {
-        return Err(io::Error::other("container telemetry unavailable"));
     }
-    let file = File::open(temporary.path())?;
+}
+
+fn read_capture(path: &Path) -> io::Result<String> {
+    let file = File::open(path)?;
     let mut output = String::new();
     // Bounded file read even if a broken CLI produces excessive output.
     file.take(1024 * 1024).read_to_string(&mut output)?;
@@ -164,23 +179,28 @@ fn parse_stats(output: &str, expected: usize) -> Option<ResourceSample> {
     })
 }
 
+#[derive(serde::Deserialize)]
+struct StatsRow {
+    #[serde(rename = "CPUPerc")]
+    cpu: String,
+    #[serde(rename = "MemUsage")]
+    memory: String,
+}
+
 fn parse_stats_row(line: &str) -> Option<ResourceSample> {
-    let value: serde_json::Value = serde_json::from_str(line).ok()?;
-    let cpu: f32 = value
-        .get("CPUPerc")?
-        .as_str()?
-        .trim()
-        .strip_suffix('%')?
-        .parse()
-        .ok()?;
+    let value: StatsRow = serde_json::from_str(line).ok()?;
+    Some(ResourceSample {
+        cpu_percent: parse_cpu(&value.cpu)?,
+        rss_kb: memory_kib(value.memory.split('/').next()?.trim())?,
+    })
+}
+
+fn parse_cpu(text: &str) -> Option<f32> {
+    let cpu: f32 = text.trim().strip_suffix('%')?.parse().ok()?;
     if !cpu.is_finite() || cpu < 0.0 {
         return None;
     }
-    let memory = value.get("MemUsage")?.as_str()?.split('/').next()?.trim();
-    Some(ResourceSample {
-        cpu_percent: cpu,
-        rss_kb: memory_kib(memory)?,
-    })
+    Some(cpu)
 }
 
 fn memory_kib(text: &str) -> Option<u64> {
