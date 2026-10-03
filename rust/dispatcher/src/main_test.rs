@@ -299,6 +299,7 @@ fn resource_sampler_skips_zero_pid_and_reuses_recent_sample() {
         cpu_percent: 12.5,
         rss_kb: 2048,
     };
+    sampler.last_pid = Some(u32::MAX);
     sampler.last_sample_at = Some(std::time::Instant::now());
     sampler.last_sample = Some(cached);
     let sample = sampler.sample(u32::MAX).unwrap().unwrap();
@@ -1594,7 +1595,7 @@ fn tail_status_lines_put_completed_commands_above_running_tail() {
 
     assert_eq!(lines[0], "Working for 13s >");
     assert_eq!(lines[1], "[✓] format | 6s | .makevn/logs/format.log");
-    assert_eq!(lines[2], ":: makevn checkstyle");
+    assert_eq!(lines[2], "[•] makevn checkstyle");
     assert_eq!(lines[3], " └ tailing log: .makevn/logs/checkstyle.log");
 }
 
@@ -1604,7 +1605,7 @@ fn tail_window_places_loader_above_tailed_log() {
     let mut tail_window = super::LogTailWindow::new(log_path);
     tail_window.set_prefix_lines(vec![
         String::from("Working for 1s >"),
-        String::from(":: makevn compile"),
+        String::from("[•] makevn compile"),
         String::from("-> tailing log: .makevn/logs/compile.log"),
     ]);
     tail_window.set_loader_line(Some(String::from("........  esc interrupt")));
@@ -1613,7 +1614,7 @@ fn tail_window_places_loader_above_tailed_log() {
     let lines = tail_window.rendered_output_lines(120, 1);
 
     assert_eq!(lines[0], "Working for 1s >");
-    assert_eq!(lines[1], ":: makevn compile");
+    assert_eq!(lines[1], "[•] makevn compile");
     assert_eq!(lines[2], "........  esc interrupt");
     assert_eq!(lines[3], "-> tailing log: .makevn/logs/compile.log");
     assert_eq!(
@@ -1662,7 +1663,7 @@ fn dashboard_shows_summaries_and_current_details() {
     assert_eq!(lines[2], "│ worked");
     assert_eq!(
         lines[3],
-        ":: makevn coverage-changes | .makevn/logs/coverage-changes.log"
+        "[•] makevn coverage-changes | .makevn/logs/coverage-changes.log"
     );
     assert_eq!(lines[4], "│ coverage-changes detail");
     assert!(lines[5].contains("interrupt"));
@@ -1718,7 +1719,7 @@ fn final_dashboard_does_not_prefix_box_detail_lines() {
 }
 
 #[test]
-fn running_command_line_uses_flat_prefix_for_logged_commands() {
+fn running_command_line_uses_fixed_marker_for_logged_commands() {
     let metadata = BackendMetadata {
         command: String::from("verify"),
         repo: String::from("/repo"),
@@ -1732,7 +1733,7 @@ fn running_command_line_uses_flat_prefix_for_logged_commands() {
 
     assert_eq!(
         super::running_command_line(&metadata),
-        ":: makevn verify | .makevn/logs/verify.log"
+        "[•] makevn verify | .makevn/logs/verify.log"
     );
 }
 
@@ -2241,4 +2242,217 @@ fn resume_after_prompt_restores_loader_input_without_resetting_history() {
             original.c_lflag & (libc::ICANON | libc::ECHO)
         );
     }
+}
+
+#[test]
+fn pending_dashboard_marks_previous_command_completed_and_next_starting() {
+    let metadata = super::pending_backend_metadata("docker-ps-required");
+    assert_eq!(metadata.command_display, "makevn docker-ps-required");
+    assert_eq!(
+        super::running_command_line(&metadata),
+        "[•] makevn docker-ps-required (starting)"
+    );
+    assert_eq!(
+        super::backend_header_line(&metadata),
+        "[•] makevn docker-ps-required (starting)"
+    );
+    assert!(metadata.log_path.is_empty());
+    let summary = CommandSummary {
+        title: "docker-up".to_owned(),
+        duration: "2s".to_owned(),
+        log_path: None,
+        relative_log_path: None,
+        exit_code: 0,
+        detail_lines: vec!["retained detail".to_owned()],
+    };
+    let lines = super::dashboard_output_lines(
+        Duration::from_secs(3),
+        &[summary],
+        &[],
+        &metadata,
+        0,
+        0.0,
+        "esc interrupt",
+    );
+    let output = lines.join("\n");
+    assert!(output.contains("docker-up"));
+    assert!(output.contains("retained detail"));
+    assert!(output.contains("makevn docker-ps-required (starting)"));
+    assert!(!output.contains("makevn docker-up"));
+    assert!(!output.contains("t tail"));
+}
+
+#[test]
+fn replay_backend_output_handles_missing_empty_and_nonempty_files() {
+    let path = env::temp_dir().join(format!(
+        "makevn-replay-{}-{}",
+        process::id(),
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    super::replay_backend_output(&path, None, false);
+    fs::write(&path, "").unwrap();
+    super::replay_backend_output(&path, None, false);
+    fs::write(&path, "replayed backend output\n").unwrap();
+    super::replay_backend_output(&path, None, false);
+    super::replay_backend_output(&path, None, true);
+    fs::remove_file(path).unwrap();
+}
+
+struct CountingOutput {
+    bytes: u64,
+    largest_write: usize,
+}
+
+impl Write for CountingOutput {
+    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+        self.bytes += bytes.len() as u64;
+        self.largest_write = self.largest_write.max(bytes.len());
+        Ok(bytes.len())
+    }
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+#[test]
+fn large_backend_output_is_replayed_in_bounded_chunks() {
+    let path = env::temp_dir().join(format!(
+        "makevn-stream-{}-{}",
+        process::id(),
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    let mut output = CountingOutput {
+        bytes: 0,
+        largest_write: 0,
+    };
+    assert!(super::stream_backend_output(&path, None, &mut output).is_err());
+    let file = File::create(&path).unwrap();
+    assert_eq!(
+        super::stream_backend_output(&path, None, &mut output).unwrap(),
+        0
+    );
+    let length = 16 * 1024 * 1024;
+    file.set_len(length).unwrap();
+    assert_eq!(
+        super::stream_backend_output(&path, None, &mut output).unwrap(),
+        length
+    );
+    assert_eq!(output.bytes, length);
+    assert!(
+        output.largest_write <= 64 * 1024,
+        "unbounded write: {}",
+        output.largest_write
+    );
+    fs::remove_file(path).unwrap();
+}
+
+fn renderer_for_backend_boundary() -> SpinnerRenderer {
+    SpinnerRenderer {
+        tty: File::open("/dev/null").unwrap(),
+        tty_guard: None,
+        paused: false,
+        frame: 17,
+        frame_interval: Duration::ZERO,
+        next_frame_at: Instant::now(),
+        second_escape_deadline: Some(Instant::now() + Duration::from_secs(3)),
+        resource_sampler: ResourceSampler::new(),
+        resource_history: ResourceHistory::new(),
+        resource_history_revision: 0,
+        cpu_visual_load: 0.0,
+        ram_visual_load: 0.0,
+        resource_visual_load: 0.0,
+        rendered_block_line_widths: vec![12, 30, 80],
+    }
+}
+
+#[test]
+fn backend_boundary_resets_escape_confirmation_without_clearing_dashboard() {
+    let mut renderer = renderer_for_backend_boundary();
+    renderer.begin_backend();
+    assert!(renderer.second_escape_deadline.is_none());
+    assert_eq!(renderer.rendered_block_line_widths, [12, 30, 80]);
+    assert_eq!(renderer.frame, 17);
+    assert!(matches!(
+        super::decode_spinner_input(0x1b, &mut renderer.second_escape_deadline),
+        InputEvent::None
+    ));
+    assert!(matches!(
+        super::decode_spinner_input(0x1b, &mut renderer.second_escape_deadline),
+        InputEvent::Interrupt
+    ));
+}
+
+#[test]
+fn backend_boundary_resets_telemetry_history_and_smoothed_loads() {
+    let mut renderer = renderer_for_backend_boundary();
+    let previous = ResourceSample {
+        cpu_percent: 200.0,
+        rss_kb: 1024 * 1024,
+    };
+    renderer.resource_sampler.last_pid = Some(99);
+    renderer.resource_sampler.last_sample_at = Some(Instant::now());
+    renderer.resource_sampler.last_sample = Some(previous);
+    renderer.resource_sampler.sample_revision = 5;
+    for _ in 0..5 {
+        renderer.resource_history.push(previous);
+    }
+    renderer.resource_history_revision = 5;
+    renderer.cpu_visual_load = 0.8;
+    renderer.ram_visual_load = 0.7;
+    renderer.resource_visual_load = 0.9;
+    renderer.begin_backend();
+    assert!(renderer.resource_sampler.last_pid.is_none());
+    assert!(renderer.resource_sampler.last_sample.is_none());
+    assert!(renderer.resource_sampler.last_sample_at.is_none());
+    assert_eq!(renderer.resource_sampler.revision(), 0);
+    assert!(renderer.resource_history.cpu_percent.is_empty());
+    assert!(renderer.resource_history.rss_kb.is_empty());
+    assert_eq!(renderer.resource_history_revision, 0);
+    assert_eq!(renderer.cpu_visual_load, 0.0);
+    assert_eq!(renderer.ram_visual_load, 0.0);
+    assert_eq!(renderer.resource_visual_load, 0.0);
+    assert_eq!(renderer.frame, 17);
+    assert_eq!(renderer.rendered_block_line_widths, [12, 30, 80]);
+    renderer.resource_history.push(ResourceSample {
+        cpu_percent: 2.0,
+        rss_kb: 64,
+    });
+    assert_eq!(renderer.resource_history.cpu_percent, [2.0]);
+    assert_eq!(renderer.resource_history.rss_kb, [64]);
+}
+
+#[test]
+fn backend_boundary_selects_docker_source_after_reset_and_clears_it_for_verify() {
+    let mut renderer = renderer_for_backend_boundary();
+    renderer.begin_backend();
+    renderer.configure_resource_source(
+        "docker-up",
+        Some(std::path::PathBuf::from("/nonexistent/makevn.resources")),
+    );
+    assert!(renderer.resource_sampler.docker.is_some());
+    assert!(renderer
+        .resource_sampler
+        .sample(std::process::id())
+        .unwrap()
+        .is_none());
+    assert_eq!(
+        renderer.resource_sampler.scoped_text(String::new()),
+        "containers cpu — | ram —"
+    );
+    renderer.begin_backend();
+    renderer.configure_resource_source("verify", None);
+    assert!(renderer.resource_sampler.docker.is_none());
+    assert!(renderer.resource_sampler.last_pid.is_none());
+    assert_eq!(
+        renderer.resource_sampler.scoped_text("cpu 2%".into()),
+        "cpu 2%"
+    );
+    assert_eq!(renderer.rendered_block_line_widths, [12, 30, 80]);
+    assert_eq!(renderer.frame, 17);
 }
