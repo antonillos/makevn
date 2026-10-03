@@ -7,6 +7,7 @@ import pty
 import select
 import signal
 import struct
+import subprocess
 import sys
 import tempfile
 import termios
@@ -206,12 +207,15 @@ def verify(binary, exit_code=0, tail_enabled=True):
                 Path(os.environ['MAKEVN_TAIL_PTY_TRANSCRIPT']).write_bytes(transcript)
 
 
-if sys.argv[1] == '--backend':
-    backend(sys.argv[2:])
-elif Path(sys.argv[1]).is_file():
-    verify(str(Path(sys.argv[1]).resolve()))
-    verify(str(Path(sys.argv[1]).resolve()), 42)
-    verify(str(Path(sys.argv[1]).resolve()), 42, False)
-    print('Tail metadata PTY regression tests passed')
-else:
-    print('Tail metadata PTY test skipped: Rust dispatcher not built')
+if __name__ == '__main__':
+    if sys.argv[1] == '--backend':
+        backend(sys.argv[2:])
+    elif Path(sys.argv[1]).is_file():
+        verify(str(Path(sys.argv[1]).resolve()))
+        verify(str(Path(sys.argv[1]).resolve()), 42)
+        verify(str(Path(sys.argv[1]).resolve()), 42, False)
+        subprocess.run([sys.executable, str(Path(__file__).with_name('dashboard_transition_pty_test.py')),
+                        str(Path(sys.argv[1]).resolve())], check=True)
+        print('Tail metadata PTY regression tests passed')
+    else:
+        print('Tail metadata PTY test skipped: Rust dispatcher not built')

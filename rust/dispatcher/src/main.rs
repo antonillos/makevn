@@ -1177,12 +1177,10 @@ fn dispatch_backend_invocations(
             .unwrap_or_else(|| String::from("command"));
         let use_frontend_loader = loader_available;
         let state_command = !backend_invocation.frontend_loader;
-        drop(renderer.take());
-        renderer = if use_frontend_loader {
-            SpinnerRenderer::new_with_input(true).ok()
-        } else {
-            None
-        };
+        // Keep the live block across commands, including metadata startup waits.
+        if use_frontend_loader && renderer.is_none() {
+            renderer = SpinnerRenderer::new_with_input(true).ok();
+        }
         let captured_stdout =
             if use_frontend_loader && (state_command || backend_invocation.compact) {
                 Some(BackendStderrFile::new()?)
@@ -1287,18 +1285,16 @@ fn dispatch_backend_invocations(
                 phase_files.as_ref(),
                 prompt_sync.as_ref(),
             );
-            if let Some(renderer) = renderer.as_mut() {
-                renderer.clear_line();
-            }
             if !state_command {
                 if let Some(output) = &captured_stdout {
-                    if let Ok(mut output) = File::open(output.path()) {
-                        let _ = io::copy(&mut output, &mut io::stdout());
-                    }
+                    replay_backend_output(output.path(), renderer.as_mut(), false);
                 }
             }
-            if let Ok(mut stderr) = File::open(stderr_file.path()) {
-                let _ = io::copy(&mut stderr, &mut io::stderr());
+            replay_backend_output(stderr_file.path(), renderer.as_mut(), true);
+            if result.is_err() {
+                if let Some(renderer) = renderer.as_mut() {
+                    renderer.clear_line();
+                }
             }
             result?
         } else {
@@ -1416,6 +1412,30 @@ fn dispatch_backend_invocations(
     Ok(last_exit_code)
 }
 
+// Only external output needs to take ownership of the live terminal block.
+fn replay_backend_output(path: &Path, renderer: Option<&mut SpinnerRenderer>, stderr: bool) {
+    if stderr {
+        let _ = stream_backend_output(path, renderer, &mut io::stderr().lock());
+    } else {
+        let _ = stream_backend_output(path, renderer, &mut io::stdout().lock());
+    }
+}
+
+fn stream_backend_output(
+    path: &Path,
+    renderer: Option<&mut SpinnerRenderer>,
+    output: &mut impl Write,
+) -> io::Result<u64> {
+    let mut file = File::open(path)?;
+    if file.metadata()?.len() == 0 {
+        return Ok(0);
+    }
+    if let Some(renderer) = renderer {
+        renderer.clear_line();
+    }
+    io::copy(&mut file, output)
+}
+
 fn format_failure_summary(
     exit_code: i32,
     duration: Option<&str>,
@@ -1500,6 +1520,9 @@ fn run_backend_with_loader(
     prompt_sync: Option<&BackendDetailFile>,
 ) -> Result<BackendRunResult, String> {
     let started_at = Instant::now();
+    if let Some(renderer) = renderer.as_mut() {
+        renderer.begin_backend();
+    }
     let mut child = command.spawn().map_err(|error| {
         format!(
             "failed to launch backend {}: {error}",
@@ -1544,8 +1567,10 @@ fn run_backend_with_loader(
     }
 
     if let Some(metadata) = metadata.as_ref() {
-        if let Some(renderer) = renderer.as_mut() {
-            renderer.clear_frame_line();
+        if tail_active {
+            if let Some(renderer) = renderer.as_mut() {
+                renderer.clear_frame_line();
+            }
         }
         if tail_active {
             tail_window = Some(LogTailWindow::new(PathBuf::from(&metadata.log_path)));
@@ -1629,8 +1654,10 @@ fn run_backend_with_loader(
                     }
                 }
                 if let Some(metadata) = metadata.as_ref() {
-                    if let Some(renderer) = renderer.as_mut() {
-                        renderer.clear_frame_line();
+                    if tail_active {
+                        if let Some(renderer) = renderer.as_mut() {
+                            renderer.clear_frame_line();
+                        }
                     }
                     if tail_active {
                         tail_window = Some(LogTailWindow::new(PathBuf::from(&metadata.log_path)));
@@ -1669,9 +1696,6 @@ fn run_backend_with_loader(
                         .map_err(|error| format!("failed to clear tailed log: {error}"))?;
                 }
             }
-            if let Some(renderer) = renderer.as_mut() {
-                renderer.clear_line();
-            }
             return Ok(summarize_backend_exit(
                 status,
                 started_at.elapsed(),
@@ -1707,8 +1731,10 @@ fn run_backend_with_loader(
             }
 
             if let Some(metadata) = metadata.as_ref() {
-                if let Some(renderer) = renderer.as_mut() {
-                    renderer.clear_frame_line();
+                if tail_active {
+                    if let Some(renderer) = renderer.as_mut() {
+                        renderer.clear_frame_line();
+                    }
                 }
                 if tail_active {
                     tail_window = Some(LogTailWindow::new(PathBuf::from(&metadata.log_path)));
@@ -1792,7 +1818,8 @@ fn run_backend_with_loader(
         }
 
         if let Some(renderer) = renderer.as_mut() {
-            if !tail_active {
+            // Tail owns the screen only after metadata identifies its log.
+            if !tail_active || metadata.is_none() {
                 let hint = match metadata.as_ref() {
                     Some(metadata) if metadata.log_path.is_empty() => {
                         renderer.current_spinner_hint()
@@ -1811,10 +1838,15 @@ fn run_backend_with_loader(
                         )
                         .map_err(|error| format!("failed to render loader: {error}"))?;
                 } else {
+                    let hint = renderer.current_spinner_hint();
                     renderer
-                        .render_frame_with_hint(
+                        .render_dashboard(
                             child.id(),
-                            &format!("{} | {}", pending_command_line(fallback_title), hint),
+                            global_started_at.elapsed(),
+                            completed_summaries,
+                            &[],
+                            &pending_backend_metadata(fallback_title),
+                            &hint,
                         )
                         .map_err(|error| format!("failed to render loader: {error}"))?;
                 }
@@ -1848,10 +1880,6 @@ fn run_backend_with_loader(
                 .clear()
                 .map_err(|error| format!("failed to clear tailed log: {error}"))?;
         }
-    }
-
-    if let Some(renderer) = renderer.as_mut() {
-        renderer.clear_line();
     }
 
     let status = child
@@ -1929,7 +1957,7 @@ fn parse_backend_metadata(content: &str) -> Option<BackendMetadata> {
 fn backend_header_line(metadata: &BackendMetadata) -> String {
     format!(
         "{} {}",
-        dim_text("::"),
+        warn_text("[•]"),
         accent_text(&format!("makevn {}", metadata.title))
     )
 }
@@ -2034,17 +2062,30 @@ fn pending_command_line(title: &str) -> String {
     format!("makevn {title}")
 }
 
+fn pending_backend_metadata(title: &str) -> BackendMetadata {
+    BackendMetadata {
+        command: title.to_owned(),
+        repo: String::new(),
+        cwd: String::new(),
+        log_path: String::new(),
+        relative_log_path: String::new(),
+        command_display: pending_command_line(title),
+        title: format!("{title} (starting)"),
+        context: None,
+    }
+}
+
 fn running_command_line(metadata: &BackendMetadata) -> String {
     if metadata.relative_log_path.is_empty() {
         format!(
             "{} {}",
-            dim_text("->"),
+            warn_text("[•]"),
             accent_text(&format!("makevn {}", metadata.title))
         )
     } else {
         format!(
             "{} {} {} {}",
-            dim_text("::"),
+            warn_text("[•]"),
             accent_text(&format!("makevn {}", metadata.title)),
             dim_text("|"),
             dim_text(&metadata.relative_log_path)
@@ -2864,6 +2905,17 @@ impl SpinnerRenderer {
         })
     }
 
+    // Reset command-local state without erasing the retained terminal block.
+    fn begin_backend(&mut self) {
+        self.second_escape_deadline = None;
+        self.resource_sampler = ResourceSampler::new();
+        self.resource_history = ResourceHistory::new();
+        self.resource_history_revision = 0;
+        self.cpu_visual_load = 0.0;
+        self.ram_visual_load = 0.0;
+        self.resource_visual_load = 0.0;
+    }
+
     fn pause(&mut self) {
         self.clear_line();
         self.show_cursor();
@@ -2933,6 +2985,9 @@ impl SpinnerRenderer {
         let line = status_line_text_for_width(&line, terminal_width().max(8));
         write!(io::stdout(), "\r\u{1b}[2K{}", line)?;
         io::stdout().flush()?;
+        if let Some(width) = self.rendered_block_line_widths.last_mut() {
+            *width = visible_char_count(&line);
+        }
         Ok(())
     }
 
@@ -3012,16 +3067,18 @@ impl SpinnerRenderer {
             .map(|line| status_line_text_for_width(line, render_width))
             .collect::<Vec<_>>();
 
+        let mut stdout = io::stdout().lock();
         self.clear_dynamic_block()?;
+        let mut replacement = String::new();
         for (index, line) in lines.iter().enumerate() {
             if index + 1 == lines.len() {
-                write!(io::stdout(), "\r\u{1b}[2K{}", line)?;
+                replacement.push_str(&format!("\r\u{1b}[2K{line}"));
             } else {
-                writeln!(io::stdout(), "\r\u{1b}[2K{}", line)?;
+                replacement.push_str(&format!("\r\u{1b}[2K{line}\n"));
             }
         }
-
-        io::stdout().flush()?;
+        stdout.write_all(replacement.as_bytes())?;
+        stdout.flush()?;
         self.rendered_block_line_widths =
             lines.iter().map(|line| visible_char_count(line)).collect();
         self.frame += 1;
@@ -3173,6 +3230,7 @@ struct ResourceSample {
 }
 
 struct ResourceSampler {
+    last_pid: Option<u32>,
     last_sample_at: Option<Instant>,
     last_sample: Option<ResourceSample>,
     sample_revision: u64,
@@ -3183,6 +3241,7 @@ impl ResourceSampler {
 
     fn new() -> Self {
         Self {
+            last_pid: None,
             last_sample_at: None,
             last_sample: None,
             sample_revision: 0,
@@ -3190,6 +3249,11 @@ impl ResourceSampler {
     }
 
     fn sample(&mut self, pid: u32) -> io::Result<Option<ResourceSample>> {
+        if self.last_pid != Some(pid) {
+            self.last_pid = Some(pid);
+            self.last_sample_at = None;
+            self.last_sample = None;
+        }
         if pid == 0 {
             return Ok(None);
         }

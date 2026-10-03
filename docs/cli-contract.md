@@ -641,6 +641,10 @@ Agent/non-TTY execution remains plain: no animation, telemetry or ANSI sequences
 PTY; inherited `MAKEVN_COMPACT_OUTPUT=1` (used by MCP) also retains agent-safe
 behavior. An empty next-step section is omitted.
 
+The interactive active command uses a fixed yellow `[•]` marker (including
+startup while metadata is pending); completed commands retain `[✓]`. The
+marker does not blink or animate.
+
 State commands reuse the same `render_dashboard` and final results renderer as
 Karate: `Working for`, completed phases, the active command, and `Worked for`
 with results and the green success marker. Doctor reports its real inspection
