@@ -19,6 +19,8 @@ source "${MAKEVN_LIBEXEC_DIR}/common/core.sh"
 # shellcheck source=/dev/null
 source "${MAKEVN_LIBEXEC_DIR}/common/backend_logging.sh"
 # shellcheck source=/dev/null
+source "${MAKEVN_LIBEXEC_DIR}/common/state_progress.sh"
+# shellcheck source=/dev/null
 source "${MAKEVN_LIBEXEC_DIR}/common/doctor_snapshot.sh"
 # shellcheck source=/dev/null
 source "${MAKEVN_LIBEXEC_DIR}/common/profile_detection.sh"

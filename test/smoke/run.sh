@@ -4842,6 +4842,7 @@ main() {
   bash "${ROOT_DIR}/test/smoke/jdk_discovery_test.sh"
   bash "${ROOT_DIR}/test/smoke/bash_crap_test.sh"
   bash "${ROOT_DIR}/test/smoke/doctor_compact_test.sh"
+  bash "${ROOT_DIR}/test/smoke/state_progress_test.sh"
   python3 "${ROOT_DIR}/test/smoke/interactive_doctor_test.py" "${ROOT_DIR}/target/release/makevn"
   printf 'Smoke tests passed\n'
 }

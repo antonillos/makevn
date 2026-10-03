@@ -2123,3 +2123,73 @@ fn terminal_presentation_never_leaks_into_agent_or_piped_output() {
         true, true, true, false, true
     ));
 }
+
+#[test]
+fn state_metadata_reuses_dashboard_without_empty_log_suffix() {
+    let path = std::env::temp_dir().join(format!("makevn-state-metadata-{}", std::process::id()));
+    super::write_state_metadata(&path, "doctor", &OsString::from("/repo")).unwrap();
+    let metadata = super::read_backend_metadata(&path).unwrap().unwrap();
+    let summary = super::summary_from_backend_metadata(0, "1s".into(), "doctor", Some(&metadata));
+    assert_eq!(summary.title, "doctor");
+    assert_eq!(summary.log_path, None);
+    assert_eq!(summary.relative_log_path, None);
+    std::fs::remove_file(path).unwrap();
+}
+
+#[test]
+fn completion_records_include_state_phases_beyond_karate_five() {
+    let files = super::BackendPhaseFiles::new().unwrap();
+    for index in [6, 2, 1] {
+        let path = files.0.join(index.to_string());
+        super::write_state_metadata(&path, &format!("phase-{index}"), &OsString::from("/repo"))
+            .unwrap();
+        use std::io::Write;
+        let mut record = std::fs::OpenOptions::new().append(true).open(path).unwrap();
+        writeln!(record, "duration_seconds=1\nexit_code=0").unwrap();
+    }
+    assert_eq!(
+        files
+            .read()
+            .iter()
+            .map(|phase| phase.title.clone())
+            .collect::<Vec<_>>(),
+        vec!["phase-1", "phase-2", "phase-6"]
+    );
+}
+
+#[test]
+fn paused_dashboard_does_not_overwrite_interactive_prompt() {
+    let mut renderer = SpinnerRenderer {
+        tty: File::open("/dev/null").unwrap(),
+        tty_guard: None,
+        paused: true,
+        frame: 0,
+        frame_interval: std::time::Duration::ZERO,
+        next_frame_at: std::time::Instant::now(),
+        second_escape_deadline: None,
+        resource_sampler: ResourceSampler::new(),
+        resource_history: ResourceHistory::new(),
+        resource_history_revision: 0,
+        cpu_visual_load: 0.0,
+        ram_visual_load: 0.0,
+        resource_visual_load: 0.0,
+        rendered_block_line_widths: Vec::new(),
+    };
+    let metadata = BackendMetadata {
+        command: "doctor".into(),
+        repo: "/repo".into(),
+        cwd: "/repo".into(),
+        log_path: String::new(),
+        relative_log_path: String::new(),
+        command_display: "makevn doctor".into(),
+        title: "doctor".into(),
+        context: None,
+    };
+    assert!(!renderer.current_metadata_hint(&metadata).contains("tail"));
+    renderer
+        .render_dashboard(0, std::time::Duration::ZERO, &[], &[], &metadata, "")
+        .unwrap();
+    assert_eq!(renderer.frame, 0);
+    renderer.render_frame_with_hint(0, "").unwrap();
+    assert_eq!(renderer.frame, 0);
+}

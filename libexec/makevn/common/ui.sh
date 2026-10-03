@@ -39,6 +39,10 @@ makevn_warn() {
 
 makevn_print_header() {
   local title="$1"
+  if [[ -n "${MAKEVN_FRONTEND_STATE_METADATA_OUT:-}" && -n "${MAKEVN_BACKEND_DETAIL_OUT:-}" ]]; then
+    makevn_print_detail_line "${title}"
+    return 0
+  fi
   printf '%s %s\n' "$(makevn_dim '::')" "$(makevn_accent "${title}")"
 }
 

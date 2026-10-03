@@ -200,7 +200,15 @@ impl BackendPhaseFiles {
     }
 
     fn read(&self) -> Vec<CommandSummary> {
-        (1..=5)
+        let mut indices: Vec<u32> = fs::read_dir(&self.0)
+            .into_iter()
+            .flatten()
+            .filter_map(Result::ok)
+            .filter_map(|entry| entry.file_name().to_str()?.parse().ok())
+            .collect();
+        indices.sort_unstable();
+        indices
+            .into_iter()
             .filter_map(|index| {
                 let path = self.0.join(index.to_string());
                 let content = fs::read_to_string(&path).ok()?;
@@ -1166,10 +1174,7 @@ fn dispatch_backend_invocations(
     let mut last_exit_code = 0;
     let started_at = Instant::now();
     let mut completed_summaries: Vec<CommandSummary> = Vec::new();
-    let use_dashboard = frontend_loader_is_available()
-        && backend_invocations
-            .iter()
-            .any(|invocation| invocation.frontend_loader && !invocation.compact);
+    let use_dashboard = frontend_loader_is_available();
 
     // Output size and interactive presentation are independent: compact human
     // runs retain color and telemetry, while agents never enter terminal mode.
@@ -1191,7 +1196,7 @@ fn dispatch_backend_invocations(
         let state_command = !backend_invocation.frontend_loader;
         drop(renderer.take());
         renderer = if use_frontend_loader {
-            SpinnerRenderer::new_with_input(!state_command).ok()
+            SpinnerRenderer::new_with_input(true).ok()
         } else {
             None
         };
@@ -1208,19 +1213,29 @@ fn dispatch_backend_invocations(
         };
         // Managed-log commands expose backend metadata, including in compact
         // runs. State commands reject this internal option.
-        let metadata_file = if backend_invocation.frontend_loader {
+        let metadata_file = if backend_invocation.frontend_loader || use_frontend_loader {
             let metadata_file = BackendMetadataFile::new()?;
-            insert_backend_option(
-                &mut backend_invocation.args,
-                "--metadata-out",
-                metadata_file.path().as_os_str().to_os_string(),
-            );
+            if backend_invocation.frontend_loader {
+                insert_backend_option(
+                    &mut backend_invocation.args,
+                    "--metadata-out",
+                    metadata_file.path().as_os_str().to_os_string(),
+                );
+            } else {
+                write_state_metadata(
+                    metadata_file.path(),
+                    &fallback_title,
+                    &backend_invocation.args[2],
+                )?;
+            }
             Some(metadata_file)
         } else {
             None
         };
 
-        let phase_files = if fallback_title == "karate-all" {
+        let phase_files = if fallback_title == "karate-all"
+            || (use_frontend_loader && fallback_title == "doctor")
+        {
             Some(BackendPhaseFiles::new()?)
         } else {
             None
@@ -1236,6 +1251,11 @@ fn dispatch_backend_invocations(
         command.env("MAKEVN_FRONTEND", "rust");
         command.env("MAKEVN_FRONTEND_VERSION", makevn_version());
         command.env("MAKEVN_VERSION", makevn_version());
+        if state_command {
+            if let Some(metadata) = &metadata_file {
+                command.env("MAKEVN_FRONTEND_STATE_METADATA_OUT", metadata.path());
+            }
+        }
         if !loader_available {
             command.env("NO_COLOR", "1");
         }
@@ -1287,9 +1307,11 @@ fn dispatch_backend_invocations(
             if let Some(renderer) = renderer.as_mut() {
                 renderer.clear_line();
             }
-            if let Some(output) = &captured_stdout {
-                if let Ok(mut output) = File::open(output.path()) {
-                    let _ = io::copy(&mut output, &mut io::stdout());
+            if !state_command {
+                if let Some(output) = &captured_stdout {
+                    if let Ok(mut output) = File::open(output.path()) {
+                        let _ = io::copy(&mut output, &mut io::stdout());
+                    }
                 }
             }
             if let Ok(mut stderr) = File::open(stderr_file.path()) {
@@ -1316,10 +1338,20 @@ fn dispatch_backend_invocations(
         };
 
         // Snapshot detail lines into the summary then clear for the next command.
-        let detail_lines = detail_file
+        let stdout_details: Vec<String> = captured_stdout
+            .as_ref()
+            .filter(|_| state_command)
+            .and_then(|output| fs::read_to_string(output.path()).ok())
+            .unwrap_or_default()
+            .lines()
+            .filter(|line| !line.trim().is_empty())
+            .map(str::to_owned)
+            .collect();
+        let mut detail_lines = detail_file
             .as_ref()
             .map(|df| df.read_lines())
             .unwrap_or_default();
+        detail_lines.extend(stdout_details.iter().cloned());
         if let Some(df) = detail_file.as_ref() {
             df.clear();
         }
@@ -1328,10 +1360,13 @@ fn dispatch_backend_invocations(
         let failure_hint = read_failure_hint(run_result.summary.log_path.as_deref());
         let mut summary = run_result.summary;
         summary.detail_lines = detail_lines;
-        let phases = phase_files
+        let mut phases = phase_files
             .as_ref()
             .map(|files| files.read())
             .unwrap_or_default();
+        if let Some(last_phase) = phases.last_mut() {
+            last_phase.detail_lines.extend(stdout_details);
+        }
         let needs_fallback = phases
             .last()
             .map(|phase| phase.exit_code != last_exit_code)
@@ -1427,8 +1462,12 @@ fn summary_from_backend_metadata(
             .map(|metadata| metadata.title.clone())
             .unwrap_or_else(|| fallback_title.to_owned()),
         duration,
-        log_path: metadata.map(|metadata| metadata.log_path.clone()),
-        relative_log_path: metadata.map(|metadata| metadata.relative_log_path.clone()),
+        log_path: metadata
+            .map(|metadata| metadata.log_path.clone())
+            .filter(|path| !path.is_empty()),
+        relative_log_path: metadata
+            .map(|metadata| metadata.relative_log_path.clone())
+            .filter(|path| !path.is_empty()),
         exit_code,
         detail_lines: Vec::new(),
     }
@@ -1531,7 +1570,7 @@ fn run_backend_with_loader(
             if let Some(df) = detail_file {
                 current_detail_lines = df.read_lines();
             }
-            let hint = renderer.current_dashboard_hint();
+            let hint = renderer.current_metadata_hint(metadata);
             renderer
                 .render_dashboard(
                     child.id(),
@@ -1605,7 +1644,7 @@ fn run_backend_with_loader(
                     if tail_active {
                         tail_window = Some(LogTailWindow::new(PathBuf::from(&metadata.log_path)));
                     } else if let Some(renderer) = renderer.as_mut() {
-                        let hint = renderer.current_dashboard_hint();
+                        let hint = renderer.current_metadata_hint(metadata);
                         renderer
                             .render_dashboard(
                                 child.id(),
@@ -1683,7 +1722,7 @@ fn run_backend_with_loader(
                 if tail_active {
                     tail_window = Some(LogTailWindow::new(PathBuf::from(&metadata.log_path)));
                 } else if let Some(renderer) = renderer.as_mut() {
-                    let hint = renderer.current_dashboard_hint();
+                    let hint = renderer.current_metadata_hint(metadata);
                     renderer
                         .render_dashboard(
                             child.id(),
@@ -1717,7 +1756,10 @@ fn run_backend_with_loader(
                 }
                 InputEvent::StartTail => {
                     if !tail_active {
-                        if let Some(metadata) = metadata.as_ref() {
+                        if let Some(metadata) = metadata
+                            .as_ref()
+                            .filter(|metadata| !metadata.log_path.is_empty())
+                        {
                             renderer.clear_frame_line();
                             tail_window =
                                 Some(LogTailWindow::new(PathBuf::from(&metadata.log_path)));
@@ -1760,14 +1802,11 @@ fn run_backend_with_loader(
 
         if let Some(renderer) = renderer.as_mut() {
             if !tail_active {
-                let hint = if metadata.is_some() {
-                    renderer.current_dashboard_hint()
-                } else {
-                    format!(
-                        "Working for {} | {}",
-                        format_duration(global_started_at.elapsed()),
-                        fallback_title
-                    )
+                let hint = match metadata.as_ref() {
+                    Some(metadata) if metadata.log_path.is_empty() => {
+                        renderer.current_spinner_hint()
+                    }
+                    _ => renderer.current_dashboard_hint(),
                 };
                 if let Some(metadata) = metadata.as_ref() {
                     renderer
@@ -1834,6 +1873,14 @@ fn run_backend_with_loader(
         metadata.as_ref(),
         fallback_title,
     ))
+}
+
+// State commands use the same metadata renderer, without granting --tail or
+// changing the backend's public managed-log options.
+fn write_state_metadata(path: &Path, title: &str, repo: &OsString) -> Result<(), String> {
+    let repo = repo.to_string_lossy().replace('\n', " ");
+    let metadata = format!("command={title}\nrepo={repo}\ncwd={repo}\nlog_path=\nrelative_log_path=\ncommand_display=makevn {title}\ntitle={title}\n");
+    fs::write(path, metadata).map_err(|error| format!("failed to write state metadata: {error}"))
 }
 
 fn read_backend_metadata(metadata_path: &Path) -> Result<Option<BackendMetadata>, String> {
@@ -2865,6 +2912,14 @@ impl SpinnerRenderer {
         dashboard_hint(&self.current_spinner_hint())
     }
 
+    fn current_metadata_hint(&mut self, metadata: &BackendMetadata) -> String {
+        if metadata.log_path.is_empty() {
+            self.current_spinner_hint()
+        } else {
+            self.current_dashboard_hint()
+        }
+    }
+
     fn render_frame_with_hint(&mut self, pid: u32, hint: &str) -> io::Result<()> {
         if self.paused {
             thread::sleep(Duration::from_millis(50));
@@ -2917,6 +2972,10 @@ impl SpinnerRenderer {
         metadata: &BackendMetadata,
         hint: &str,
     ) -> io::Result<()> {
+        if self.paused {
+            thread::sleep(Duration::from_millis(50));
+            return Ok(());
+        }
         wait_until_next_frame(self.next_frame_at);
 
         let resource_sample = self.resource_sampler.sample(pid).unwrap_or(None);

@@ -100,8 +100,35 @@ def verify(binary):
     print("Interactive doctor tests passed")
 
 
+def verify_real_doctor(binary):
+    root = Path(__file__).resolve().parents[2]
+    with tempfile.TemporaryDirectory(prefix="makevn-real-doctor-dashboard-") as folder:
+        repo = Path(folder)
+        (repo / "pom.xml").write_text("<project><modelVersion>4.0.0</modelVersion><groupId>x</groupId><artifactId>x</artifactId><version>1</version></project>\n")
+        subprocess.run([str(root / "bin/makevn"), "--repo", str(repo), "init"], check=True, capture_output=True)
+        env = environment(root)
+        human = terminal(binary, repo, env, compact=False)
+        assert b"Working for" in human and b"Worked  for" in human, human
+        for phase in (b"Inspecting repository layout", b"Refreshing persisted profile",
+                      b"Scanning workflow and Maven signals", b"Resolving Docker compose files",
+                      b"Resolving Java homes", b"Reporting repository analysis"):
+            assert phase in human, (phase, human)
+        for detail in (b"Repo root:", b"Java Maven repo: yes", b"Current makevn status:"):
+            assert detail in human, (detail, human)
+        assert b"makevn doctor | Working for" not in human, human
+        compact = terminal(binary, repo, env)
+        assert b"Current makevn status:" in compact and b"Repo root:" not in compact, compact
+        agent = subprocess.run([binary, "--repo", str(repo), "doctor", "--compact"],
+                               env=environment(root, agent="MAKEVN_AGENT_OUTPUT"), capture_output=True, check=True).stdout
+        assert b"\x1b" not in agent and b"Working for" not in agent and b"Worked  for" not in agent, agent
+        assert b"Inspecting repository layout" not in agent, agent
+    print("Real doctor dashboard tests passed")
+
+
 if __name__ == "__main__":
     if sys.argv[1] == "--backend":
         backend()
     else:
-        verify(str(Path(sys.argv[1]).resolve()))
+        binary = str(Path(sys.argv[1]).resolve())
+        verify(binary)
+        verify_real_doctor(binary)

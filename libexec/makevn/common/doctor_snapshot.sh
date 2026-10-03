@@ -74,6 +74,7 @@ makevn_read_choice_into() {
 
 makevn_doctor_progress() {
   local message="$1"
+  makevn_start_state_phase "${message}"
   [[ "${MAKEVN_COMPACT_OUTPUT:-}" != "1" ]] || return 0
   [[ -t 2 ]] || return 0
   [[ -z "${MAKEVN_BACKEND_DETAIL_OUT:-}" ]] || return 0

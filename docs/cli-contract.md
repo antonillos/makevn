@@ -645,3 +645,11 @@ Agent/non-TTY execution remains plain: no animation, telemetry or ANSI sequences
 `MAKEVN_AGENT_OUTPUT=1` explicitly disables interactive presentation even in a
 PTY; inherited `MAKEVN_COMPACT_OUTPUT=1` (used by MCP) also retains agent-safe
 behavior. An empty next-step section is omitted.
+
+State commands reuse the same `render_dashboard` and final results renderer as
+Karate: `Working for`, completed phases, the active command, and `Worked for`
+with results and the green success marker. Doctor reports its real inspection
+phases (including profile refresh only when executed). The detailed repository
+fields are retained under the reporting phase rather than discarded by stdout
+capture. Compact limits the report fields; it does not introduce a separate
+telemetry layout. Agent/non-TTY invocations still show no phase history or TUI.
