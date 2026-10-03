@@ -680,3 +680,13 @@ volume pruning, or overall host CPU. While no project containers are running,
 container metrics are unavailable. Docker commands with no resolved Compose
 project also show unavailable live telemetry. Standalone `docker-stats` output
 retains its existing all-containers contract; its live loader uses project scope.
+
+### Formatting failures
+
+Formatting validation failures during tests emit a recovery hint:
+`makevn format --apply` (MCP: `makevn_format` with `apply: true`).
+Plain `makevn format` checks; `--apply` corrects formatting using the
+repository's plugin. There is no single-file option.
+Preserve the original failure exit code, inspect the formatter diff, and rerun
+the original test without `--fast`. Never add skip flags or edit Maven/makevn
+configuration to bypass validation.

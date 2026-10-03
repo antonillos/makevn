@@ -163,6 +163,11 @@ directly when they support MCP.
 See [AI agent use](docs/agents.md) and the [MCP guide](mcp/README.md) for the
 full agent workflow and client configuration.
 
+When tests fail formatting validation, agents should run `makevn format --apply`
+and rerun the original test, never disable the formatter. MCP recovery uses
+`makevn_format` with `apply: true`.
+See [formatting recovery for agents](docs/agents.md#formatting-failure-recovery-for-ai-agents).
+
 ## Standalone operation
 
 Use the public CLI or MCP tools; repository Makefiles are not an execution contract.

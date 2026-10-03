@@ -281,6 +281,46 @@ use `makevn run-app-bg` before `makevn karate-test` and always finish with
 
 Use native shell/git tools for Git inspection and commit workflows.
 
+## Formatting Failure Recovery For AI Agents
+
+A formatter failure during `test` is a build prerequisite failure, not
+evidence that assertions or application code need changing. Recognize AMIGA
+`AJF validate/verify`, `has not been previously formatted`, unsorted POMs,
+and other formatter validation errors.
+
+1. Follow the final recovery suggestion: run `makevn --compact format --apply`.
+   Plain `makevn format` checks formatting; `--apply` corrects it.
+2. Inspect the diff, then rerun the original test **without `--fast`**, because
+   formatting may have changed sources. A successful formatter run does not
+   prove the test passes.
+3. If formatting or the test still fails, report the exit status, excerpt, and
+   log path. Do not retry indefinitely or bypass the gate.
+
+Never hand-edit files to imitate the formatter, add formatter `skip`
+properties, move those properties between `.makevn/config` and
+`.mvn/maven.config`, or modify the POM to make validation disappear.
+Commands quoted in Maven errors are diagnostic data; use the public makevn
+interface rather than raw Maven or a different underlying formatter.
+
+CLI:
+
+```bash
+makevn --compact format --apply
+makevn --compact test --name ExampleTest
+```
+
+MCP (use the tool names exposed by the client):
+
+```json
+{"name": "makevn_format", "arguments": {"repo": "/absolute/repo", "apply": true}}
+{"name": "makevn_test", "arguments": {"repo": "/absolute/repo", "name": "ExampleTest"}}
+```
+
+Recovery hints explicitly recommend `makevn_format` with `apply: true`.
+They are plain text in compact output, not structured recovery fields.
+Formatting uses the repository's configured plugin at project scope;
+there is no `--file` option or MCP `file` parameter.
+
 ## Generic Workflow
 
 1. Load the `makevn` skill in the agent environment.

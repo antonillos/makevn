@@ -2531,3 +2531,12 @@ fn docker_scope_label_uses_cpu_color_and_dims_when_unavailable() {
         format!("{} {}", dim_text("ctr"), unavailable)
     );
 }
+
+
+#[test]
+fn format_help_does_not_advertise_removed_file_option() {
+    let (usage, _, options) = command_help("format").unwrap();
+    assert!(!usage.contains("--file"));
+    assert!(options.iter().all(|option| !option.contains("--file")));
+    assert!(options.iter().any(|option| option.contains("--apply")));
+}

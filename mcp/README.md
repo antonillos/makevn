@@ -120,6 +120,22 @@ Interpretation rules:
   the MCP session. MCP tools are listed when the server starts and may be cached
   by the client.
 
+## Formatting recovery
+
+When tests fail formatter validation (including AMIGA's unformatted Java files
+or unsorted POMs), the final hint recommends `makevn_format` with `apply: true`:
+
+```json
+{"name": "makevn_format", "arguments": {"repo": "/absolute/repo", "apply": true}}
+```
+
+Formatting runs at project scope; there is no `file` parameter.
+Inspect the diff, then rerun the same test without `fast: true`.
+Do not add skip flags, change configuration, or manually imitate formatting
+to bypass validation. Recovery hints are plain text, not structured JSON fields.
+See [the agent recovery workflow](../docs/agents.md#formatting-failure-recovery-for-ai-agents)
+and the [makevn skill](../skills/makevn/SKILL.md).
+
 ## Development
 
 ```bash
