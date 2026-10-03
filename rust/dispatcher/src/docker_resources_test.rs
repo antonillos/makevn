@@ -159,7 +159,7 @@ fn collects_only_compose_project_ids_with_fake_docker_cli() {
     )
     .unwrap();
     let stop = AtomicBool::new(false);
-    let sample = collect(&scope, &stop).unwrap().unwrap();
+    let sample = collect_fixture(&scope, &stop).unwrap().unwrap();
     assert_eq!(sample.cpu_percent, 7.5);
     assert_eq!(sample.rss_kb, 4096);
     // Replace the inode instead of rewriting an executable that Linux may still
@@ -168,9 +168,9 @@ fn collects_only_compose_project_ids_with_fake_docker_cli() {
     fs::write(&replacement, "#!/bin/sh\nexit 0\n").unwrap();
     fs::set_permissions(&replacement, fs::Permissions::from_mode(0o755)).unwrap();
     fs::rename(&replacement, &executable).unwrap();
-    assert!(collect(&scope, &stop).unwrap().is_none());
+    assert!(collect_fixture(&scope, &stop).unwrap().is_none());
     fs::write(&scope, "invalid\ncommand\n").unwrap();
-    assert!(collect(&scope, &stop).unwrap().is_none());
+    assert!(collect_fixture(&scope, &stop).unwrap().is_none());
     std::env::set_var("PATH", path);
     fs::remove_dir_all(directory).unwrap();
 }
@@ -202,4 +202,19 @@ fn poll_expires_stale_samples_and_records_new_results() {
     assert_eq!(sample.unwrap().cpu_percent, 5.0);
     sender.send((Instant::now(), None)).unwrap();
     assert!(sampler.poll().0.is_none());
+}
+
+
+// Concurrent forks can briefly inherit a fixture write descriptor even after
+// this thread closes it. Retry only Linux ETXTBSY, never telemetry failures.
+fn collect_fixture(scope: &Path, stop: &AtomicBool) -> io::Result<Option<ResourceSample>> {
+    let mut result = collect(scope, stop);
+    for _ in 0..20 {
+        if !matches!(&result, Err(error) if error.raw_os_error() == Some(26)) {
+            break;
+        }
+        thread::sleep(Duration::from_millis(10));
+        result = collect(scope, stop);
+    }
+    result
 }
