@@ -4307,8 +4307,15 @@ EOF
 
   output="$("${fail_cli}" --repo "${repo}" compile 2>&1 || true)"
 
-  [[ "${output}" == *"Worked  for "* ]] || fail "expected dashboard elapsed to be present"
-  [[ "${output}" == *"[fail] exit 7 | check the log"* ]] || fail "expected compact failure summary without duplicate elapsed"
+  [[ "${output}" != *"Worked  for "* ]] || fail "non-TTY failure must not include a dashboard"
+  [[ "${output}" != *$'\033['* ]] || fail "non-TTY failure must not include ANSI"
+  [[ "${output}" =~ \[fail\]\ exit\ 7\ \|\ [0-9]+s\ \|\ check\ the\ log ]] || fail "expected plain failure with elapsed once"
+
+  local output_file="${repo}/failure-tty.out"
+  TERM=xterm-256color NO_COLOR=1 run_pty_command "${output_file}" "${fail_cli}" --repo "${repo}" compile || true
+  output="$(tr -d '\r' < "${output_file}")"
+  [[ "${output}" == *"Worked  for "* ]] || fail "expected human TTY dashboard elapsed"
+  [[ "${output}" == *"[fail] exit 7 | check the log"* ]] || fail "expected TTY failure without duplicate elapsed"
   if [[ "${output}" =~ \[fail\]\ exit\ 7\ \|\ [0-9]+s\ \|\ check\ the\ log ]]; then
     fail "expected failure summary not to repeat elapsed after dashboard"
   fi
