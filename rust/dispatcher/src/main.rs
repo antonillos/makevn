@@ -1826,10 +1826,15 @@ fn run_backend_with_loader(
                         )
                         .map_err(|error| format!("failed to render loader: {error}"))?;
                 } else {
+                    let hint = renderer.current_spinner_hint();
                     renderer
-                        .render_frame_with_hint(
+                        .render_dashboard(
                             child.id(),
-                            &format!("{} | {}", pending_command_line(fallback_title), hint),
+                            global_started_at.elapsed(),
+                            completed_summaries,
+                            &[],
+                            &pending_backend_metadata(fallback_title),
+                            &hint,
                         )
                         .map_err(|error| format!("failed to render loader: {error}"))?;
                 }
@@ -2043,6 +2048,19 @@ fn tail_status_lines(
 
 fn pending_command_line(title: &str) -> String {
     format!("makevn {title}")
+}
+
+fn pending_backend_metadata(title: &str) -> BackendMetadata {
+    BackendMetadata {
+        command: title.to_owned(),
+        repo: String::new(),
+        cwd: String::new(),
+        log_path: String::new(),
+        relative_log_path: String::new(),
+        command_display: pending_command_line(title),
+        title: format!("{title} (starting)"),
+        context: None,
+    }
 }
 
 fn running_command_line(metadata: &BackendMetadata) -> String {

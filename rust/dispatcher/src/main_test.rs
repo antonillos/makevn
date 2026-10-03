@@ -2234,3 +2234,52 @@ fn resume_after_prompt_restores_loader_input_without_resetting_history() {
         );
     }
 }
+
+#[test]
+fn pending_dashboard_marks_previous_command_completed_and_next_starting() {
+    let metadata = super::pending_backend_metadata("docker-ps-required");
+    assert_eq!(metadata.command_display, "makevn docker-ps-required");
+    assert!(metadata.log_path.is_empty());
+    let summary = CommandSummary {
+        title: "docker-up".to_owned(),
+        duration: "2s".to_owned(),
+        log_path: None,
+        relative_log_path: None,
+        exit_code: 0,
+        detail_lines: vec!["retained detail".to_owned()],
+    };
+    let lines = super::dashboard_output_lines(
+        Duration::from_secs(3),
+        &[summary],
+        &[],
+        &metadata,
+        0,
+        0.0,
+        "esc interrupt",
+    );
+    let output = lines.join("\n");
+    assert!(output.contains("docker-up"));
+    assert!(output.contains("retained detail"));
+    assert!(output.contains("makevn docker-ps-required (starting)"));
+    assert!(!output.contains("makevn docker-up"));
+    assert!(!output.contains("t tail"));
+}
+
+#[test]
+fn replay_backend_output_handles_missing_empty_and_nonempty_files() {
+    let path = env::temp_dir().join(format!(
+        "makevn-replay-{}-{}",
+        process::id(),
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    super::replay_backend_output(&path, None, false);
+    fs::write(&path, "").unwrap();
+    super::replay_backend_output(&path, None, false);
+    fs::write(&path, "replayed backend output\n").unwrap();
+    super::replay_backend_output(&path, None, false);
+    super::replay_backend_output(&path, None, true);
+    fs::remove_file(path).unwrap();
+}
