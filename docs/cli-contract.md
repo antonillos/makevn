@@ -632,3 +632,16 @@ previous versions and `current`, `changed` or `unknown` status. This record is
 separate from the init manifest: repeating doctor does not clear stale init state.
 No state directory is created for an uninitialized repository just to save this
 record. Compact doctor writes this analysis stamp, but not config or profile.
+
+### Compact output versus interactive presentation
+
+Compact controls report size, not the audience. Only when stdin, stdout and
+stderr are terminals and `TERM` is not `dumb` does the Rust frontend show
+telemetry and the loader, including for doctor and init. Human compact runs retain
+the green success marker unless `NO_COLOR` is set. State-command output is
+preserved, and doctor pauses the loader before interactive configuration prompts.
+
+Agent/non-TTY execution remains plain: no animation, telemetry or ANSI sequences.
+`MAKEVN_AGENT_OUTPUT=1` explicitly disables interactive presentation even in a
+PTY; inherited `MAKEVN_COMPACT_OUTPUT=1` (used by MCP) also retains agent-safe
+behavior. An empty next-step section is omitted.

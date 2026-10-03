@@ -10,7 +10,7 @@ output="$("${CLI}" --repo "${TMP}" doctor --compact)"
 [[ ! -e "${TMP}/.makevn" ]]
 "${CLI}" --repo "${TMP}" init >/dev/null
 output="$("${CLI}" --repo "${TMP}" doctor --compact)"
-[[ "${output}" == *'status: initialized'* && "${output}" != *'next: makevn init'* ]]
+[[ "${output}" == *'status: initialized'* && "${output}" != *'next: makevn init'* && "${output}" != *'Suggested next step'* && "${output}" != *$'\e'* ]]
 cp "${TMP}/.makevn/profile.env" "${TMP}/profile.before"
 "${CLI}" --repo "${TMP}" doctor --compact >/dev/null
 cmp "${TMP}/profile.before" "${TMP}/.makevn/profile.env"
@@ -38,5 +38,5 @@ output="$(MAKEVN_VERSION="${new_build}" bash "${ROOT_DIR}/libexec/makevn/backend
 printf '%s' "${output}" | python3 -c 'import json,sys; d=json.load(sys.stdin); assert d["doctor_build"]["status"] == "current"; assert d["suggested_next_step"]["next"] == "makevn init --force"'
 MAKEVN_VERSION="${new_build}" "${CLI}" --repo "${TMP}" init --force >/dev/null
 output="$(MAKEVN_VERSION="${new_build}" "${CLI}" --repo "${TMP}" doctor --compact)"
-[[ "${output}" == *'status: initialized'* && "${output}" != *'next: makevn init'* ]]
+[[ "${output}" == *'status: initialized'* && "${output}" != *'next: makevn init'* && "${output}" != *'Suggested next step'* && "${output}" != *$'\e'* ]]
 printf 'Doctor compact tests passed\n'

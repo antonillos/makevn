@@ -108,8 +108,7 @@ else
 fi
 
 if [[ "${COMPACT_OUTPUT}" == "true" ]]; then
-  export MAKEVN_COMPACT_OUTPUT=1
-  export NO_COLOR=1
+  makevn_enable_compact_output
 fi
 
 if [[ "${COMMAND}" == "doctor" && "${FORMAT:-text}" == "json" ]]; then

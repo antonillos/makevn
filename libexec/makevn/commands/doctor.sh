@@ -16,6 +16,7 @@ makevn_print_doctor_java_details() {
 }
 
 makevn_print_doctor_suggestions() {
+  [[ -n "${MAKEVN_DOCTOR_SUGGESTED_NEXT}${MAKEVN_DOCTOR_SUGGESTED_NOTE}${MAKEVN_DOCTOR_SUGGESTED_OPTIONAL}" ]] || return 0
   printf '\n'
   makevn_print_header "Suggested next step"
   if [[ -n "${MAKEVN_DOCTOR_SUGGESTED_NEXT}" ]]; then
@@ -37,7 +38,7 @@ print_doctor() {
   while [[ $# -gt 0 ]]; do
     case "$1" in
       --compact)
-        export MAKEVN_COMPACT_OUTPUT=1 NO_COLOR=1
+        makevn_enable_compact_output
         shift
         ;;
       *)

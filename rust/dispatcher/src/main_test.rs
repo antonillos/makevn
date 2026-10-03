@@ -78,7 +78,8 @@ fn spinner_renderer_handles_tty_input_and_dashboard_lifecycle() {
     let tty_guard = TtyModeGuard::new(&tty).unwrap();
     let mut renderer = SpinnerRenderer {
         tty,
-        tty_guard,
+        tty_guard: Some(tty_guard),
+        paused: false,
         frame: 0,
         frame_interval: Duration::ZERO,
         next_frame_at: Instant::now(),
@@ -970,7 +971,7 @@ fn parses_global_compact_prefix_for_command_sequence() {
 }
 
 #[test]
-fn compact_disables_dashboard_loader_usage() {
+fn compact_keeps_final_report_brief() {
     let invocations = vec![BackendInvocation {
         args: vec![OsString::from("compile")],
         frontend_loader: true,
@@ -2099,4 +2100,26 @@ fn doctor_accepts_compact_after_command() {
     };
     assert!(invocations[0].compact);
     assert!(invocations[0].args.contains(&OsString::from("--compact")));
+}
+
+#[test]
+fn terminal_presentation_never_leaks_into_agent_or_piped_output() {
+    assert!(super::interactive_presentation(
+        true, true, true, false, false
+    ));
+    assert!(!super::interactive_presentation(
+        true, true, true, true, false
+    ));
+    assert!(!super::interactive_presentation(
+        false, true, true, false, false
+    ));
+    assert!(!super::interactive_presentation(
+        true, false, true, false, false
+    ));
+    assert!(!super::interactive_presentation(
+        true, true, false, false, false
+    ));
+    assert!(!super::interactive_presentation(
+        true, true, true, false, true
+    ));
 }

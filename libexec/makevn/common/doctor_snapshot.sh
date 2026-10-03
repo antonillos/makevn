@@ -1,6 +1,17 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Stop terminal animation before a human prompt; never consume the user's input.
+makevn_pause_frontend_for_prompt() {
+  [[ -n "${MAKEVN_FRONTEND_PROMPT_SYNC:-}" ]] || return 0
+  printf 'pause\n' > "${MAKEVN_FRONTEND_PROMPT_SYNC}"
+  local attempt
+  for attempt in {1..100}; do
+    [[ "$(cat "${MAKEVN_FRONTEND_PROMPT_SYNC}")" != paused ]] || return 0
+    sleep 0.02
+  done
+}
+
 makevn_read_editable_default() {
   local prompt="$1"
   local default_value="$2"
@@ -101,6 +112,7 @@ makevn_prompt_doctor_app_health_url() {
   local health_input=""
   local default_health_url="${detected_app_health_url}"
 
+  makevn_pause_frontend_for_prompt
   printf '\n' >&2
   if [[ -n "${default_health_url}" ]]; then
     printf '%s\n' "$(makevn_warn "Detected app health URL: ${default_health_url}")" >&2
@@ -249,6 +261,7 @@ makevn_collect_doctor_snapshot() {
     else
       # Multiple: ask interactively if we have a TTY
       if [[ -t 0 && -t 2 && "${MAKEVN_COMPACT_OUTPUT:-}" != "1" ]]; then
+        makevn_pause_frontend_for_prompt
         printf '\n' >&2
         printf '%s\n' "$(makevn_warn "Multiple docker-compose.yml files found. Select one:")" >&2
         local _i=1
@@ -298,6 +311,7 @@ makevn_collect_doctor_snapshot() {
       e2e_compose_file="${_e2e_found[0]}"
     else
       if [[ -t 0 && -t 2 && "${MAKEVN_COMPACT_OUTPUT:-}" != "1" ]]; then
+        makevn_pause_frontend_for_prompt
         printf '\n' >&2
         printf '%s\n' "$(makevn_warn "Multiple e2e docker-compose.yml files found. Select one:")" >&2
         local _i=1
@@ -407,6 +421,7 @@ makevn_collect_doctor_snapshot() {
 
   makevn_load_config "${repo_root}"
   if [[ -f "$(makevn_config_path "${repo_root}")" && -n "${verify_it_local_containers_default}" && -z "${LOCAL_CONTAINERS+x}" && "${local_containers_configured}" != "yes" && "${prompted_interactively}" != "yes" && -t 0 && -t 2 && "${MAKEVN_COMPACT_OUTPUT:-}" != "1" ]]; then
+    makevn_pause_frontend_for_prompt
     printf '\n' >&2
     printf '%s\n' "$(makevn_warn "Use LOCAL_CONTAINERS=TRUE by default for makevn test/verify commands?")" >&2
     printf '  [1] yes, use local containers\n' >&2

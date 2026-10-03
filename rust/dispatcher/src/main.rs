@@ -1137,8 +1137,24 @@ fn command_supports_frontend_loader(command: &OsString) -> bool {
     )
 }
 
+fn interactive_presentation(
+    stdin_tty: bool,
+    stdout_tty: bool,
+    stderr_tty: bool,
+    agent: bool,
+    dumb: bool,
+) -> bool {
+    stdin_tty && stdout_tty && stderr_tty && !agent && !dumb
+}
+
 fn frontend_loader_is_available() -> bool {
-    io::stdin().is_terminal() && io::stdout().is_terminal()
+    interactive_presentation(
+        io::stdin().is_terminal(),
+        io::stdout().is_terminal(),
+        io::stderr().is_terminal(),
+        agent_output_mode(),
+        env::var("TERM").is_ok_and(|term| term == "dumb"),
+    )
 }
 
 fn dispatch_backend_invocations(
@@ -1150,29 +1166,20 @@ fn dispatch_backend_invocations(
     let mut last_exit_code = 0;
     let started_at = Instant::now();
     let mut completed_summaries: Vec<CommandSummary> = Vec::new();
-    let compact_output = backend_invocations
-        .iter()
-        .any(|invocation| invocation.compact);
-    if compact_output {
-        env::set_var("NO_COLOR", "1");
-    }
-    let use_dashboard = backend_invocations
-        .iter()
-        .any(|invocation| invocation.frontend_loader && !invocation.compact);
+    let use_dashboard = frontend_loader_is_available()
+        && backend_invocations
+            .iter()
+            .any(|invocation| invocation.frontend_loader && !invocation.compact);
 
-    // Create the renderer and detail file once for the entire run so there is
-    // a single continuous spinner and a single "Working for" counter.
-    let loader_available = use_dashboard && frontend_loader_is_available();
+    // Output size and interactive presentation are independent: compact human
+    // runs retain color and telemetry, while agents never enter terminal mode.
+    let loader_available = frontend_loader_is_available();
     let detail_file = if loader_available {
         BackendDetailFile::new().ok()
     } else {
         None
     };
-    let mut renderer = if loader_available {
-        SpinnerRenderer::new().ok()
-    } else {
-        None
-    };
+    let mut renderer = None;
 
     for mut backend_invocation in backend_invocations {
         let fallback_title = backend_invocation
@@ -1180,9 +1187,25 @@ fn dispatch_backend_invocations(
             .first()
             .map(|arg| arg.to_string_lossy().into_owned())
             .unwrap_or_else(|| String::from("command"));
-        let use_frontend_loader = backend_invocation.frontend_loader
-            && !backend_invocation.compact
-            && frontend_loader_is_available();
+        let use_frontend_loader = loader_available;
+        let state_command = !backend_invocation.frontend_loader;
+        drop(renderer.take());
+        renderer = if use_frontend_loader {
+            SpinnerRenderer::new_with_input(!state_command).ok()
+        } else {
+            None
+        };
+        let captured_stdout =
+            if use_frontend_loader && (state_command || backend_invocation.compact) {
+                Some(BackendStderrFile::new()?)
+            } else {
+                None
+            };
+        let prompt_sync = if use_frontend_loader && state_command {
+            Some(BackendDetailFile::new()?)
+        } else {
+            None
+        };
         // Managed-log commands expose backend metadata, including in compact
         // runs. State commands reject this internal option.
         let metadata_file = if backend_invocation.frontend_loader {
@@ -1213,17 +1236,38 @@ fn dispatch_backend_invocations(
         command.env("MAKEVN_FRONTEND", "rust");
         command.env("MAKEVN_FRONTEND_VERSION", makevn_version());
         command.env("MAKEVN_VERSION", makevn_version());
+        if !loader_available {
+            command.env("NO_COLOR", "1");
+        }
 
         let run_result = if use_frontend_loader {
-            command.process_group(0);
-            command.stdout(process::Stdio::null());
+            if !state_command {
+                command.process_group(0);
+            }
+            if let Some(output) = &captured_stdout {
+                command.stdout(
+                    File::create(output.path())
+                        .map_err(|error| format!("failed to capture backend output: {error}"))?,
+                );
+            } else {
+                command.stdout(process::Stdio::null());
+            }
             // Backend stderr must not write into the live dashboard: Git and
             // other tools can emit warnings that move the terminal cursor and
             // strand a spinner row above the final summary.
             let stderr_file = BackendStderrFile::new()?;
             let stderr_writer = File::create(stderr_file.path())
                 .map_err(|error| format!("failed to capture backend stderr: {error}"))?;
-            command.stderr(process::Stdio::from(stderr_writer));
+            if state_command {
+                // Keep stderr a TTY so existing interactive configuration prompts
+                // retain their behavior. The prompt handshake pauses the loader.
+                command.env(
+                    "MAKEVN_FRONTEND_PROMPT_SYNC",
+                    prompt_sync.as_ref().unwrap().path(),
+                );
+            } else {
+                command.stderr(process::Stdio::from(stderr_writer));
+            }
             command.env("MAKEVN_FRONTEND_OWNS_LOADER", "1");
             if let Some(df) = detail_file.as_ref() {
                 command.env("MAKEVN_BACKEND_DETAIL_OUT", df.path());
@@ -1238,9 +1282,15 @@ fn dispatch_backend_invocations(
                 renderer.as_mut(),
                 detail_file.as_ref(),
                 phase_files.as_ref(),
+                prompt_sync.as_ref(),
             );
             if let Some(renderer) = renderer.as_mut() {
                 renderer.clear_line();
+            }
+            if let Some(output) = &captured_stdout {
+                if let Ok(mut output) = File::open(output.path()) {
+                    let _ = io::copy(&mut output, &mut io::stdout());
+                }
             }
             if let Ok(mut stderr) = File::open(stderr_file.path()) {
                 let _ = io::copy(&mut stderr, &mut io::stderr());
@@ -1425,6 +1475,7 @@ fn run_backend_with_loader(
     mut renderer: Option<&mut SpinnerRenderer>,
     detail_file: Option<&BackendDetailFile>,
     phase_files: Option<&BackendPhaseFiles>,
+    prompt_sync: Option<&BackendDetailFile>,
 ) -> Result<BackendRunResult, String> {
     let started_at = Instant::now();
     let mut child = command.spawn().map_err(|error| {
@@ -1434,6 +1485,13 @@ fn run_backend_with_loader(
         )
     })?;
 
+    // State backends stay in the foreground group so canonical prompt reads
+    // are not stopped by SIGTTIN. Managed-log backends own a separate group.
+    let signal_target = if prompt_sync.is_some() {
+        child.id() as libc::pid_t
+    } else {
+        -(child.id() as libc::pid_t)
+    };
     let signal_requested = Arc::new(AtomicBool::new(false));
     #[cfg(unix)]
     register_signal_flag(&signal_requested)?;
@@ -1489,6 +1547,15 @@ fn run_backend_with_loader(
     }
 
     loop {
+        if let Some(sync) = prompt_sync {
+            if fs::read_to_string(sync.path()).ok().as_deref() == Some("pause\n") {
+                if let Some(renderer) = renderer.as_mut() {
+                    renderer.pause();
+                }
+                fs::write(sync.path(), "paused\n")
+                    .map_err(|error| format!("failed to pause loader: {error}"))?;
+            }
+        }
         let mut live_summaries = completed_summaries.to_vec();
         if let Some(phases) = phase_files {
             live_summaries.extend(phases.read());
@@ -1586,7 +1653,7 @@ fn run_backend_with_loader(
 
         if signal_requested.load(Ordering::Relaxed) {
             if !cancel_requested {
-                interrupt_backend(child.id());
+                interrupt_backend(signal_target);
                 cancel_requested = true;
                 cancel_requested_at = Some(Instant::now());
             }
@@ -1595,10 +1662,10 @@ fn run_backend_with_loader(
         if let Some(requested_at) = cancel_requested_at {
             let elapsed = requested_at.elapsed();
             if elapsed > Duration::from_secs(4) {
-                let _ = unsafe { libc::kill(-(child.id() as libc::pid_t), libc::SIGKILL) };
+                let _ = unsafe { libc::kill(signal_target, libc::SIGKILL) };
                 break;
             } else if elapsed > Duration::from_secs(2) {
-                let _ = unsafe { libc::kill(-(child.id() as libc::pid_t), libc::SIGTERM) };
+                let _ = unsafe { libc::kill(signal_target, libc::SIGTERM) };
             }
         }
 
@@ -1640,10 +1707,10 @@ fn run_backend_with_loader(
                 .map_err(|error| format!("failed to read terminal input: {error}"))?
             {
                 InputEvent::Interrupt => {
-                    interrupt_backend(child.id());
+                    interrupt_backend(signal_target);
                     #[cfg(unix)]
                     unsafe {
-                        libc::kill(-(child.id() as libc::pid_t), SIGTERM);
+                        libc::kill(signal_target, SIGTERM);
                     }
                     cancel_requested = true;
                     cancel_requested_at = Some(Instant::now());
@@ -1693,7 +1760,15 @@ fn run_backend_with_loader(
 
         if let Some(renderer) = renderer.as_mut() {
             if !tail_active {
-                let hint = renderer.current_dashboard_hint();
+                let hint = if metadata.is_some() {
+                    renderer.current_dashboard_hint()
+                } else {
+                    format!(
+                        "Working for {} | {}",
+                        format_duration(global_started_at.elapsed()),
+                        fallback_title
+                    )
+                };
                 if let Some(metadata) = metadata.as_ref() {
                     renderer
                         .render_dashboard(
@@ -2003,10 +2078,10 @@ fn exit_code_from_status(status: process::ExitStatus, interrupted: bool) -> i32 
     1
 }
 
-fn interrupt_backend(pid: u32) {
+fn interrupt_backend(target: libc::pid_t) {
     #[cfg(unix)]
     unsafe {
-        libc::kill(-(pid as libc::pid_t), SIGINT);
+        libc::kill(target, SIGINT);
     }
 }
 
@@ -2022,13 +2097,7 @@ fn format_duration(elapsed: Duration) -> String {
 }
 
 fn use_color() -> bool {
-    if agent_output_mode() {
-        return false;
-    }
-
-    (io::stdout().is_terminal() || io::stderr().is_terminal())
-        && env::var_os("NO_COLOR").is_none()
-        && env::var("TERM").map(|term| term != "dumb").unwrap_or(true)
+    frontend_loader_is_available() && env::var_os("NO_COLOR").is_none()
 }
 
 fn agent_output_mode() -> bool {
@@ -2702,7 +2771,8 @@ fn pulse_color(index: usize) -> Rgb {
 
 struct SpinnerRenderer {
     tty: File,
-    tty_guard: TtyModeGuard,
+    tty_guard: Option<TtyModeGuard>,
+    paused: bool,
     frame: usize,
     frame_interval: Duration,
     next_frame_at: Instant,
@@ -2725,9 +2795,13 @@ enum InputEvent {
 }
 
 impl SpinnerRenderer {
-    fn new() -> io::Result<Self> {
+    fn new_with_input(interactive_input: bool) -> io::Result<Self> {
         let tty = File::options().read(true).write(true).open("/dev/tty")?;
-        let tty_guard = TtyModeGuard::new(&tty)?;
+        let tty_guard = if interactive_input {
+            Some(TtyModeGuard::new(&tty)?)
+        } else {
+            None
+        };
 
         if use_color() {
             write!(io::stdout(), "\u{1b}[?25l")?;
@@ -2737,6 +2811,7 @@ impl SpinnerRenderer {
         Ok(Self {
             tty,
             tty_guard,
+            paused: false,
             frame: 0,
             frame_interval: Duration::from_millis(33),
             next_frame_at: Instant::now(),
@@ -2751,7 +2826,17 @@ impl SpinnerRenderer {
         })
     }
 
+    fn pause(&mut self) {
+        self.clear_line();
+        self.show_cursor();
+        self.tty_guard = None;
+        self.paused = true;
+    }
+
     fn poll_input(&mut self) -> io::Result<InputEvent> {
+        if self.tty_guard.is_none() {
+            return Ok(InputEvent::None);
+        }
         let mut buffer = [0_u8; 1];
         match self.tty.read(&mut buffer) {
             Ok(1) => Ok(decode_spinner_input(
@@ -2781,6 +2866,10 @@ impl SpinnerRenderer {
     }
 
     fn render_frame_with_hint(&mut self, pid: u32, hint: &str) -> io::Result<()> {
+        if self.paused {
+            thread::sleep(Duration::from_millis(50));
+            return Ok(());
+        }
         let line = self.frame_line_with_hint(pid, hint)?;
         // Before backend metadata arrives this is the only live row. Clipping
         // keeps it single-line so the detailed dashboard can replace it cleanly.
@@ -3714,7 +3803,7 @@ fn print_help(with_header: bool) {
     println!("  - 'init' always creates '.makevn/' without touching root makefiles.");
     println!("  - 'make install' adds optional 'vn-*' targets by updating one existing makefile or creating a minimal root Makefile.");
     println!("  - 'make uninstall' removes only the Make integration and keeps '.makevn/' intact.");
-    println!("  - '--compact' forces compact agent-style summaries; non-interactive runs are compact by default.");
+    println!("  - '--compact' shortens reports; MAKEVN_AGENT_OUTPUT=1 disables TTY presentation for agents.");
     println!("  - '--tail' starts managed-log commands in tail mode; without it, press 't' while a command is running to tail the current log.");
     println!("  - 'makevn-mcp' starts the MCP server over stdio (Model Context Protocol).");
 }

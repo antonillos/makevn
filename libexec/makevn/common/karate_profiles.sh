@@ -39,6 +39,7 @@ makevn_doctor_karate_profiles() {
     eligible="yes"
   fi
   if [[ "${eligible}" == yes && "${app_runnable}" == yes && -z "${SPRING_PROFILES_ACTIVE+x}" && -z "${MAKEVN_KARATE_APP_PROFILES:-}" && -f "$(makevn_config_path "${repo_root}")" && -t 0 && -t 2 && "${MAKEVN_COMPACT_OUTPUT:-}" != "1" ]]; then
+    makevn_pause_frontend_for_prompt
     default_value="${MAKEVN_DETECTED_KARATE_APP_PROFILES:-skip}"
     printf 'Karate Spring profiles: %s\nSource: %s\n' "${MAKEVN_DETECTED_KARATE_APP_PROFILES_CANDIDATES:-not detected}" "${MAKEVN_EFFECTIVE_KARATE_APP_PROFILES_SOURCE}" >&2
     input="$(makevn_read_editable_default "Karate profiles [${default_value}] (skip to leave unchanged): " "${default_value}")" || return 0
