@@ -42,7 +42,7 @@ makevn_doctor_karate_profiles() {
     makevn_pause_frontend_for_prompt
     default_value="${MAKEVN_DETECTED_KARATE_APP_PROFILES:-skip}"
     printf 'Karate Spring profiles: %s\nSource: %s\n' "${MAKEVN_DETECTED_KARATE_APP_PROFILES_CANDIDATES:-not detected}" "${MAKEVN_EFFECTIVE_KARATE_APP_PROFILES_SOURCE}" >&2
-    input="$(makevn_read_editable_default "Karate profiles [${default_value}] (skip to leave unchanged): " "${default_value}")" || return 0
+    input="$(makevn_read_editable_default "Karate profiles [${default_value}] (skip to leave unchanged): " "${default_value}")" || { makevn_resume_frontend_after_prompt; return 0; }
     if [[ "${input}" != skip ]]; then
       if [[ "${input}" =~ ^[A-Za-z0-9_.-]+(,[A-Za-z0-9_.-]+)*$ ]]; then
         makevn_update_config_karate_profiles "${repo_root}" "${input}"
@@ -52,6 +52,7 @@ makevn_doctor_karate_profiles() {
         printf 'Invalid profiles: use a comma-separated list of literal profile names. Configuration unchanged.\n' >&2
       fi
     fi
+    makevn_resume_frontend_after_prompt
   fi
   MAKEVN_DOCTOR_KARATE_APP_PROFILES="${MAKEVN_EFFECTIVE_KARATE_APP_PROFILES:-application defaults}"
   if [[ "${MAKEVN_EFFECTIVE_KARATE_APP_PROFILES_SOURCE}" == CI:* && "${MAKEVN_DETECTED_KARATE_APP_PROFILES_STATUS}" == ambiguous ]]; then

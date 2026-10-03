@@ -1309,7 +1309,7 @@ MAKEVN_KARATE_TOOL_VERSIONS=""
 MAKEVN_RUN_CMD=""
 EOF
 
-  run_pty_command "${output_file}" "${compact_cli}" --repo "${repo}" --compact compile
+  MAKEVN_AGENT_OUTPUT=1 run_pty_command "${output_file}" "${compact_cli}" --repo "${repo}" --compact compile
 
   [[ "$(tr -d '\r' < "${output_file}")" == *"[..] makevn compile |"* ]] || fail "expected compact tty output to include plain compact header"
   [[ "$(tr -d '\r' < "${output_file}")" == *"log: .makevn/logs/compile.log"* ]] || fail "expected compact tty output to include log path"

@@ -13,9 +13,17 @@ import time
 def backend():
     time.sleep(0.5)
     if os.environ.get("TEST_PROMPT"):
-        print("Confirm health URL:", file=sys.stderr, flush=True)
-        answer = sys.stdin.readline().strip()
-        print("answer=" + answer)
+        common = Path(__file__).resolve().parents[2] / "libexec/makevn/common.sh"
+        def sync(action):
+            subprocess.run(["bash", "-c", 'source "$1"; "$2"', "sync", str(common), action], check=True)
+        for index in (1, 2):
+            if index > 1:
+                sync("makevn_pause_frontend_for_prompt")
+            print(f"Confirm health URL {index}:", file=sys.stderr, flush=True)
+            answer = sys.stdin.readline().strip()
+            print("answer=" + answer)
+            sync("makevn_resume_frontend_after_prompt")
+            time.sleep(0.35)
     print("Current makevn status: initialized", flush=True)
 
 
@@ -42,7 +50,8 @@ def terminal(binary, repo, env, command="doctor", compact=True, prompt=False):
     if pid == 0:
         os.execve(binary, argv, env)
     output = bytearray()
-    answered = False
+    answered = 0
+    previous_answer_end = None
     deadline = time.monotonic() + 15
     try:
         while time.monotonic() < deadline:
@@ -54,15 +63,28 @@ def terminal(binary, repo, env, command="doctor", compact=True, prompt=False):
                 if not chunk:
                     break
                 output.extend(chunk)
-                if prompt and not answered and b"Confirm health URL:" in output:
+                token = f"Confirm health URL {answered + 1}:".encode()
+                found = output.find(token)
+                if prompt and answered < 2 and found >= 0:
+                    if previous_answer_end is not None:
+                        assert b"Working for" in output[previous_answer_end:found], output
+                    # Waiting for input must be completely free of redraws.
+                    prompt_end = len(output)
+                    until = time.monotonic() + 0.2
+                    while time.monotonic() < until:
+                        if select.select([fd], [], [], 0.02)[0]:
+                            output.extend(os.read(fd, 65536))
+                    assert b"\x1b" not in output[prompt_end:], output[prompt_end:]
                     os.write(fd, b"http://localhost/health\n")
-                    answered = True
+                    answered += 1
+                    previous_answer_end = len(output)
         else:
             raise TimeoutError(output[-1000:])
         _, status = os.waitpid(pid, 0)
         assert os.waitstatus_to_exitcode(status) == 0, output
         if prompt:
-            assert answered and b"answer=http://localhost/health" in output, output
+            assert answered == 2 and output.count(b"answer=http://localhost/health") == 2, output
+            assert b"Working for" in output[previous_answer_end:], output
         return bytes(output)
     finally:
         os.close(fd)

@@ -2193,3 +2193,55 @@ fn paused_dashboard_does_not_overwrite_interactive_prompt() {
     renderer.render_frame_with_hint(0, "").unwrap();
     assert_eq!(renderer.frame, 0);
 }
+
+#[test]
+fn resume_after_prompt_restores_loader_input_without_resetting_history() {
+    let mut master_fd = -1;
+    let mut slave_fd = -1;
+    assert_eq!(
+        unsafe {
+            libc::openpty(
+                &mut master_fd,
+                &mut slave_fd,
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+            )
+        },
+        0
+    );
+    let _master = unsafe { File::from_raw_fd(master_fd) };
+    let tty = unsafe { File::from_raw_fd(slave_fd) };
+    let original = super::get_termios(slave_fd).unwrap();
+    let mut renderer = SpinnerRenderer {
+        tty,
+        tty_guard: None,
+        paused: true,
+        frame: 42,
+        frame_interval: std::time::Duration::ZERO,
+        next_frame_at: std::time::Instant::now(),
+        second_escape_deadline: None,
+        resource_sampler: ResourceSampler::new(),
+        resource_history: ResourceHistory::new(),
+        resource_history_revision: 0,
+        cpu_visual_load: 0.0,
+        ram_visual_load: 0.0,
+        resource_visual_load: 0.0,
+        rendered_block_line_widths: Vec::new(),
+    };
+    for _ in 0..2 {
+        renderer.resume().unwrap();
+        assert!(!renderer.paused && renderer.tty_guard.is_some());
+        assert_eq!(
+            super::get_termios(slave_fd).unwrap().c_lflag & libc::ICANON,
+            0
+        );
+        assert_eq!(renderer.frame, 42);
+        renderer.pause();
+        assert!(renderer.paused && renderer.tty_guard.is_none());
+        assert_eq!(
+            super::get_termios(slave_fd).unwrap().c_lflag & (libc::ICANON | libc::ECHO),
+            original.c_lflag & (libc::ICANON | libc::ECHO)
+        );
+    }
+}

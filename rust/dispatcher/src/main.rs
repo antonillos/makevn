@@ -1593,6 +1593,14 @@ fn run_backend_with_loader(
                 }
                 fs::write(sync.path(), "paused\n")
                     .map_err(|error| format!("failed to pause loader: {error}"))?;
+            } else if fs::read_to_string(sync.path()).ok().as_deref() == Some("resume\n") {
+                if let Some(renderer) = renderer.as_mut() {
+                    renderer
+                        .resume()
+                        .map_err(|error| format!("failed to resume loader: {error}"))?;
+                }
+                fs::write(sync.path(), "running\n")
+                    .map_err(|error| format!("failed to resume loader: {error}"))?;
             }
         }
         let mut live_summaries = completed_summaries.to_vec();
@@ -2878,6 +2886,17 @@ impl SpinnerRenderer {
         self.show_cursor();
         self.tty_guard = None;
         self.paused = true;
+    }
+
+    fn resume(&mut self) -> io::Result<()> {
+        self.tty_guard = Some(TtyModeGuard::new(&self.tty)?);
+        self.paused = false;
+        self.next_frame_at = Instant::now();
+        if use_color() {
+            write!(io::stdout(), "\u{1b}[?25l")?;
+            io::stdout().flush()?;
+        }
+        Ok(())
     }
 
     fn poll_input(&mut self) -> io::Result<InputEvent> {

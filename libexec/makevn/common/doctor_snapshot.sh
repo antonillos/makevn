@@ -2,14 +2,24 @@
 set -euo pipefail
 
 # Stop terminal animation before a human prompt; never consume the user's input.
-makevn_pause_frontend_for_prompt() {
+makevn_frontend_prompt_sync() {
   [[ -n "${MAKEVN_FRONTEND_PROMPT_SYNC:-}" ]] || return 0
-  printf 'pause\n' > "${MAKEVN_FRONTEND_PROMPT_SYNC}"
+  printf '%s\n' "$1" > "${MAKEVN_FRONTEND_PROMPT_SYNC}"
   local attempt
   for attempt in {1..100}; do
-    [[ "$(cat "${MAKEVN_FRONTEND_PROMPT_SYNC}")" != paused ]] || return 0
+    [[ "$(cat "${MAKEVN_FRONTEND_PROMPT_SYNC}")" != "$2" ]] || return 0
     sleep 0.02
   done
+  printf 'Unable to %s terminal telemetry safely.\n' "$1" >&2
+  return 1
+}
+
+makevn_pause_frontend_for_prompt() {
+  makevn_frontend_prompt_sync pause paused
+}
+
+makevn_resume_frontend_after_prompt() {
+  makevn_frontend_prompt_sync resume running
 }
 
 makevn_read_editable_default() {
@@ -109,11 +119,17 @@ makevn_doctor_suggest_app_health_url() {
 
 # Updates the caller-local detected_app_health_url only after a confirmed input.
 makevn_prompt_doctor_app_health_url() {
+  makevn_pause_frontend_for_prompt
+  local rc=0
+  makevn_prompt_doctor_app_health_url_paused "$@" || rc=$?
+  makevn_resume_frontend_after_prompt
+  return "${rc}"
+}
+
+makevn_prompt_doctor_app_health_url_paused() {
   local repo_root="$1"
   local health_input=""
   local default_health_url="${detected_app_health_url}"
-
-  makevn_pause_frontend_for_prompt
   printf '\n' >&2
   if [[ -n "${default_health_url}" ]]; then
     printf '%s\n' "$(makevn_warn "Detected app health URL: ${default_health_url}")" >&2
@@ -126,7 +142,7 @@ makevn_prompt_doctor_app_health_url() {
     health_input="$(makevn_read_editable_default "Health URL [${default_health_url}]: " "${default_health_url}")" || return 0
     [[ "${health_input}" != "skip" ]] || return 0
     if [[ "${health_input}" =~ ^https?://[^[:space:]]+$ ]]; then
-      makevn_update_config_app_health_url "${repo_root}" "${health_input}"
+      makevn_update_config_app_health_url "${repo_root}" "${health_input}" || return $?
       detected_app_health_url="${health_input}"
       printf '%s\n' "$(makevn_dim "Saved to .makevn/config (MAKEVN_APP_HEALTH_URL).")" >&2
       return 0
@@ -288,6 +304,7 @@ makevn_collect_doctor_snapshot() {
         fi
         makevn_update_config_compose_file "${repo_root}" "${compose_file}"
         printf '%s\n' "$(makevn_dim "Saved to .makevn/config (MAKEVN_COMPOSE_FILE).")" >&2
+        makevn_resume_frontend_after_prompt
       else
         compose_file="ambiguous (${#_found[@]} files found; set MAKEVN_COMPOSE_FILE in .makevn/config)"
       fi
@@ -337,6 +354,7 @@ makevn_collect_doctor_snapshot() {
         fi
         makevn_update_config_e2e_compose_file "${repo_root}" "${e2e_compose_file}"
         printf '%s\n' "$(makevn_dim "Saved to .makevn/config (MAKEVN_E2E_COMPOSE_FILE).")" >&2
+        makevn_resume_frontend_after_prompt
       else
         e2e_compose_file="ambiguous (${#_e2e_found[@]} files found; set MAKEVN_E2E_COMPOSE_FILE in .makevn/config)"
       fi
@@ -451,6 +469,7 @@ makevn_collect_doctor_snapshot() {
           ;;
       esac
     done
+    makevn_resume_frontend_after_prompt
   fi
   [[ -n "${MAKEVN_RUN_CMD:-}" ]] && run_configured="yes"
 

@@ -653,3 +653,10 @@ phases (including profile refresh only when executed). The detailed repository
 fields are retained under the reporting phase rather than discarded by stdout
 capture. Compact limits the report fields; it does not introduce a separate
 telemetry layout. Agent/non-TTY invocations still show no phase history or TUI.
+
+Interactive prompt handling is a pause/resume cycle: the frontend clears the
+whole live dashboard and restores normal terminal input before showing a
+question. Once the complete question/validation loop finishes (including skip),
+it restores the same loader with the existing phase history and elapsed time.
+No redraws or input polling occur while the prompt is active. Agent compact
+output remains plain and never enters this terminal protocol.

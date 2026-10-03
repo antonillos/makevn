@@ -28,4 +28,9 @@ grep -Fqx 'title=Failed inspection' "${MAKEVN_BACKEND_PHASE_DIR}/3"
 grep -Fqx 'exit_code=1' "${MAKEVN_BACKEND_PHASE_DIR}/3"
 [[ ! -e "${MAKEVN_BACKEND_PHASE_DIR}/4" ]]
 trap 'rm -rf "${repo_root}"' EXIT
+# A missing frontend acknowledgement must not expose a prompt to live redraws.
+if (export MAKEVN_FRONTEND_PROMPT_SYNC="${repo_root}/unacknowledged"; sleep() { :; }; makevn_pause_frontend_for_prompt) 2>/dev/null; then
+  printf 'Expected prompt synchronization timeout to fail closed\n' >&2
+  exit 1
+fi
 printf 'State progress tests passed\n'
