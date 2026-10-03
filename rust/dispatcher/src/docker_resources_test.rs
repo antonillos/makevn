@@ -162,7 +162,12 @@ fn collects_only_compose_project_ids_with_fake_docker_cli() {
     let sample = collect(&scope, &stop).unwrap().unwrap();
     assert_eq!(sample.cpu_percent, 7.5);
     assert_eq!(sample.rss_kb, 4096);
-    fs::write(&executable, "#!/bin/sh\nexit 0\n").unwrap();
+    // Replace the inode instead of rewriting an executable that Linux may still
+    // have mapped after the previous child exits (ETXTBSY under llvm-cov).
+    let replacement = directory.join("docker-next");
+    fs::write(&replacement, "#!/bin/sh\nexit 0\n").unwrap();
+    fs::set_permissions(&replacement, fs::Permissions::from_mode(0o755)).unwrap();
+    fs::rename(&replacement, &executable).unwrap();
     assert!(collect(&scope, &stop).unwrap().is_none());
     fs::write(&scope, "invalid\ncommand\n").unwrap();
     assert!(collect(&scope, &stop).unwrap().is_none());
