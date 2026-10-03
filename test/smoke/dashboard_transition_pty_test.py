@@ -39,6 +39,11 @@ def verify(binary):
         script.write_text(f'#!/bin/bash\nexec "{sys.executable}" "{Path(__file__).resolve()}" --backend "$@"\n')
         pid, fd = pty.fork()
         if pid == 0:
+            # This synthetic backend contains no product Bash to cover. Inherited
+            # bashcov tracing writes diagnostics into stderr and legitimately
+            # takes ownership of the dashboard, invalidating this no-output test.
+            for name in ('BASH_ENV', 'BASH_XTRACEFD', 'SHELLOPTS', 'PS4'):
+                os.environ.pop(name, None)
             os.environ.update(MAKEVN_INSTALL_ROOT=str(repo), NO_COLOR='1', TERM='xterm')
             os.environ.pop('MAKEVN_AGENT_OUTPUT', None)
             os.environ.pop('MAKEVN_COMPACT_OUTPUT', None)
