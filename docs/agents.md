@@ -52,6 +52,10 @@ existing user configuration. Compact doctor does not prompt or refresh the
 persisted profile; ordinary doctor retains detailed output and interactive setup.
 Older manifests without `makevn_version` need a one-time `init --force`.
 
+MCP doctor also emits a plain `Init recommendation`: `makevn_init (force: false)`,
+`makevn_init (force: true)`, or `none (already up to date)`. These are
+recommendations only; doctor does not automatically initialize the repository.
+
 Changed-code verification without a full coverage gate:
 
 ```bash

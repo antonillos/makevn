@@ -15,6 +15,21 @@ makevn_print_doctor_java_details() {
   return 0
 }
 
+makevn_print_doctor_init_recommendation() {
+  [[ -n "${MAKEVN_AGENT_OUTPUT:-}" ]] || return 0
+  local recommendation="unavailable (see repository support status)"
+  case "${MAKEVN_DOCTOR_SUGGESTED_NEXT}" in
+    'makevn init') recommendation='makevn_init (force: false)' ;;
+    'makevn init --force') recommendation='makevn_init (force: true)' ;;
+    *)
+      if [[ "${MAKEVN_DOCTOR_CURRENT_STATUS}" == "initialized" ]]; then
+        recommendation='none (already up to date)'
+      fi
+      ;;
+  esac
+  makevn_print_item "Init recommendation" "${recommendation}"
+}
+
 makevn_print_doctor_suggestions() {
   [[ -n "${MAKEVN_DOCTOR_SUGGESTED_NEXT}${MAKEVN_DOCTOR_SUGGESTED_NOTE}${MAKEVN_DOCTOR_SUGGESTED_OPTIONAL}" ]] || return 0
   [[ -n "${MAKEVN_FRONTEND_STATE_METADATA_OUT:-}" ]] || printf '\n'
@@ -53,6 +68,7 @@ print_doctor() {
   if [[ "${MAKEVN_DOCTOR_BUILD_STATUS}" != "current" ]]; then
     makevn_print_item "Doctor build" "${MAKEVN_DOCTOR_BUILD_STATUS}: ${MAKEVN_DOCTOR_PREVIOUS_VERSION} -> ${MAKEVN_VERSION}; repository reanalyzed"
   fi
+  makevn_print_doctor_init_recommendation
 
   if [[ "${MAKEVN_COMPACT_OUTPUT:-}" == "1" ]]; then
     makevn_print_item "Current makevn status" "${MAKEVN_DOCTOR_CURRENT_STATUS}"
