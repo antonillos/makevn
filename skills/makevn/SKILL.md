@@ -106,7 +106,7 @@ These two commands serve different purposes and are **not interchangeable**:
 | Command | Qué hace | Cuándo usarlo |
 |---|---|---|
 | `makevn profile refresh` | Re-detecta el perfil del repo (workflows, flags de Maven, cobertura) y regenera solo `.makevn/profile.env`. No toca el resto del estado. | Cuando cambian los workflows de GitHub Actions, o después de modificar configuración de cobertura/compilación. Es el comando para "actualizar la detección". |
-| `makevn refresh` | Actualiza la inicialización (`init --force`), conserva configuración y retira artefactos Make antiguos reconocidos. | Después de actualizar makevn a una nueva versión, o cuando `doctor` muestra estado inconsistente a pesar de que `.makevn/` existe. Conserva la configuración del usuario. |
+| `makevn refresh` | Actualiza la inicialización (`init --force`) y conserva configuración. No inspecciona ni modifica Makefiles. | Después de actualizar makevn a una nueva versión, o cuando `doctor` muestra estado inconsistente a pesar de que `.makevn/` existe. Conserva la configuración del usuario. |
 
 **Regla práctica**: si el problema es que makevn no detecta bien los workflows o flags, usa `profile refresh`. Si el problema es que el estado de makevn está corrupto o es de una versión anterior, usa `refresh`.
 

@@ -10,7 +10,7 @@ The skill is meant to teach agents to:
 
 - inspect the repo before changing anything
 - select the least invasive mode
-- preserve user-owned `Makefile` and `GNUmakefile` content; retire only recognized legacy generated artifacts
+- leave `Makefile` and `GNUmakefile` untouched; no automatic migration or cleanup is provided
 - prefer `makevn uninstall` over heuristic cleanup
 - operate the repository through terminal commands that also work from OpenCode and Codex
 - treat `makevn` as the primary interface instead of relying on IDE actions

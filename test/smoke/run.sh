@@ -866,8 +866,6 @@ test_checkstyle_requires_configured_plugin() {
 
 test_installer() {
   local prefix="${TMP_ROOT}/install-prefix"
-  mkdir -p "${prefix}/share/makevn"
-  cp "${ROOT_DIR}/test/smoke/fixtures/legacy-makevn.mk" "${prefix}/share/makevn/makevn.mk"
   PREFIX="${prefix}" "${ROOT_DIR}/install.sh" >/dev/null
   assert_file_exists "${prefix}/bin/makevn"
   assert_file_exists "${prefix}/bin/makevn-mcp"
@@ -901,8 +899,6 @@ test_runtime_archive_includes_crap_reporter() {
   if tar -tzf "${archive}" | grep -Fx 'makevn-0.0.0-smoke/share/makevn/makevn.mk' >/dev/null; then
     fail "runtime archive must not ship retired Make templates"
   fi
-  tar -tzf "${archive}" | grep -Fx 'makevn-0.0.0-smoke/libexec/makevn/common/legacy_make.py' >/dev/null \
-    || fail "runtime archive should include the one-way retirement helper"
 }
 
 test_mcp_tool_listing() {
@@ -4742,8 +4738,7 @@ main() {
   bash "${ROOT_DIR}/test/smoke/karate_profiles_doctor_test.sh"
   bash "${ROOT_DIR}/test/smoke/jdk_discovery_test.sh"
   bash "${ROOT_DIR}/test/smoke/bash_crap_test.sh"
-  python3 "${ROOT_DIR}/test/smoke/legacy_make_test.py"
-  bash "${ROOT_DIR}/test/smoke/legacy_make_test.sh"
+  bash "${ROOT_DIR}/test/smoke/standalone_contract_test.sh"
   bash "${ROOT_DIR}/test/smoke/doctor_compact_test.sh"
   bash "${ROOT_DIR}/test/smoke/state_progress_test.sh"
   python3 "${ROOT_DIR}/test/smoke/interactive_doctor_test.py" "${ROOT_DIR}/target/release/makevn"

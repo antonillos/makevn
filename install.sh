@@ -71,7 +71,6 @@ cp -R "${SCRIPT_DIR}/libexec/makevn/crap" "${LIBEXEC_DIR}/crap"
 cp -R "${SCRIPT_DIR}/libexec/makevn/docker" "${LIBEXEC_DIR}/docker"
 cp -R "${SCRIPT_DIR}/libexec/makevn/jdk" "${LIBEXEC_DIR}/jdk"
 cp -R "${SCRIPT_DIR}/libexec/makevn/compat" "${LIBEXEC_DIR}/compat"
-rm -f "${SHARE_DIR}/makevn.mk"
 cp -R "${SCRIPT_DIR}/skills/makevn/." "${SKILL_DIR}/"
 
 chmod +x "${LIBEXEC_DIR}/cli.sh" "${LIBEXEC_DIR}/backend.sh" "${LIBEXEC_DIR}/common.sh"

@@ -3647,7 +3647,7 @@ fn command_help(command: &str) -> Option<(&'static str, &'static str, &'static [
         "doctor" => Some(("makevn [--repo PATH] doctor [--compact]", "Inspect repository setup and makevn configuration.", &["--compact  Print brief, noninteractive setup advice"])),
         "init" => Some(("makevn [--repo PATH] init [--dry-run] [--force]", "Initialize .makevn configuration for the repository.", &["--dry-run  Show what would change without writing files", "--force    Refresh existing generated files"])),
         "uninstall" => Some(("makevn [--repo PATH] uninstall [--dry-run]", "Remove makevn local repository state.", &["--dry-run  Show what would be removed"])),
-        "refresh" => Some(("makevn [--repo PATH] refresh [--dry-run]", "Refresh initialization while preserving user configuration and retiring legacy generated artifacts.", &["--dry-run  Show what would change without writing files"])),
+        "refresh" => Some(("makevn [--repo PATH] refresh [--dry-run]", "Refresh initialization while preserving user configuration.", &["--dry-run  Show what would change without writing files"])),
         "profile" => Some(("makevn [--repo PATH] profile refresh", "Refresh detected repository profile information.", &[])),
         "compile" => maven_command_help("compile", "Compile project sources.", false),
         "test-compile" => maven_command_help("test-compile", "Compile project tests.", false),
@@ -3855,7 +3855,7 @@ fn print_help(with_header: bool) {
     println!();
     println!("Notes:");
     println!("  - 'doctor' inspects the repository before and after initialization.");
-    println!("  - 'init' creates '.makevn/'; forced initialization safely retires legacy generated artifacts.");
+    println!("  - 'init' creates '.makevn/' without inspecting or modifying root Makefiles.");
     println!("  - '--compact' shortens reports; MAKEVN_AGENT_OUTPUT=1 disables TTY presentation for agents.");
     println!("  - '--tail' starts managed-log commands in tail mode; without it, press 't' while a command is running to tail the current log.");
     println!("  - 'makevn-mcp' starts the MCP server over stdio (Model Context Protocol).");

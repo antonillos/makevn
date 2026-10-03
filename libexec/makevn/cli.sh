@@ -103,7 +103,7 @@ Notes:
   - '--compact' shortens reports; MAKEVN_AGENT_OUTPUT=1 disables TTY presentation for agents.
   - Non-interactive runs are compact by default: full logs stay under '.makevn/logs/'.
   - 'doctor' inspects the repository before and after initialization.
-  - 'init' creates '.makevn/'; forced initialization safely retires legacy generated artifacts.
+  - 'init' creates '.makevn/' without inspecting or modifying root Makefiles.
 EOF
 }
 

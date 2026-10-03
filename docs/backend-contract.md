@@ -47,7 +47,6 @@ Current implemented status:
 - Maven executable resolution
 - Maven, Docker, and configured run-command execution
 - `.makevn/` state management
-- one-way safe retirement of legacy generated Make artifacts (no Make execution)
 - managed log-file creation for long-running commands
 - preserving delegated exit codes when practical
 

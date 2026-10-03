@@ -166,7 +166,7 @@ full agent workflow and client configuration.
 ## Standalone operation
 
 Use the public CLI or MCP tools; repository Makefiles are not an execution contract.
-See [migration guidance](docs/integration.md) for legacy generated artifacts.
+There is no automatic migration or cleanup of old Make integrations.
 
 ## Documentation
 

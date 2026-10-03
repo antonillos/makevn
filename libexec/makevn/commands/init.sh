@@ -41,8 +41,6 @@ cmd_init() {
     return 0
   fi
 
-  makevn_retire_legacy_make "${repo_root}" "${dry_run}" || return $?
-
   state_dir="$(makevn_state_dir "${repo_root}")"
   config_path="$(makevn_config_path "${repo_root}")"
   logs_dir="$(makevn_logs_dir "${repo_root}")"
@@ -99,8 +97,6 @@ cmd_uninstall() {
   manifest_path="$(makevn_manifest_path "${repo_root}")"
   [[ -f "${manifest_path}" ]] || makevn_die "makevn is not initialized in ${repo_root}"
 
-  makevn_retire_legacy_make "${repo_root}" "${dry_run}" || return $?
-
   if [[ "${dry_run}" == true ]]; then
     makevn_print_item "would remove" ".makevn/"
     return 0
@@ -108,9 +104,4 @@ cmd_uninstall() {
 
   rm -rf "$(makevn_state_dir "${repo_root}")"
   printf '%s\n' "$(makevn_accent "makevn removed from ${repo_root}")"
-}
-
-# Read-only preflight precedes every migration write; this never runs Make.
-makevn_retire_legacy_make() {
-  python3 "${MAKEVN_LIBEXEC_DIR}/common/legacy_make.py" "$1" "$2"
 }
