@@ -5,7 +5,7 @@ source "${ROOT}/libexec/makevn/common.sh"
 source "${ROOT}/libexec/makevn/commands/maven.sh"
 tmp="$(mktemp -d)"
 trap 'rm -rf "${tmp}"' EXIT
-for error in   'AJF validate: AJF Formatter plugin failed.'   "File '/repo/Test.java' has not been previously formatted. Please format file."   'AJF verify: AJF sortPom plugin failed.'   'The file /repo/module/pom.xml is not sorted'   'spotless check violations'; do
+for error in   'AJF validate: AJF Formatter plugin failed.'   "File '/repo/Test.java' has not been previously formatted. Please format file."   'AJF verify: AJF sortPom plugin failed.'   'The file /repo/module/pom.xml is not sorted'   'spotless check violations' 'Failed to execute goal com.diffplug.spotless:spotless-maven-plugin:2.43.0:check'; do
   printf '%s\n' "${error}" > "${tmp}/log"
   makevn_hint_format_failure "${tmp}" "${tmp}/log" 2>"${tmp}/hint"
   grep -Fxq '  makevn format --apply' "${tmp}/hint"
@@ -13,7 +13,7 @@ for error in   'AJF validate: AJF Formatter plugin failed.'   "File '/repo/Test.
   grep -Fq 'Do not add formatter skip flags' "${tmp}/hint"
   ! grep -Fq -- '--file' "${tmp}/hint"
 done
-printf '%s\n' 'Tests run: 1, Failures: 1' > "${tmp}/log"
+printf '%s\n' '[INFO] --- spotless-maven-plugin:2.43.0:check (default) @ fixture ---' 'Tests run: 1, Failures: 1' > "${tmp}/log"
 makevn_hint_format_failure "${tmp}" "${tmp}/log" 2>"${tmp}/hint"
 [[ ! -s "${tmp}/hint" ]]
 makevn_hint_format_failure "${tmp}" "${tmp}/absent" 2>"${tmp}/hint"
