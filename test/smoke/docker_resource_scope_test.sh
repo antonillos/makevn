@@ -30,3 +30,19 @@ export MAKEVN_FRONTEND_RESOURCE_SCOPE_OUT="${TMP}/scope"
 makevn_publish_boot_resources "${repo}"
 printf '%s\n' "${repo}" docker compose -f "${repo}/custom.yml" -f "${repo}/override.yml" > "${TMP}/expected"
 cmp "${TMP}/scope" "${TMP}/expected"
+
+# Invoke directly under errexit: optional publication must not stop Docker work.
+for failure in write args rename cleanup; do
+  (
+    set -e
+    case "${failure}" in
+      write) printf() { return 1; } ;;
+      args) makevn_collect_compose_args() { return 1; } ;;
+      rename) mv() { return 1; } ;;
+      cleanup) mv() { return 1; }; rm() { return 1; } ;;
+    esac
+    makevn_publish_compose_resources "${repo}" 'docker compose' "${repo}/custom.yml" ""
+    touch "${TMP}/continued-${failure}"
+  )
+  [[ -f "${TMP}/continued-${failure}" ]]
+done

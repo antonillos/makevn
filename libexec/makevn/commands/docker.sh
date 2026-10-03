@@ -31,11 +31,14 @@ makevn_publish_compose_resources() {
   [[ "${repo_root}${compose_file}${override_file}" != *$'\n'* ]] || return 0
   read -r -a command_words <<< "${compose_command}"
   temporary="$(mktemp "${output}.tmp.XXXXXX" 2>/dev/null)" || return 0
-  {
-    printf '%s\n' "${repo_root}" "${command_words[@]}"
-    makevn_collect_compose_args "${compose_file}" "${override_file}"
-  } > "${temporary}"
-  mv "${temporary}" "${output}" 2>/dev/null || rm -f "${temporary}"
+  if {
+    printf '%s\n' "${repo_root}" "${command_words[@]}" &&
+      makevn_collect_compose_args "${compose_file}" "${override_file}"
+  } > "${temporary}"; then
+    mv "${temporary}" "${output}" 2>/dev/null || true
+  fi
+  rm -f "${temporary}" 2>/dev/null || true
+  return 0
 }
 
 makevn_publish_boot_resources() {
