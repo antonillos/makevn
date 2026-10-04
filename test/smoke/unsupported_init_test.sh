@@ -36,4 +36,5 @@ done
 printf '<project><modelVersion>4.0.0</modelVersion><groupId>x</groupId><artifactId>x</artifactId><version>1</version></project>\n' >"${TMP}/pom.xml"
 output="$(bash "${BACKEND}" init --repo "${TMP}" --force 2>&1)"
 [[ "${output}" != *'Maven commands remain unavailable.'* ]]
+python3 "${ROOT_DIR}/test/smoke/unsupported_init_pty_test.py" "${ROOT_DIR}/target/release/makevn"
 echo 'Unsupported init tests passed'
