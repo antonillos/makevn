@@ -107,6 +107,10 @@ add_home_to_list() {
   local home
   local label="$2"
   home="$(normalize_home "$1")"
+  if [[ -n "${compatible_required_major:-}" ]]; then
+    try_list_compatible_home "${home}" "${compatible_required_major}"
+    return 0
+  fi
   if ! has_java "${home}"; then
     return 0
   fi
@@ -171,15 +175,19 @@ list_jdks() {
 }
 
 list_compatible_homes() {
-  local required_major="$1"
+  # Dynamic scope lets the inventory callback filter without duplicating
+  # Homebrew, macOS and directory discovery for compatible selection.
+  local compatible_required_major="$1"
   SEEN_FILE="$(mktemp)"
   export SEEN_FILE
   trap 'rm -f "${SEEN_FILE}"' EXIT
 
   if [[ -n "${JAVA_HOME:-}" ]]; then
-    try_list_compatible_home "${JAVA_HOME}" "${required_major}"
+    add_home_to_list "${JAVA_HOME}" "JAVA_HOME"
   fi
-  list_compatible_from_common_dirs "${required_major}"
+  list_from_java_home
+  list_from_brew
+  list_from_common_dirs
 }
 
 resolve_compatible_version_home() {
@@ -223,19 +231,6 @@ try_list_compatible_home() {
   fi
   printf '%s\n' "${home}" >> "${SEEN_FILE}"
   printf '%s\n' "${home}"
-}
-
-list_compatible_from_common_dirs() {
-  local required_major="$1"
-  local base
-  local candidate
-  for base in "${candidate_bases[@]}"; do
-    [[ -d "${base}" ]] || continue
-    for candidate in "${base}"/* "${base}"/*/Contents/Home; do
-      [[ -e "${candidate}" ]] || continue
-      try_list_compatible_home "${candidate}" "${required_major}"
-    done
-  done
 }
 
 try_resolve_home() {
