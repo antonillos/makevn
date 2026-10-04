@@ -13,6 +13,7 @@ makevn_die() {
       "Error: $*"
   fi
   if makevn_frontend_owns_loader 2>/dev/null; then
+    makevn_print_detail_line "Error: $*"
     exit 1
   fi
   printf '%s\n' "$(makevn_warn "Error: $*")" >&2

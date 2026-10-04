@@ -45,7 +45,11 @@ Initial inspection (brief, noninteractive analysis):
 makevn doctor --compact
 ```
 
-Follow the reported `next` command: `makevn init` for missing initialization,
+For unsupported repositories, doctor reports no automatic recommendation and does
+not suggest initialization. `init` rejects repositories without Maven signals,
+including `--force` and `--dry-run`, without creating or updating configuration.
+
+Only for supported repositories, follow the reported `next` command: `makevn init` for missing initialization,
 `makevn init --force` for incomplete state or a different/unknown installed
 makevn version. Initialized, current state needs neither command. Force preserves
 existing user configuration. Compact doctor does not prompt or refresh the
@@ -325,7 +329,7 @@ there is no `--file` option or MCP `file` parameter.
 
 1. Load the `makevn` skill in the agent environment.
 2. Run `makevn doctor` in the target repo.
-3. If `makevn doctor` reports that the repo is not initialized, run `makevn init` before continuing with adoption or verification work.
+3. If `makevn doctor` reports `supported` and the repo is not initialized, run `makevn init` before continuing with adoption or verification work. If support is `unsupported`, report that no Maven project was detected and stop adoption/verification; do not run `init` or `refresh`.
 4. Validate the result.
 5. Use `makevn uninstall` to revert.
 
@@ -382,7 +386,7 @@ When using the MCP tools directly, use the explicit `makevn_*` tool names and
 follow this runbook for changed-code verification:
 
 1. `makevn_doctor` on the target repository.
-2. `makevn_init` if doctor reports missing, stale, or uninitialized makevn state.
+2. Check repository support first: if `unsupported`, report that no Maven project was detected and stop without initialization or verification. Only call `makevn_init` for supported repositories if doctor reports missing, stale, or uninitialized makevn state.
 3. `makevn_verify_changes_preview` to surface the affected modules/tests quickly.
 4. `makevn_verify_changes` for changed modules or changed tests.
 5. `makevn_coverage_changes` after a coverage-producing run.

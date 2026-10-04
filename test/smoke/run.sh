@@ -371,6 +371,8 @@ assert data['repository_analysis']['repo_root'] == repo, data
 assert data['repository_analysis']['repository_support_status'] == 'unsupported', data
 assert data['repository_analysis']['current_makevn_status'] == 'not initialized', data
 assert 'make_integration_status' not in data['repository_analysis'], data
+assert data['suggested_next_step']['next'] == '', data
+assert data['suggested_next_step']['optional'] == '', data
 assert data['suggested_next_step']['note'] == 'no automatic recommendation: Maven repository signals were not detected', data
 PY
 }
@@ -1482,18 +1484,6 @@ test_nested_single_maven_project_routing() {
 
   mkdir -p "${repo}/cataloger-cli/src/test/java/com/example"
   java_home="$(detect_java_home)"
-  ${CLI} --repo "${repo}" init >/dev/null
-  cat > "${repo}/.makevn/config" <<EOF
-MAKEVN_JAVA_HOME="${java_home}"
-MAKEVN_CODE_JAVA_HOME=""
-MAKEVN_KARATE_JAVA_HOME=""
-MAKEVN_CODE_TOOL_VERSIONS=""
-MAKEVN_KARATE_TOOL_VERSIONS=""
-MAKEVN_RUN_CMD=""
-MAKEVN_FORMAT_CHECK_GOAL=""
-MAKEVN_FORMAT_APPLY_GOAL=""
-MAKEVN_CHECKSTYLE_GOAL=""
-EOF
   cat > "${repo}/cataloger-cli/pom.xml" <<'EOF'
 <project>
   <build>
@@ -1505,6 +1495,18 @@ EOF
     </plugins>
   </build>
 </project>
+EOF
+  ${CLI} --repo "${repo}" init >/dev/null
+  cat > "${repo}/.makevn/config" <<EOF
+MAKEVN_JAVA_HOME="${java_home}"
+MAKEVN_CODE_JAVA_HOME=""
+MAKEVN_KARATE_JAVA_HOME=""
+MAKEVN_CODE_TOOL_VERSIONS=""
+MAKEVN_KARATE_TOOL_VERSIONS=""
+MAKEVN_RUN_CMD=""
+MAKEVN_FORMAT_CHECK_GOAL=""
+MAKEVN_FORMAT_APPLY_GOAL=""
+MAKEVN_CHECKSTYLE_GOAL=""
 EOF
   cat > "${repo}/cataloger-cli/src/test/java/com/example/NestedTest.java" <<'EOF'
 package com.example;
@@ -4748,6 +4750,7 @@ main() {
   fi
   bash "${ROOT_DIR}/test/smoke/standalone_contract_test.sh"
   bash "${ROOT_DIR}/test/smoke/doctor_compact_test.sh"
+  bash "${ROOT_DIR}/test/smoke/unsupported_init_test.sh"
   bash "${ROOT_DIR}/test/smoke/state_progress_test.sh"
   python3 "${ROOT_DIR}/test/smoke/interactive_doctor_test.py" "${ROOT_DIR}/target/release/makevn"
   printf 'Smoke tests passed\n'
