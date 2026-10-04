@@ -81,6 +81,11 @@ makevn_effective_java_home() {
   local maven_base_path="$3"
   local tool_versions_file=""
 
+  local MAKEVN_JDK_MAVEN_BASE_PATH=""
+  if [[ "${context}" == code ]]; then
+    MAKEVN_JDK_MAVEN_BASE_PATH="${maven_base_path}"
+  fi
+  export MAKEVN_JDK_MAVEN_BASE_PATH
   makevn_load_config "${repo_root}"
 
   if [[ "${context}" == "code" && -n "${MAKEVN_CODE_JAVA_HOME:-}" ]]; then

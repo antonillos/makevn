@@ -557,3 +557,29 @@ names for other repositories. Noninteractive agents must not wait for a prompt:
 use an explicit approved setting/override when detection is ambiguous; report
 unresolved workflow expressions rather than evaluating them. `profile refresh`
 updates detected profile metadata, not user configuration.
+
+### Stable automatic JDK selection
+
+Numeric Java requirements select stable GA JDKs only, including compatible
+newer versions. EA, internal and project builds (for example `25-loom`) are not
+automatically treated as compatible merely because the major version matches.
+If no stable candidate is available, doctor reports an unresolved JDK and an
+installation/configuration recommendation; builds stop before invoking Maven.
+`makevn jdk list` still lists experimental installations. An explicit
+`MAKEVN_CODE_JAVA_HOME`/`MAKEVN_KARATE_JAVA_HOME` or `MAKEVN_JAVA_HOME` path,
+or an installed repository-pinned `.tool-versions` JDK, remains authoritative
+for projects that deliberately require an experimental compiler.
+
+Automatic code-JDK selection also checks unconditional local
+`maven-enforcer-plugin` `requireJavaVersion` rules before treating newer JDKs
+as compatible. Numeric minimum, exact, bounded and union ranges are supported,
+including patch versions and properties from local relative parent POMs. Rules in unconditional local reactor modules also constrain the selected JDK. For
+example, `[25,26)` rejects 27 and requires an accepted stable 25.x. Doctor
+reports the restriction if no candidate satisfies it; makevn never adds an
+Enforcer skip flag or changes the project's range.
+
+This read-only inspection requires Python 3 and is not a complete Maven
+`effective-pom` evaluator: remote parent rules and profile activation remain
+Maven's responsibility. Unresolved or unsupported detected local rules stop
+automatic selection rather than guessing. Explicit configured JDK paths remain
+user choices and are still checked by Maven Enforcer when Maven executes.
