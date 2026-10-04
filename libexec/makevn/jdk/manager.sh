@@ -243,8 +243,10 @@ try_resolve_home() {
   if has_java "${home}" && matches_version "${home}"; then
     # A repository-pinned installation is intentional, unlike major-only
     # discovery through JAVA_HOME, java_home, Homebrew or common directories.
-    [[ "${2:-false}" == true ]] || is_stable_home "${home}" || return 1
-    jdk_satisfies_enforcer "${home}" || return 1
+    if [[ "${2:-false}" != true ]]; then
+      is_stable_home "${home}" || return 1
+      jdk_satisfies_enforcer "${home}" || return 1
+    fi
     printf '%s\n' "${home}"
     return 0
   fi

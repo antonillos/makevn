@@ -55,4 +55,17 @@ fi
 printf 'MAKEVN_CODE_JAVA_HOME="%s/jdks/127"\n' "${tmp}" > "${tmp}/repo/.makevn/config"
 bash "${ROOT}/libexec/makevn/backend.sh" compile --repo "${tmp}/repo" --compact >"${tmp}/output" 2>&1
 [[ "$(cat "${tmp}/repo/maven-java-home")" == "${tmp}/jdks/127" ]]
+# A repository pin is authoritative even when it conflicts with Enforcer.
+# Automatic discovery must still reject the same forbidden major.
+sed 's/\[125.0.3,126)/[126,)/' "${tmp}/repo/pom.xml" > "${tmp}/new-pom"
+mv "${tmp}/new-pom" "${tmp}/repo/pom.xml"
+rm -f "${tmp}/repo/.makevn/config"
+pin="${ASDF_DATA_DIR}/installs/java/company-125"
+mkdir -p "${pin}"
+cp -R "${expected}/bin" "${pin}/"
+printf 'java company-125\n' > "${tmp}/repo/.tool-versions"
+[[ "$(bash "${manager}" resolve-tool-versions "${tmp}/repo/.tool-versions")" == "${pin}" ]]
+[[ "$(bash "${manager}" resolve-compatible-version 125)" == "${tmp}/jdks/127" ]]
+bash "${ROOT}/libexec/makevn/backend.sh" compile --repo "${tmp}/repo" --compact >"${tmp}/output" 2>&1
+[[ "$(cat "${tmp}/repo/maven-java-home")" == "${pin}" ]]
 echo 'Enforcer-aware JDK regression tests passed'
