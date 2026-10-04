@@ -117,7 +117,8 @@ makevn_collect_test_names() {
 makevn_run_all_tests() {
   local repo_root="$1"
   local rc=0
-  if makevn_run_maven_goal "${repo_root}" test test test "${extra_args[@]}"; then
+  # Bash 3.2 treats empty arrays as unset under nounset; preserve zero args.
+  if makevn_run_maven_goal "${repo_root}" test test test ${extra_args[@]+"${extra_args[@]}"}; then
     rc=0
   else
     rc=$?
