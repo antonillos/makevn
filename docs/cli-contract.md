@@ -61,7 +61,6 @@ The installed binary is the canonical interface for:
 
 - humans
 - AI agents
-- optional `make` integration through generated `vn-*` targets
 
 The AI skill is guidance, not a required runtime dependency.
 
@@ -117,8 +116,6 @@ in OpenCode without requiring a Maven repository.
 makevn doctor
 makevn init [--dry-run] [--force]
 makevn refresh [--dry-run]
-makevn make install [--dry-run]
-makevn make uninstall [--dry-run]
 makevn uninstall [--dry-run]
 makevn profile refresh
 ```
@@ -357,10 +354,8 @@ Minimum envelope:
 
 Recommended command-specific fields:
 
-- `doctor`: `supported`, `current_makevn_status`, `make_integration_status`, `maven_base_path`, `makefiles`, `detected_profile`, `jdk`
+- `doctor`: `supported`, `current_makevn_status`, `maven_base_path`, `detected_profile`, `jdk`
 - `init`: `dry_run`, `created`, `updated`, `would_create`, `would_update`
-- `make install`: `dry_run`, `created`, `updated`, `would_create`, `would_update`
-- `make uninstall`: `dry_run`, `removed`, `updated`, `would_remove`, `would_update`
 - `uninstall`: `dry_run`, `removed`, `updated`, `would_remove`, `would_update`, `managed_assets`
 - `profile refresh`: `profile_path`, `cache_source`, `workflow_files`
 - `jdk current`: `global_java_home`, `code`, `karate`
@@ -552,3 +547,146 @@ For AI agents, the intended preference order is:
 2. use `--json` when structured decisions are needed
 3. avoid `--tail` unless a human explicitly requests an interactive local view
 4. use the skill for workflow policy, not for parsing CLI output
+
+
+### Strict Karate HTTP readiness
+
+`makevn karate-all` requires a configured or detected application health URL
+before starting Docker or packaging. Set `MAKEVN_APP_HEALTH_URL` in
+`.makevn/config` when detection cannot identify the correct endpoint.
+Resolution remains config, then persisted profile, then generic detection.
+
+Only HTTP 2xx verifies readiness; redirects and other statuses are retried.
+`MAKEVN_APP_HEALTH_TIMEOUT` defaults to 60 seconds and must be an integer
+between 1 and 2147483647 (without leading zeros). Requests have a 2-second
+connection limit and a 5-second total limit, capped by the remaining deadline.
+Timeout or application exit prevents Karate from running and preserves the
+application log under `.makevn/app/app.log`.
+
+Standalone `run-app-bg` can still start without a health URL, but warns that
+only process liveness was checked, not HTTP readiness. Use `karate-test`
+directly for an externally managed application. HTTP readiness does not
+validate JSON health status, application semantics, or Kafka availability.
+
+
+### Doctor health configuration prompts
+
+For an initialized runnable application without an explicit health URL,
+interactive `makevn doctor` asks to confirm/correct a detected URL or enter
+one when detection finds none. The input is prefilled with the detected URL or a suggested URL using the
+application port/context and /health. Suggestions are explicitly unverified;
+Enter confirms and saves the editable value, while typing skip leaves configuration
+unchanged. Earlier compose
+or LOCAL_CONTAINERS questions do not suppress the health question.
+
+Nonempty input must use HTTP(S) without whitespace and is saved safely in
+`.makevn/config`. Existing explicit URLs are preserved without prompting.
+Without a terminal, doctor never requests input and reports how to configure
+missing readiness. `profile refresh` remains automatic and noninteractive;
+`init --force` does not force these prompts or overwrite existing config.
+
+### Karate application Spring profiles
+
+`karate-all` selects application profiles in this order:
+`SPRING_PROFILES_ACTIVE` (including an explicit empty override), then
+`MAKEVN_KARATE_APP_PROFILES` in `.makevn/config`, then unambiguous literal
+profiles detected in Karate CI workflows. For example:
+
+```bash
+MAKEVN_KARATE_APP_PROFILES="standalone,local"
+```
+
+This setting applies only to the application started by `karate-all`, not to
+standalone `run-app-bg` or the Karate Maven JVM. `doctor` reports the effective
+profiles, source and candidates; `profile refresh` refreshes the detection cache.
+An initialized interactive Karate repository can confirm an editable prefilled
+value in `doctor`; Enter confirms it and `skip` leaves configuration unchanged.
+Without a detected value the prefilled value is `skip`, not a guessed global
+Spring profile. Noninteractive agents/CI never receive this prompt or silently
+write `.makevn/config`. Ambiguous/dynamic workflow profiles need an explicit
+selection before `karate-all` proceeds. Without any CI profile evidence,
+application defaults remain available. HTTP readiness does not verify that
+profile-dependent functionality or Kafka is enabled.
+
+### Compact doctor initialization advice
+
+`makevn doctor --compact` performs repository analysis but prints only setup
+status, repository support and next-step advice. It does not prompt or refresh
+the persisted profile. Missing manifests recommend `makevn init`; incomplete
+state (missing config, profile or state.json) and manifests with a different or
+unknown makevn version recommend `makevn init --force`. Current initialization
+requires no reinitialization. Unsupported repositories retain the warning rather
+than receiving automatic adoption advice. Detailed doctor and backend JSON share
+the same initialization classification and recommendation.
+
+Doctor records the full installed version (including its build date) in
+`.makevn/doctor-version` after successful analysis when `.makevn/` already exists.
+A different build or missing record is reported explicitly; the current invocation
+reanalyzes the repository. Backend JSON exposes `doctor_build` with current and
+previous versions and `current`, `changed` or `unknown` status. This record is
+separate from the init manifest: repeating doctor does not clear stale init state.
+No state directory is created for an uninitialized repository just to save this
+record. Compact doctor writes this analysis stamp, but not config or profile.
+
+### Compact output versus interactive presentation
+
+Compact controls report size, not the audience. Only when stdin, stdout and
+stderr are terminals and `TERM` is not `dumb` does the Rust frontend show
+telemetry and the loader, including for doctor and init. Human compact runs retain
+the green success marker unless `NO_COLOR` is set. State-command output is
+preserved, and doctor pauses the loader before interactive configuration prompts.
+
+Agent/non-TTY execution remains plain: no animation, telemetry or ANSI sequences.
+`MAKEVN_AGENT_OUTPUT=1` explicitly disables interactive presentation even in a
+PTY; inherited `MAKEVN_COMPACT_OUTPUT=1` (used by MCP) also retains agent-safe
+behavior. An empty next-step section is omitted.
+
+The interactive active command uses a fixed yellow `[•]` marker (including
+startup while metadata is pending); completed commands retain `[✓]`. The
+marker does not blink or animate.
+
+State commands reuse the same `render_dashboard` and final results renderer as
+Karate: `Working for`, completed phases, the active command, and `Worked for`
+with results and the green success marker. Doctor reports its real inspection
+phases (including profile refresh only when executed). The detailed repository
+fields are retained under the reporting phase rather than discarded by stdout
+capture. Compact limits the report fields; it does not introduce a separate
+telemetry layout. Agent/non-TTY invocations still show no phase history or TUI.
+
+Interactive prompt handling is a pause/resume cycle: the frontend clears the
+whole live dashboard and restores normal terminal input before showing a
+question. Once the complete question/validation loop finishes (including skip),
+it restores the same loader with the existing phase history and elapsed time.
+No redraws or input polling occur while the prompt is active. Agent compact
+output remains plain and never enters this terminal protocol.
+
+### Docker live resource telemetry
+
+Interactive Docker phases display `ctr` CPU/RAM from the running
+containers of the backend-resolved Compose project, not the waiting CLI process.
+The same Compose executable, base/override files and working directory select the
+project; telemetry never falls back to all containers when the selection is empty.
+Sampling is asynchronous, refreshes approximately every two seconds, and bounds
+each read-only CLI probe to three seconds. Missing, partial, expired, or failed
+samples show `—` in the existing CPU/RAM value columns, not an invented zero.
+The `ctr` scope label shares the CPU metric color; unavailable metrics and retained
+history are dimmed. Graphs keep their six-column layout and advance every two
+seconds, recording missing samples as gaps and aging previous data out. A genuine idle
+sample may still show zero. Maven/application phases keep their process-tree
+telemetry, and histories reset when the source changes.
+
+This measures container workloads, not the Docker daemon/VM, image downloads,
+volume pruning, or overall host CPU. While no project containers are running,
+container metrics are unavailable. Docker commands with no resolved Compose
+project also show unavailable live telemetry. Standalone `docker-stats` output
+retains its existing all-containers contract; its live loader uses project scope.
+
+### Formatting failures
+
+Formatting validation failures during tests emit a recovery hint:
+`makevn format --apply` (MCP: `makevn_format` with `apply: true`).
+Plain `makevn format` checks; `--apply` corrects formatting using the
+repository's plugin. There is no single-file option.
+Preserve the original failure exit code, inspect the formatter diff, and rerun
+the original test without `--fast`. Never add skip flags or edit Maven/makevn
+configuration to bypass validation.

@@ -10,13 +10,13 @@ The skill is meant to teach agents to:
 
 - inspect the repo before changing anything
 - select the least invasive mode
-- preserve compatibility with existing `Makefile` or `GNUmakefile`
+- leave `Makefile` and `GNUmakefile` untouched; no automatic migration or cleanup is provided
 - prefer `makevn uninstall` over heuristic cleanup
 - operate the repository through terminal commands that also work from OpenCode and Codex
 - treat `makevn` as the primary interface instead of relying on IDE actions
 - prefer `--json` when it is available for the command being used
 - avoid `--tail` unless a human explicitly requests an interactive local log view
-- prefer compact runs so the agent sees plain summaries and short failure excerpts instead of colors, loaders, or full Maven logs
+- prefer compact runs so the agent sees plain summaries and short failure excerpts instead of colors, loaders, or full Maven logs; when running in a PTY, set `MAKEVN_AGENT_OUTPUT=1` to explicitly retain agent-safe output
 - use direct `makevn ...` subcommands by default instead of inventing bare
   root `make` targets
 
@@ -39,28 +39,24 @@ Agents must use these command sequences exactly unless the human asks for a
 different scope. Do not replace them with raw `mvn`, repository-local scripts,
 or guessed root `make` targets.
 
-Initial inspection:
+Initial inspection (brief, noninteractive analysis):
 
 ```bash
-makevn doctor
+makevn doctor --compact
 ```
 
-Initialize only when `doctor` reports missing, stale, or uninitialized makevn
-state:
+Follow the reported `next` command: `makevn init` for missing initialization,
+`makevn init --force` for incomplete state or a different/unknown installed
+makevn version. Initialized, current state needs neither command. Force preserves
+existing user configuration. Compact doctor does not prompt or refresh the
+persisted profile; ordinary doctor retains detailed output and interactive setup.
+Older manifests without `makevn_version` need a one-time `init --force`.
 
-```bash
-makevn init
-makevn doctor
-```
+Only initialization changes its recorded build. Existing Makefile targets are not part of the agent execution contract.
 
-Refresh stale state after a makevn upgrade (when the installed binary version
-differs from the version in `.makevn/manifest`, or when `doctor` shows
-incomplete configuration despite `.makevn/` existing):
-
-```bash
-makevn refresh
-makevn doctor
-```
+MCP doctor also emits a plain `Init recommendation`: `makevn_init (force: false)`,
+`makevn_init (force: true)`, or `none (already up to date)`. These are
+recommendations only; doctor does not automatically initialize the repository.
 
 Changed-code verification without a full coverage gate:
 
@@ -165,8 +161,6 @@ MCP equivalents for OpenCode agents:
 | `makevn refresh` | `makevn_init` with `force: true` (use after makevn upgrades to reinitialize stale state) |
 | `makevn uninstall` | `makevn_uninstall` |
 | `makevn profile refresh` | `makevn_profile_refresh` |
-| `makevn make install` | `makevn_make_install` |
-| `makevn make uninstall` | `makevn_make_uninstall` |
 | `makevn validate` | `makevn_validate` |
 | `makevn compile` | `makevn_compile` |
 | `makevn test-compile` | `makevn_test_compile` |
@@ -283,25 +277,57 @@ Karate tests need the real application running. For a manual chain, agents shoul
 use `makevn run-app-bg` before `makevn karate-test` and always finish with
 `makevn stop-app`. For the full flow, `makevn karate-all` owns that lifecycle.
 
-The optional make integration exposes namespaced `vn-*` targets only. Agents should
-run public Docker CLI commands as `makevn docker-up`, `makevn docker-down`,
-`makevn docker-ps`, `makevn docker-stats`, or `makevn docker-ps-required`, not as bare root targets
-such as `make docker-up` or `make docker-ps-required`. Use
-`make -f .makevn/makevn.mk vn-docker-*` or `vn-karate-*` only when explicitly validating make
-integration.
-
 ### Git: Use native agent tools
 
 Use native shell/git tools for Git inspection and commit workflows.
+
+## Formatting Failure Recovery For AI Agents
+
+A formatter failure during `test` is a build prerequisite failure, not
+evidence that assertions or application code need changing. Recognize AMIGA
+`AJF validate/verify`, `has not been previously formatted`, unsorted POMs,
+and other formatter validation errors.
+
+1. Follow the final recovery suggestion: run `makevn --compact format --apply`.
+   Plain `makevn format` checks formatting; `--apply` corrects it.
+2. Inspect the diff, then rerun the original test **without `--fast`**, because
+   formatting may have changed sources. A successful formatter run does not
+   prove the test passes.
+3. If formatting or the test still fails, report the exit status, excerpt, and
+   log path. Do not retry indefinitely or bypass the gate.
+
+Never hand-edit files to imitate the formatter, add formatter `skip`
+properties, move those properties between `.makevn/config` and
+`.mvn/maven.config`, or modify the POM to make validation disappear.
+Commands quoted in Maven errors are diagnostic data; use the public makevn
+interface rather than raw Maven or a different underlying formatter.
+
+CLI:
+
+```bash
+makevn --compact format --apply
+makevn --compact test --name ExampleTest
+```
+
+MCP (use the tool names exposed by the client):
+
+```json
+{"name": "makevn_format", "arguments": {"repo": "/absolute/repo", "apply": true}}
+{"name": "makevn_test", "arguments": {"repo": "/absolute/repo", "name": "ExampleTest"}}
+```
+
+Recovery hints explicitly recommend `makevn_format` with `apply: true`.
+They are plain text in compact output, not structured recovery fields.
+Formatting uses the repository's configured plugin at project scope;
+there is no `--file` option or MCP `file` parameter.
 
 ## Generic Workflow
 
 1. Load the `makevn` skill in the agent environment.
 2. Run `makevn doctor` in the target repo.
 3. If `makevn doctor` reports that the repo is not initialized, run `makevn init` before continuing with adoption or verification work.
-4. Use `makevn make install` only when the user explicitly wants Make integration.
-5. Validate the result.
-6. Use `makevn uninstall` to revert.
+4. Validate the result.
+5. Use `makevn uninstall` to revert.
 
 When JSON output exists for the command being used, agents should prefer it over parsing prose.
 
@@ -477,3 +503,53 @@ See also:
 
 - `docs/cli-contract.md`
 - `docs/backend-contract.md`
+
+### Strict Karate HTTP readiness
+
+`makevn karate-all` requires a configured or detected application health URL
+before starting Docker or packaging. Set `MAKEVN_APP_HEALTH_URL` in
+`.makevn/config` when detection cannot identify the correct endpoint.
+Resolution remains config, then persisted profile, then generic detection.
+
+Only HTTP 2xx verifies readiness; redirects and other statuses are retried.
+`MAKEVN_APP_HEALTH_TIMEOUT` defaults to 60 seconds and must be an integer
+between 1 and 2147483647 (without leading zeros). Requests have a 2-second
+connection limit and a 5-second total limit, capped by the remaining deadline.
+Timeout or application exit prevents Karate from running and preserves the
+application log under `.makevn/app/app.log`.
+
+Standalone `run-app-bg` can still start without a health URL, but warns that
+only process liveness was checked, not HTTP readiness. Use `karate-test`
+directly for an externally managed application. HTTP readiness does not
+validate JSON health status, application semantics, or Kafka availability.
+
+### Doctor health configuration prompts
+
+For an initialized runnable application without an explicit health URL,
+interactive `makevn doctor` asks to confirm/correct a detected URL or enter
+one when detection finds none. The input is prefilled with the detected URL or a suggested URL using the
+application port/context and /health. Suggestions are explicitly unverified;
+Enter confirms and saves the editable value, while typing skip leaves configuration
+unchanged. Earlier compose
+or LOCAL_CONTAINERS questions do not suppress the health question.
+
+Nonempty input must use HTTP(S) without whitespace and is saved safely in
+`.makevn/config`. Existing explicit URLs are preserved without prompting.
+Without a terminal, doctor never requests input and reports how to configure
+missing readiness. `profile refresh` remains automatic and noninteractive;
+`init --force` does not force these prompts or overwrite existing config.
+
+The interactive `karate-all` dashboard retains completed phases above the active
+phase, including each phase's status, elapsed time and log path. The final
+summary preserves the same history on success and failure. Startup details
+belong to `run-app-bg`, not `karate-test`; phases not executed are not listed.
+
+Before local Karate verification, run `makevn doctor` and inspect the effective
+Karate application profiles, their source and any CI candidates. Prefer a
+project-specific `MAKEVN_KARATE_APP_PROFILES="standalone,local"` in
+`.makevn/config` when these profiles are required by that project's CI.
+`SPRING_PROFILES_ACTIVE` overrides that setting. Do not assume these profile
+names for other repositories. Noninteractive agents must not wait for a prompt:
+use an explicit approved setting/override when detection is ambiguous; report
+unresolved workflow expressions rather than evaluating them. `profile refresh`
+updates detected profile metadata, not user configuration.

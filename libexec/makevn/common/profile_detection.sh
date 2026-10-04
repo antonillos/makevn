@@ -1592,6 +1592,7 @@ makevn_detect_repo_profile() {
   fi
   app_health_url="$(makevn_detect_app_health_url "${maven_base_path}" || true)"
 
+  makevn_detect_karate_profiles "${repo_root}"
   makevn_detect_workflow_maven_flags "${repo_root}"
   coverage_threshold="$(makevn_detect_workflow_coverage_threshold "${repo_root}" || true)"
   coverage_changes_threshold="$(makevn_detect_workflow_coverage_changes_threshold "${repo_root}" || true)"
@@ -1671,6 +1672,10 @@ makevn_write_profile() {
     printf 'MAKEVN_PROFILE_MAVEN_CLI_FLAGS=%q\n' "${MAKEVN_DETECTED_MAVEN_CLI_FLAGS}"
     printf 'MAKEVN_PROFILE_MAVEN_PROP_FLAGS=%q\n' "${MAKEVN_DETECTED_MAVEN_PROP_FLAGS}"
     printf 'MAKEVN_PROFILE_MAVEN_CACHE_SOURCE=%q\n' "${MAKEVN_DETECTED_MAVEN_CACHE_SOURCE}"
+    printf 'MAKEVN_PROFILE_KARATE_APP_PROFILES=%q\n' "${MAKEVN_DETECTED_KARATE_APP_PROFILES:-}"
+    printf 'MAKEVN_PROFILE_KARATE_APP_PROFILES_SOURCE=%q\n' "${MAKEVN_DETECTED_KARATE_APP_PROFILES_SOURCE:-}"
+    printf 'MAKEVN_PROFILE_KARATE_APP_PROFILES_STATUS=%q\n' "${MAKEVN_DETECTED_KARATE_APP_PROFILES_STATUS:-missing}"
+    printf 'MAKEVN_PROFILE_KARATE_APP_PROFILES_CANDIDATES=%q\n' "${MAKEVN_DETECTED_KARATE_APP_PROFILES_CANDIDATES:-}"
     printf 'MAKEVN_PROFILE_APP_HEALTH_URL=%q\n' "${MAKEVN_DETECTED_APP_HEALTH_URL:-}"
     printf 'MAKEVN_PROFILE_COVERAGE_THRESHOLD=%q\n' "${MAKEVN_DETECTED_COVERAGE_THRESHOLD:-}"
     printf 'MAKEVN_PROFILE_COVERAGE_CHANGES_THRESHOLD=%q\n' "${MAKEVN_DETECTED_COVERAGE_CHANGES_THRESHOLD:-}"

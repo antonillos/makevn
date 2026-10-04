@@ -6,17 +6,33 @@ makevn_print_doctor_java_details() {
     makevn_print_item "Code JDK recommendation" "${MAKEVN_DOCTOR_CODE_JAVA_HOME_RECOMMENDATION}"
   fi
   if [[ -n "${MAKEVN_DOCTOR_CODE_JAVA_VERSION_LINE}" ]]; then
-    printf '  %s\n' "$(makevn_dim "${MAKEVN_DOCTOR_CODE_JAVA_VERSION_LINE}")"
+    makevn_print_detail_line "  ${MAKEVN_DOCTOR_CODE_JAVA_VERSION_LINE}"
   fi
   makevn_print_item "Resolved karate JAVA_HOME" "${MAKEVN_DOCTOR_KARATE_JAVA_HOME}"
   if [[ -n "${MAKEVN_DOCTOR_KARATE_JAVA_VERSION_LINE}" ]]; then
-    printf '  %s\n' "$(makevn_dim "${MAKEVN_DOCTOR_KARATE_JAVA_VERSION_LINE}")"
+    makevn_print_detail_line "  ${MAKEVN_DOCTOR_KARATE_JAVA_VERSION_LINE}"
   fi
   return 0
 }
 
+makevn_print_doctor_init_recommendation() {
+  [[ -n "${MAKEVN_AGENT_OUTPUT:-}" ]] || return 0
+  local recommendation="unavailable (see repository support status)"
+  case "${MAKEVN_DOCTOR_SUGGESTED_NEXT}" in
+    'makevn init') recommendation='makevn_init (force: false)' ;;
+    'makevn init --force') recommendation='makevn_init (force: true)' ;;
+    *)
+      if [[ "${MAKEVN_DOCTOR_CURRENT_STATUS}" == "initialized" ]]; then
+        recommendation='none (already up to date)'
+      fi
+      ;;
+  esac
+  makevn_print_item "Init recommendation" "${recommendation}"
+}
+
 makevn_print_doctor_suggestions() {
-  printf '\n'
+  [[ -n "${MAKEVN_DOCTOR_SUGGESTED_NEXT}${MAKEVN_DOCTOR_SUGGESTED_NOTE}${MAKEVN_DOCTOR_SUGGESTED_OPTIONAL}" ]] || return 0
+  [[ -n "${MAKEVN_FRONTEND_STATE_METADATA_OUT:-}" ]] || printf '\n'
   makevn_print_header "Suggested next step"
   if [[ -n "${MAKEVN_DOCTOR_SUGGESTED_NEXT}" ]]; then
     makevn_print_item "next" "${MAKEVN_DOCTOR_SUGGESTED_NEXT}"
@@ -36,6 +52,10 @@ print_doctor() {
   shift
   while [[ $# -gt 0 ]]; do
     case "$1" in
+      --compact)
+        makevn_enable_compact_output
+        shift
+        ;;
       *)
         makevn_die "Unknown doctor option: $1"
         ;;
@@ -44,13 +64,23 @@ print_doctor() {
 
   print_command_intro "${repo_root}" doctor
   makevn_collect_doctor_snapshot "${repo_root}"
+  makevn_doctor_progress "Reporting repository analysis"
+  if [[ "${MAKEVN_DOCTOR_BUILD_STATUS}" != "current" ]]; then
+    makevn_print_item "Doctor build" "${MAKEVN_DOCTOR_BUILD_STATUS}: ${MAKEVN_DOCTOR_PREVIOUS_VERSION} -> ${MAKEVN_VERSION}; repository reanalyzed"
+  fi
+  makevn_print_doctor_init_recommendation
+
+  if [[ "${MAKEVN_COMPACT_OUTPUT:-}" == "1" ]]; then
+    makevn_print_item "Current makevn status" "${MAKEVN_DOCTOR_CURRENT_STATUS}"
+    makevn_print_item "Repository support status" "${MAKEVN_DOCTOR_REPO_SUPPORT_STATUS}"
+    makevn_print_doctor_suggestions
+    return 0
+  fi
 
   makevn_print_header "Repository analysis"
   makevn_print_item "Repo root" "${MAKEVN_DOCTOR_REPO_ROOT}"
   makevn_print_item "Java Maven repo" "${MAKEVN_DOCTOR_JAVA_MAVEN_REPO}"
   makevn_print_item "Maven base path" "${MAKEVN_DOCTOR_MAVEN_BASE_PATH}"
-  makevn_print_item "Existing Makefile" "${MAKEVN_DOCTOR_EXISTING_MAKEFILE}"
-  makevn_print_item "Existing GNUmakefile" "${MAKEVN_DOCTOR_EXISTING_GNUMAKEFILE}"
   makevn_print_item "Existing .makevn/" "${MAKEVN_DOCTOR_EXISTING_STATE_DIR}"
   makevn_print_item "Current makevn status" "${MAKEVN_DOCTOR_CURRENT_STATUS}"
   makevn_print_item "Code .tool-versions" "${MAKEVN_DOCTOR_CODE_TOOL_VERSIONS}"
@@ -61,6 +91,10 @@ print_doctor() {
   makevn_print_item "Detected Maven CLI flags" "${MAKEVN_DOCTOR_DETECTED_MAVEN_CLI_FLAGS}"
   makevn_print_item "Detected Maven prop flags" "${MAKEVN_DOCTOR_DETECTED_MAVEN_PROP_FLAGS}"
   makevn_print_item "Detected Maven cache" "${MAKEVN_DOCTOR_DETECTED_MAVEN_CACHE_SOURCE}"
+  makevn_print_item "Karate application profiles" "${MAKEVN_DOCTOR_KARATE_APP_PROFILES}"
+  makevn_print_item "Karate profiles source" "${MAKEVN_DOCTOR_KARATE_APP_PROFILES_SOURCE}"
+  makevn_print_item "Karate profiles candidates" "${MAKEVN_DOCTOR_KARATE_APP_PROFILES_CANDIDATES}"
+  makevn_print_item "Configure Karate profiles" "MAKEVN_KARATE_APP_PROFILES in .makevn/config (or SPRING_PROFILES_ACTIVE override)"
   makevn_print_item "Detected app health URL" "${MAKEVN_DOCTOR_DETECTED_APP_HEALTH_URL}"
   makevn_print_item "Detected coverage activation" "${MAKEVN_DOCTOR_DETECTED_COVERAGE_ACTIVATION}"
   makevn_print_item "JaCoCo report layout" "${MAKEVN_DOCTOR_JACOCO_REPORT_LAYOUT}"
@@ -82,10 +116,9 @@ print_doctor() {
   makevn_print_item "LOCAL_CONTAINERS default" "${MAKEVN_DOCTOR_LOCAL_CONTAINERS}"
   makevn_print_item "Persisted profile" "${MAKEVN_DOCTOR_PROFILE_STATUS}"
   makevn_print_item "Repository support status" "${MAKEVN_DOCTOR_REPO_SUPPORT_STATUS}"
-  makevn_print_item "Make integration status" "${MAKEVN_DOCTOR_MAKE_INTEGRATION_STATUS}"
   makevn_print_item "Mutation testing (PIT)" "${MAKEVN_DOCTOR_MUTATION_AVAILABLE}"
   if [[ "${MAKEVN_DOCTOR_MUTATION_AVAILABLE}" == "yes" && -n "${MAKEVN_DOCTOR_MUTATION_GOAL}" ]]; then
-    printf '  %s\n' "$(makevn_dim "goal: ${MAKEVN_DOCTOR_MUTATION_GOAL}")"
+    makevn_print_detail_line "  goal: ${MAKEVN_DOCTOR_MUTATION_GOAL}"
   fi
 
   makevn_print_doctor_suggestions

@@ -1,48 +1,24 @@
-# Integration Workflow
+# Standalone initialization
 
-The repository integration model is intentionally small and stable:
+Run `makevn doctor`, then `makevn init` when initialization is missing.
+The public CLI and MCP never invoke or interpret repository Makefiles.
+Initialization creates `.makevn/` only; no Make targets are generated.
 
-## Initialize `makevn`
+After an upgrade, run `makevn doctor`, then `makevn init --force` or
+`makevn refresh` when advised. Both preserve user configuration and update the
+initialization build. `profile refresh` updates only the profile.
 
-```bash
-makevn doctor
-makevn init
-```
+`makevn uninstall --dry-run` previews removal of `.makevn/`.
+`makevn uninstall` removes that state directory, never root Makefiles.
 
-`init` creates `.makevn/` and does not touch `Makefile` or `GNUmakefile`.
+## Old Make integrations
 
-## Install Make integration
+There is no migration, compatibility mode, or automatic cleanup. Commands and MCP
+tools for Make integration are removed. Existing Makefile/GNUmakefile files,
+managed includes, and bootstrap files are neither inspected nor modified.
+If you previously installed Make integration, remove its includes and generated
+artifacts manually as appropriate; preserve your own targets. Uninstall removes
+`.makevn/`, so any old references to it in Makefiles must be cleaned up manually.
 
-When a repo wants optional `vn-*` make targets:
-
-```bash
-makevn make install
-```
-
-Behavior:
-
-- if the repo already has a single `Makefile` or `GNUmakefile`, `makevn` adds an include block for `.makevn/makevn.mk`
-- if the repo has no make entrypoint, `makevn` creates a minimal root `Makefile`
-- if the repo has both `Makefile` and `GNUmakefile`, `makevn` refuses the automatic edit
-
-## Remove Make integration
-
-```bash
-makevn make uninstall
-```
-
-This removes only the Make integration and keeps `.makevn/` intact.
-
-## Uninstall `makevn`
-
-```bash
-makevn uninstall
-```
-
-This removes `.makevn/` and any Make integration managed by `makevn`.
-
-## Agent Notes
-
-- agents should run `makevn doctor` before `makevn init`
-- agents should prefer `makevn init` as the default adoption path
-- agents should only run `makevn make install` when the user explicitly wants Make integration
+Makefile variables no longer affect makevn. Configure `MAKEVN_LOCAL_CONTAINERS`
+in `.makevn/config` or explicitly export `LOCAL_CONTAINERS` when needed.

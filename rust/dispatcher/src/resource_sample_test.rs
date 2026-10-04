@@ -39,3 +39,62 @@ fn failed_ps_command_has_zero_metrics() {
     assert_eq!(sample.cpu_percent, 0.0);
     assert_eq!(sample.rss_kb, 0);
 }
+
+#[test]
+fn docker_source_is_explicit_and_missing_data_never_falls_back_to_client_cpu() {
+    let mut sampler = super::ResourceSampler::new();
+    sampler.configure_docker("verify", None);
+    assert_eq!(
+        sampler.scoped_text("cpu 20%".to_owned(), Some(0.0)),
+        "cpu 20%"
+    );
+    sampler.configure_docker(
+        "docker-up",
+        Some(std::path::PathBuf::from("/nonexistent/makevn.resources")),
+    );
+    assert_eq!(
+        sampler.scoped_text(String::new(), None),
+        format!(
+            "ctr {}",
+            super::format_unavailable_resource_metrics(&super::ResourceHistory::new())
+        )
+    );
+    assert_eq!(
+        sampler.scoped_text("cpu 5% | ram 4 MiB".to_owned(), Some(0.0)),
+        "ctr cpu 5% | ram 4 MiB"
+    );
+    assert!(sampler.sample(std::process::id()).unwrap().is_none());
+    let revision = sampler.revision();
+    sampler.configure_docker(
+        "docker-up",
+        Some(std::path::PathBuf::from("/nonexistent/makevn.resources")),
+    );
+    assert_eq!(sampler.revision(), revision);
+    sampler.configure_docker("verify", None);
+    assert!(sampler.docker.is_none());
+    assert!(sampler.last_sample.is_none());
+}
+
+#[test]
+fn sampler_cache_is_keyed_by_backend_pid() {
+    let mut sampler = super::ResourceSampler::new();
+    sampler.last_pid = Some(u32::MAX);
+    sampler.last_sample_at = Some(std::time::Instant::now());
+    sampler.last_sample = Some(super::ResourceSample {
+        cpu_percent: 9876.0,
+        rss_kb: u64::MAX,
+    });
+    let pid = std::process::id();
+    let sample = sampler.sample(pid).unwrap().unwrap();
+    assert_eq!(sampler.last_pid, Some(pid));
+    assert_ne!(sample.cpu_percent, 9876.0);
+    assert_ne!(sample.rss_kb, u64::MAX);
+    assert_eq!(sampler.revision(), 1);
+    let cached = sampler.sample(pid).unwrap().unwrap();
+    assert_eq!(cached.cpu_percent, sample.cpu_percent);
+    assert_eq!(cached.rss_kb, sample.rss_kb);
+    assert_eq!(sampler.revision(), 1);
+    assert!(sampler.sample(0).unwrap().is_none());
+    assert!(sampler.last_sample.is_none());
+    assert!(sampler.last_sample_at.is_none());
+}

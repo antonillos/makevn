@@ -55,3 +55,46 @@ protected settings. Keep credential values, exact permission mappings, and
 recovery internals out of documentation, logs, issues, and pull-request text.
 Changes to release authorization must be reviewed separately from ordinary
 packaging changes.
+
+## Release notes and changelog
+
+[GitHub Releases](https://github.com/antonillos/makevn/releases) is the canonical
+changelog, linked from the README. The release workflow generates PR entries,
+contributors, and a comparison against the previous stable version through the
+GitHub release-notes API. `.github/release.yml` groups labelled PRs; unlabelled
+changes remain visible under Other changes. Label feature PRs `enhancement`,
+fixes `bug`, documentation `documentation`, and dependency updates `dependencies`.
+
+For an editorial introduction, include `docs/release-highlights/vX.Y.Z.md` in
+the revision being released, before merging the release PR. Use a short,
+benefit-oriented introduction and 3–5 concrete highlights. Put breaking changes
+and migration instructions before highlights. Explain maintenance honestly;
+do not turn a dependency bump into a product feature or claim unmeasured speedups.
+This optional introduction is reviewed copy, not AI-generated marketing in CI.
+Without it, generated changes are still published automatically.
+
+`packaging/release/render-notes.py` assembles the introduction, a collapsible
+technical changelog when editorial copy exists, a visible compare link, the
+canonical installation guide, and asset information. Generation failures stop
+publication rather than silently shipping installation-only notes.
+
+The historical introductions for v0.1.0–v0.1.13 were reconstructed from tagged
+commit ranges and source diffs, including squash-merged promotions. GitHub's
+PR-only generator can miss feature detail hidden inside a promotion PR, and
+branch synchronization can repeat older commits: inspect source deltas before
+attributing a feature to a release. Only release descriptions are changed during
+backfill; preserve tags, assets, publication dates, and release status. Back up
+existing descriptions before editing and compare the saved metadata afterwards.
+
+Run renderer tests with:
+
+```bash
+python3 -m unittest discover -s test/release -v
+```
+
+For offline previews, supply a generated body with `--changes`:
+
+```bash
+python3 packaging/release/render-notes.py v0.1.13 \
+  --changes /tmp/generated-notes.md --output /tmp/release-notes.md
+```

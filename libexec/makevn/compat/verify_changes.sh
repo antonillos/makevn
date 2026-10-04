@@ -81,12 +81,12 @@ if [ -n "$CHANGED_JAVA_SRC" ]; then
         sed 's/,$//')
     if [ -z "$MODULES" ]; then
         warning "Changes detected but no specific modules identified. Running full verify."
-        exit 1  # Let Makefile handle fallback
+        exit 1  # Let the public verification workflow handle fallback
     else
         echo "◇ Affected modules: $MODULES"
         echo ""
         echo "🧪 Running unit and integration tests to generate complete coverage report..."
-        echo "   (Note: This ensures make coverage works correctly)"
+        echo "   (Note: This ensures makevn coverage works correctly)"
         echo ""
         # Run tests (set +e temporarily to capture exit code)
         set +e
@@ -116,7 +116,7 @@ elif [ -n "$CHANGED_JAVA_TEST" ]; then
     TEST_COUNT=$(echo "$TEST_CLASSES" | wc -l | xargs)
     if [ $TEST_COUNT -gt 5 ]; then
         warning "Warning: $TEST_COUNT tests changed. This might take a while."
-        echo "◆ Consider running full verify if you changed many tests: make verify"
+        echo "◆ Consider running full verify if you changed many tests: makevn verify"
     fi
     TEST_LIST=$(echo "$TEST_CLASSES" | tr '\n' ',' | sed 's/,$//')
     echo "🧪 Running $TEST_COUNT test(s): $TEST_LIST"

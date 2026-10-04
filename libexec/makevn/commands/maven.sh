@@ -117,17 +117,16 @@ makevn_collect_test_names() {
 makevn_run_all_tests() {
   local repo_root="$1"
   local rc=0
-  if [[ ${#extra_args[@]} -gt 0 ]]; then
-    makevn_run_maven_goal "${repo_root}" test test test "${extra_args[@]}"
-    rc=$?
+  if makevn_run_maven_goal "${repo_root}" test test test "${extra_args[@]}"; then
+    rc=0
   else
-    makevn_run_maven_goal "${repo_root}" test test test
     rc=$?
   fi
   if [[ ${rc} -ne 0 ]]; then
     local logs_dir_hint
     logs_dir_hint="$(makevn_logs_dir "${repo_root}")"
     makevn_hint_stale_generated_sources_if_needed "${logs_dir_hint}/test.log"
+    makevn_hint_format_failure "${repo_root}" "${logs_dir_hint}/test.log"
   fi
   return ${rc}
 }

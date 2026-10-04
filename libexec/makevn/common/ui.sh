@@ -1,7 +1,15 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+makevn_enable_compact_output() {
+  export MAKEVN_COMPACT_OUTPUT=1
+  if [[ ! -t 0 || ! -t 1 || ! -t 2 || -n "${MAKEVN_AGENT_OUTPUT:-}" ]]; then
+    export NO_COLOR=1
+  fi
+}
+
 makevn_use_color() {
+  [[ -z "${MAKEVN_AGENT_OUTPUT:-}" ]] || return 1
   [[ -t 1 ]] || [[ -t 2 ]] || return 1
   [[ "${TERM:-}" != "dumb" ]]
   [[ -z "${NO_COLOR:-}" ]]
@@ -31,6 +39,10 @@ makevn_warn() {
 
 makevn_print_header() {
   local title="$1"
+  if [[ -n "${MAKEVN_FRONTEND_STATE_METADATA_OUT:-}" && -n "${MAKEVN_BACKEND_DETAIL_OUT:-}" ]]; then
+    makevn_print_detail_line "${title}"
+    return 0
+  fi
   printf '%s %s\n' "$(makevn_dim '::')" "$(makevn_accent "${title}")"
 }
 

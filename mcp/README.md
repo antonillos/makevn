@@ -106,8 +106,12 @@ Tool mapping for common commands:
 Interpretation rules:
 
 - `makevn_init` is safe to run when doctor indicates the repository needs local
-  makevn state. It does not install root Makefile integration; that is a separate
-  `makevn_make_install` operation.
+  makevn state. It creates standalone state; `force` refreshes initialization while
+  preserving user configuration. Neither mode inspects or removes legacy Make
+  artifacts: `.makevn/makevn.mk` and root Makefile includes remain untouched.
+  Remove old includes and generated artifacts manually as appropriate; see
+  [integration guidance](../docs/integration.md). Uninstall removes `.makevn/`,
+  so clean up old Makefile references to it manually as well.
 - `makevn_verify_changes` owns Maven module selection. Agents should not add
   their own `-pl`, `-am`, or `-f` flags unless explicitly debugging makevn.
 - `makevn_coverage_changes` is a gate. Exit code `1` can be the expected result
@@ -115,6 +119,22 @@ Interpretation rules:
 - If a newly installed tool is not visible in the agent schema, restart or reload
   the MCP session. MCP tools are listed when the server starts and may be cached
   by the client.
+
+## Formatting recovery
+
+When tests fail formatter validation (including AMIGA's unformatted Java files
+or unsorted POMs), the final hint recommends `makevn_format` with `apply: true`:
+
+```json
+{"name": "makevn_format", "arguments": {"repo": "/absolute/repo", "apply": true}}
+```
+
+Formatting runs at project scope; there is no `file` parameter.
+Inspect the diff, then rerun the same test without `fast: true`.
+Do not add skip flags, change configuration, or manually imitate formatting
+to bypass validation. Recovery hints are plain text, not structured JSON fields.
+See [the agent recovery workflow](../docs/agents.md#formatting-failure-recovery-for-ai-agents)
+and the [makevn skill](../skills/makevn/SKILL.md).
 
 ## Development
 

@@ -370,7 +370,7 @@ assert data['command'] == 'doctor', data
 assert data['repository_analysis']['repo_root'] == repo, data
 assert data['repository_analysis']['repository_support_status'] == 'unsupported', data
 assert data['repository_analysis']['current_makevn_status'] == 'not initialized', data
-assert data['repository_analysis']['make_integration_status'] == 'not installed', data
+assert 'make_integration_status' not in data['repository_analysis'], data
 assert data['suggested_next_step']['note'] == 'no automatic recommendation: Maven repository signals were not detected', data
 PY
 }
@@ -486,155 +486,6 @@ EOF
   output="$(JAVA_HOME="${fake_java_home}" ${CLI} --repo "${repo}" doctor)"
 
   [[ "${output}" == *"Code Java version: 8"* ]] || fail "doctor should resolve Java version from maven-compiler-plugin source/target"
-}
-
-test_doctor_does_not_invent_health_check() {
-  local repo="${TMP_ROOT}/doctor-no-health"
-  local output
-
-  mkdir -p "${repo}/src/main/resources"
-  cat > "${repo}/pom.xml" <<'EOF'
-<project>
-  <modelVersion>4.0.0</modelVersion>
-  <groupId>com.example</groupId>
-  <artifactId>sample</artifactId>
-  <version>1.0.0</version>
-</project>
-EOF
-  cat > "${repo}/src/main/resources/application.yml" <<'EOF'
-server:
-  port: 18080
-EOF
-
-  output="$(${CLI} --repo "${repo}" doctor)"
-
-  [[ "${output}" == *"Detected app health URL: not detected"* ]] || fail "doctor should not invent an app health URL"
-}
-
-test_doctor_detects_actuator_health_check() {
-  local repo="${TMP_ROOT}/doctor-actuator-health"
-  local output
-
-  mkdir -p "${repo}/src/main/resources"
-  cat > "${repo}/pom.xml" <<'EOF'
-<project>
-  <modelVersion>4.0.0</modelVersion>
-  <groupId>com.example</groupId>
-  <artifactId>sample</artifactId>
-  <version>1.0.0</version>
-  <dependencies>
-    <dependency>
-      <groupId>org.springframework.boot</groupId>
-      <artifactId>spring-boot-starter-actuator</artifactId>
-    </dependency>
-  </dependencies>
-</project>
-EOF
-  cat > "${repo}/src/main/resources/application.yml" <<'EOF'
-server:
-  port: 18080
-EOF
-
-  output="$(${CLI} --repo "${repo}" doctor)"
-
-  [[ "${output}" == *"Detected app health URL: http://localhost:18080/actuator/health"* ]] || fail "doctor should detect Actuator health URL"
-}
-
-test_doctor_local_containers_prompt_does_not_chain_health_prompt() {
-  local repo="${TMP_ROOT}/doctor-local-containers-health-pty"
-  local output_file="${TMP_ROOT}/doctor-local-containers-health-pty.out"
-
-  mkdir -p "${repo}/.github/workflows" "${repo}/src/main/resources"
-  cat > "${repo}/pom.xml" <<'EOF'
-<project>
-  <dependencies>
-    <dependency>
-      <groupId>org.testcontainers</groupId>
-      <artifactId>testcontainers</artifactId>
-    </dependency>
-    <dependency>
-      <groupId>org.springframework.boot</groupId>
-      <artifactId>spring-boot-starter-actuator</artifactId>
-    </dependency>
-  </dependencies>
-</project>
-EOF
-  cat > "${repo}/src/main/resources/application.yml" <<'EOF'
-server:
-  port: 18080
-EOF
-  cat > "${repo}/.github/workflows/integration.yml" <<'EOF'
-jobs:
-  integration:
-    steps:
-      - run: mvn -B verify -DskipUTs
-EOF
-
-  ${CLI} --repo "${repo}" init >/dev/null
-
-  python3 - "${CLI}" "${repo}" "${output_file}" <<'PY'
-import os
-import pty
-import select
-import signal
-import sys
-import time
-
-cli, repo, output_file = sys.argv[1:4]
-cmd = [cli, '--repo', repo, 'doctor']
-
-pid, fd = pty.fork()
-if pid == 0:
-    os.execv(cmd[0], cmd)
-
-output = bytearray()
-sent_choice = False
-status = None
-start = time.time()
-
-while True:
-    readable, _, _ = select.select([fd], [], [], 0.1)
-    if fd in readable:
-        try:
-            chunk = os.read(fd, 4096)
-        except OSError:
-            break
-        if not chunk:
-            break
-        output.extend(chunk)
-        if not sent_choice and b'Enter number [1-2]:' in output:
-            os.write(fd, b'1\n')
-            sent_choice = True
-
-    try:
-        waited = os.waitpid(pid, os.WNOHANG)
-    except ChildProcessError:
-        break
-    if waited != (0, 0):
-        status = waited[1]
-        break
-    if time.time() - start > 5:
-        os.kill(pid, signal.SIGTERM)
-        time.sleep(0.2)
-        try:
-            os.kill(pid, signal.SIGKILL)
-        except ProcessLookupError:
-            pass
-        status = 124 << 8
-        break
-
-if status is None:
-    status = os.waitpid(pid, 0)[1]
-
-with open(output_file, 'wb') as fh:
-    fh.write(output)
-
-raise SystemExit(os.waitstatus_to_exitcode(status))
-PY
-
-  assert_contains "${output_file}" "Saved to .makevn/config (MAKEVN_LOCAL_CONTAINERS)."
-  assert_contains "${output_file}" "LOCAL_CONTAINERS default: TRUE"
-  assert_not_contains "${output_file}" "Health URL ["
 }
 
 test_doctor_compose_prompt_does_not_chain_local_containers_prompt() {
@@ -1013,47 +864,6 @@ test_checkstyle_requires_configured_plugin() {
   assert_contains "${output_file}" "No Checkstyle plugin configured for this Maven project"
 }
 
-test_make_install_existing_makefile() {
-  local repo="${TMP_ROOT}/make-install-existing-makefile"
-  mkdir -p "${repo}"
-  printf '<project/>\n' > "${repo}/pom.xml"
-  cat > "${repo}/Makefile" <<'EOF'
-all:
-	@printf 'existing makefile\n'
-EOF
-  ${CLI} --repo "${repo}" init >/dev/null
-  ${CLI} --repo "${repo}" make install >/dev/null
-  assert_file_exists "${repo}/.makevn/makevn.mk"
-  assert_contains "${repo}/Makefile" "# makevn:begin"
-  assert_contains "${repo}/Makefile" "include .makevn/makevn.mk"
-  make -C "${repo}" vn-doctor >/dev/null
-  ${CLI} --repo "${repo}" make uninstall >/dev/null
-  assert_dir_exists "${repo}/.makevn"
-  assert_file_exists "${repo}/Makefile"
-  assert_not_contains "${repo}/Makefile" "# makevn:begin"
-  ${CLI} --repo "${repo}" uninstall >/dev/null
-  assert_not_exists "${repo}/.makevn"
-  assert_file_exists "${repo}/Makefile"
-}
-
-test_make_install_without_makefile() {
-  local repo="${TMP_ROOT}/make-install-without-makefile"
-  mkdir -p "${repo}"
-  printf '<project/>\n' > "${repo}/pom.xml"
-  ${CLI} --repo "${repo}" init >/dev/null
-  ${CLI} --repo "${repo}" make install >/dev/null
-  assert_file_exists "${repo}/Makefile"
-  assert_file_exists "${repo}/.makevn/makevn.mk"
-  assert_contains "${repo}/Makefile" "Generated by makevn"
-  make -C "${repo}" vn-doctor >/dev/null
-  ${CLI} --repo "${repo}" make uninstall >/dev/null
-  assert_not_exists "${repo}/Makefile"
-  assert_dir_exists "${repo}/.makevn"
-  ${CLI} --repo "${repo}" uninstall >/dev/null
-  assert_not_exists "${repo}/Makefile"
-  assert_not_exists "${repo}/.makevn"
-}
-
 test_installer() {
   local prefix="${TMP_ROOT}/install-prefix"
   PREFIX="${prefix}" "${ROOT_DIR}/install.sh" >/dev/null
@@ -1065,7 +875,7 @@ test_installer() {
   assert_file_exists "${prefix}/libexec/makevn/crap/report.py"
   assert_file_exists "${prefix}/libexec/makevn/crap/jacoco_html.py"
   assert_file_exists "${prefix}/libexec/makevn/compat/verify_changes.sh"
-  assert_file_exists "${prefix}/share/makevn/makevn.mk"
+  assert_not_exists "${prefix}/share/makevn/makevn.mk"
   assert_file_exists "${prefix}/share/makevn/skills/makevn/SKILL.md"
   "${prefix}/bin/makevn" --help >/dev/null
 }
@@ -1086,6 +896,9 @@ test_runtime_archive_includes_crap_reporter() {
     || fail "runtime archive should include CRAP reporter"
   tar -tzf "${archive}" | grep -Fx 'makevn-0.0.0-smoke/libexec/makevn/crap/jacoco_html.py' >/dev/null \
     || fail "runtime archive should include the JaCoCo HTML adapter"
+  if tar -tzf "${archive}" | grep -Fx 'makevn-0.0.0-smoke/share/makevn/makevn.mk' >/dev/null; then
+    fail "runtime archive must not ship retired Make templates"
+  fi
 }
 
 test_mcp_tool_listing() {
@@ -1104,10 +917,12 @@ test_mcp_tool_listing() {
 
   assert_contains "${output_file}" '"name":"docker_up"'
   assert_contains "${output_file}" '"name":"docker_ps_required"'
-  assert_contains "${output_file}" '"name":"make_install"'
+  assert_not_contains "${output_file}" '"name":"make_install"'
+  assert_not_contains "${output_file}" '"name":"make_uninstall"'
   assert_contains "${output_file}" '"name":"verify_ut_coverage"'
   assert_contains "${output_file}" '"name":"verify_changes_preview"'
   assert_contains "${output_file}" '"name":"jdk_list"'
+  python3 "${ROOT_DIR}/test/smoke/doctor_mcp_test.py" "${prefix}/bin/makevn-mcp"
 }
 
 test_init_does_not_touch_existing_makefile() {
@@ -1131,12 +946,6 @@ test_profile_refresh() {
 
   ${CLI} --repo "${repo}" init >/dev/null
 
-  cat > "${repo}/.makevn/makevn.mk" <<'EOF'
-MAKEVN_BIN ?= makevn
-vn-test:
-	@"$(MAKEVN_BIN)" test
-EOF
-
   cat > "${repo}/.github/workflows/build.yml" <<'EOF'
 jobs:
   build:
@@ -1146,7 +955,7 @@ EOF
 
   ${CLI} --repo "${repo}" profile refresh >/dev/null
   assert_contains "${repo}/.makevn/profile.env" "MAKEVN_PROFILE_BUILD_PROP_FLAGS=''"
-  assert_contains "${repo}/.makevn/makevn.mk" 'define makevn_run'
+  assert_not_exists "${repo}/.makevn/makevn.mk"
 
   cat > "${repo}/.github/workflows/build.yml" <<'EOF'
 jobs:
@@ -1199,7 +1008,6 @@ test_interactive_pid_output() {
   java_home="$(detect_java_home)"
 
   ${CLI} --repo "${repo}" init >/dev/null
-  ${CLI} --repo "${repo}" make install >/dev/null
 
   cat > "${repo}/mvnw" <<'EOF'
 #!/usr/bin/env bash
@@ -1266,41 +1074,6 @@ EOF
   [[ ! -n "$(pgrep -f "${repo}/mvnw" || true)" ]] || fail "expected ctrl+c interrupted mvnw process to be stopped"
   [[ ! -n "$(pgrep -f "/libexec/makevn/cli.sh --repo ${repo} build" || true)" ]] || fail "expected ctrl+c interrupted makevn process to be stopped"
   [[ "$(tr -d '\r' < "${output_file}")" == *"interrupted after "* ]] || fail "expected ctrl+c output to include interrupted message"
-
-  ${CLI} --repo "${repo}" uninstall >/dev/null
-}
-
-test_make_failure_output() {
-  local repo="${TMP_ROOT}/make-failure"
-  local java_home
-  local output
-
-  mkdir -p "${repo}"
-  printf '<project/>\n' > "${repo}/pom.xml"
-  java_home="$(detect_java_home)"
-
-  ${CLI} --repo "${repo}" init >/dev/null
-
-  cat > "${repo}/mvnw" <<'EOF'
-#!/usr/bin/env bash
-set -euo pipefail
-printf 'failing-test\n' >&2
-exit 7
-EOF
-  chmod +x "${repo}/mvnw"
-
-  cat > "${repo}/.makevn/config" <<EOF
-MAKEVN_JAVA_HOME="${java_home}"
-MAKEVN_CODE_JAVA_HOME=""
-MAKEVN_KARATE_JAVA_HOME=""
-MAKEVN_CODE_TOOL_VERSIONS=""
-MAKEVN_KARATE_TOOL_VERSIONS=""
-MAKEVN_RUN_CMD=""
-EOF
-
-  output="$(make -f .makevn/makevn.mk -C "${repo}" vn-test 2>&1 || true)"
-
-  [[ "${output}" == *"make: ***"* || "${output}" == *"gmake: ***"* ]] || fail "expected make failure output to still include make failure"
 
   ${CLI} --repo "${repo}" uninstall >/dev/null
 }
@@ -1458,7 +1231,7 @@ MAKEVN_KARATE_TOOL_VERSIONS=""
 MAKEVN_RUN_CMD=""
 EOF
 
-  run_pty_command "${output_file}" "${compact_cli}" --repo "${repo}" --compact compile
+  MAKEVN_AGENT_OUTPUT=1 run_pty_command "${output_file}" "${compact_cli}" --repo "${repo}" --compact compile
 
   [[ "$(tr -d '\r' < "${output_file}")" == *"[..] makevn compile |"* ]] || fail "expected compact tty output to include plain compact header"
   [[ "$(tr -d '\r' < "${output_file}")" == *"log: .makevn/logs/compile.log"* ]] || fail "expected compact tty output to include log path"
@@ -1521,7 +1294,7 @@ PY
 test_command_routing() {
   local repo="${TMP_ROOT}/command-routing"
   local java_home
-  local make_output
+  local selected_test_output
   mkdir -p "${repo}"
   mkdir -p "${repo}/code/boot/src/test/resources/compose"
   mkdir -p "${repo}/fake-bin"
@@ -1658,12 +1431,11 @@ MAKEVN_CHECKSTYLE_GOAL=""
 EOF
   local build_output
   local package_output
-  PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" make install >/dev/null
   build_output="$(PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" build)"
   PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" test-compile >/dev/null
   PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" compile-tests >/dev/null
   PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" validate >/dev/null
-  package_output="$(PATH="${repo}/fake-bin:${PATH}" make -f .makevn/makevn.mk -C "${repo}" vn-package)"
+  package_output="$(PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" package)"
   PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" clean >/dev/null
   PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" test >/dev/null
   PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" format --apply >/dev/null
@@ -1671,13 +1443,13 @@ EOF
   PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" test --name UserRepositoryTest >/dev/null
   PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" test --name UserRepositoryTest,OrderRepositoryTest >/dev/null
   mkdir -p "${repo}/module-a/target/test-classes"
-  make_output="$(PATH="${repo}/fake-bin:${PATH}" make -f .makevn/makevn.mk -C "${repo}" vn-test NAME=UserRepositoryTest FAST=true)"
+  selected_test_output="$(PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" test --name UserRepositoryTest --fast)"
   PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" test --name UserFlowIT >/dev/null
   PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" verify >/dev/null
   PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" run >/dev/null
   [[ "${build_output}" == *"[ok] "* ]] || fail "expected build output to include success summary"
-  [[ "${package_output}" == *"[ok] "* ]] || fail "expected vn-package output to include success summary"
-  [[ "${make_output}" == *"[ok] "* ]] || fail "expected vn-test fast output to include success summary"
+  [[ "${package_output}" == *"[ok] "* ]] || fail "expected package output to include success summary"
+  [[ "${selected_test_output}" == *"[ok] "* ]] || fail "expected test fast output to include success summary"
   assert_contains "${repo}/.makevn/profile.env" 'MAKEVN_PROFILE_MAVEN_CLI_FLAGS=-B\ -nsu'
   assert_contains "${repo}/.makevn/profile.env" 'MAKEVN_PROFILE_BUILD_PRE_GOALS=clean'
   assert_contains "${repo}/.makevn/profile.env" 'MAKEVN_PROFILE_BUILD_PROP_FLAGS=-Dformat.skip=true'
@@ -1825,20 +1597,11 @@ exit 0
 EOF
   chmod +x "${repo}/fake-bin/docker"
 
-  cat > "${repo}/fake-bin/makevn-wrapper" <<EOF
-#!/usr/bin/env bash
-set -euo pipefail
-export PATH="${repo}/fake-bin:\$PATH"
-exec "${CLI}" "\$@"
-EOF
-  chmod +x "${repo}/fake-bin/makevn-wrapper"
-
   PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" init >/dev/null
-  PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" make install >/dev/null
   PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" docker-up >/dev/null
   assert_not_contains "${repo}/.docker-compose.log" " ps -q "
   PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" docker-down >/dev/null
-  output="$(make -f .makevn/makevn.mk -C "${repo}" MAKEVN_BIN="${repo}/fake-bin/makevn-wrapper" vn-docker-ps)"
+  output="$(PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" docker-ps)"
   stats_output="$(PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" docker-stats)"
 
   assert_matches "${repo}/.docker-compose.log" '^docker-compose -f .*/code/boot/src/test/resources/compose/docker-compose\.yml -f .*/code/boot/src/test/resources/compose/docker-compose\.override\.yml down -v --remove-orphans$'
@@ -2129,20 +1892,12 @@ EOF
 #!/usr/bin/env bash
 set -euo pipefail
 printf 'curl %s\n' "\$*" >> "${repo}/.curl.log"
+printf 200
 exit 0
 EOF
   chmod +x "${repo}/fake-bin/curl"
 
-  cat > "${repo}/fake-bin/makevn-wrapper" <<EOF
-#!/usr/bin/env bash
-set -euo pipefail
-export PATH="${repo}/fake-bin:\$PATH"
-exec "${CLI}" "\$@"
-EOF
-  chmod +x "${repo}/fake-bin/makevn-wrapper"
-
   PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" init >/dev/null
-  PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" make install >/dev/null
   cat > "${repo}/.makevn/config" <<EOF
 MAKEVN_JAVA_HOME="${java_home}"
 MAKEVN_CODE_JAVA_HOME="${repo}/fake-java-home"
@@ -2156,12 +1911,11 @@ EOF
   assert_not_contains "${repo}/.docker-compose.log" " ps -q "
   PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" karate-docker-down >/dev/null
   PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" docker-ps-required --compose karate >/dev/null
-  PATH="${repo}/fake-bin:${PATH}" make -f .makevn/makevn.mk -C "${repo}" MAKEVN_BIN="${repo}/fake-bin/makevn-wrapper" vn-docker-ps-required MAKEVN_DOCKER_PS_REQUIRED_ARGS="--compose karate" >/dev/null
   printf 'not-a-real-jar\n' > "${repo}/code/boot/target/app.jar"
   PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" run-app-bg >/dev/null
   PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" stop-app >/dev/null
   PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" karate-test --tag @smoke >/dev/null
-  output="$(PATH="${repo}/fake-bin:${PATH}" make -f .makevn/makevn.mk -C "${repo}" MAKEVN_BIN="${repo}/fake-bin/makevn-wrapper" vn-karate-all TAG=@smoke)"
+  output="$(PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" karate-all --tag @smoke)"
 
   assert_matches "${repo}/.docker-compose.log" '^docker-compose -f .*/e2e/karate/src/test/resources/compose/docker-compose\.yml -f .*/e2e/karate/src/test/resources/compose/docker-compose\.override\.yml down -v --remove-orphans$'
   assert_matches "${repo}/.docker-compose.log" '^docker-compose -f .*/e2e/karate/src/test/resources/compose/docker-compose\.yml -f .*/e2e/karate/src/test/resources/compose/docker-compose\.override\.yml up --detach$'
@@ -2172,7 +1926,7 @@ EOF
   assert_matches "${repo}/.java.log" '^JAVA_ARGS=-jar .*/code/boot/target/app\.jar$'
   assert_contains "${repo}/.curl.log" "http://localhost:18080/products/actuator/health"
   assert_not_exists "${repo}/.makevn/app/app.pid"
-  [[ "${output}" == *"[ok] "* ]] || fail "expected vn-karate-all output to include success summary"
+  [[ "${output}" == *"[ok] "* ]] || fail "expected karate-all output to include success summary"
 
   ${CLI} --repo "${repo}" uninstall >/dev/null
 }
@@ -2430,6 +2184,7 @@ EOF
   cat > "${repo}/fake-bin/curl" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
+printf 200
 exit 0
 EOF
   chmod +x "${repo}/fake-bin/curl"
@@ -2515,6 +2270,7 @@ EOF
   cat > "${repo}/fake-bin/curl" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
+printf 200
 exit 0
 EOF
   chmod +x "${repo}/fake-bin/curl"
@@ -2637,6 +2393,7 @@ MAKEVN_CODE_TOOL_VERSIONS=""
 MAKEVN_KARATE_TOOL_VERSIONS=""
 MAKEVN_RUN_CMD=""
 MAKEVN_APP_HEALTH_TIMEOUT=5
+MAKEVN_APP_HEALTH_URL="http://localhost:18081/health"
 EOF
 
   PATH="${repo}/fake-bin:${PATH}" run_pty_command "${output_file}" "${rust_cli}" --repo "${repo}" karate-all || true
@@ -2712,16 +2469,7 @@ exit 0
 EOF
   chmod +x "${repo}/fake-bin/docker"
 
-  cat > "${repo}/fake-bin/makevn-wrapper" <<EOF
-#!/usr/bin/env bash
-set -euo pipefail
-export PATH="${repo}/fake-bin:\$PATH"
-exec "${CLI}" "\$@"
-EOF
-  chmod +x "${repo}/fake-bin/makevn-wrapper"
-
   PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" init >/dev/null
-  PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" make install >/dev/null
   cat > "${repo}/.makevn/config" <<EOF
 MAKEVN_JAVA_HOME="${java_home}"
 MAKEVN_CODE_JAVA_HOME=""
@@ -2735,17 +2483,17 @@ EOF
   PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" verify-ut-coverage >/dev/null
   PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" verify-it >/dev/null
   PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" verify-it-coverage >/dev/null
-  output="$(make -f .makevn/makevn.mk -C "${repo}" MAKEVN_BIN="${repo}/fake-bin/makevn-wrapper" vn-verify-ut)"
-  pr_output="$(make -f .makevn/makevn.mk -C "${repo}" MAKEVN_BIN="${repo}/fake-bin/makevn-wrapper" vn-pr-verify)"
-  make -f .makevn/makevn.mk -C "${repo}" MAKEVN_BIN="${repo}/fake-bin/makevn-wrapper" vn-docker-ps-required >/dev/null
+  output="$(PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" verify-ut)"
+  pr_output="$(PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" pr-verify)"
+  PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" docker-ps-required >/dev/null
 
   assert_matches "${repo}/.mvnw.log" '^ARGS=-f .*/pom\.xml verify -Djacoco\.skip=false -DskipITs -DfailIfNoTests=false -Dmaven\.test\.failure\.ignore=false$'
   assert_matches "${repo}/.mvnw.log" '^ARGS=-f .*/pom\.xml verify -Djacoco\.skip=false -DskipUTs -Dskip\.unit\.tests=true -DfailIfNoTests=false -Dmaven\.test\.failure\.ignore=false -Dmaven\.build\.cache\.enabled=false$'
   assert_matches "${repo}/.mvnw.log" '^ARGS=-B -nsu -f .*/pom\.xml clean verify -Djacoco\.skip=false -DskipITs -DfailIfNoTests=false -Dmaven\.test\.failure\.ignore=false -Dmaven\.build\.cache\.enabled=false$'
   assert_contains "${repo}/.mvnw.log" "JAVA_HOME=${java_home}"
   assert_matches "${repo}/.docker-compose.log" '^docker-compose -f .*/code/boot/src/test/resources/compose/docker-compose\.yml -f .*/code/boot/src/test/resources/compose/docker-compose\.override\.yml ps -q db$'
-  [[ "${output}" == *"[ok] "* ]] || fail "expected vn-verify-ut output to include success summary"
-  [[ "${pr_output}" == *"[ok] "* ]] || fail "expected vn-pr-verify output to include success summary"
+  [[ "${output}" == *"[ok] "* ]] || fail "expected verify-ut output to include success summary"
+  [[ "${pr_output}" == *"[ok] "* ]] || fail "expected pr-verify output to include success summary"
 
   ${CLI} --repo "${repo}" uninstall >/dev/null
 }
@@ -4452,8 +4200,15 @@ EOF
 
   output="$("${fail_cli}" --repo "${repo}" compile 2>&1 || true)"
 
-  [[ "${output}" == *"Worked  for "* ]] || fail "expected dashboard elapsed to be present"
-  [[ "${output}" == *"[fail] exit 7 | check the log"* ]] || fail "expected compact failure summary without duplicate elapsed"
+  [[ "${output}" != *"Worked  for "* ]] || fail "non-TTY failure must not include a dashboard"
+  [[ "${output}" != *$'\033['* ]] || fail "non-TTY failure must not include ANSI"
+  [[ "${output}" =~ \[fail\]\ exit\ 7\ \|\ [0-9]+s\ \|\ check\ the\ log ]] || fail "expected plain failure with elapsed once"
+
+  local output_file="${repo}/failure-tty.out"
+  TERM=xterm-256color NO_COLOR=1 run_pty_command "${output_file}" "${fail_cli}" --repo "${repo}" compile || true
+  output="$(tr -d '\r' < "${output_file}")"
+  [[ "${output}" == *"Worked  for "* ]] || fail "expected human TTY dashboard elapsed"
+  [[ "${output}" == *"[fail] exit 7 | check the log"* ]] || fail "expected TTY failure without duplicate elapsed"
   if [[ "${output}" =~ \[fail\]\ exit\ 7\ \|\ [0-9]+s\ \|\ check\ the\ log ]]; then
     fail "expected failure summary not to repeat elapsed after dashboard"
   fi
@@ -4877,7 +4632,13 @@ main() {
   test_doctor_resolves_java_version_from_compiler_plugin_source
   test_doctor_does_not_invent_health_check
   test_doctor_detects_actuator_health_check
-  test_doctor_local_containers_prompt_does_not_chain_health_prompt
+  test_doctor_missing_health_prompt
+  test_doctor_health_skip_and_noninteractive
+  test_doctor_health_invalid_and_explicit_url
+  test_doctor_health_confirms_suggested_default
+  test_doctor_health_readline_fallback
+  test_doctor_health_config_roundtrip
+  test_doctor_local_containers_prompt_also_prompts_health
   test_doctor_compose_prompt_does_not_chain_local_containers_prompt
   test_doctor_shows_progress_in_tty
   test_doctor_reports_compatible_newer_java_homes
@@ -4889,15 +4650,12 @@ main() {
   test_init_force_preserves_config
   test_format_requires_configured_formatter
   test_checkstyle_requires_configured_plugin
-  test_make_install_existing_makefile
-  test_make_install_without_makefile
   test_installer
   test_runtime_archive_includes_crap_reporter
   test_init_does_not_touch_existing_makefile
   test_profile_refresh
   test_interactive_pid_output
   test_interactive_ctrl_c_interrupt
-  test_make_failure_output
   test_tail_degrades_without_tty
   test_non_tty_run_is_compact_and_keeps_full_log_in_file
   test_compact_tty_omits_color_and_loader
@@ -4972,8 +4730,22 @@ main() {
   test_removed_exec_rejected
   test_command_typo_rejected_before_backend
   test_command_failure_summary_omits_duplicate_elapsed
+  python3 "${ROOT_DIR}/test/smoke/tail_metadata_pty_test.py" "${ROOT_DIR}/target/release/makevn"
+  python3 "${ROOT_DIR}/test/smoke/docker_resources_pty_test.py" "${ROOT_DIR}/target/release/makevn"
+  bash "${ROOT_DIR}/test/smoke/docker_resource_scope_test.sh"
+  bash "${ROOT_DIR}/test/smoke/karate_readiness_test.sh"
+  bash "${ROOT_DIR}/test/smoke/karate_phase_records_test.sh"
+  python3 "${ROOT_DIR}/test/smoke/karate_profiles_test.py"
+  bash "${ROOT_DIR}/test/smoke/karate_profiles_test.sh"
+  bash "${ROOT_DIR}/test/smoke/karate_profiles_doctor_test.sh"
   bash "${ROOT_DIR}/test/smoke/jdk_discovery_test.sh"
+  bash "${ROOT_DIR}/test/smoke/formatting_test.sh"
+  bash "${ROOT_DIR}/test/smoke/formatting_recovery_test.sh"
   bash "${ROOT_DIR}/test/smoke/bash_crap_test.sh"
+  bash "${ROOT_DIR}/test/smoke/standalone_contract_test.sh"
+  bash "${ROOT_DIR}/test/smoke/doctor_compact_test.sh"
+  bash "${ROOT_DIR}/test/smoke/state_progress_test.sh"
+  python3 "${ROOT_DIR}/test/smoke/interactive_doctor_test.py" "${ROOT_DIR}/target/release/makevn"
   printf 'Smoke tests passed\n'
 }
 
@@ -4988,5 +4760,7 @@ test_removed_exec_rejected() {
   fi
   [[ "${output}" == *"Unknown backend command: exec"* ]] || fail "expected unknown backend command"
 }
+
+source "${ROOT_DIR}/test/smoke/doctor_health_test.sh"
 
 main "$@"

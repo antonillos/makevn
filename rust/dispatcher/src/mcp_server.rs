@@ -191,8 +191,6 @@ const CLEAN_GENERATED_CONTRACT_TARGETS: ToolOption = ToolOption {
 const TOOL_SPECS: &[ToolSpec] = &[
     ToolSpec { name: "doctor", description: "Inspect a Java/Maven repository. Run this first to understand the repo setup.", command: &["doctor"], options: &[COMMON_REPO, COMPACT] },
     ToolSpec { name: "init", description: "Initialize makevn in a repository. Creates .makevn/ configuration directory.", command: &["init"], options: &[COMMON_REPO, DRY_RUN, ToolOption { name: "force", ty: "boolean", description: "Force reinitialization", required: false }, COMPACT] },
-    ToolSpec { name: "make_install", description: "Install optional Makefile integration.", command: &["make", "install"], options: &[COMMON_REPO, DRY_RUN, COMPACT] },
-    ToolSpec { name: "make_uninstall", description: "Remove optional Makefile integration.", command: &["make", "uninstall"], options: &[COMMON_REPO, DRY_RUN, COMPACT] },
     ToolSpec { name: "uninstall", description: "Remove makevn local repository state.", command: &["uninstall"], options: &[COMMON_REPO, DRY_RUN, COMPACT] },
     ToolSpec { name: "profile_refresh", description: "Refresh makevn repository profile detection.", command: &["profile", "refresh"], options: &[COMMON_REPO, COMPACT] },
     ToolSpec { name: "compile", description: "Compile the Maven project source code.", command: &["compile"], options: &[COMMON_REPO, COMPACT] },

@@ -47,7 +47,6 @@ cp -R "${ROOT_DIR}/libexec/makevn/crap" "${STAGE_DIR}/libexec/makevn/crap"
 cp -R "${ROOT_DIR}/libexec/makevn/docker" "${STAGE_DIR}/libexec/makevn/docker"
 cp -R "${ROOT_DIR}/libexec/makevn/jdk" "${STAGE_DIR}/libexec/makevn/jdk"
 cp -R "${ROOT_DIR}/libexec/makevn/compat" "${STAGE_DIR}/libexec/makevn/compat"
-cp -R "${ROOT_DIR}/share/makevn/." "${STAGE_DIR}/share/makevn/"
 mkdir -p "${STAGE_DIR}/share/makevn/skills/makevn"
 cp -R "${ROOT_DIR}/skills/makevn/." "${STAGE_DIR}/share/makevn/skills/makevn/"
 

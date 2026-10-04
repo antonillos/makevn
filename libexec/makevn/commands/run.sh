@@ -97,20 +97,6 @@ makevn_app_health_url() {
   makevn_detect_app_health_url "${maven_base_path}" || return 1
 }
 
-makevn_repo_has_legacy_local_containers_default() {
-  local repo_root="$1"
-  local makefile=""
-
-  for makefile in "${repo_root}/GNUmakefile" "${repo_root}/Makefile"; do
-    [[ -f "${makefile}" ]] || continue
-    grep -q 'LOCAL_TEST[[:space:]]*?=[[:space:]]*TRUE' "${makefile}" || continue
-    grep -q 'export[[:space:]]\+LOCAL_CONTAINERS[[:space:]]*:=' "${makefile}" || continue
-    return 0
-  done
-
-  return 1
-}
-
 makevn_effective_app_local_containers() {
   local repo_root="$1"
 
@@ -121,10 +107,6 @@ makevn_effective_app_local_containers() {
   fi
   if [[ -n "${MAKEVN_LOCAL_CONTAINERS+x}" ]]; then
     printf '%s\n' "${MAKEVN_LOCAL_CONTAINERS}"
-    return 0
-  fi
-  if makevn_repo_has_legacy_local_containers_default "${repo_root}"; then
-    printf '%s\n' "${LOCAL_TEST:-TRUE}"
     return 0
   fi
 
@@ -166,34 +148,77 @@ makevn_app_process_exited() {
   [[ "${process_state}" == "gone" || "${process_state}" == "zombie" ]]
 }
 
+makevn_validate_app_health_timeout() {
+  local timeout_seconds="$1"
+
+  if [[ ! "${timeout_seconds}" =~ ^[1-9][0-9]*$ ]] ||
+    [[ ${#timeout_seconds} -gt 10 ]] ||
+    (( timeout_seconds > 2147483647 )); then
+    makevn_die "MAKEVN_APP_HEALTH_TIMEOUT must be a positive integer between 1 and 2147483647 seconds."
+  fi
+}
+
+makevn_probe_app_health() {
+  local health_url="$1"
+  local remaining="$2"
+  local request_timeout=5
+  local connect_timeout=2
+  local http_status=""
+
+  (( remaining >= request_timeout )) || request_timeout="${remaining}"
+  (( remaining >= connect_timeout )) || connect_timeout="${remaining}"
+  http_status="$(curl --disable --silent --show-error --output /dev/null --write-out '%{http_code}' \
+    --connect-timeout "${connect_timeout}" --max-time "${request_timeout}" \
+    "${health_url}" 2>/dev/null)" || return 1
+  [[ "${http_status}" =~ ^2[0-9][0-9]$ ]]
+}
+
+# One current readiness detail, rather than an accumulating progress transcript.
+makevn_report_app_readiness() {
+  local message="$1" tmp_file
+  if [[ -n "${MAKEVN_BACKEND_DETAIL_OUT:-}" && -f "${MAKEVN_BACKEND_DETAIL_OUT}" ]]; then
+    tmp_file="$(mktemp)"
+    awk '!/^readiness:/' "${MAKEVN_BACKEND_DETAIL_OUT}" > "${tmp_file}"
+    mv "${tmp_file}" "${MAKEVN_BACKEND_DETAIL_OUT}"
+  fi
+  makevn_report_run_detail "readiness: ${message}"
+}
+
 makevn_wait_app_health() {
   local health_url="$1"
-  local timeout_seconds="${2:-30}"
+  local timeout_seconds="${2:-60}"
   local app_pid="${3:-}"
   local log_file="${4:-}"
-  local elapsed=0
+  local deadline=$((SECONDS + timeout_seconds))
+  local remaining=0
 
-  while (( elapsed < timeout_seconds )); do
-    if curl -fsS "${health_url}" >/dev/null 2>&1; then
+  makevn_report_run_detail "health URL: ${health_url}"
+  makevn_report_app_readiness "waiting for HTTP 2xx | timeout: ${timeout_seconds}s"
+  while (( SECONDS < deadline )); do
+    if [[ -n "${app_pid}" ]] && makevn_app_process_exited "${app_pid}"; then
+      MAKEVN_APP_PROCESS_EXITED="yes"
+      makevn_report_app_readiness "not verified (application process exited)"
+      makevn_report_app_startup_failure "Application process exited during startup. Check the log: ${log_file}" "${log_file}"
+      return 1
+    fi
+    remaining=$((deadline - SECONDS))
+    (( remaining > 0 )) || break
+    if makevn_probe_app_health "${health_url}" "${remaining}"; then
+      if (( SECONDS >= deadline )); then
+        break
+      fi
+      makevn_report_app_readiness "HTTP 2xx verified | timeout: ${timeout_seconds}s"
       return 0
     fi
-    if [[ -n "${app_pid}" ]]; then
-      if makevn_app_process_exited "${app_pid}"; then
-        MAKEVN_APP_PROCESS_EXITED="yes"
-        sleep 0.1
-        if [[ -n "${log_file}" ]]; then
-          makevn_report_app_startup_failure "Application process exited during startup. Check the log: ${log_file}" "${log_file}"
-        else
-          makevn_report_app_startup_failure "Application process exited during startup."
-        fi
-        return 1
-      fi
-    fi
+    (( SECONDS < deadline )) || break
     sleep 1
-    elapsed=$((elapsed + 1))
   done
 
-  makevn_report_app_startup_failure "App health check did not pass within ${timeout_seconds}s: ${health_url}" "${log_file}"
+  makevn_report_app_readiness "timeout after ${timeout_seconds}s (HTTP 2xx not received)"
+  makevn_report_run_detail "Timeout: the application did not respond with HTTP 2xx within ${timeout_seconds}s: ${health_url}"
+  makevn_report_run_detail "Readiness was not verified; this does not establish an application failure."
+  makevn_report_run_detail "If startup needs more time, increase MAKEVN_APP_HEALTH_TIMEOUT in .makevn/config (for example: MAKEVN_APP_HEALTH_TIMEOUT=120). Also check the health URL and HTTP response."
+  [[ -z "${log_file}" ]] || makevn_report_run_detail "Full application log: ${log_file}"
   return 1
 }
 
@@ -285,6 +310,8 @@ makevn_ensure_app_jar() {
 makevn_start_app_background() {
   local repo_root="$1"
   local mode="$2"
+  local resolved_health_url="${3:-}"
+  local health_timeout="${4:-}"
   local maven_base_path=""
   local boot_module=""
   local java_home=""
@@ -308,6 +335,10 @@ makevn_start_app_background() {
   if ! makevn_detect_app_runnable "${repo_root}" "${maven_base_path}"; then
     makevn_die "run-app is disabled: no executable application was detected. Add an application main class, executable packaging plugin, or configure MAKEVN_RUN_CMD for 'makevn run'."
   fi
+  makevn_load_config "${repo_root}"
+  health_url="${resolved_health_url:-$(makevn_app_health_url "${repo_root}" "${maven_base_path}" || true)}"
+  health_timeout="${health_timeout:-${MAKEVN_APP_HEALTH_TIMEOUT:-60}}"
+  makevn_validate_app_health_timeout "${health_timeout}"
   boot_module="$(makevn_detect_boot_module_name "${repo_root}")"
   java_home="$(makevn_effective_java_home "${repo_root}" code "${maven_base_path}" || true)"
   [[ -n "${java_home}" ]] || makevn_die "Could not resolve code JDK. Run 'makevn doctor' or configure .makevn/config first."
@@ -343,26 +374,13 @@ makevn_start_app_background() {
   if ! makevn_frontend_owns_loader; then
     print_command_intro "${repo_root}" "${mode}"
   fi
+  makevn_report_run_detail "profiles: ${SPRING_PROFILES_ACTIVE:-application defaults} (${MAKEVN_EFFECTIVE_KARATE_APP_PROFILES_SOURCE:-inherited environment / application defaults})"
   makevn_ensure_app_jar "${repo_root}" "${maven_base_path}" "${boot_module}"
   jar_file="${MAKEVN_ENSURED_APP_JAR:-}"
   jar_main_class="$(makevn_app_jar_manifest_value "${jar_file}" "Main-Class" || true)"
   jar_start_class="$(makevn_app_jar_manifest_value "${jar_file}" "Start-Class" || true)"
-  health_url="$(makevn_app_health_url "${repo_root}" "${maven_base_path}" || true)"
-  makevn_print_item "jar" "${jar_file}"
-  if [[ -n "${jar_main_class}" ]]; then
-    makevn_print_item "Main-Class" "${jar_main_class}"
-  fi
-  if [[ -n "${jar_start_class}" ]]; then
-    makevn_print_item "Start-Class" "${jar_start_class}"
-  fi
-  if [[ -n "${health_url}" ]]; then
-    makevn_print_item "health" "${health_url}"
-  else
-    makevn_print_item "health" "not configured"
-    makevn_report_run_detail "$(makevn_warn "No application health check configured or detected; startup readiness will only verify that the process stays alive briefly.")"
-  fi
-  if [[ -n "${local_containers}" ]]; then
-    makevn_print_item "LOCAL_CONTAINERS" "${local_containers}"
+  if [[ -z "${health_url}" ]]; then
+    makevn_report_run_detail "$(makevn_warn "No application health check configured or detected; only process liveness will be checked; HTTP readiness is not verified.")"
   fi
 
   makevn_write_backend_metadata \
@@ -378,9 +396,13 @@ makevn_start_app_background() {
 
   (
     cd "${repo_root}"
+    local log_header
+    log_header="$(mktemp "${log_dir}/app.log.XXXXXX")"
     {
       printf "started: %s\n" "$(date "+%Y-%m-%d %H:%M:%S")"
       printf "java_home: %s\n" "${java_home}"
+      printf "spring_profiles_active: %s\n" "${SPRING_PROFILES_ACTIVE:-application defaults}"
+      printf "spring_profiles_source: %s\n" "${MAKEVN_EFFECTIVE_KARATE_APP_PROFILES_SOURCE:-inherited environment / application defaults}"
       printf "jar: %s\n" "${jar_file}"
       if [[ -n "${jar_main_class}" ]]; then
         printf "main_class: %s\n" "${jar_main_class}"
@@ -395,7 +417,8 @@ makevn_start_app_background() {
         printf "command: %s\n" "$(makevn_quote_command env JAVA_HOME="${java_home}" java -jar "${jar_file}")"
       fi
       printf '\n'
-    } > "${log_file}" 2>&1
+    } > "${log_header}" 2>&1
+    mv -f "${log_header}" "${log_file}"
     if [[ -n "${local_containers}" ]]; then
       exec env JAVA_HOME="${java_home}" PATH="${java_home}/bin:${PATH}" LOCAL_CONTAINERS="${local_containers}" java -jar "${jar_file}" >> "${log_file}" 2>&1
     fi
@@ -408,7 +431,7 @@ makevn_start_app_background() {
   MAKEVN_APP_PROCESS_EXITED=""
   set +e
   if [[ -n "${health_url}" ]]; then
-    makevn_wait_app_health "${health_url}" "${MAKEVN_APP_HEALTH_TIMEOUT:-60}" "${app_pid}" "${log_file}"
+    makevn_wait_app_health "${health_url}" "${health_timeout}" "${app_pid}" "${log_file}"
   else
     makevn_wait_app_started_without_health "${MAKEVN_APP_STARTUP_GRACE_SECONDS:-3}" "${app_pid}" "${log_file}"
   fi
@@ -430,14 +453,14 @@ makevn_start_app_background() {
     if [[ -n "${health_url}" ]]; then
       printf '%s\n' "$(makevn_accent "ok application is ready")"
     else
-      printf '%s\n' "$(makevn_accent "ok application started without health check")"
+      printf '%s\n' "$(makevn_accent "ok application started without health check (process alive; HTTP readiness not verified)")"
     fi
   fi
 }
 
 cmd_run_app_bg() {
   local repo_root="$1"
-  makevn_start_app_background "${repo_root}" run-app-bg
+  makevn_start_app_background "${repo_root}" run-app-bg "${2:-}" "${3:-}"
 }
 
 cmd_run_app() {

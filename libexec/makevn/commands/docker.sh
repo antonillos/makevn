@@ -22,6 +22,34 @@ makevn_collect_compose_args() {
   fi
 }
 
+# Optional frontend-only side channel; telemetry must never block the command.
+makevn_publish_compose_resources() {
+  local repo_root="$1" compose_command="$2" compose_file="$3" override_file="$4"
+  local output="${MAKEVN_FRONTEND_RESOURCE_SCOPE_OUT:-}" temporary=""
+  local -a command_words=()
+  [[ -n "${output}" && -f "${compose_file}" ]] || return 0
+  [[ "${repo_root}${compose_file}${override_file}" != *$'\n'* ]] || return 0
+  read -r -a command_words <<< "${compose_command}"
+  temporary="$(mktemp "${output}.tmp.XXXXXX" 2>/dev/null)" || return 0
+  if {
+    printf '%s\n' "${repo_root}" "${command_words[@]}" &&
+      makevn_collect_compose_args "${compose_file}" "${override_file}"
+  } > "${temporary}"; then
+    mv "${temporary}" "${output}" 2>/dev/null || true
+  fi
+  rm -f "${temporary}" 2>/dev/null || true
+  return 0
+}
+
+makevn_publish_boot_resources() {
+  local repo_root="$1"
+  [[ -n "${MAKEVN_FRONTEND_RESOURCE_SCOPE_OUT:-}" ]] || return 0
+  makevn_publish_compose_resources "${repo_root}" \
+    "$(makevn_resolve_docker_compose_command || true)" \
+    "$(makevn_boot_compose_file_path "${repo_root}" || true)" \
+    "$(makevn_boot_compose_override_file_path "${repo_root}" || true)"
+}
+
 makevn_parse_docker_args() {
   while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -186,6 +214,8 @@ cmd_docker_ps_required() {
     compose_args+=" -f ${compose_override_file}"
   fi
 
+  makevn_publish_compose_resources "${repo_root}" "${docker_compose_cmd}" "${compose_file}" "${compose_override_file}"
+
   while true; do
     output="$(cd "${repo_root}" && COMPOSE_ARGS="${compose_args}" SERVICES="${services}" DOCKER_COMPOSE="${docker_compose_cmd}" bash "${docker_ps_script}" || true)"
     if [[ -z "${output}" ]]; then
@@ -244,6 +274,8 @@ cmd_docker_up() {
     compose_args+=("${arg}")
   done < <(makevn_collect_compose_args "${compose_file}" "${compose_override_file}")
 
+  makevn_publish_compose_resources "${repo_root}" "${docker_compose_cmd}" "${compose_file}" "${compose_override_file}"
+
   makevn_run_logged "${repo_root}" docker-up docker-up docker-up bash -c '
     "$@" down -v --remove-orphans
     docker volume prune -f
@@ -278,6 +310,8 @@ cmd_docker_down() {
     compose_args+=("${arg}")
   done < <(makevn_collect_compose_args "${compose_file}" "${compose_override_file}")
 
+  makevn_publish_compose_resources "${repo_root}" "${docker_compose_cmd}" "${compose_file}" "${compose_override_file}"
+
   makevn_run_logged "${repo_root}" docker-down docker-down docker-down bash -c '
     "$@" down -v --remove-orphans
     docker volume prune -f
@@ -293,6 +327,7 @@ cmd_docker_ps() {
 
   [[ -f "${docker_ps_script}" ]] || makevn_die "Docker ps helper script not found: ${docker_ps_script}"
 
+  makevn_publish_boot_resources "${repo_root}"
   makevn_run_logged "${repo_root}" docker-ps docker-ps docker-ps bash "${docker_ps_script}"
 }
 
@@ -305,5 +340,6 @@ cmd_docker_stats() {
 
   [[ -f "${docker_stats_script}" ]] || makevn_die "Docker stats helper script not found: ${docker_stats_script}"
 
+  makevn_publish_boot_resources "${repo_root}"
   makevn_run_logged "${repo_root}" docker-stats docker-stats docker-stats bash "${docker_stats_script}"
 }

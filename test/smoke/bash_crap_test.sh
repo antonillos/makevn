@@ -27,13 +27,9 @@ test_option_parsers() {
   cmd_init_parse_options --dry-run --force
   assert_equal "${dry_run}:${force}" true:true
   dry_run=false
-  cmd_make_install_parse_options --dry-run
-  assert_equal "${dry_run}" true
-  cmd_make_uninstall_parse_options --dry-run
   cmd_uninstall_parse_options --dry-run
+  assert_equal "${dry_run}" true
   assert_rejected 'Unknown init option: --bad' cmd_init_parse_options --bad
-  assert_rejected 'Unknown make install option: --bad' cmd_make_install_parse_options --bad
-  assert_rejected 'Unknown make uninstall option: --bad' cmd_make_uninstall_parse_options --bad
   assert_rejected 'Unknown uninstall option: --bad' cmd_uninstall_parse_options --bad
 
   local fast_mode=false name_arg='' test_name=''
@@ -113,26 +109,6 @@ test_selected_test_execution() (
   assert_rejected 'test --fast requires at least one --name' cmd_test root --fast
 )
 
-test_make_previews_and_modified_file() (
-  local repo_root="${TMP_ROOT}/preview" managed_makefile='' generated_root_makefile=Makefile
-  local make_include_path="${repo_root}/.makevn/makevn.mk"
-  mkdir -p "${repo_root}/.makevn"
-  touch "${make_include_path}"
-  printf 'user-authored content\n' >"${repo_root}/Makefile"
-  makevn_print_make_install_preview "${repo_root}" "${make_include_path}" '' Makefile >"${TMP_ROOT}/preview-output"
-  grep -Fq 'would create' "${TMP_ROOT}/preview-output"
-  makevn_print_make_install_preview "${repo_root}" "${make_include_path}" GNUmakefile '' >"${TMP_ROOT}/preview-output"
-  grep -Fq 'would update' "${TMP_ROOT}/preview-output"
-  cmd_make_uninstall_preview "${repo_root}" '' Makefile >"${TMP_ROOT}/preview-output"
-  grep -Fq 'would leave modified root file untouched' "${TMP_ROOT}/preview-output"
-  cmd_uninstall_preview "${repo_root}" '' Makefile >"${TMP_ROOT}/preview-output"
-  grep -Fq 'would leave modified root file untouched' "${TMP_ROOT}/preview-output"
-  cmd_make_uninstall_remove_makefiles "${repo_root}" '' Makefile >"${TMP_ROOT}/remove-output" 2>&1
-  grep -Fq 'after make install' "${TMP_ROOT}/remove-output"
-  cmd_uninstall_remove_makefiles "${repo_root}" '' Makefile >"${TMP_ROOT}/remove-output" 2>&1
-  grep -Fq 'after initialization' "${TMP_ROOT}/remove-output"
-  assert_equal "$(cat "${repo_root}/Makefile")" 'user-authored content'
-)
 
 test_all_test_exit_status() (
   makevn_run_maven_goal() { return 17; }
@@ -172,7 +148,6 @@ test_checkstyle_arguments
 test_goal_flag_arrays
 test_verify_it_workflow_flags
 test_selected_test_execution
-test_make_previews_and_modified_file
 test_all_test_exit_status
 test_failed_selected_test_sequence
 test_verify_it_property_filtering

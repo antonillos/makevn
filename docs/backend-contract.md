@@ -47,7 +47,6 @@ Current implemented status:
 - Maven executable resolution
 - Maven, Docker, and configured run-command execution
 - `.makevn/` state management
-- `Makefile` and `.makevn/makevn.mk` generation or cleanup
 - managed log-file creation for long-running commands
 - preserving delegated exit codes when practical
 
@@ -371,3 +370,16 @@ This contract does not require:
 - the backend to implement user-facing color or spinner behavior
 - the frontend to parse human-oriented backend output
 - native `Windows` support outside WSL
+
+### Optional project-container resource scope
+
+The interactive Rust frontend may set `MAKEVN_FRONTEND_RESOURCE_SCOPE_OUT` to a
+per-invocation temporary path. Before Docker work or readiness polling, the
+backend atomically publishes a newline-delimited scope: repository working
+directory, resolved executable (`docker` or `docker-compose`), then one exact
+Compose argument per line (including `compose`, base and override files).
+Paths containing newlines are unsupported for this optional channel; no scope
+means unavailable telemetry. This is internal, read-only telemetry plumbing,
+not a public CLI option. Noninteractive commands do not request this channel.
+The frontend owns removal of the scope file, samples only IDs selected by the
+scope, and ignores telemetry failures without changing command results.

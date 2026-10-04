@@ -6,6 +6,7 @@ use std::fs::{self, File};
 use std::io::{self, IsTerminal, Read, Seek, SeekFrom, Write};
 use std::mem::MaybeUninit;
 use std::os::fd::AsRawFd;
+use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
 use std::process;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -19,6 +20,7 @@ use std::os::unix::process::{CommandExt, ExitStatusExt};
 #[cfg(unix)]
 use signal_hook::consts::signal::{SIGINT, SIGTERM};
 
+mod docker_resources;
 mod mcp_server;
 
 fn main() {
@@ -185,6 +187,57 @@ struct BackendMetadataFile {
 #[derive(Debug)]
 struct BackendDetailFile {
     path: PathBuf,
+}
+
+// Completion records survive metadata changes and are scoped to one invocation.
+struct BackendPhaseFiles(PathBuf);
+
+impl BackendPhaseFiles {
+    fn new() -> Result<Self, String> {
+        let temporary = BackendDetailFile::new()?;
+        let path = temporary.path().with_extension("phases");
+        fs::create_dir(&path).map_err(|error| error.to_string())?;
+        Ok(Self(path))
+    }
+
+    fn read(&self) -> Vec<CommandSummary> {
+        let mut indices: Vec<u32> = fs::read_dir(&self.0)
+            .into_iter()
+            .flatten()
+            .filter_map(Result::ok)
+            .filter_map(|entry| entry.file_name().to_str()?.parse().ok())
+            .collect();
+        indices.sort_unstable();
+        indices
+            .into_iter()
+            .filter_map(|index| {
+                let path = self.0.join(index.to_string());
+                let content = fs::read_to_string(&path).ok()?;
+                let metadata = parse_backend_metadata(&content)?;
+                let value = |key: &str| content.lines().find_map(|line| line.strip_prefix(key));
+                let seconds = value("duration_seconds=")?.parse().ok()?;
+                let exit_code = value("exit_code=")?.parse().ok()?;
+                let mut summary = summary_from_backend_metadata(
+                    exit_code,
+                    format_duration(Duration::from_secs(seconds)),
+                    "karate-all",
+                    Some(&metadata),
+                );
+                summary.detail_lines = fs::read_to_string(path.with_extension("detail"))
+                    .unwrap_or_default()
+                    .lines()
+                    .map(str::to_owned)
+                    .collect();
+                Some(summary)
+            })
+            .collect()
+    }
+}
+
+impl Drop for BackendPhaseFiles {
+    fn drop(&mut self) {
+        let _ = fs::remove_dir_all(&self.0);
+    }
 }
 
 #[derive(Debug)]
@@ -634,11 +687,6 @@ fn split_command_segments(args: Vec<OsString>) -> Result<Vec<(OsString, Vec<OsSt
             continue;
         }
 
-        if is_make_subcommand(current_command.as_ref(), &current_args, &arg) {
-            current_args.push(arg);
-            continue;
-        }
-
         if starts_command_segment(&arg) {
             segments.push((current_command.take().unwrap(), current_args));
             current_command = Some(arg);
@@ -673,12 +721,6 @@ fn consume_command_option(
     false
 }
 
-fn is_make_subcommand(command: Option<&OsString>, args: &[OsString], arg: &OsString) -> bool {
-    command == Some(&OsString::from("make"))
-        && args.is_empty()
-        && (arg == "install" || arg == "uninstall")
-}
-
 fn starts_command_segment(arg: &OsString) -> bool {
     is_top_level_command(arg)
         && !COMMAND_SEQUENCE_BREAKERS.contains(&arg.to_string_lossy().as_ref())
@@ -707,9 +749,10 @@ fn validate_command(
     command: &OsString,
     trailing_args: &[OsString],
 ) -> Result<CommandValidation, String> {
-    if trailing_args
-        .iter()
-        .any(|arg| matches!(arg.to_string_lossy().as_ref(), "--help" | "-h"))
+    if is_top_level_command(command)
+        && trailing_args
+            .iter()
+            .any(|arg| matches!(arg.to_string_lossy().as_ref(), "--help" | "-h"))
     {
         return Ok(CommandValidation::Valid);
     }
@@ -743,18 +786,12 @@ fn validate_command(
         | "docker-ps-required" | "karate-docker-up" | "karate-docker-down" | "run-app"
         | "run-app-bg" | "stop-app" | "run" => Ok(CommandValidation::Valid),
         "doctor" => {
-            if let Some(extra_arg) = trailing_args.first() {
+            if let Some(extra_arg) = trailing_args.iter().find(|arg| *arg != "--compact") {
                 Err(format!("Unknown doctor option: {}", Lossy(extra_arg)))
             } else {
                 Ok(CommandValidation::Valid)
             }
         }
-        "make" => match trailing_args.first().map(|arg| arg.to_string_lossy()) {
-            Some(subcommand) if subcommand == "install" || subcommand == "uninstall" => {
-                Ok(CommandValidation::Valid)
-            }
-            _ => Err(String::from("Usage: makevn make install|uninstall")),
-        },
         "profile" => match trailing_args.first().map(|arg| arg.to_string_lossy()) {
             Some(subcommand) if subcommand == "refresh" => Ok(CommandValidation::ProfileRefresh),
             _ => Err(String::from("Usage: makevn profile refresh")),
@@ -926,7 +963,6 @@ fn is_top_level_command(arg: &OsString) -> bool {
         "help"
             | "doctor"
             | "init"
-            | "make"
             | "uninstall"
             | "profile"
             | "compile"
@@ -1042,6 +1078,7 @@ impl BackendMetadataFile {
 impl Drop for BackendMetadataFile {
     fn drop(&mut self) {
         let _ = fs::remove_file(&self.path);
+        let _ = fs::remove_file(self.path.with_extension("resources"));
     }
 }
 
@@ -1093,8 +1130,24 @@ fn command_supports_frontend_loader(command: &OsString) -> bool {
     )
 }
 
+fn interactive_presentation(
+    stdin_tty: bool,
+    stdout_tty: bool,
+    stderr_tty: bool,
+    agent: bool,
+    dumb: bool,
+) -> bool {
+    stdin_tty && stdout_tty && stderr_tty && !agent && !dumb
+}
+
 fn frontend_loader_is_available() -> bool {
-    io::stdin().is_terminal() && io::stdout().is_terminal()
+    interactive_presentation(
+        io::stdin().is_terminal(),
+        io::stdout().is_terminal(),
+        io::stderr().is_terminal(),
+        agent_output_mode(),
+        env::var("TERM").is_ok_and(|term| term == "dumb"),
+    )
 }
 
 fn dispatch_backend_invocations(
@@ -1106,29 +1159,17 @@ fn dispatch_backend_invocations(
     let mut last_exit_code = 0;
     let started_at = Instant::now();
     let mut completed_summaries: Vec<CommandSummary> = Vec::new();
-    let compact_output = backend_invocations
-        .iter()
-        .any(|invocation| invocation.compact);
-    if compact_output {
-        env::set_var("NO_COLOR", "1");
-    }
-    let use_dashboard = backend_invocations
-        .iter()
-        .any(|invocation| invocation.frontend_loader && !invocation.compact);
+    let use_dashboard = frontend_loader_is_available();
 
-    // Create the renderer and detail file once for the entire run so there is
-    // a single continuous spinner and a single "Working for" counter.
-    let loader_available = use_dashboard && frontend_loader_is_available();
+    // Output size and interactive presentation are independent: compact human
+    // runs retain color and telemetry, while agents never enter terminal mode.
+    let loader_available = frontend_loader_is_available();
     let detail_file = if loader_available {
         BackendDetailFile::new().ok()
     } else {
         None
     };
-    let mut renderer = if loader_available {
-        SpinnerRenderer::new().ok()
-    } else {
-        None
-    };
+    let mut renderer = None;
 
     for mut backend_invocation in backend_invocations {
         let fallback_title = backend_invocation
@@ -1136,24 +1177,56 @@ fn dispatch_backend_invocations(
             .first()
             .map(|arg| arg.to_string_lossy().into_owned())
             .unwrap_or_else(|| String::from("command"));
-        let use_frontend_loader = backend_invocation.frontend_loader
-            && !backend_invocation.compact
-            && frontend_loader_is_available();
+        let use_frontend_loader = loader_available;
+        let state_command = !backend_invocation.frontend_loader;
+        // Keep the live block across commands, including metadata startup waits.
+        if use_frontend_loader && renderer.is_none() {
+            renderer = SpinnerRenderer::new_with_input(true).ok();
+        }
+        let captured_stdout =
+            if use_frontend_loader && (state_command || backend_invocation.compact) {
+                Some(BackendStderrFile::new()?)
+            } else {
+                None
+            };
+        let prompt_sync = if use_frontend_loader && state_command {
+            Some(BackendDetailFile::new()?)
+        } else {
+            None
+        };
         // Managed-log commands expose backend metadata, including in compact
         // runs. State commands reject this internal option.
-        let metadata_file = if backend_invocation.frontend_loader {
+        let metadata_file = if backend_invocation.frontend_loader || use_frontend_loader {
             let metadata_file = BackendMetadataFile::new()?;
-            insert_backend_option(
-                &mut backend_invocation.args,
-                "--metadata-out",
-                metadata_file.path().as_os_str().to_os_string(),
-            );
+            if backend_invocation.frontend_loader {
+                insert_backend_option(
+                    &mut backend_invocation.args,
+                    "--metadata-out",
+                    metadata_file.path().as_os_str().to_os_string(),
+                );
+            } else {
+                write_state_metadata(
+                    metadata_file.path(),
+                    &fallback_title,
+                    &backend_invocation.args[2],
+                )?;
+            }
             Some(metadata_file)
         } else {
             None
         };
 
+        let phase_files = if fallback_title == "karate-all"
+            || (use_frontend_loader && fallback_title == "doctor")
+        {
+            Some(BackendPhaseFiles::new()?)
+        } else {
+            None
+        };
         let mut command = process::Command::new("bash");
+        if let Some(phases) = &phase_files {
+            command.env("MAKEVN_BACKEND_PHASE_DIR", &phases.0);
+        }
         command.arg(backend_path);
         command.args(&backend_invocation.args);
         command.env("MAKEVN_BIN_PATH", current_exe);
@@ -1161,17 +1234,49 @@ fn dispatch_backend_invocations(
         command.env("MAKEVN_FRONTEND", "rust");
         command.env("MAKEVN_FRONTEND_VERSION", makevn_version());
         command.env("MAKEVN_VERSION", makevn_version());
+        if state_command {
+            if let Some(metadata) = &metadata_file {
+                command.env("MAKEVN_FRONTEND_STATE_METADATA_OUT", metadata.path());
+            }
+        }
+        if let Some(metadata) = metadata_file.as_ref().filter(|_| use_frontend_loader) {
+            command.env(
+                "MAKEVN_FRONTEND_RESOURCE_SCOPE_OUT",
+                metadata.path().with_extension("resources"),
+            );
+        }
+        if !loader_available {
+            command.env("NO_COLOR", "1");
+        }
 
         let run_result = if use_frontend_loader {
-            command.process_group(0);
-            command.stdout(process::Stdio::null());
+            if !state_command {
+                command.process_group(0);
+            }
+            if let Some(output) = &captured_stdout {
+                command.stdout(
+                    File::create(output.path())
+                        .map_err(|error| format!("failed to capture backend output: {error}"))?,
+                );
+            } else {
+                command.stdout(process::Stdio::null());
+            }
             // Backend stderr must not write into the live dashboard: Git and
             // other tools can emit warnings that move the terminal cursor and
             // strand a spinner row above the final summary.
             let stderr_file = BackendStderrFile::new()?;
             let stderr_writer = File::create(stderr_file.path())
                 .map_err(|error| format!("failed to capture backend stderr: {error}"))?;
-            command.stderr(process::Stdio::from(stderr_writer));
+            if state_command {
+                // Keep stderr a TTY so existing interactive configuration prompts
+                // retain their behavior. The prompt handshake pauses the loader.
+                command.env(
+                    "MAKEVN_FRONTEND_PROMPT_SYNC",
+                    prompt_sync.as_ref().unwrap().path(),
+                );
+            } else {
+                command.stderr(process::Stdio::from(stderr_writer));
+            }
             command.env("MAKEVN_FRONTEND_OWNS_LOADER", "1");
             if let Some(df) = detail_file.as_ref() {
                 command.env("MAKEVN_BACKEND_DETAIL_OUT", df.path());
@@ -1185,12 +1290,19 @@ fn dispatch_backend_invocations(
                 &completed_summaries,
                 renderer.as_mut(),
                 detail_file.as_ref(),
+                phase_files.as_ref(),
+                prompt_sync.as_ref(),
             );
-            if let Some(renderer) = renderer.as_mut() {
-                renderer.clear_line();
+            if !state_command {
+                if let Some(output) = &captured_stdout {
+                    replay_backend_output(output.path(), renderer.as_mut(), false);
+                }
             }
-            if let Ok(mut stderr) = File::open(stderr_file.path()) {
-                let _ = io::copy(&mut stderr, &mut io::stderr());
+            replay_backend_output(stderr_file.path(), renderer.as_mut(), true);
+            if result.is_err() {
+                if let Some(renderer) = renderer.as_mut() {
+                    renderer.clear_line();
+                }
             }
             result?
         } else {
@@ -1213,10 +1325,20 @@ fn dispatch_backend_invocations(
         };
 
         // Snapshot detail lines into the summary then clear for the next command.
-        let detail_lines = detail_file
+        let stdout_details: Vec<String> = captured_stdout
+            .as_ref()
+            .filter(|_| state_command)
+            .and_then(|output| fs::read_to_string(output.path()).ok())
+            .unwrap_or_default()
+            .lines()
+            .filter(|line| !line.trim().is_empty())
+            .map(str::to_owned)
+            .collect();
+        let mut detail_lines = detail_file
             .as_ref()
             .map(|df| df.read_lines())
             .unwrap_or_default();
+        detail_lines.extend(stdout_details.iter().cloned());
         if let Some(df) = detail_file.as_ref() {
             df.clear();
         }
@@ -1225,7 +1347,21 @@ fn dispatch_backend_invocations(
         let failure_hint = read_failure_hint(run_result.summary.log_path.as_deref());
         let mut summary = run_result.summary;
         summary.detail_lines = detail_lines;
-        completed_summaries.push(summary);
+        let mut phases = phase_files
+            .as_ref()
+            .map(|files| files.read())
+            .unwrap_or_default();
+        if let Some(last_phase) = phases.last_mut() {
+            last_phase.detail_lines.extend(stdout_details);
+        }
+        let needs_fallback = phases
+            .last()
+            .map(|phase| phase.exit_code != last_exit_code)
+            .unwrap_or(true);
+        completed_summaries.extend(phases);
+        if needs_fallback {
+            completed_summaries.push(summary);
+        }
 
         if last_exit_code != 0 {
             if let Some(r) = renderer.as_mut() {
@@ -1284,6 +1420,30 @@ fn dispatch_backend_invocations(
     Ok(last_exit_code)
 }
 
+// Only external output needs to take ownership of the live terminal block.
+fn replay_backend_output(path: &Path, renderer: Option<&mut SpinnerRenderer>, stderr: bool) {
+    if stderr {
+        let _ = stream_backend_output(path, renderer, &mut io::stderr().lock());
+    } else {
+        let _ = stream_backend_output(path, renderer, &mut io::stdout().lock());
+    }
+}
+
+fn stream_backend_output(
+    path: &Path,
+    renderer: Option<&mut SpinnerRenderer>,
+    output: &mut impl Write,
+) -> io::Result<u64> {
+    let mut file = File::open(path)?;
+    if file.metadata()?.len() == 0 {
+        return Ok(0);
+    }
+    if let Some(renderer) = renderer {
+        renderer.clear_line();
+    }
+    io::copy(&mut file, output)
+}
+
 fn format_failure_summary(
     exit_code: i32,
     duration: Option<&str>,
@@ -1313,8 +1473,12 @@ fn summary_from_backend_metadata(
             .map(|metadata| metadata.title.clone())
             .unwrap_or_else(|| fallback_title.to_owned()),
         duration,
-        log_path: metadata.map(|metadata| metadata.log_path.clone()),
-        relative_log_path: metadata.map(|metadata| metadata.relative_log_path.clone()),
+        log_path: metadata
+            .map(|metadata| metadata.log_path.clone())
+            .filter(|path| !path.is_empty()),
+        relative_log_path: metadata
+            .map(|metadata| metadata.relative_log_path.clone())
+            .filter(|path| !path.is_empty()),
         exit_code,
         detail_lines: Vec::new(),
     }
@@ -1360,8 +1524,17 @@ fn run_backend_with_loader(
     completed_summaries: &[CommandSummary],
     mut renderer: Option<&mut SpinnerRenderer>,
     detail_file: Option<&BackendDetailFile>,
+    phase_files: Option<&BackendPhaseFiles>,
+    prompt_sync: Option<&BackendDetailFile>,
 ) -> Result<BackendRunResult, String> {
     let started_at = Instant::now();
+    if let Some(renderer) = renderer.as_mut() {
+        renderer.begin_backend();
+        renderer.configure_resource_source(
+            fallback_title,
+            metadata_file.map(|m| m.path().with_extension("resources")),
+        );
+    }
     let mut child = command.spawn().map_err(|error| {
         format!(
             "failed to launch backend {}: {error}",
@@ -1369,6 +1542,13 @@ fn run_backend_with_loader(
         )
     })?;
 
+    // State backends stay in the foreground group so canonical prompt reads
+    // are not stopped by SIGTTIN. Managed-log backends own a separate group.
+    let signal_target = if prompt_sync.is_some() {
+        child.id() as libc::pid_t
+    } else {
+        -(child.id() as libc::pid_t)
+    };
     let signal_requested = Arc::new(AtomicBool::new(false));
     #[cfg(unix)]
     register_signal_flag(&signal_requested)?;
@@ -1399,8 +1579,10 @@ fn run_backend_with_loader(
     }
 
     if let Some(metadata) = metadata.as_ref() {
-        if let Some(renderer) = renderer.as_mut() {
-            renderer.clear_frame_line();
+        if tail_active {
+            if let Some(renderer) = renderer.as_mut() {
+                renderer.clear_frame_line();
+            }
         }
         if tail_active {
             tail_window = Some(LogTailWindow::new(PathBuf::from(&metadata.log_path)));
@@ -1408,7 +1590,7 @@ fn run_backend_with_loader(
             if let Some(df) = detail_file {
                 current_detail_lines = df.read_lines();
             }
-            let hint = renderer.current_dashboard_hint();
+            let hint = renderer.current_metadata_hint(metadata);
             renderer
                 .render_dashboard(
                     child.id(),
@@ -1424,24 +1606,52 @@ fn run_backend_with_loader(
     }
 
     loop {
+        if let Some(sync) = prompt_sync {
+            if fs::read_to_string(sync.path()).ok().as_deref() == Some("pause\n") {
+                if let Some(renderer) = renderer.as_mut() {
+                    renderer.pause();
+                }
+                fs::write(sync.path(), "paused\n")
+                    .map_err(|error| format!("failed to pause loader: {error}"))?;
+            } else if fs::read_to_string(sync.path()).ok().as_deref() == Some("resume\n") {
+                if let Some(renderer) = renderer.as_mut() {
+                    renderer
+                        .resume()
+                        .map_err(|error| format!("failed to resume loader: {error}"))?;
+                }
+                fs::write(sync.path(), "running\n")
+                    .map_err(|error| format!("failed to resume loader: {error}"))?;
+            }
+        }
+        let mut live_summaries = completed_summaries.to_vec();
+        if let Some(phases) = phase_files {
+            live_summaries.extend(phases.read());
+        }
+        let completed_summaries = live_summaries.as_slice();
         if let Some(metadata_file) = metadata_file {
             let latest_metadata = read_backend_metadata(metadata_file.path())?;
             if latest_metadata.is_some() && latest_metadata != metadata {
                 metadata = latest_metadata;
-                if let Some(renderer) = renderer.as_mut() {
-                    renderer.clear_frame_line();
-                }
                 if tail_active {
                     if let Some(metadata) = metadata.as_ref() {
-                        tail_window = Some(LogTailWindow::new(PathBuf::from(&metadata.log_path)));
+                        LogTailWindow::follow_log(
+                            &mut tail_window,
+                            PathBuf::from(&metadata.log_path),
+                        );
                     }
                 }
             }
         }
 
+        if let (Some(renderer), Some(metadata)) = (renderer.as_mut(), metadata.as_ref()) {
+            renderer.configure_resource_source(
+                &metadata.command,
+                metadata_file.map(|m| m.path().with_extension("resources")),
+            );
+        }
         if let Some(df) = detail_file {
             let latest = df.read_lines();
-            if latest.len() != current_detail_lines.len() {
+            if latest != current_detail_lines {
                 current_detail_lines = latest;
             }
         }
@@ -1462,13 +1672,15 @@ fn run_backend_with_loader(
                     }
                 }
                 if let Some(metadata) = metadata.as_ref() {
-                    if let Some(renderer) = renderer.as_mut() {
-                        renderer.clear_frame_line();
+                    if tail_active {
+                        if let Some(renderer) = renderer.as_mut() {
+                            renderer.clear_frame_line();
+                        }
                     }
                     if tail_active {
                         tail_window = Some(LogTailWindow::new(PathBuf::from(&metadata.log_path)));
                     } else if let Some(renderer) = renderer.as_mut() {
-                        let hint = renderer.current_dashboard_hint();
+                        let hint = renderer.current_metadata_hint(metadata);
                         renderer
                             .render_dashboard(
                                 child.id(),
@@ -1502,9 +1714,6 @@ fn run_backend_with_loader(
                         .map_err(|error| format!("failed to clear tailed log: {error}"))?;
                 }
             }
-            if let Some(renderer) = renderer.as_mut() {
-                renderer.clear_line();
-            }
             return Ok(summarize_backend_exit(
                 status,
                 started_at.elapsed(),
@@ -1516,7 +1725,7 @@ fn run_backend_with_loader(
 
         if signal_requested.load(Ordering::Relaxed) {
             if !cancel_requested {
-                interrupt_backend(child.id());
+                interrupt_backend(signal_target);
                 cancel_requested = true;
                 cancel_requested_at = Some(Instant::now());
             }
@@ -1525,10 +1734,10 @@ fn run_backend_with_loader(
         if let Some(requested_at) = cancel_requested_at {
             let elapsed = requested_at.elapsed();
             if elapsed > Duration::from_secs(4) {
-                let _ = unsafe { libc::kill(-(child.id() as libc::pid_t), libc::SIGKILL) };
+                let _ = unsafe { libc::kill(signal_target, libc::SIGKILL) };
                 break;
             } else if elapsed > Duration::from_secs(2) {
-                let _ = unsafe { libc::kill(-(child.id() as libc::pid_t), libc::SIGTERM) };
+                let _ = unsafe { libc::kill(signal_target, libc::SIGTERM) };
             }
         }
 
@@ -1540,13 +1749,15 @@ fn run_backend_with_loader(
             }
 
             if let Some(metadata) = metadata.as_ref() {
-                if let Some(renderer) = renderer.as_mut() {
-                    renderer.clear_frame_line();
+                if tail_active {
+                    if let Some(renderer) = renderer.as_mut() {
+                        renderer.clear_frame_line();
+                    }
                 }
                 if tail_active {
                     tail_window = Some(LogTailWindow::new(PathBuf::from(&metadata.log_path)));
                 } else if let Some(renderer) = renderer.as_mut() {
-                    let hint = renderer.current_dashboard_hint();
+                    let hint = renderer.current_metadata_hint(metadata);
                     renderer
                         .render_dashboard(
                             child.id(),
@@ -1570,17 +1781,20 @@ fn run_backend_with_loader(
                 .map_err(|error| format!("failed to read terminal input: {error}"))?
             {
                 InputEvent::Interrupt => {
-                    interrupt_backend(child.id());
+                    interrupt_backend(signal_target);
                     #[cfg(unix)]
                     unsafe {
-                        libc::kill(-(child.id() as libc::pid_t), SIGTERM);
+                        libc::kill(signal_target, SIGTERM);
                     }
                     cancel_requested = true;
                     cancel_requested_at = Some(Instant::now());
                 }
                 InputEvent::StartTail => {
                     if !tail_active {
-                        if let Some(metadata) = metadata.as_ref() {
+                        if let Some(metadata) = metadata
+                            .as_ref()
+                            .filter(|metadata| !metadata.log_path.is_empty())
+                        {
                             renderer.clear_frame_line();
                             tail_window =
                                 Some(LogTailWindow::new(PathBuf::from(&metadata.log_path)));
@@ -1622,8 +1836,14 @@ fn run_backend_with_loader(
         }
 
         if let Some(renderer) = renderer.as_mut() {
-            if !tail_active {
-                let hint = renderer.current_dashboard_hint();
+            // Tail owns the screen only after metadata identifies its log.
+            if !tail_active || metadata.is_none() {
+                let hint = match metadata.as_ref() {
+                    Some(metadata) if metadata.log_path.is_empty() => {
+                        renderer.current_spinner_hint()
+                    }
+                    _ => renderer.current_dashboard_hint(),
+                };
                 if let Some(metadata) = metadata.as_ref() {
                     renderer
                         .render_dashboard(
@@ -1636,10 +1856,15 @@ fn run_backend_with_loader(
                         )
                         .map_err(|error| format!("failed to render loader: {error}"))?;
                 } else {
+                    let hint = renderer.current_spinner_hint();
                     renderer
-                        .render_frame_with_hint(
+                        .render_dashboard(
                             child.id(),
-                            &format!("{} | {}", pending_command_line(fallback_title), hint),
+                            global_started_at.elapsed(),
+                            completed_summaries,
+                            &[],
+                            &pending_backend_metadata(fallback_title),
+                            &hint,
                         )
                         .map_err(|error| format!("failed to render loader: {error}"))?;
                 }
@@ -1675,10 +1900,6 @@ fn run_backend_with_loader(
         }
     }
 
-    if let Some(renderer) = renderer.as_mut() {
-        renderer.clear_line();
-    }
-
     let status = child
         .wait()
         .map_err(|error| format!("failed while waiting for backend: {error}"))?;
@@ -1689,6 +1910,14 @@ fn run_backend_with_loader(
         metadata.as_ref(),
         fallback_title,
     ))
+}
+
+// State commands use the same metadata renderer, without granting --tail or
+// changing the backend's public managed-log options.
+fn write_state_metadata(path: &Path, title: &str, repo: &OsString) -> Result<(), String> {
+    let repo = repo.to_string_lossy().replace('\n', " ");
+    let metadata = format!("command={title}\nrepo={repo}\ncwd={repo}\nlog_path=\nrelative_log_path=\ncommand_display=makevn {title}\ntitle={title}\n");
+    fs::write(path, metadata).map_err(|error| format!("failed to write state metadata: {error}"))
 }
 
 fn read_backend_metadata(metadata_path: &Path) -> Result<Option<BackendMetadata>, String> {
@@ -1746,7 +1975,7 @@ fn parse_backend_metadata(content: &str) -> Option<BackendMetadata> {
 fn backend_header_line(metadata: &BackendMetadata) -> String {
     format!(
         "{} {}",
-        dim_text("::"),
+        warn_text("[•]"),
         accent_text(&format!("makevn {}", metadata.title))
     )
 }
@@ -1851,17 +2080,30 @@ fn pending_command_line(title: &str) -> String {
     format!("makevn {title}")
 }
 
+fn pending_backend_metadata(title: &str) -> BackendMetadata {
+    BackendMetadata {
+        command: title.to_owned(),
+        repo: String::new(),
+        cwd: String::new(),
+        log_path: String::new(),
+        relative_log_path: String::new(),
+        command_display: pending_command_line(title),
+        title: format!("{title} (starting)"),
+        context: None,
+    }
+}
+
 fn running_command_line(metadata: &BackendMetadata) -> String {
     if metadata.relative_log_path.is_empty() {
         format!(
             "{} {}",
-            dim_text("->"),
+            warn_text("[•]"),
             accent_text(&format!("makevn {}", metadata.title))
         )
     } else {
         format!(
             "{} {} {} {}",
-            dim_text("::"),
+            warn_text("[•]"),
             accent_text(&format!("makevn {}", metadata.title)),
             dim_text("|"),
             dim_text(&metadata.relative_log_path)
@@ -1933,10 +2175,10 @@ fn exit_code_from_status(status: process::ExitStatus, interrupted: bool) -> i32 
     1
 }
 
-fn interrupt_backend(pid: u32) {
+fn interrupt_backend(target: libc::pid_t) {
     #[cfg(unix)]
     unsafe {
-        libc::kill(-(pid as libc::pid_t), SIGINT);
+        libc::kill(target, SIGINT);
     }
 }
 
@@ -1952,13 +2194,7 @@ fn format_duration(elapsed: Duration) -> String {
 }
 
 fn use_color() -> bool {
-    if agent_output_mode() {
-        return false;
-    }
-
-    (io::stdout().is_terminal() || io::stderr().is_terminal())
-        && env::var_os("NO_COLOR").is_none()
-        && env::var("TERM").map(|term| term != "dumb").unwrap_or(true)
+    frontend_loader_is_available() && env::var_os("NO_COLOR").is_none()
 }
 
 fn agent_output_mode() -> bool {
@@ -2244,6 +2480,24 @@ impl LogTailWindow {
         }
     }
 
+    fn follow_log(window: &mut Option<Self>, path: PathBuf) {
+        let window = window.get_or_insert_with(|| Self::new(path.clone()));
+        window.switch_log(path);
+    }
+
+    fn switch_log(&mut self, path: PathBuf) {
+        if self.path == path {
+            return;
+        }
+        self.path = path;
+        self.file = None;
+        self.offset = 0;
+        self.pending.clear();
+        self.lines.clear();
+        // Keep the painted rows and chosen height: the next render must erase
+        // the previous phase before drawing the new log in the same block.
+    }
+
     fn set_prefix_lines(&mut self, prefix_lines: Vec<String>) {
         self.prefix_lines = prefix_lines;
     }
@@ -2271,6 +2525,15 @@ impl LogTailWindow {
     }
 
     fn read_available(&mut self) -> io::Result<()> {
+        if let (Some(file), Ok(current)) = (&self.file, fs::metadata(&self.path)) {
+            let opened = file.metadata()?;
+            if (opened.dev(), opened.ino()) != (current.dev(), current.ino()) {
+                self.file = None;
+                self.offset = 0;
+                self.pending.clear();
+                self.lines.clear();
+            }
+        }
         if self.file.is_none() {
             match File::open(&self.path) {
                 Ok(file) => self.file = Some(file),
@@ -2605,7 +2868,8 @@ fn pulse_color(index: usize) -> Rgb {
 
 struct SpinnerRenderer {
     tty: File,
-    tty_guard: TtyModeGuard,
+    tty_guard: Option<TtyModeGuard>,
+    paused: bool,
     frame: usize,
     frame_interval: Duration,
     next_frame_at: Instant,
@@ -2628,9 +2892,13 @@ enum InputEvent {
 }
 
 impl SpinnerRenderer {
-    fn new() -> io::Result<Self> {
+    fn new_with_input(interactive_input: bool) -> io::Result<Self> {
         let tty = File::options().read(true).write(true).open("/dev/tty")?;
-        let tty_guard = TtyModeGuard::new(&tty)?;
+        let tty_guard = if interactive_input {
+            Some(TtyModeGuard::new(&tty)?)
+        } else {
+            None
+        };
 
         if use_color() {
             write!(io::stdout(), "\u{1b}[?25l")?;
@@ -2640,6 +2908,7 @@ impl SpinnerRenderer {
         Ok(Self {
             tty,
             tty_guard,
+            paused: false,
             frame: 0,
             frame_interval: Duration::from_millis(33),
             next_frame_at: Instant::now(),
@@ -2654,7 +2923,39 @@ impl SpinnerRenderer {
         })
     }
 
+    // Reset command-local state without erasing the retained terminal block.
+    fn begin_backend(&mut self) {
+        self.second_escape_deadline = None;
+        self.resource_sampler = ResourceSampler::new();
+        self.resource_history = ResourceHistory::new();
+        self.resource_history_revision = 0;
+        self.cpu_visual_load = 0.0;
+        self.ram_visual_load = 0.0;
+        self.resource_visual_load = 0.0;
+    }
+
+    fn pause(&mut self) {
+        self.clear_line();
+        self.show_cursor();
+        self.tty_guard = None;
+        self.paused = true;
+    }
+
+    fn resume(&mut self) -> io::Result<()> {
+        self.tty_guard = Some(TtyModeGuard::new(&self.tty)?);
+        self.paused = false;
+        self.next_frame_at = Instant::now();
+        if use_color() {
+            write!(io::stdout(), "\u{1b}[?25l")?;
+            io::stdout().flush()?;
+        }
+        Ok(())
+    }
+
     fn poll_input(&mut self) -> io::Result<InputEvent> {
+        if self.tty_guard.is_none() {
+            return Ok(InputEvent::None);
+        }
         let mut buffer = [0_u8; 1];
         match self.tty.read(&mut buffer) {
             Ok(1) => Ok(decode_spinner_input(
@@ -2683,13 +2984,28 @@ impl SpinnerRenderer {
         dashboard_hint(&self.current_spinner_hint())
     }
 
+    fn current_metadata_hint(&mut self, metadata: &BackendMetadata) -> String {
+        if metadata.log_path.is_empty() {
+            self.current_spinner_hint()
+        } else {
+            self.current_dashboard_hint()
+        }
+    }
+
     fn render_frame_with_hint(&mut self, pid: u32, hint: &str) -> io::Result<()> {
+        if self.paused {
+            thread::sleep(Duration::from_millis(50));
+            return Ok(());
+        }
         let line = self.frame_line_with_hint(pid, hint)?;
         // Before backend metadata arrives this is the only live row. Clipping
         // keeps it single-line so the detailed dashboard can replace it cleanly.
         let line = status_line_text_for_width(&line, terminal_width().max(8));
         write!(io::stdout(), "\r\u{1b}[2K{}", line)?;
         io::stdout().flush()?;
+        if let Some(width) = self.rendered_block_line_widths.last_mut() {
+            *width = visible_char_count(&line);
+        }
         Ok(())
     }
 
@@ -2709,7 +3025,11 @@ impl SpinnerRenderer {
                     self.ram_visual_load,
                 )
             })
-            .unwrap_or_default();
+            .unwrap_or_else(|| self.unavailable_resource_text());
+        let resource_text = self.resource_sampler.scoped_text(
+            resource_text,
+            resource_sample.is_some().then_some(self.cpu_visual_load),
+        );
         let suffix = spinner_resource_suffix(&resource_text, hint);
 
         let line = format!(
@@ -2731,6 +3051,10 @@ impl SpinnerRenderer {
         metadata: &BackendMetadata,
         hint: &str,
     ) -> io::Result<()> {
+        if self.paused {
+            thread::sleep(Duration::from_millis(50));
+            return Ok(());
+        }
         wait_until_next_frame(self.next_frame_at);
 
         let resource_sample = self.resource_sampler.sample(pid).unwrap_or(None);
@@ -2746,7 +3070,11 @@ impl SpinnerRenderer {
                     self.ram_visual_load,
                 )
             })
-            .unwrap_or_default();
+            .unwrap_or_else(|| self.unavailable_resource_text());
+        let resource_text = self.resource_sampler.scoped_text(
+            resource_text,
+            resource_sample.is_some().then_some(self.cpu_visual_load),
+        );
         let spinner_suffix = spinner_resource_suffix(&resource_text, hint);
 
         let lines = dashboard_output_lines(
@@ -2765,21 +3093,35 @@ impl SpinnerRenderer {
             .map(|line| status_line_text_for_width(line, render_width))
             .collect::<Vec<_>>();
 
+        let mut stdout = io::stdout().lock();
         self.clear_dynamic_block()?;
+        let mut replacement = String::new();
         for (index, line) in lines.iter().enumerate() {
             if index + 1 == lines.len() {
-                write!(io::stdout(), "\r\u{1b}[2K{}", line)?;
+                replacement.push_str(&format!("\r\u{1b}[2K{line}"));
             } else {
-                writeln!(io::stdout(), "\r\u{1b}[2K{}", line)?;
+                replacement.push_str(&format!("\r\u{1b}[2K{line}\n"));
             }
         }
-
-        io::stdout().flush()?;
+        stdout.write_all(replacement.as_bytes())?;
+        stdout.flush()?;
         self.rendered_block_line_widths =
             lines.iter().map(|line| visible_char_count(line)).collect();
         self.frame += 1;
         self.next_frame_at = Instant::now() + self.frame_interval();
         Ok(())
+    }
+
+    fn configure_resource_source(&mut self, title: &str, scope: Option<PathBuf>) {
+        let revision = self.resource_sampler.revision();
+        self.resource_sampler.configure_docker(title, scope);
+        if revision != self.resource_sampler.revision() {
+            self.resource_history = ResourceHistory::new();
+            self.resource_history_revision = self.resource_sampler.revision();
+            self.cpu_visual_load = 0.0;
+            self.ram_visual_load = 0.0;
+            self.resource_visual_load = 0.0;
+        }
     }
 
     fn update_resource_visuals(&mut self, sample: Option<&ResourceSample>) {
@@ -2791,7 +3133,19 @@ impl SpinnerRenderer {
         self.resource_visual_load += (target_load - self.resource_visual_load) * 0.06;
     }
 
+    fn unavailable_resource_text(&self) -> String {
+        if self.resource_sampler.docker.is_some() {
+            format_unavailable_resource_metrics(&self.resource_history)
+        } else {
+            String::new()
+        }
+    }
+
     fn sync_resource_history(&mut self, sample: Option<&ResourceSample>) {
+        if self.resource_sampler.docker.is_some() {
+            self.resource_history.tick(Instant::now(), sample);
+            return;
+        }
         self.resource_history_revision = self.resource_history.sync_sample(
             self.resource_history_revision,
             self.resource_sampler.revision(),
@@ -2926,6 +3280,9 @@ struct ResourceSample {
 }
 
 struct ResourceSampler {
+    docker: Option<docker_resources::DockerSampler>,
+    docker_scope: Option<(String, PathBuf)>,
+    last_pid: Option<u32>,
     last_sample_at: Option<Instant>,
     last_sample: Option<ResourceSample>,
     sample_revision: u64,
@@ -2936,13 +3293,42 @@ impl ResourceSampler {
 
     fn new() -> Self {
         Self {
+            docker: None,
+            docker_scope: None,
+            last_pid: None,
             last_sample_at: None,
             last_sample: None,
             sample_revision: 0,
         }
     }
 
+    fn configure_docker(&mut self, title: &str, scope: Option<PathBuf>) {
+        let scope = scope
+            .filter(|_| docker_resources::is_docker_phase(title))
+            .map(|path| (title.to_owned(), path));
+        if scope == self.docker_scope {
+            return;
+        }
+        self.last_sample = None;
+        self.last_sample_at = None;
+        self.sample_revision += 1;
+        self.docker = scope
+            .as_ref()
+            .map(|(_, path)| docker_resources::DockerSampler::new(path.clone()));
+        self.docker_scope = scope;
+    }
+
     fn sample(&mut self, pid: u32) -> io::Result<Option<ResourceSample>> {
+        if let Some(docker) = self.docker.as_mut() {
+            let (sample, changed) = docker.poll();
+            self.sample_revision += u64::from(changed);
+            return Ok(sample);
+        }
+        if self.last_pid != Some(pid) {
+            self.last_pid = Some(pid);
+            self.last_sample_at = None;
+            self.last_sample = None;
+        }
         if pid == 0 {
             return Ok(None);
         }
@@ -2963,14 +3349,30 @@ impl ResourceSampler {
         Ok(self.last_sample)
     }
 
+    fn scoped_text(&self, text: String, cpu_load: Option<f32>) -> String {
+        if self.docker.is_none() {
+            return text;
+        }
+        let label = cpu_load
+            .map(|load| adaptive_metric_text("ctr", load))
+            .unwrap_or_else(|| dim_text("ctr"));
+        let metrics = if text.is_empty() {
+            format_unavailable_resource_metrics(&ResourceHistory::new())
+        } else {
+            text
+        };
+        format!("{label} {metrics}")
+    }
+
     fn revision(&self) -> u64 {
         self.sample_revision
     }
 }
 
 struct ResourceHistory {
-    cpu_percent: Vec<f32>,
-    rss_kb: Vec<u64>,
+    cpu_percent: Vec<Option<f32>>,
+    rss_kb: Vec<Option<u64>>,
+    last_tick: Option<Instant>,
 }
 
 impl ResourceHistory {
@@ -2980,12 +3382,40 @@ impl ResourceHistory {
         Self {
             cpu_percent: Vec::with_capacity(Self::WIDTH),
             rss_kb: Vec::with_capacity(Self::WIDTH),
+            last_tick: None,
         }
     }
 
     fn push(&mut self, sample: ResourceSample) {
-        push_ring_value(&mut self.cpu_percent, sample.cpu_percent, Self::WIDTH);
-        push_ring_value(&mut self.rss_kb, sample.rss_kb, Self::WIDTH);
+        self.push_slot(Some(&sample));
+    }
+
+    fn push_slot(&mut self, sample: Option<&ResourceSample>) {
+        push_ring_value(
+            &mut self.cpu_percent,
+            sample.map(|s| s.cpu_percent),
+            Self::WIDTH,
+        );
+        push_ring_value(&mut self.rss_kb, sample.map(|s| s.rss_kb), Self::WIDTH);
+    }
+
+    // The Docker graph is a time axis, not a count of asynchronous probe results.
+    fn tick(&mut self, now: Instant, sample: Option<&ResourceSample>) {
+        let Some(previous) = self.last_tick else {
+            self.last_tick = Some(now);
+            self.push_slot(sample);
+            return;
+        };
+        let ticks =
+            now.duration_since(previous).as_secs() / ResourceSampler::SAMPLE_INTERVAL.as_secs();
+        if ticks == 0 {
+            return;
+        }
+        for _ in 1..ticks.min(Self::WIDTH as u64) {
+            self.push_slot(None);
+        }
+        self.push_slot(sample);
+        self.last_tick = Some(previous + ResourceSampler::SAMPLE_INTERVAL * ticks as u32);
     }
 
     fn sync_sample(
@@ -3111,6 +3541,12 @@ fn format_resource_metrics(
     )
 }
 
+fn format_unavailable_resource_metrics(history: &ResourceHistory) -> String {
+    let cpu = sparkline_f32(&history.cpu_percent, ResourceHistory::WIDTH, 250.0);
+    let ram = sparkline_u64(&history.rss_kb, ResourceHistory::WIDTH);
+    dim_text(&format!("cpu {cpu} {:>5} | ram {ram}  {:>5}", "—", "—"))
+}
+
 fn format_resource_sample_cpu(sample: &ResourceSample, history: &ResourceHistory) -> String {
     let cpu_sparkline = sparkline_f32(&history.cpu_percent, ResourceHistory::WIDTH, 250.0);
     format!(
@@ -3133,28 +3569,36 @@ fn push_ring_value<T>(values: &mut Vec<T>, value: T, max_len: usize) {
     values.push(value);
 }
 
-fn sparkline_f32(values: &[f32], width: usize, max_value: f32) -> String {
+fn sparkline_f32(values: &[Option<f32>], width: usize, max_value: f32) -> String {
     if values.is_empty() {
         return " ".repeat(width);
     }
     let normalized = values
         .iter()
-        .map(|value| (value / max_value).clamp(0.0, 1.0))
+        .map(|value| {
+            value
+                .map(|v| (v / max_value).clamp(0.0, 1.0))
+                .unwrap_or(f32::NAN)
+        })
         .collect::<Vec<_>>();
     sparkline_from_normalized(&normalized, width)
 }
 
-fn sparkline_u64(values: &[u64], width: usize) -> String {
+fn sparkline_u64(values: &[Option<u64>], width: usize) -> String {
     if values.is_empty() {
         return " ".repeat(width);
     }
-    let peak = values.iter().copied().max().unwrap_or(0);
+    let peak = values.iter().flatten().copied().max().unwrap_or(0);
     if peak == 0 {
         return " ".repeat(width);
     }
     let normalized = values
         .iter()
-        .map(|value| (*value as f32 / peak as f32).clamp(0.0, 1.0))
+        .map(|value| {
+            value
+                .map(|v| (v as f32 / peak as f32).clamp(0.0, 1.0))
+                .unwrap_or(f32::NAN)
+        })
         .collect::<Vec<_>>();
     sparkline_from_normalized(&normalized, width)
 }
@@ -3168,7 +3612,7 @@ fn sparkline_from_normalized(values: &[f32], width: usize) -> String {
     }
     for value in values {
         let index = ((*value * (SPARKS.len() - 1) as f32).round() as usize).min(SPARKS.len() - 1);
-        sparkline.push(SPARKS[index]);
+        sparkline.push(if value.is_nan() { ' ' } else { SPARKS[index] });
     }
     sparkline
 }
@@ -3397,11 +3841,10 @@ fn command_help(command: &str) -> Option<(&'static str, &'static str, &'static [
     match command {
         "help" => Some(("makevn help", "Print the full makevn help.", &[])),
         "agent" => Some(("makevn agent install opencode", "Install the makevn MCP server in the global OpenCode configuration.", &[])),
-        "doctor" => Some(("makevn [--repo PATH] doctor", "Inspect repository setup and makevn configuration.", &[])),
+        "doctor" => Some(("makevn [--repo PATH] doctor [--compact]", "Inspect repository setup and makevn configuration.", &["--compact  Print brief, noninteractive setup advice"])),
         "init" => Some(("makevn [--repo PATH] init [--dry-run] [--force]", "Initialize .makevn configuration for the repository.", &["--dry-run  Show what would change without writing files", "--force    Refresh existing generated files"])),
-        "make" => Some(("makevn [--repo PATH] make install|uninstall [--dry-run]", "Install or remove optional vn-* Make targets.", &["--dry-run  Show what would change without writing files"])),
         "uninstall" => Some(("makevn [--repo PATH] uninstall [--dry-run]", "Remove makevn local repository state.", &["--dry-run  Show what would be removed"])),
-        "refresh" => Some(("makevn [--repo PATH] refresh [--dry-run]", "Reinitialize makevn state from scratch. Removes stale state and runs init --force.", &["--dry-run  Show what would change without writing files"])),
+        "refresh" => Some(("makevn [--repo PATH] refresh [--dry-run]", "Refresh initialization while preserving user configuration.", &["--dry-run  Show what would change without writing files"])),
         "profile" => Some(("makevn [--repo PATH] profile refresh", "Refresh detected repository profile information.", &[])),
         "compile" => maven_command_help("compile", "Compile project sources.", false),
         "test-compile" => maven_command_help("test-compile", "Compile project tests.", false),
@@ -3522,8 +3965,6 @@ fn print_help(with_header: bool) {
     println!("  makevn [--repo PATH] doctor");
     println!("  makevn [--repo PATH] init [--dry-run] [--force]");
     println!("  makevn [--repo PATH] refresh [--dry-run]");
-    println!("  makevn [--repo PATH] make install [--dry-run]");
-    println!("  makevn [--repo PATH] make uninstall [--dry-run]");
     println!("  makevn [--repo PATH] uninstall [--dry-run]");
     println!("  makevn [--repo PATH] profile refresh");
     println!("  makevn [--repo PATH] [--compact] compile [--tail] [-- EXTRA_MAVEN_ARGS...]");
@@ -3578,8 +4019,6 @@ fn print_help(with_header: bool) {
     println!("Examples:");
     println!("  makevn doctor");
     println!("  makevn init");
-    println!("  makevn make install");
-    println!("  makevn make uninstall");
     println!("  makevn profile refresh");
     println!("  makevn compile");
     println!("  makevn test-compile");
@@ -3610,14 +4049,11 @@ fn print_help(with_header: bool) {
     println!("  makevn karate-test --tag @smoke");
     println!("  makevn run-app-bg");
     println!("  makevn stop-app");
-    println!("  make -f .makevn/makevn.mk vn-doctor");
     println!();
     println!("Notes:");
     println!("  - 'doctor' inspects the repository before and after initialization.");
-    println!("  - 'init' always creates '.makevn/' without touching root makefiles.");
-    println!("  - 'make install' adds optional 'vn-*' targets by updating one existing makefile or creating a minimal root Makefile.");
-    println!("  - 'make uninstall' removes only the Make integration and keeps '.makevn/' intact.");
-    println!("  - '--compact' forces compact agent-style summaries; non-interactive runs are compact by default.");
+    println!("  - 'init' creates '.makevn/' without inspecting or modifying root Makefiles.");
+    println!("  - '--compact' shortens reports; MAKEVN_AGENT_OUTPUT=1 disables TTY presentation for agents.");
     println!("  - '--tail' starts managed-log commands in tail mode; without it, press 't' while a command is running to tail the current log.");
     println!("  - 'makevn-mcp' starts the MCP server over stdio (Model Context Protocol).");
 }
