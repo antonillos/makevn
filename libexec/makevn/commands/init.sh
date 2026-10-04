@@ -35,6 +35,10 @@ cmd_init() {
   shift
   cmd_init_parse_options "$@"
 
+  if [[ -z "$(makevn_detect_maven_base_path "${repo_root}" || true)" ]]; then
+    printf '%s\n' "$(makevn_warn "No Maven project detected. init only creates local configuration; Maven commands remain unavailable.")" >&2
+  fi
+
   existing_manifest="$(makevn_manifest_path "${repo_root}")"
   if [[ -f "${existing_manifest}" && "${force}" != true ]]; then
     printf '%s\n' "$(makevn_warn "makevn is already initialized.")"

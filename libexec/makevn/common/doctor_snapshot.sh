@@ -550,7 +550,6 @@ makevn_collect_doctor_snapshot() {
         ;;
       unsupported)
         MAKEVN_DOCTOR_SUGGESTED_NOTE="no automatic recommendation: Maven repository signals were not detected"
-        MAKEVN_DOCTOR_SUGGESTED_OPTIONAL="makevn init"
         ;;
     esac
   elif [[ "${current_status}" != "initialized" ]]; then
@@ -561,7 +560,7 @@ makevn_collect_doctor_snapshot() {
     unsupported)
       MAKEVN_DOCTOR_SUGGESTED_NEXT=""
       MAKEVN_DOCTOR_SUGGESTED_NOTE="no automatic recommendation: Maven repository signals were not detected"
-      [[ -n "${MAKEVN_DOCTOR_SUGGESTED_OPTIONAL}" ]] || MAKEVN_DOCTOR_SUGGESTED_OPTIONAL="makevn init"
+      MAKEVN_DOCTOR_SUGGESTED_OPTIONAL=""
       ;;
   esac
   if [[ "${app_runnable}" == "yes" && -z "${detected_app_health_url}" ]]; then

@@ -371,6 +371,8 @@ assert data['repository_analysis']['repo_root'] == repo, data
 assert data['repository_analysis']['repository_support_status'] == 'unsupported', data
 assert data['repository_analysis']['current_makevn_status'] == 'not initialized', data
 assert 'make_integration_status' not in data['repository_analysis'], data
+assert data['suggested_next_step']['next'] == '', data
+assert data['suggested_next_step']['optional'] == '', data
 assert data['suggested_next_step']['note'] == 'no automatic recommendation: Maven repository signals were not detected', data
 PY
 }
@@ -4748,6 +4750,7 @@ main() {
   fi
   bash "${ROOT_DIR}/test/smoke/standalone_contract_test.sh"
   bash "${ROOT_DIR}/test/smoke/doctor_compact_test.sh"
+  bash "${ROOT_DIR}/test/smoke/unsupported_init_test.sh"
   bash "${ROOT_DIR}/test/smoke/state_progress_test.sh"
   python3 "${ROOT_DIR}/test/smoke/interactive_doctor_test.py" "${ROOT_DIR}/target/release/makevn"
   printf 'Smoke tests passed\n'
