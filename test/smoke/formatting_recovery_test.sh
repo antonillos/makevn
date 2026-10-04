@@ -63,5 +63,43 @@ assert "exit code 7" in text, text
 assert "without --fast" in text, text
 MCP
 fi
+# A failed test in a project without a formatter must retain its own log and
+# backend metadata, including selected tests whose log is not test.log.
+cat > "${tmp}/pom.xml" <<'POM'
+<project><modelVersion>4.0.0</modelVersion><groupId>fixture</groupId><artifactId>plain</artifactId><version>1</version></project>
+POM
+cat > "${tmp}/mvnw" <<'MVN'
+#!/bin/sh
+echo '[ERROR] Original test failure: PostgreSQL connection refused'
+echo '[ERROR] Failed to execute goal org.apache.maven.plugins:maven-surefire-plugin:3.5.3:test'
+exit 7
+MVN
+for selection in all ExampleIT ExampleTest; do
+  args=()
+  [[ "${selection}" == all ]] || args=(--name "${selection}")
+  set +e
+  bash "${ROOT}/libexec/makevn/backend.sh" test --repo "${tmp}" --compact \
+    --metadata-out "${tmp}/metadata" "${args[@]}" >"${tmp}/output" 2>&1
+  rc=$?
+  set -e
+  [[ "${rc}" == 7 ]] || { cat "${tmp}/output"; echo "expected exit 7, got ${rc}"; exit 1; }
+  log_path="$(sed -n 's/^log_path=//p' "${tmp}/metadata")"
+  grep -Fq 'Original test failure: PostgreSQL connection refused' "${log_path}"
+  printf '%s\n' '[ERROR] Original test failure: PostgreSQL connection refused' \
+    '[ERROR] Failed to execute goal org.apache.maven.plugins:maven-surefire-plugin:3.5.3:test' > "${tmp}/expected-log"
+  cmp "${tmp}/expected-log" "${log_path}"
+  grep -Fxq 'context=code' "${tmp}/metadata"
+  if grep -Fq 'No formatting plugin configured' "${tmp}/output" "${log_path}"; then
+    echo 'formatter diagnostic replaced the test failure'; exit 1
+  fi
+  if grep -Fq 'makevn format --apply' "${tmp}/output"; then
+    echo 'unrelated test failure received a formatter hint'; exit 1
+  fi
+done
+# Explicit format requests still report the missing optional capability.
+if bash "${ROOT}/libexec/makevn/backend.sh" format --repo "${tmp}" --compact >"${tmp}/output" 2>&1; then
+  echo 'format unexpectedly succeeded without a formatter'; exit 1
+fi
+grep -Fq 'No formatting plugin configured' "${tmp}/output"
 echo 'formatting recovery integration tests passed'
 
