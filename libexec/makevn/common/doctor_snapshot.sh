@@ -382,6 +382,8 @@ makevn_collect_doctor_snapshot() {
   if [[ "${app_runnable}" != "yes" ]] && makevn_detect_app_runnable "${repo_root}" "${maven_base_path}"; then
     app_runnable="yes"
   fi
+  local MAKEVN_JDK_MAVEN_BASE_PATH="${maven_base_path}"
+  export MAKEVN_JDK_MAVEN_BASE_PATH
   makevn_doctor_progress "Resolving Java homes"
   code_java_home="$(MAKEVN_RESOLVE_COMPATIBLE_JAVA_FIRST=1 makevn_effective_java_home "${repo_root}" code "${maven_base_path}" || true)"
   if [[ -n "${code_tool_versions_java_version}" ]]; then
@@ -399,6 +401,11 @@ makevn_collect_doctor_snapshot() {
   elif [[ -z "${code_java_home}" && -n "${code_java_version}" ]]; then
     compatible_code_java_homes="$(makevn_compatible_java_homes_csv "${code_java_version}" || true)"
     code_java_home_recommendation="No stable JDK ${code_java_version}+ detected. Automatic selection excludes EA/internal/project builds. Install a stable JDK or explicitly set MAKEVN_CODE_JAVA_HOME in .makevn/config."
+  fi
+  local java_enforcer_ranges=""
+  java_enforcer_ranges="$(makevn_java_enforcer_ranges "${maven_base_path}")"
+  if [[ -z "${code_java_home}" && -n "${java_enforcer_ranges}" ]]; then
+    code_java_home_recommendation="No stable JDK satisfies Maven Enforcer requireJavaVersion: ${java_enforcer_ranges}. Install an accepted stable JDK; do not bypass Enforcer."
   fi
   karate_java_home="$(makevn_effective_java_home "${repo_root}" karate "${maven_base_path}" || true)"
   repo_support_status="$(makevn_repository_support_status "${repo_root}")"

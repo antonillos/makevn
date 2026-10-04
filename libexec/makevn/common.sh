@@ -34,3 +34,6 @@ source "${MAKEVN_LIBEXEC_DIR}/common/karate_profiles.sh"
 
 # shellcheck source=/dev/null
 source "${MAKEVN_LIBEXEC_DIR}/common/formatting.sh"
+
+# shellcheck source=/dev/null
+source "${MAKEVN_LIBEXEC_DIR}/jdk/enforcer.sh"

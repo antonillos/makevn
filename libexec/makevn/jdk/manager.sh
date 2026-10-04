@@ -5,6 +5,9 @@ ACTION="${1:-}"
 JDK_VERSION="${2:-}"
 JDK_HOME_ARG="${3:-}"
 CONFIG_FILE="${CONFIG_FILE:-makevn.config}"
+# shellcheck source=/dev/null
+source "$(dirname "${BASH_SOURCE[0]}")/enforcer.sh"
+enforcer_ranges="$(makevn_java_enforcer_ranges "${MAKEVN_JDK_MAVEN_BASE_PATH:-}")"
 
 extract_tool_versions_jdk_major() {
   local tool_versions_file="$1"
@@ -221,6 +224,7 @@ try_list_compatible_home() {
     return 0
   fi
   is_stable_home "${home}" || return 0
+  jdk_satisfies_enforcer "${home}" || return 0
   if grep -Fxq "${home}" "${SEEN_FILE}"; then
     return 0
   fi
@@ -240,6 +244,7 @@ try_resolve_home() {
     # A repository-pinned installation is intentional, unlike major-only
     # discovery through JAVA_HOME, java_home, Homebrew or common directories.
     [[ "${2:-false}" == true ]] || is_stable_home "${home}" || return 1
+    jdk_satisfies_enforcer "${home}" || return 1
     printf '%s\n' "${home}"
     return 0
   fi
