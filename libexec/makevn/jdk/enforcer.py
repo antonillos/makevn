@@ -86,7 +86,13 @@ def intervals(value):
 
 
 def accepts(value, version):
-    actual = number(version.split("+", 1)[0])
+    base, separator, build = version.partition("+")
+    actual = number(base)
+    if separator:
+        build = build.removesuffix("-LTS")
+        if not build.isdigit():
+            raise ValueError("unsupported JDK build: " + version)
+        actual += (0,) * max(0, 3 - len(actual)) + (int(build),)
     for low, low_closed, high, high_closed in intervals(value):
         lower = 1 if low is None else compare(actual, low)
         upper = -1 if high is None else compare(actual, high)

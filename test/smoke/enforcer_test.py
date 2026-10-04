@@ -20,6 +20,8 @@ class EnforcerTests(unittest.TestCase):
             ("[25.0.2,25.0.4)", "25.0.1", False),
             ("[25.0.2,25.0.4)", "25.0.3+8-LTS", True),
             ("[8,9)", "1.8.0_402", True),
+            ("[25.0.1-9,)", "25.0.1+8-LTS", False),
+            ("[25.0.1-9,)", "25.0.1+10-LTS", True),
         ]
         for rule, version, expected in cases:
             with self.subTest(rule=rule, version=version):
