@@ -1484,18 +1484,6 @@ test_nested_single_maven_project_routing() {
 
   mkdir -p "${repo}/cataloger-cli/src/test/java/com/example"
   java_home="$(detect_java_home)"
-  ${CLI} --repo "${repo}" init >/dev/null
-  cat > "${repo}/.makevn/config" <<EOF
-MAKEVN_JAVA_HOME="${java_home}"
-MAKEVN_CODE_JAVA_HOME=""
-MAKEVN_KARATE_JAVA_HOME=""
-MAKEVN_CODE_TOOL_VERSIONS=""
-MAKEVN_KARATE_TOOL_VERSIONS=""
-MAKEVN_RUN_CMD=""
-MAKEVN_FORMAT_CHECK_GOAL=""
-MAKEVN_FORMAT_APPLY_GOAL=""
-MAKEVN_CHECKSTYLE_GOAL=""
-EOF
   cat > "${repo}/cataloger-cli/pom.xml" <<'EOF'
 <project>
   <build>
@@ -1507,6 +1495,18 @@ EOF
     </plugins>
   </build>
 </project>
+EOF
+  ${CLI} --repo "${repo}" init >/dev/null
+  cat > "${repo}/.makevn/config" <<EOF
+MAKEVN_JAVA_HOME="${java_home}"
+MAKEVN_CODE_JAVA_HOME=""
+MAKEVN_KARATE_JAVA_HOME=""
+MAKEVN_CODE_TOOL_VERSIONS=""
+MAKEVN_KARATE_TOOL_VERSIONS=""
+MAKEVN_RUN_CMD=""
+MAKEVN_FORMAT_CHECK_GOAL=""
+MAKEVN_FORMAT_APPLY_GOAL=""
+MAKEVN_CHECKSTYLE_GOAL=""
 EOF
   cat > "${repo}/cataloger-cli/src/test/java/com/example/NestedTest.java" <<'EOF'
 package com.example;
