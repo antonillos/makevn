@@ -83,6 +83,14 @@ major_for_home() {
   printf '%s\n' "${version_line}" | sed -nE 's/.*version "([0-9]+).*/\1/p'
 }
 
+is_stable_home() {
+  local version=""
+  version="$(java_version_line "$1" | sed -nE 's/.*version "([^"]+)".*/\1/p')"
+  # Numeric GA versions (including legacy Java 8) only. EA, internal and
+  # project builds such as 25-loom are not interchangeable with a GA JDK.
+  [[ "${version}" =~ ^[0-9]+([._][0-9]+)*(\+[0-9]+(-LTS)?)?$ ]]
+}
+
 matches_version() {
   local home="$1"
   local actual_major=""
@@ -204,6 +212,7 @@ try_list_compatible_home() {
   if ! has_java "${home}"; then
     return 0
   fi
+  is_stable_home "${home}" || return 0
   if grep -Fxq "${home}" "${SEEN_FILE}"; then
     return 0
   fi
@@ -233,6 +242,9 @@ try_resolve_home() {
   local home
   home="$(normalize_home "$1")"
   if has_java "${home}" && matches_version "${home}"; then
+    # A repository-pinned installation is intentional, unlike major-only
+    # discovery through JAVA_HOME, java_home, Homebrew or common directories.
+    [[ "${2:-false}" == true ]] || is_stable_home "${home}" || return 1
     printf '%s\n' "${home}"
     return 0
   fi
@@ -303,7 +315,7 @@ resolve_declared_asdf_home() {
     case "${tool}" in
       java|ivm-java)
         [[ "${version}" != */* && "${version}" != "." && "${version}" != ".." ]] || continue
-        try_resolve_home "${ASDF_DATA_DIR:-$HOME/.asdf}/installs/${tool}/${version}" && return 0
+        try_resolve_home "${ASDF_DATA_DIR:-$HOME/.asdf}/installs/${tool}/${version}" true && return 0
         ;;
     esac
   done < "${tool_versions_file}"

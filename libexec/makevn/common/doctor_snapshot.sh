@@ -398,6 +398,7 @@ makevn_collect_doctor_snapshot() {
     fi
   elif [[ -z "${code_java_home}" && -n "${code_java_version}" ]]; then
     compatible_code_java_homes="$(makevn_compatible_java_homes_csv "${code_java_version}" || true)"
+    code_java_home_recommendation="No stable JDK ${code_java_version}+ detected. Automatic selection excludes EA/internal/project builds. Install a stable JDK or explicitly set MAKEVN_CODE_JAVA_HOME in .makevn/config."
   fi
   karate_java_home="$(makevn_effective_java_home "${repo_root}" karate "${maven_base_path}" || true)"
   repo_support_status="$(makevn_repository_support_status "${repo_root}")"
