@@ -46,8 +46,8 @@ makevn doctor --compact
 ```
 
 For unsupported repositories, doctor reports no automatic recommendation and does
-not suggest initialization. Explicit `init` remains available but warns that it
-only creates local configuration and does not enable Maven commands.
+not suggest initialization. `init` rejects repositories without Maven signals,
+including `--force` and `--dry-run`, without creating or updating configuration.
 
 Follow the reported `next` command: `makevn init` for missing initialization,
 `makevn init --force` for incomplete state or a different/unknown installed
