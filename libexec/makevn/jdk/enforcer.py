@@ -101,12 +101,17 @@ def accepts(value, version):
     return False
 
 
-def rules(pom):
-    roots = models(pom)
+def model_properties(roots):
     properties = {}
     for root in roots:
         for prop in root.findall("properties/*"):
             properties[prop.tag] = prop.text or ""
+    return properties
+
+
+def rules(pom, roots=None):
+    roots = models(pom) if roots is None else roots
+    properties = model_properties(roots)
     result = []
     for root in roots:
         for plugin in root.findall("build/plugins/plugin"):
@@ -138,12 +143,30 @@ def rules(pom):
     return list(dict.fromkeys(result))
 
 
+def reactor_rules(pom, ancestors=frozenset()):
+    pom = pom.resolve()
+    if pom in ancestors:
+        raise ValueError("cyclic reactor module POM")
+    roots = models(pom)
+    properties = model_properties(roots)
+    result = rules(pom, roots)
+    for module in roots[-1].findall("modules/module"):
+        name = expand(module.text or "", properties)
+        if not name:
+            raise ValueError("empty reactor module path")
+        candidate = pom.parent / name
+        if candidate.is_dir() or candidate.suffix != ".xml":
+            candidate /= "pom.xml"
+        result.extend(reactor_rules(candidate, ancestors | {pom}))
+    return list(dict.fromkeys(result))
+
+
 def main(args):
     try:
         if args[0] == "rules":
             pom = Path(args[1]) / "pom.xml"
             if pom.is_file():
-                print("\n".join(rules(pom)), end="")
+                print("\n".join(reactor_rules(pom)), end="")
             return 0
         return 0 if all(accepts(value, args[1]) for value in args[2:]) else 1
     except (ValueError, OSError, ET.ParseError) as error:

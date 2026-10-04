@@ -69,3 +69,25 @@ printf 'java company-125\n' > "${tmp}/repo/.tool-versions"
 bash "${ROOT}/libexec/makevn/backend.sh" compile --repo "${tmp}/repo" --compact >"${tmp}/output" 2>&1
 [[ "$(cat "${tmp}/repo/maven-java-home")" == "${pin}" ]]
 echo 'Enforcer-aware JDK regression tests passed'
+# Rules in unconditional reactor modules constrain the whole Maven invocation.
+rm -f "${tmp}/repo/.makevn/config" "${tmp}/repo/.tool-versions"
+cat > "${tmp}/repo/pom.xml" <<'POM'
+<project><properties><java.version>125</java.version></properties>
+<modules><module>feature</module></modules></project>
+POM
+mkdir -p "${tmp}/repo/feature"
+cat > "${tmp}/repo/feature/pom.xml" <<'POM'
+<project><build><plugins><plugin><artifactId>maven-enforcer-plugin</artifactId>
+<executions><execution><goals><goal>enforce</goal></goals><configuration><rules>
+<requireJavaVersion><version>[127,128)</version></requireJavaVersion>
+</rules></configuration></execution></executions></plugin></plugins></build></project>
+POM
+if bash "${manager}" resolve-version 125; then
+  echo 'exact discovery ignored a reactor module rule'; exit 1
+fi
+[[ "$(bash "${manager}" resolve-compatible-version 125)" == "${tmp}/jdks/127" ]]
+output="$(bash "${ROOT}/libexec/makevn/cli.sh" --repo "${tmp}/repo" doctor)"
+[[ "${output}" == *"Resolved code JAVA_HOME: ${tmp}/jdks/127"* ]]
+bash "${ROOT}/libexec/makevn/backend.sh" compile --repo "${tmp}/repo" --compact >"${tmp}/output" 2>&1
+[[ "$(cat "${tmp}/repo/maven-java-home")" == "${tmp}/jdks/127" ]]
+echo 'Reactor Enforcer JDK regression tests passed'

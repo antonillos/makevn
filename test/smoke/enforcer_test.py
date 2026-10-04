@@ -1,3 +1,5 @@
+import contextlib
+import io
 import importlib.util
 import tempfile
 import unittest
@@ -57,6 +59,47 @@ class EnforcerTests(unittest.TestCase):
             (root / "pom.xml").write_text("<project><build><plugins>" + plugin + "</plugins></build></project>")
             with self.assertRaisesRegex(ValueError, "unresolved"):
                 enforcer.rules(root / "pom.xml")
+
+
+    def test_reactor_module_rules(self):
+        def plugin(value):
+            return """<build><plugins><plugin><artifactId>maven-enforcer-plugin</artifactId>
+            <executions><execution><goals><goal>enforce</goal></goals><configuration>
+            <rules><requireJavaVersion><version>""" + value + """</version></requireJavaVersion>
+            </rules></configuration></execution></executions></plugin></plugins></build>"""
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            pom = root / "pom.xml"
+            pom.write_text('<project xmlns="http://maven.apache.org/POM/4.0.0">'
+                           '<properties><feature.module>feature</feature.module></properties>'
+                           '<modules><module>${feature.module}</module><module>other.xml</module></modules>'
+                           '<profiles><profile><modules><module>inactive-missing</module></modules></profile></profiles>'
+                           '</project>')
+            child = root / "feature"
+            child.mkdir()
+            (child / "pom.xml").write_text('<project><modules><module>nested</module></modules>' +
+                                           plugin('[26,27)') + '</project>')
+            nested = child / 'nested'
+            nested.mkdir()
+            (nested / 'pom.xml').write_text('<project>' + plugin('26') + '</project>')
+            (root / 'other.xml').write_text('<project>' + plugin('[25,28)') + '</project>')
+            output = io.StringIO()
+            with contextlib.redirect_stdout(output):
+                self.assertEqual(enforcer.main(['rules', str(root)]), 0)
+            self.assertEqual(output.getvalue(), '[26,27)\n26\n[25,28)')
+            ranges = enforcer.reactor_rules(pom)
+            self.assertEqual(ranges, ['[26,27)', '26', '[25,28)'])
+            self.assertFalse(all(enforcer.accepts(value, '25') for value in ranges))
+            self.assertTrue(all(enforcer.accepts(value, '26') for value in ranges))
+            self.assertFalse(all(enforcer.accepts(value, '27') for value in ranges))
+            # A module cycle or unavailable declared POM must not drop constraints.
+            (nested / 'pom.xml').write_text('<project><modules><module>../../pom.xml</module></modules></project>')
+            with self.assertRaisesRegex(ValueError, 'cyclic reactor'):
+                enforcer.reactor_rules(pom)
+            (nested / 'pom.xml').unlink()
+            with self.assertRaises(OSError):
+                enforcer.reactor_rules(pom)
 
 
 if __name__ == "__main__":
