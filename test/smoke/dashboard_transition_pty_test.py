@@ -32,7 +32,7 @@ def backend(args):
     time.sleep(0.4)
 
 
-def verify(binary, tail_enabled=False, color_enabled=False):
+def verify(binary, tail_enabled=False, color_enabled=False, truecolor=False):
     with tempfile.TemporaryDirectory() as folder:
         repo = Path(folder)
         script = repo / 'libexec/makevn/backend.sh'
@@ -46,6 +46,9 @@ def verify(binary, tail_enabled=False, color_enabled=False):
             for name in ('BASH_ENV', 'BASH_XTRACEFD', 'SHELLOPTS', 'PS4'):
                 os.environ.pop(name, None)
             os.environ.update(MAKEVN_INSTALL_ROOT=str(repo), NO_COLOR='1', TERM='xterm')
+            os.environ.pop('COLORTERM', None)
+            if truecolor:
+                os.environ['COLORTERM'] = 'truecolor'
             if color_enabled:
                 os.environ.pop('NO_COLOR', None)
             os.environ.pop('MAKEVN_AGENT_OUTPUT', None)
@@ -93,13 +96,16 @@ def verify(binary, tail_enabled=False, color_enabled=False):
             assert os.waitstatus_to_exitcode(status) == 0
             assert 'Worked  for' in '\n'.join(screen.lines())
             if color_enabled:
+                color_code = '38;2;227;193;104' if truecolor else '33'
+                assert f'\x1b[{color_code}m[•]\x1b[0m' in output, output
                 for title in ('docker-up', 'docker-ps-required (starting)', 'docker-ps-required'):
-                    assert f'\x1b[33mmakevn {title}\x1b[0m' in output, output
+                    assert f'\x1b[{color_code}mmakevn {title}\x1b[0m' in output, output
                     assert f'\x1b[36mmakevn {title}\x1b[0m' not in output, output
                 assert '[\x1b[36m✓\x1b[0m]\x1b[90m docker-up |' in output, output
                 assert '[\x1b[32mok\x1b[0m]' in output, output
             else:
                 assert '\x1b[33m' not in output, output
+                assert '\x1b[38;2;' not in output, output
         finally:
             os.close(fd)
 
@@ -112,4 +118,7 @@ if __name__ == '__main__':
         verify(str(Path(sys.argv[1]).resolve()), True)
         verify(str(Path(sys.argv[1]).resolve()), color_enabled=True)
         verify(str(Path(sys.argv[1]).resolve()), True, color_enabled=True)
+        verify(str(Path(sys.argv[1]).resolve()), color_enabled=True, truecolor=True)
+        verify(str(Path(sys.argv[1]).resolve()), True, color_enabled=True, truecolor=True)
+        verify(str(Path(sys.argv[1]).resolve()), truecolor=True)
         print('dashboard transition PTY: ok')
