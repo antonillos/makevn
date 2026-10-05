@@ -1738,6 +1738,27 @@ fn running_command_line_uses_fixed_marker_for_logged_commands() {
 }
 
 #[test]
+fn active_action_color_uses_reference_gold_only_with_truecolor_support() {
+    for colorterm in ["truecolor", "24bit", "TRUECOLOR"] {
+        assert_eq!(
+            super::active_action_color_code(Some(colorterm), Some("xterm-256color")),
+            "38;2;227;193;104"
+        );
+    }
+    assert_eq!(
+        super::active_action_color_code(None, Some("xterm-direct")),
+        "38;2;227;193;104"
+    );
+    for colorterm in [None, Some(""), Some("256color")] {
+        assert_eq!(
+            super::active_action_color_code(colorterm, Some("xterm-256color")),
+            "33"
+        );
+    }
+    assert_eq!(super::active_action_color_code(None, None), "33");
+}
+
+#[test]
 fn pending_backend_status_uses_one_line_before_metadata_arrives() {
     let line = super::pending_command_line("verify-changes");
 

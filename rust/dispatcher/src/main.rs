@@ -1975,8 +1975,8 @@ fn parse_backend_metadata(content: &str) -> Option<BackendMetadata> {
 fn backend_header_line(metadata: &BackendMetadata) -> String {
     format!(
         "{} {}",
-        warn_text("[•]"),
-        accent_text(&format!("makevn {}", metadata.title))
+        active_action_text("[•]"),
+        active_action_text(&format!("makevn {}", metadata.title))
     )
 }
 
@@ -2097,14 +2097,14 @@ fn running_command_line(metadata: &BackendMetadata) -> String {
     if metadata.relative_log_path.is_empty() {
         format!(
             "{} {}",
-            warn_text("[•]"),
-            accent_text(&format!("makevn {}", metadata.title))
+            active_action_text("[•]"),
+            active_action_text(&format!("makevn {}", metadata.title))
         )
     } else {
         format!(
             "{} {} {} {}",
-            warn_text("[•]"),
-            accent_text(&format!("makevn {}", metadata.title)),
+            active_action_text("[•]"),
+            active_action_text(&format!("makevn {}", metadata.title)),
             dim_text("|"),
             dim_text(&metadata.relative_log_path)
         )
@@ -2270,6 +2270,28 @@ fn accent_text(text: &str) -> String {
 
 fn warn_text(text: &str) -> String {
     style("33", text)
+}
+
+fn active_action_color_code(colorterm: Option<&str>, term: Option<&str>) -> &'static str {
+    if colorterm.is_some_and(|value| {
+        value.eq_ignore_ascii_case("truecolor") || value.eq_ignore_ascii_case("24bit")
+    }) || term.is_some_and(|value| value.ends_with("-direct"))
+    {
+        // Dominant reference text color, converted to sRGB: #e3c168.
+        "38;2;227;193;104"
+    } else {
+        "33"
+    }
+}
+
+fn active_action_text(text: &str) -> String {
+    style(
+        active_action_color_code(
+            env::var("COLORTERM").ok().as_deref(),
+            env::var("TERM").ok().as_deref(),
+        ),
+        text,
+    )
 }
 
 fn adaptive_metric_text(text: &str, load: f32) -> String {
