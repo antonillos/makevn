@@ -1976,7 +1976,7 @@ fn backend_header_line(metadata: &BackendMetadata) -> String {
     format!(
         "{} {}",
         warn_text("[•]"),
-        accent_text(&format!("makevn {}", metadata.title))
+        warn_text(&format!("makevn {}", metadata.title))
     )
 }
 
@@ -2098,13 +2098,13 @@ fn running_command_line(metadata: &BackendMetadata) -> String {
         format!(
             "{} {}",
             warn_text("[•]"),
-            accent_text(&format!("makevn {}", metadata.title))
+            warn_text(&format!("makevn {}", metadata.title))
         )
     } else {
         format!(
             "{} {} {} {}",
             warn_text("[•]"),
-            accent_text(&format!("makevn {}", metadata.title)),
+            warn_text(&format!("makevn {}", metadata.title)),
             dim_text("|"),
             dim_text(&metadata.relative_log_path)
         )
