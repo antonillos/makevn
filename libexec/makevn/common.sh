@@ -37,3 +37,6 @@ source "${MAKEVN_LIBEXEC_DIR}/common/formatting.sh"
 
 # shellcheck source=/dev/null
 source "${MAKEVN_LIBEXEC_DIR}/jdk/enforcer.sh"
+
+# shellcheck source=/dev/null
+source "${MAKEVN_LIBEXEC_DIR}/common/maven_resolution.sh"

@@ -166,6 +166,14 @@ makevn_java_version_line() {
 makevn_maven_executable() {
   local repo_root="$1"
   local maven_base_path="$2"
+  local context="${3:-code}"
+  local pinned_executable=""
+
+  pinned_executable="$(makevn_pinned_maven_executable "${repo_root}" "${context}" "${maven_base_path}")" || return $?
+  if [[ -n "${pinned_executable}" ]]; then
+    printf '%s\n' "${pinned_executable}"
+    return 0
+  fi
 
   if [[ -x "${repo_root}/mvnw" ]]; then
     printf '%s\n' "${repo_root}/mvnw"
@@ -431,7 +439,7 @@ makevn_run_selected_test() {
     test_param="-Dtest=${full_test_class}"
   fi
 
-  maven_executable="$(makevn_maven_executable "${repo_root}" "${maven_base_path}")"
+  maven_executable="$(makevn_maven_executable "${repo_root}" "${maven_base_path}")" || return $?
   cli_flags_value="$(makevn_maven_cli_flags_for_command "${repo_root}" test)"
   cli_flags_value="$(makevn_append_word "${cli_flags_value}" "-nsu")"
   prop_flags_value="$(makevn_maven_prop_flags_for_command "${repo_root}" test)"
@@ -681,7 +689,7 @@ makevn_run_verify_it_goal() {
       makevn_die "No Maven project detected in ${repo_root}"
     fi
 
-    maven_executable="$(makevn_maven_executable "${repo_root}" "${maven_base_path}")"
+    maven_executable="$(makevn_maven_executable "${repo_root}" "${maven_base_path}")" || return $?
     read -r -a workflow_tokens <<< "${workflow_invocation}"
 
     if [[ -n "${local_containers}" ]]; then
@@ -704,7 +712,7 @@ makevn_run_verify_it_goal() {
     makevn_die "No Maven project detected in ${repo_root}"
   fi
 
-  maven_executable="$(makevn_maven_executable "${repo_root}" "${maven_base_path}")"
+  maven_executable="$(makevn_maven_executable "${repo_root}" "${maven_base_path}")" || return $?
   maven_cli_flags_value="$(makevn_maven_cli_flags_for_command "${repo_root}" verify)"
   maven_prop_flags_value="$(makevn_maven_prop_flags_for_command "${repo_root}" verify)"
 
@@ -753,7 +761,7 @@ makevn_run_maven_goal() {
     makevn_die "No Maven project detected in ${repo_root}"
   fi
 
-  maven_executable="$(makevn_maven_executable "${repo_root}" "${maven_base_path}")"
+  maven_executable="$(makevn_maven_executable "${repo_root}" "${maven_base_path}")" || return $?
   maven_cli_flags_value="$(makevn_maven_cli_flags_for_command "${repo_root}" "${command_name}")"
   maven_prop_flags_value="$(makevn_maven_prop_flags_for_command "${repo_root}" "${command_name}")"
   command_pre_goals_value="$(makevn_maven_pre_goals_for_command "${repo_root}" "${command_name}")"

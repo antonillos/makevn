@@ -345,7 +345,7 @@ cmd_pr_verify() {
 
   maven_base_path="$(makevn_detect_maven_base_path "${repo_root}" || true)"
   [[ -n "${maven_base_path}" ]] || makevn_die "No Maven project detected in ${repo_root}"
-  maven_executable="$(makevn_maven_executable "${repo_root}" "${maven_base_path}")"
+  maven_executable="$(makevn_maven_executable "${repo_root}" "${maven_base_path}")" || return $?
   cli_flags_value="$(makevn_maven_cli_flags_for_command "${repo_root}" verify)"
   cli_flags_value="$(makevn_append_word "${cli_flags_value}" "-B")"
   cli_flags_value="$(makevn_append_word "${cli_flags_value}" "-nsu")"
@@ -591,7 +591,7 @@ cmd_checkstyle() {
   [[ -n "${maven_base_path}" ]] || makevn_die "No Maven project detected in ${repo_root}"
   makevn_normalize_checkstyle_module "${repo_root}" "${maven_base_path}"
   checkstyle_goal="$(makevn_checkstyle_goal_for_project "${repo_root}" "${maven_base_path}")"
-  maven_executable="$(makevn_maven_executable "${repo_root}" "${maven_base_path}")"
+  maven_executable="$(makevn_maven_executable "${repo_root}" "${maven_base_path}")" || return $?
   maven_cli_flags_value="$(makevn_maven_cli_flags_for_command "${repo_root}" checkstyle)"
   if [[ -n "${maven_cli_flags_value}" ]]; then
     read -r -a maven_cli_flags <<< "${maven_cli_flags_value}"
