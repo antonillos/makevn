@@ -4740,6 +4740,8 @@ main() {
   python3 "${ROOT_DIR}/test/smoke/karate_profiles_test.py"
   bash "${ROOT_DIR}/test/smoke/karate_profiles_test.sh"
   bash "${ROOT_DIR}/test/smoke/karate_profiles_doctor_test.sh"
+  bash "${ROOT_DIR}/test/smoke/maven_resolution_test.sh"
+  bash "${ROOT_DIR}/test/smoke/maven_system_test.sh"
   bash "${ROOT_DIR}/test/smoke/jdk_discovery_test.sh"
   bash "${ROOT_DIR}/test/smoke/jdk_brew_test.sh"
   python3 "${ROOT_DIR}/test/smoke/enforcer_test.py"

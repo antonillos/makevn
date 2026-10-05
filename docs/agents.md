@@ -558,6 +558,22 @@ use an explicit approved setting/override when detection is ambiguous; report
 unresolved workflow expressions rather than evaluating them. `profile refresh`
 updates detected profile metadata, not user configuration.
 
+### Repository-pinned Maven selection
+
+Maven selection reads `maven` and `ivm-maven` pins from `.tool-versions`.
+It checks the configured context file (`MAKEVN_CODE_TOOL_VERSIONS` or
+`MAKEVN_KARATE_TOOL_VERSIONS`), then the context Maven directory, then the
+repository root. A file containing only other tools does not hide a root Maven
+pin. The exact installation under `${ASDF_DATA_DIR:-$HOME/.asdf}/installs`
+is used directly, ahead of Maven wrappers and PATH shims. Missing or invalid
+pins stop execution; makevn never silently substitutes another Maven version.
+A `system` pin explicitly selects the first executable Maven in PATH outside
+the asdf shim directory (including aliases of that directory); it does not
+select a wrapper. If system Maven is unavailable, execution stops.
+Without a Maven pin, the existing root wrapper, context wrapper, then `mvn`
+PATH selection is preserved. Detailed doctor reports the effective executable
+for code and Karate independently.
+
 ### Stable automatic JDK selection
 
 Numeric Java requirements select stable GA JDKs only, including compatible

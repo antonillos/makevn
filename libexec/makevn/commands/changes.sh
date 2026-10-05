@@ -270,7 +270,7 @@ makevn_collect_verify_changes_scope() {
     MAKEVN_VERIFY_CHANGES_MAVEN_BASE_REL="${MAKEVN_VERIFY_CHANGES_MAVEN_BASE_PATH#${repo_root}/}"
   fi
 
-  MAKEVN_VERIFY_CHANGES_MAVEN_EXECUTABLE="$(makevn_maven_executable "${repo_root}" "${MAKEVN_VERIFY_CHANGES_MAVEN_BASE_PATH}")"
+  MAKEVN_VERIFY_CHANGES_MAVEN_EXECUTABLE="$(makevn_maven_executable "${repo_root}" "${MAKEVN_VERIFY_CHANGES_MAVEN_BASE_PATH}")" || return $?
   local_containers="$(makevn_effective_local_containers "${repo_root}" "${MAKEVN_PROFILE_VERIFY_IT_LOCAL_CONTAINERS:-}")"
   MAKEVN_VERIFY_CHANGES_LOCAL_CONTAINERS="${local_containers}"
 
@@ -433,7 +433,7 @@ cmd_coverage() {
       fi
       [[ "${jacoco_plugin_declared}" == true ]] || makevn_die "No JaCoCo activation or jacoco-maven-plugin declaration detected under ${maven_base_path}. Configure coverage in the repository, run 'makevn profile refresh', then run a coverage-enabled verify flow before 'makevn coverage'."
       makevn_print_detail_line "Coverage report not found; attempting jacoco:report from existing test data."
-      maven_executable="$(makevn_maven_executable "${repo_root}" "${maven_base_path}")"
+      maven_executable="$(makevn_maven_executable "${repo_root}" "${maven_base_path}")" || return $?
       cli_flags_value="$(makevn_maven_cli_flags_for_command "${repo_root}" verify)"
       cli_flags_value="$(makevn_append_coverage_cli_flags "${repo_root}" "${cli_flags_value}")"
       cli_flags_value="$(makevn_append_word "${cli_flags_value}" "-nsu")"
@@ -682,7 +682,7 @@ cmd_coverage_changes() {
     fi
 
     makevn_print_detail_line "Coverage report not found; attempting jacoco:report-aggregate for ${jacoco_module}."
-    maven_executable="$(makevn_maven_executable "${repo_root}" "${maven_base_path}")"
+    maven_executable="$(makevn_maven_executable "${repo_root}" "${maven_base_path}")" || return $?
     cli_flags_value="$(makevn_maven_cli_flags_for_command "${repo_root}" verify)"
     cli_flags_value="$(makevn_append_coverage_cli_flags "${repo_root}" "${cli_flags_value}")"
     cli_flags_value="$(makevn_append_word "${cli_flags_value}" "-nsu")"
