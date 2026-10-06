@@ -124,6 +124,7 @@ makevn_quote_command() {
 }
 
 makevn_trace_command() {
+  [[ "${MAKEVN_TRACE_OUTPUT:-1}" == "1" ]] || return 0
   local label="$1"
   shift
   printf '%s %s %s\n' "$(makevn_dim '→')" "$(makevn_dim "${label}")" "$(makevn_dim "$(makevn_quote_command "$@")")"

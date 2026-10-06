@@ -249,7 +249,7 @@ fn tool(spec: &ToolSpec) -> Value {
         "trace".into(),
         json!({
             "type": "boolean",
-            "description": "Include execution metadata (durationMs, exitCode, tool). Disabled by default.",
+            "description": "Show executed commands and execution metadata. Disabled by default.",
             "default": false,
         }),
     );
@@ -334,6 +334,7 @@ fn handle_tool_call(makevn_bin: &Path, params: &Value) -> Result<ToolCallResult,
     let output: ToolOutput = {
         Command::new(makevn_bin)
             .args(&cmd_args)
+            .env("MAKEVN_TRACE_OUTPUT", trace_output(&args))
             .env("NO_COLOR", "1")
             .env("MAKEVN_COMPACT_OUTPUT", "1")
             .env("MAKEVN_AGENT_OUTPUT", "1")
@@ -370,6 +371,14 @@ fn handle_tool_call(makevn_bin: &Path, params: &Value) -> Result<ToolCallResult,
     })
 }
 
+fn trace_output(args: &Map<String, Value>) -> &'static str {
+    if args.get("trace").and_then(Value::as_bool) == Some(true) {
+        "1"
+    } else {
+        "0"
+    }
+}
+
 fn parse_steps(args: &Map<String, Value>) -> Result<Vec<Value>, String> {
     let Some(steps_value) = args.get("steps") else {
         return Err(String::from("missing required argument: steps"));
@@ -387,11 +396,13 @@ fn execute_single_step(
     makevn_bin: &Path,
     step: &Value,
     global_repo: Option<&str>,
+    global_trace: bool,
 ) -> Result<(String, i32, u128), String> {
     let step_tool = step["tool"]
         .as_str()
         .ok_or_else(|| String::from("each step must have a 'tool' field"))?;
-    let step_args = step["arguments"].as_object().cloned().unwrap_or_default();
+    let mut step_args = step["arguments"].as_object().cloned().unwrap_or_default();
+    step_args.entry("trace").or_insert(json!(global_trace));
 
     let spec = TOOL_SPECS
         .iter()
@@ -413,17 +424,22 @@ fn execute_single_step(
     push_tool_flags(&mut cmd_args, spec, &step_args)?;
 
     let start = Instant::now();
-    let output = execute_tool_process(makevn_bin, &cmd_args)?;
+    let output = execute_tool_process(makevn_bin, &cmd_args, trace_output(&step_args))?;
     let duration_ms = start.elapsed().as_millis();
 
     let (result, exit_code) = format_tool_output(&output);
     Ok((result, exit_code, duration_ms))
 }
 
-fn execute_tool_process(makevn_bin: &Path, cmd_args: &[String]) -> Result<ToolOutput, String> {
+fn execute_tool_process(
+    makevn_bin: &Path,
+    cmd_args: &[String],
+    trace: &str,
+) -> Result<ToolOutput, String> {
     let output: ToolOutput = {
         Command::new(makevn_bin)
             .args(cmd_args)
+            .env("MAKEVN_TRACE_OUTPUT", trace)
             .env("NO_COLOR", "1")
             .env("MAKEVN_COMPACT_OUTPUT", "1")
             .env("MAKEVN_AGENT_OUTPUT", "1")
@@ -472,7 +488,7 @@ fn handle_composite_run(makevn_bin: &Path, args: &Map<String, Value>) -> Result<
             .ok_or_else(|| String::from("each step must have a 'tool' field"))?;
 
         let (output, exit_code, duration_ms) =
-            match execute_single_step(makevn_bin, step, global_repo) {
+            match execute_single_step(makevn_bin, step, global_repo, trace_output(args) == "1") {
                 Ok(result) => result,
                 Err(error) => (error, -1, 0),
             };
@@ -510,6 +526,7 @@ fn handle_parallel_run(makevn_bin: &Path, args: &Map<String, Value>) -> Result<S
         .filter(|s| !s.is_empty())
         .map(|s| s.to_owned());
 
+    let global_trace = trace_output(args) == "1";
     let bin = makevn_bin.to_path_buf();
     let mut handles = Vec::new();
 
@@ -519,7 +536,7 @@ fn handle_parallel_run(makevn_bin: &Path, args: &Map<String, Value>) -> Result<S
         let repo = global_repo.clone();
         handles.push(thread::spawn(move || {
             let step_tool = step["tool"].as_str().unwrap_or("unknown");
-            match execute_single_step(&bin, &step, repo.as_deref()) {
+            match execute_single_step(&bin, &step, repo.as_deref(), global_trace) {
                 Ok((output, exit_code, duration_ms)) => {
                     json!({
                         "step": i,
