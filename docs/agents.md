@@ -372,6 +372,10 @@ When the MCP server is active, the agent can call makevn commands as MCP tools
 (e.g. `doctor`, `test`, `verify`) in addition to running them via the CLI.
 MCP tools invoke the installed sibling `makevn` binary with compact,
 agent-safe output.
+Execution metadata (`durationMs`, `exitCode`, `tool`) is hidden by default;
+pass `trace: true` explicitly on any MCP tool to include that diagnostic block.
+Command results and failure diagnostics remain visible. Workflow tools retain
+per-step status and timing in their result summaries.
 
 Inside OpenCode, the intended flow is:
 

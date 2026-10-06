@@ -393,3 +393,70 @@ fn retired_make_tools_are_not_registered() {
         || s.name == "make_uninstall"
         || s.command.first() == Some(&"make")));
 }
+
+#[test]
+fn all_tools_advertise_opt_in_trace_without_forwarding_it_to_cli() {
+    for spec in TOOL_SPECS {
+        let schema = super::tool(spec);
+        let trace = &schema["inputSchema"]["properties"]["trace"];
+        assert_eq!(trace["type"], "boolean");
+        assert_eq!(trace["default"], false);
+        let mut flags = Vec::new();
+        let args = json!({"trace": true, "steps": []});
+        push_tool_flags(&mut flags, spec, args.as_object().unwrap()).unwrap();
+        assert!(flags.is_empty());
+    }
+}
+
+#[test]
+fn execution_trace_is_hidden_unless_explicitly_requested_even_on_failure() {
+    for exit_code in [0, 7] {
+        let result = super::ToolCallResult {
+            output: "command result or diagnostic".into(),
+            exit_code,
+            duration_ms: 42,
+        };
+        for args in [
+            json!(null),
+            json!({}),
+            json!({"trace": false}),
+            json!({"trace": "true"}),
+        ] {
+            let content =
+                super::tool_result_content(&result, &json!({"name": "format", "arguments": args}));
+            assert_eq!(
+                content,
+                vec![json!({"type": "text", "text": result.output})]
+            );
+        }
+        let content = super::tool_result_content(
+            &result,
+            &json!({"name": "format", "arguments": {"trace": true}}),
+        );
+        assert_eq!(content.len(), 2);
+        let trace: serde_json::Value =
+            serde_json::from_str(content[1]["text"].as_str().unwrap()).unwrap();
+        assert_eq!(
+            trace,
+            json!({"tool": "format", "exitCode": exit_code, "durationMs": 42})
+        );
+    }
+}
+
+#[test]
+fn explicit_trace_includes_zero_duration_workflow_metadata() {
+    let result = super::ToolCallResult {
+        output: "workflow summary".into(),
+        exit_code: 0,
+        duration_ms: 0,
+    };
+    let content = super::tool_result_content(
+        &result,
+        &json!({"name": "composite_run", "arguments": {"trace": true}}),
+    );
+    assert_eq!(content.len(), 2);
+    assert!(content[1]["text"]
+        .as_str()
+        .unwrap()
+        .contains("\"durationMs\":0"));
+}

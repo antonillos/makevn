@@ -64,18 +64,7 @@ pub fn run_mcp_server(current_exe: PathBuf) -> Result<i32, String> {
             let result = handle_tool_call(&makevn_bin, &params);
             let response = match result {
                 Ok(tool_result) => {
-                    let mut content = vec![json!({"type": "text", "text": tool_result.output})];
-                    if tool_result.exit_code != 0 || tool_result.duration_ms > 0 {
-                        let tool_name = params["name"].as_str().unwrap_or("unknown");
-                        content.push(json!({
-                            "type": "text",
-                            "text": json!({
-                                "exitCode": tool_result.exit_code,
-                                "durationMs": tool_result.duration_ms,
-                                "tool": tool_name,
-                            }).to_string()
-                        }));
-                    }
+                    let content = tool_result_content(&tool_result, &params);
                     json!({
                         "jsonrpc": "2.0",
                         "id": id,
@@ -103,6 +92,21 @@ pub fn run_mcp_server(current_exe: PathBuf) -> Result<i32, String> {
     }
 
     Ok(0)
+}
+
+fn tool_result_content(result: &ToolCallResult, params: &Value) -> Vec<Value> {
+    let mut content = vec![json!({"type": "text", "text": result.output})];
+    if params["arguments"]["trace"].as_bool() == Some(true) {
+        content.push(json!({
+            "type": "text",
+            "text": json!({
+                "exitCode": result.exit_code,
+                "durationMs": result.duration_ms,
+                "tool": params["name"].as_str().unwrap_or("unknown"),
+            }).to_string()
+        }));
+    }
+    content
 }
 
 fn write_response(stdout: &mut io::Stdout, response: Value) -> Result<(), String> {
@@ -241,6 +245,14 @@ fn tools_list() -> Vec<Value> {
 
 fn tool(spec: &ToolSpec) -> Value {
     let mut properties = Map::new();
+    properties.insert(
+        "trace".into(),
+        json!({
+            "type": "boolean",
+            "description": "Include execution metadata (durationMs, exitCode, tool). Disabled by default.",
+            "default": false,
+        }),
+    );
     let mut required = Vec::new();
 
     for option in spec.options {
