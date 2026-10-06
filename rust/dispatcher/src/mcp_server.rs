@@ -95,18 +95,17 @@ pub fn run_mcp_server(current_exe: PathBuf) -> Result<i32, String> {
 }
 
 fn tool_result_content(result: &ToolCallResult, params: &Value) -> Vec<Value> {
-    let mut content = vec![json!({"type": "text", "text": result.output})];
-    if params["arguments"]["trace"].as_bool() == Some(true) {
-        content.push(json!({
+    vec![
+        json!({"type": "text", "text": result.output}),
+        json!({
             "type": "text",
             "text": json!({
                 "exitCode": result.exit_code,
                 "durationMs": result.duration_ms,
                 "tool": params["name"].as_str().unwrap_or("unknown"),
             }).to_string()
-        }));
-    }
-    content
+        }),
+    ]
 }
 
 fn write_response(stdout: &mut io::Stdout, response: Value) -> Result<(), String> {
@@ -249,7 +248,7 @@ fn tool(spec: &ToolSpec) -> Value {
         "trace".into(),
         json!({
             "type": "boolean",
-            "description": "Show executed commands and execution metadata. Disabled by default.",
+            "description": "Show executed command lines. Disabled by default; result metadata is always included.",
             "default": false,
         }),
     );

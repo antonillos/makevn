@@ -409,7 +409,7 @@ fn all_tools_advertise_opt_in_trace_without_forwarding_it_to_cli() {
 }
 
 #[test]
-fn execution_trace_is_hidden_unless_explicitly_requested_even_on_failure() {
+fn execution_metadata_is_always_visible_even_on_failure() {
     for exit_code in [0, 7] {
         let result = super::ToolCallResult {
             output: "command result or diagnostic".into(),
@@ -420,13 +420,18 @@ fn execution_trace_is_hidden_unless_explicitly_requested_even_on_failure() {
             json!(null),
             json!({}),
             json!({"trace": false}),
+            json!({"trace": true}),
             json!({"trace": "true"}),
         ] {
             let content =
                 super::tool_result_content(&result, &json!({"name": "format", "arguments": args}));
+            assert_eq!(content.len(), 2);
+            assert_eq!(content[0], json!({"type": "text", "text": result.output}));
+            let metadata: serde_json::Value =
+                serde_json::from_str(content[1]["text"].as_str().unwrap()).unwrap();
             assert_eq!(
-                content,
-                vec![json!({"type": "text", "text": result.output})]
+                metadata,
+                json!({"tool": "format", "exitCode": exit_code, "durationMs": 42})
             );
         }
         let content = super::tool_result_content(
@@ -444,16 +449,13 @@ fn execution_trace_is_hidden_unless_explicitly_requested_even_on_failure() {
 }
 
 #[test]
-fn explicit_trace_includes_zero_duration_workflow_metadata() {
+fn default_output_includes_zero_duration_workflow_metadata() {
     let result = super::ToolCallResult {
         output: "workflow summary".into(),
         exit_code: 0,
         duration_ms: 0,
     };
-    let content = super::tool_result_content(
-        &result,
-        &json!({"name": "composite_run", "arguments": {"trace": true}}),
-    );
+    let content = super::tool_result_content(&result, &json!({"name": "composite_run"}));
     assert_eq!(content.len(), 2);
     assert!(content[1]["text"]
         .as_str()

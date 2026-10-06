@@ -372,10 +372,11 @@ When the MCP server is active, the agent can call makevn commands as MCP tools
 (e.g. `doctor`, `test`, `verify`) in addition to running them via the CLI.
 MCP tools invoke the installed sibling `makevn` binary with compact,
 agent-safe output.
-Executed command lines (`→ exec ...`) and execution metadata
-(`durationMs`, `exitCode`, `tool`) are hidden by default;
-pass `trace: true` explicitly on any MCP tool to include those diagnostics. Workflow steps inherit the top-level trace setting,
-with an explicit per-step `trace` overriding it.
+Executed command lines (`→ exec ...`) are hidden by default;
+pass `trace: true` explicitly on any MCP tool to show them. Workflow steps
+inherit the top-level trace setting, with an explicit per-step `trace` overriding it.
+Execution metadata (`durationMs`, `exitCode`, `tool`) is always included,
+regardless of `trace`.
 Command results and failure diagnostics remain visible. Workflow tools retain
 per-step status and timing in their result summaries.
 
