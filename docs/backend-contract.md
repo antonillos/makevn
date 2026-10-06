@@ -317,6 +317,11 @@ The frontend may additionally set internal markers such as:
 
 - `MAKEVN_FRONTEND=rust`
 - `MAKEVN_FRONTEND_VERSION=<version>`
+- `MAKEVN_TRACE_OUTPUT=0|1`: controls `makevn_trace_command` command echoes only.
+  The shell defaults to `1` when absent for CLI compatibility. MCP explicitly
+  sets `0` by default and `1` only for `trace: true`, including workflow step
+  inheritance/overrides. It does not suppress logs, backend metadata, failure
+  excerpts, final output, or MCP execution metadata.
 
 Rules:
 

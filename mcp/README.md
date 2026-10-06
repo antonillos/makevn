@@ -70,6 +70,67 @@ codex mcp add makevn -- makevn-mcp
 Use `/mcp` in the Codex TUI to confirm that the server is active. Restart or
 reload Codex after installing or upgrading makevn.
 
+## Command trace control
+
+Every MCP tool accepts the optional boolean `trace`:
+
+| Setting | Executed command line (`→ exec ...`) |
+| --- | --- |
+| Omit `trace` | Hidden (default) |
+| `trace: false` | Hidden explicitly |
+| `trace: true` | Visible for debugging |
+
+This is a per-call setting, not a persistent configuration. Agents should omit
+it unless the human explicitly asks for the executed command. `compact` and
+`verbose` do not enable command tracing.
+
+The final tool result (including any result JSON), failure diagnostics, and the
+auxiliary JSON block with `durationMs`, `exitCode`, and `tool` remain visible
+regardless of `trace`. Managed log files and backend metadata are not suppressed.
+
+Examples using client-visible names (the server itself lists `format`, etc.):
+
+```json
+{"name": "makevn_format", "arguments": {"repo": "/absolute/repo", "apply": true, "trace": true}}
+{"name": "makevn_format", "arguments": {"repo": "/absolute/repo", "apply": true, "trace": false}}
+```
+
+`composite_run` and `parallel_run` accept the same option. Each step inherits the
+parent setting unless its own `arguments.trace` overrides it. Use `arguments`
+(not `args`) inside steps:
+
+```json
+{
+  "name": "makevn_composite_run",
+  "arguments": {
+    "repo": "/absolute/repo",
+    "trace": false,
+    "steps": [
+      {"tool": "doctor"},
+      {"tool": "format", "arguments": {"apply": true, "trace": true}}
+    ]
+  }
+}
+```
+
+Here only the formatter's executed command is shown. With top-level `trace: true`,
+a step can opt out with `arguments: {"trace": false}`. Workflow result summaries
+always retain per-step output, exit codes and durations.
+
+There is no CLI `--trace` flag. MCP sets the internal `MAKEVN_TRACE_OUTPUT`
+marker to `0` or `1` for each subprocess; an inherited shell value cannot
+silently enable MCP tracing. For direct CLI runs, the existing command echo is
+unchanged by default. To control the shell backend's command echo explicitly:
+
+```bash
+MAKEVN_TRACE_OUTPUT=0 makevn --compact format --apply
+MAKEVN_TRACE_OUTPUT=1 makevn --compact format --apply
+```
+
+This marker controls only the backend command echo, not interactive dashboards,
+log contents, or result JSON. After installing a version with this option,
+restart/reload the MCP session so the client refreshes the tool schemas.
+
 ## Agent Workflow
 
 When using makevn through MCP, agents should follow the same command sequence as

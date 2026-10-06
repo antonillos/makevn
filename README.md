@@ -162,6 +162,11 @@ directly when they support MCP.
 
 See [AI agent use](docs/agents.md) and the [MCP guide](mcp/README.md) for the
 full agent workflow and client configuration.
+MCP command echoes (`→ exec ...`) are hidden by default: omit `trace` or use
+`trace: false`; use `trace: true` to show them explicitly. Final results,
+errors, and the auxiliary `durationMs` / `exitCode` / `tool` JSON stay visible.
+See [trace control](mcp/README.md#command-trace-control) for workflow overrides
+and direct CLI behavior.
 
 When tests fail formatting validation, agents should run `makevn format --apply`
 and rerun the original test, never disable the formatter. MCP recovery uses

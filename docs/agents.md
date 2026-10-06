@@ -373,12 +373,19 @@ When the MCP server is active, the agent can call makevn commands as MCP tools
 MCP tools invoke the installed sibling `makevn` binary with compact,
 agent-safe output.
 Executed command lines (`→ exec ...`) are hidden by default;
-pass `trace: true` explicitly on any MCP tool to show them. Workflow steps
+omit `trace` or pass `trace: false` to keep them hidden; pass `trace: true`
+explicitly on any MCP tool to show them for debugging. This setting is per call,
+not persisted, and independent of `compact` or `verbose`. Workflow steps
 inherit the top-level trace setting, with an explicit per-step `trace` overriding it.
 Execution metadata (`durationMs`, `exitCode`, `tool`) is always included,
 regardless of `trace`.
 Command results and failure diagnostics remain visible. Workflow tools retain
 per-step status and timing in their result summaries.
+Use `arguments.trace` for a step override, not `args.trace`.
+There is no CLI `--trace` flag; direct CLI backend echo can be disabled with
+`MAKEVN_TRACE_OUTPUT=0` or enabled with `MAKEVN_TRACE_OUTPUT=1` without changing
+results or managed logs. MCP sets that marker explicitly for every subprocess.
+See [trace examples and client reload guidance](../mcp/README.md#command-trace-control).
 
 Inside OpenCode, the intended flow is:
 
@@ -486,7 +493,7 @@ See `skills/makevn/SKILL.md` for detailed workflow definitions:
   "args": {
     "steps": [
       {"tool": "docker_up"},
-      {"tool": "docker_ps_required", "args": {"wait-seconds": 30}},
+      {"tool": "docker_ps_required", "arguments": {"wait-seconds": 30}},
       {"tool": "clean"},
       {"tool": "compile"},
       {"tool": "verify"},

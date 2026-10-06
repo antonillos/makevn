@@ -690,3 +690,16 @@ repository's plugin. There is no single-file option.
 Preserve the original failure exit code, inspect the formatter diff, and rerun
 the original test without `--fast`. Never add skip flags or edit Maven/makevn
 configuration to bypass validation.
+
+### Command echo versus MCP trace
+
+`trace` is an MCP tool argument, not a public CLI `--trace` option. MCP hides
+`→ exec ...` by default (`trace` omitted or false); `trace: true` enables it.
+The final result and auxiliary execution JSON remain visible in both modes.
+Composite/parallel steps inherit trace, with `arguments.trace` overriding it.
+
+Direct CLI echo behavior is unchanged by default. For the shell backend echo,
+use `MAKEVN_TRACE_OUTPUT=0 makevn --compact format --apply` to disable it or
+`MAKEVN_TRACE_OUTPUT=1 makevn --compact format --apply` to enable it. This does
+not affect interactive dashboards, managed logs, or result JSON.
+See [MCP trace control](../mcp/README.md#command-trace-control) for examples.
