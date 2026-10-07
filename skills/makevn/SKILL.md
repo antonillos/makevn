@@ -51,7 +51,7 @@ It provides:
 the human explicitly asks to see the exact command being executed.** A request
 to run tests, verify, retry, debug a failure, or inspect results is not such a
 request. Trace provides no extra test results, error details, or result JSON;
-it only echoes the command. Do not carry `trace: true` into subsequent calls
+it only shows command echoes and redundant success timings. Do not carry `trace: true` into subsequent calls
 or workflows. If the human asks to remove it, omit it or use `trace: false`
 in all subsequent calls and remove any step-level `trace: true` overrides.
 
@@ -765,3 +765,14 @@ then unambiguous literal Karate CI detection. No global `standalone,local`
 default exists. Noninteractive execution does not prompt or write user config;
 resolve ambiguous/dynamic candidates explicitly. The setting affects only the
 managed Karate application, not the test JVM or standalone application commands.
+
+### Redundant MCP success timings
+
+Without `trace` (or with `trace: false`), MCP also omits standalone success
+timing lines such as `[ok] 1m 06s`: the always-visible `durationMs` / `exitCode`
+JSON already provides that information. `trace: true` retains these lines for
+explicit diagnostics. This applies to ordinary tools and individual
+composite/parallel steps, following the same trace inheritance and overrides.
+Headers/log paths, meaningful results (including JSON), failure diagnostics and
+workflow summaries remain visible. CLI output and managed logs are unchanged.
+Do not enable trace merely to obtain status or duration; use the JSON metadata.

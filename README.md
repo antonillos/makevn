@@ -194,3 +194,14 @@ There is no automatic migration or cleanup of old Make integrations.
 ## License
 
 MIT. See [LICENSE](LICENSE).
+
+### Redundant MCP success timings
+
+Without `trace` (or with `trace: false`), MCP also omits standalone success
+timing lines such as `[ok] 1m 06s`: the always-visible `durationMs` / `exitCode`
+JSON already provides that information. `trace: true` retains these lines for
+explicit diagnostics. This applies to ordinary tools and individual
+composite/parallel steps, following the same trace inheritance and overrides.
+Headers/log paths, meaningful results (including JSON), failure diagnostics and
+workflow summaries remain visible. CLI output and managed logs are unchanged.
+Do not enable trace merely to obtain status or duration; use the JSON metadata.

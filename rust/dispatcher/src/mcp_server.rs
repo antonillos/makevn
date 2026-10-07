@@ -248,7 +248,7 @@ fn tool(spec: &ToolSpec) -> Value {
         "trace".into(),
         json!({
             "type": "boolean",
-            "description": "Do not enable unless the user explicitly asks to see the exact executed command. Omit for normal runs, tests, verification, retries and failure diagnosis. This only echoes commands; results, errors and JSON metadata are always visible without it. Default false; do not carry true into later calls.",
+            "description": "Do not enable unless the user explicitly asks to see the exact executed command. Omit for normal runs, tests, verification, retries and failure diagnosis. This shows command echoes and redundant [ok] timings; results, errors and JSON metadata are always visible without it. Default false; do not carry true into later calls.",
             "default": false,
         }),
     );
@@ -364,7 +364,7 @@ fn handle_tool_call(makevn_bin: &Path, params: &Value) -> Result<ToolCallResult,
     let exit_code = output.status.code().unwrap_or(-1);
 
     Ok(ToolCallResult {
-        output: result,
+        output: suppress_success_timings(result, trace_output(&args)),
         exit_code,
         duration_ms,
     })
@@ -376,6 +376,32 @@ fn trace_output(args: &Map<String, Value>) -> &'static str {
     } else {
         "0"
     }
+}
+
+fn suppress_success_timings(output: String, trace: &str) -> String {
+    if trace == "1" {
+        return output;
+    }
+    output
+        .lines()
+        .filter(|line| !is_success_timing(line))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn is_success_timing(line: &str) -> bool {
+    let Some(duration) = line.strip_prefix("[ok] ") else {
+        return false;
+    };
+    let parts: Vec<_> = duration.split_whitespace().collect();
+    !parts.is_empty() && parts.iter().all(|part| is_duration_token(part))
+}
+
+fn is_duration_token(token: &str) -> bool {
+    let Some(number) = token.strip_suffix('s').or_else(|| token.strip_suffix('m')) else {
+        return false;
+    };
+    !number.is_empty() && number.bytes().all(|byte| byte.is_ascii_digit())
 }
 
 fn parse_steps(args: &Map<String, Value>) -> Result<Vec<Value>, String> {
@@ -427,7 +453,11 @@ fn execute_single_step(
     let duration_ms = start.elapsed().as_millis();
 
     let (result, exit_code) = format_tool_output(&output);
-    Ok((result, exit_code, duration_ms))
+    Ok((
+        suppress_success_timings(result, trace_output(&step_args)),
+        exit_code,
+        duration_ms,
+    ))
 }
 
 fn execute_tool_process(

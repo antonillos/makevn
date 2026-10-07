@@ -376,7 +376,7 @@ agent-safe output.
 the human explicitly asks to see the exact command being executed.** A request
 to run tests, verify, retry, debug a failure, or inspect results is not such a
 request. Trace provides no extra test results, error details, or result JSON;
-it only echoes the command. Do not carry `trace: true` into subsequent calls
+it only shows command echoes and redundant success timings. Do not carry `trace: true` into subsequent calls
 or workflows. If the human asks to remove it, omit it or use `trace: false`
 in all subsequent calls and remove any step-level `trace: true` overrides.
 
@@ -621,3 +621,14 @@ This read-only inspection requires Python 3 and is not a complete Maven
 Maven's responsibility. Unresolved or unsupported detected local rules stop
 automatic selection rather than guessing. Explicit configured JDK paths remain
 user choices and are still checked by Maven Enforcer when Maven executes.
+
+### Redundant MCP success timings
+
+Without `trace` (or with `trace: false`), MCP also omits standalone success
+timing lines such as `[ok] 1m 06s`: the always-visible `durationMs` / `exitCode`
+JSON already provides that information. `trace: true` retains these lines for
+explicit diagnostics. This applies to ordinary tools and individual
+composite/parallel steps, following the same trace inheritance and overrides.
+Headers/log paths, meaningful results (including JSON), failure diagnostics and
+workflow summaries remain visible. CLI output and managed logs are unchanged.
+Do not enable trace merely to obtain status or duration; use the JSON metadata.
