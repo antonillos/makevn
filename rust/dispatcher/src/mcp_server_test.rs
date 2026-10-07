@@ -481,20 +481,26 @@ fn command_trace_is_opt_in_for_tools_and_workflow_steps() {
     fs::create_dir(&dir).unwrap();
     let bin = dir.join("makevn");
     let runtime = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../libexec/makevn/common");
-    fs::write(&bin, format!("#!/bin/bash\nsource '{}'\nsource '{}'\nmakevn_trace_command exec mvn test\necho '[ok] final result'\necho '[ERROR] diagnostic' >&2\nexit 7\n", runtime.join("ui.sh").display(), runtime.join("backend_logging.sh").display())).unwrap();
+    fs::write(&bin, format!("#!/bin/bash\nsource '{}'\nsource '{}'\nsource '{}'\nmakevn_load_config '{}'\nmakevn_load_config '{}'\nmakevn_trace_command exec mvn test\necho '[ok] final result'\necho '[ERROR] diagnostic' >&2\nexit 7\n", runtime.join("ui.sh").display(), runtime.join("backend_logging.sh").display(), runtime.join("core.sh").display(), dir.display(), dir.display())).unwrap();
     fs::set_permissions(&bin, fs::Permissions::from_mode(0o700)).unwrap();
-    for trace in [false, true] {
-        let result = super::handle_tool_call(
-            &bin,
-            &json!({"name": "test", "arguments": {"trace": trace}}),
+    fs::create_dir(dir.join(".makevn")).unwrap();
+    for configured_trace in [0, 1] {
+        fs::write(
+            dir.join(".makevn/config"),
+            format!("MAKEVN_TRACE_OUTPUT={configured_trace}\n"),
         )
         .unwrap();
-        assert_eq!(result.exit_code, 7);
-        assert_eq!(result.output.contains("→ exec mvn test"), trace);
-        assert!(result.output.contains("[ok] final result"));
-        assert!(result.output.contains("[ERROR] diagnostic"));
-        for tool in ["composite_run", "parallel_run"] {
-            let result = super::handle_tool_call(
+        for arguments in [json!({}), json!({"trace": false}), json!({"trace": true})] {
+            let trace = arguments["trace"].as_bool().unwrap_or(false);
+            let result =
+                super::handle_tool_call(&bin, &json!({"name": "test", "arguments": arguments}))
+                    .unwrap();
+            assert_eq!(result.exit_code, 7);
+            assert_eq!(result.output.contains("→ exec mvn test"), trace);
+            assert!(result.output.contains("[ok] final result"));
+            assert!(result.output.contains("[ERROR] diagnostic"));
+            for tool in ["composite_run", "parallel_run"] {
+                let result = super::handle_tool_call(
                 &bin,
                 &json!({"name": tool, "arguments": {
                     "trace": trace, "fail-fast": false,
@@ -502,13 +508,14 @@ fn command_trace_is_opt_in_for_tools_and_workflow_steps() {
                 }}),
             )
             .unwrap();
-            let summary: serde_json::Value = serde_json::from_str(&result.output).unwrap();
-            for (i, expected) in [trace, !trace].iter().enumerate() {
-                let output = summary["steps"][i]["output"].as_str().unwrap();
-                assert_eq!(output.contains("→ exec mvn test"), *expected);
-                assert!(output.contains("final result"));
-                assert!(output.contains("diagnostic"));
-                assert_eq!(summary["steps"][i]["exitCode"], 7);
+                let summary: serde_json::Value = serde_json::from_str(&result.output).unwrap();
+                for (i, expected) in [trace, !trace].iter().enumerate() {
+                    let output = summary["steps"][i]["output"].as_str().unwrap();
+                    assert_eq!(output.contains("→ exec mvn test"), *expected);
+                    assert!(output.contains("final result"));
+                    assert!(output.contains("diagnostic"));
+                    assert_eq!(summary["steps"][i]["exitCode"], 7);
+                }
             }
         }
     }
@@ -519,5 +526,13 @@ fn command_trace_is_opt_in_for_tools_and_workflow_steps() {
         .output()
         .unwrap();
     assert!(String::from_utf8_lossy(&output.stdout).contains("→ exec mvn test"));
+    // Without an explicit caller selection, the repository setting still applies.
+    fs::write(dir.join(".makevn/config"), "MAKEVN_TRACE_OUTPUT=0\n").unwrap();
+    let output = std::process::Command::new(&bin)
+        .env_remove("MAKEVN_TRACE_OUTPUT")
+        .env("NO_COLOR", "1")
+        .output()
+        .unwrap();
+    assert!(!String::from_utf8_lossy(&output.stdout).contains("→ exec mvn test"));
     fs::remove_dir_all(dir).unwrap();
 }
