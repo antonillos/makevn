@@ -95,17 +95,50 @@ pub fn run_mcp_server(current_exe: PathBuf) -> Result<i32, String> {
 }
 
 fn tool_result_content(result: &ToolCallResult, params: &Value) -> Vec<Value> {
+    let (output, log_paths) = extract_log_headers(&result.output);
     vec![
-        json!({"type": "text", "text": result.output}),
+        json!({"type": "text", "text": output}),
         json!({
             "type": "text",
             "text": json!({
                 "exitCode": result.exit_code,
                 "durationMs": result.duration_ms,
                 "tool": params["name"].as_str().unwrap_or("unknown"),
+                "logPaths": log_paths,
             }).to_string()
         }),
     ]
+}
+
+fn extract_log_headers(output: &str) -> (String, Vec<String>) {
+    let mut log_paths = Vec::new();
+    let lines: Vec<_> = output
+        .lines()
+        .filter(|line| {
+            let Some(path) = log_header_path(line) else {
+                return true;
+            };
+            let path = path.to_owned();
+            if !log_paths.contains(&path) {
+                log_paths.push(path);
+            }
+            false
+        })
+        .collect();
+    (lines.join("\n"), log_paths)
+}
+
+fn log_header_path(line: &str) -> Option<&str> {
+    line.strip_prefix("[..] makevn ")?
+        .split_once(" | log: ")
+        .map(|(_, path)| path)
+        .filter(|path| !path.is_empty())
+}
+
+fn step_result(i: usize, tool: &str, output: &str, exit_code: i32, duration_ms: u128) -> Value {
+    let (output, log_paths) = extract_log_headers(output);
+    json!({"step": i, "tool": tool, "exitCode": exit_code, "durationMs": duration_ms,
+        "output": output, "logPaths": log_paths})
 }
 
 fn write_response(stdout: &mut io::Stdout, response: Value) -> Result<(), String> {
@@ -248,7 +281,7 @@ fn tool(spec: &ToolSpec) -> Value {
         "trace".into(),
         json!({
             "type": "boolean",
-            "description": "Do not enable unless the user explicitly asks to see the exact executed command. Omit for normal runs, tests, verification, retries and failure diagnosis. This only echoes commands; results, errors and JSON metadata are always visible without it. Default false; do not carry true into later calls.",
+            "description": "Do not enable unless the user explicitly asks to see the exact executed command. Omit for normal runs, tests, verification, retries and failure diagnosis. This shows command echoes and redundant [ok] timings; results, errors and JSON metadata are always visible without it. Default false; do not carry true into later calls.",
             "default": false,
         }),
     );
@@ -364,7 +397,7 @@ fn handle_tool_call(makevn_bin: &Path, params: &Value) -> Result<ToolCallResult,
     let exit_code = output.status.code().unwrap_or(-1);
 
     Ok(ToolCallResult {
-        output: result,
+        output: suppress_success_timings(result, trace_output(&args)),
         exit_code,
         duration_ms,
     })
@@ -376,6 +409,32 @@ fn trace_output(args: &Map<String, Value>) -> &'static str {
     } else {
         "0"
     }
+}
+
+fn suppress_success_timings(output: String, trace: &str) -> String {
+    if trace == "1" {
+        return output;
+    }
+    output
+        .lines()
+        .filter(|line| !is_success_timing(line))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn is_success_timing(line: &str) -> bool {
+    let Some(duration) = line.strip_prefix("[ok] ") else {
+        return false;
+    };
+    let parts: Vec<_> = duration.split_whitespace().collect();
+    !parts.is_empty() && parts.iter().all(|part| is_duration_token(part))
+}
+
+fn is_duration_token(token: &str) -> bool {
+    let Some(number) = token.strip_suffix('s').or_else(|| token.strip_suffix('m')) else {
+        return false;
+    };
+    !number.is_empty() && number.bytes().all(|byte| byte.is_ascii_digit())
 }
 
 fn parse_steps(args: &Map<String, Value>) -> Result<Vec<Value>, String> {
@@ -427,7 +486,11 @@ fn execute_single_step(
     let duration_ms = start.elapsed().as_millis();
 
     let (result, exit_code) = format_tool_output(&output);
-    Ok((result, exit_code, duration_ms))
+    Ok((
+        suppress_success_timings(result, trace_output(&step_args)),
+        exit_code,
+        duration_ms,
+    ))
 }
 
 fn execute_tool_process(
@@ -491,13 +554,7 @@ fn handle_composite_run(makevn_bin: &Path, args: &Map<String, Value>) -> Result<
                 Ok(result) => result,
                 Err(error) => (error, -1, 0),
             };
-        results.push(json!({
-            "step": i,
-            "tool": step_tool,
-            "exitCode": exit_code,
-            "durationMs": duration_ms,
-            "output": output,
-        }));
+        results.push(step_result(i, step_tool, &output, exit_code, duration_ms));
         if exit_code != 0 {
             overall_exit_code = exit_code;
             if fail_fast {
@@ -537,23 +594,9 @@ fn handle_parallel_run(makevn_bin: &Path, args: &Map<String, Value>) -> Result<S
             let step_tool = step["tool"].as_str().unwrap_or("unknown");
             match execute_single_step(&bin, &step, repo.as_deref(), global_trace) {
                 Ok((output, exit_code, duration_ms)) => {
-                    json!({
-                        "step": i,
-                        "tool": step_tool,
-                        "exitCode": exit_code,
-                        "durationMs": duration_ms,
-                        "output": output,
-                    })
+                    step_result(i, step_tool, &output, exit_code, duration_ms)
                 }
-                Err(err) => {
-                    json!({
-                        "step": i,
-                        "tool": step_tool,
-                        "exitCode": -1,
-                        "durationMs": 0,
-                        "output": err,
-                    })
-                }
+                Err(err) => step_result(i, step_tool, &err, -1, 0),
             }
         }));
     }

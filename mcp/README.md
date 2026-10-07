@@ -76,7 +76,7 @@ reload Codex after installing or upgrading makevn.
 the human explicitly asks to see the exact command being executed.** A request
 to run tests, verify, retry, debug a failure, or inspect results is not such a
 request. Trace provides no extra test results, error details, or result JSON;
-it only echoes the command. Do not carry `trace: true` into subsequent calls
+it only shows command echoes and redundant success timings. Do not carry `trace: true` into subsequent calls
 or workflows. If the human asks to remove it, omit it or use `trace: false`
 in all subsequent calls and remove any step-level `trace: true` overrides.
 
@@ -221,3 +221,30 @@ configuration cannot turn omitted/false tracing on or explicit true tracing off.
 For direct CLI calls without that environment variable, repository configuration
 can still select the backend echo behavior; the default remains enabled when
 neither the caller nor repository config selects a value.
+
+### Redundant MCP success timings
+
+Without `trace` (or with `trace: false`), MCP also omits standalone success
+timing lines such as `[ok] 1m 06s`: the always-visible `durationMs` / `exitCode`
+JSON already provides that information. `trace: true` retains these lines for
+explicit diagnostics. This applies to ordinary tools and individual
+composite/parallel steps, following the same trace inheritance and overrides.
+Meaningful results (including JSON), failure diagnostics and workflow summaries
+remain visible. Log paths are provided in JSON `logPaths` instead of standalone
+`[..] makevn ... | log: ...` headers. CLI output and managed logs are unchanged.
+Do not enable trace merely to obtain status or duration; use the JSON metadata.
+
+### MCP log paths in JSON
+
+MCP moves standalone `[..] makevn ... | log: ...` headers into the always-visible
+JSON metadata field `logPaths` (an array of unique paths in encounter order).
+For composite/parallel workflows, each step has its own `logPaths`. An empty
+array means no log header was reported, not that no logs exist. This applies
+with either trace setting; `trace: true` still shows command echoes and success
+timings. Normal results and failure diagnostics are untouched; CLI headers and
+managed log files are unchanged. Paths keep their original form, typically
+relative to the target repository, not the MCP server's working directory.
+
+```json
+{"durationMs": 6739, "exitCode": 0, "tool": "test", "logPaths": [".makevn/logs/test-SampleTest.log"]}
+```
