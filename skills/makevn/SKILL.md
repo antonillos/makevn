@@ -45,6 +45,44 @@ It provides:
 13. Do not hardcode company-specific application health URLs, path prefixes, package names, or repository paths. Let `makevn doctor` detect the health URL, or set `MAKEVN_APP_HEALTH_URL` in `.makevn/config` when the repository needs an explicit override.
 14. Do not invent formatter or Checkstyle goals. Use `makevn format` and `makevn checkstyle` only when the repo declares a supported plugin or `.makevn/config` sets `MAKEVN_FORMAT_CHECK_GOAL`, `MAKEVN_FORMAT_APPLY_GOAL`, or `MAKEVN_CHECKSTYLE_GOAL`.
 
+## MCP command traces
+
+**Agent rule: omit `trace` in normal calls. Never set `trace: true` unless
+the human explicitly asks to see the exact command being executed.** A request
+to run tests, verify, retry, debug a failure, or inspect results is not such a
+request. Trace provides no extra test results, error details, or result JSON;
+it only echoes the command. Do not carry `trace: true` into subsequent calls
+or workflows. If the human asks to remove it, omit it or use `trace: false`
+in all subsequent calls and remove any step-level `trace: true` overrides.
+
+All MCP tools accept `trace`. Omit it or use `trace: false` to hide the
+executed command line (`→ exec ...`); use `trace: true` only when the human
+explicitly requests it for debugging. It is per call, not a saved preference.
+`compact` and `verbose` do not enable it.
+
+Never hide or discard the final tool result, result JSON, failure diagnostics,
+or the auxiliary `durationMs` / `exitCode` / `tool` JSON: these remain visible
+with either trace setting. Trace does not disable managed log files.
+
+```json
+{"name": "makevn_test", "arguments": {"repo": "/absolute/repo", "name": "ExampleTest", "trace": false}}
+{"name": "makevn_test", "arguments": {"repo": "/absolute/repo", "name": "ExampleTest", "trace": true}}
+```
+
+For `composite_run` and `parallel_run`, steps inherit the parent's `trace`.
+Override a step with `{"tool": "format", "arguments": {"trace": true}}`
+or `arguments: {"trace": false}` to opt out of a traced workflow. Use
+`arguments`, not `args`, for step parameters. Per-step output/status/timing
+remains in the workflow summary.
+
+There is no CLI `--trace` flag. Direct CLI command echo keeps its existing
+default; `MAKEVN_TRACE_OUTPUT=0 makevn --compact format --apply` hides the
+backend echo and `MAKEVN_TRACE_OUTPUT=1 makevn --compact format --apply`
+enables it. This does not control interactive dashboards or result JSON.
+MCP sets that internal marker explicitly from each call's `trace` option.
+After upgrading makevn, restart/reload MCP to refresh the schemas.
+See [the complete trace guide](../../mcp/README.md#command-trace-control).
+
 ## Failure Triage For Agents
 
 Use this triage before deciding whether to edit repository code, change makevn, or report an environment issue:
@@ -451,7 +489,7 @@ If a command times out, check the log at `.makevn/logs/<command>-*.log`. If `doc
   "args": {
     "steps": [
       {"tool": "docker_up"},
-      {"tool": "docker_ps_required", "args": {"wait-seconds": 30}},
+      {"tool": "docker_ps_required", "arguments": {"wait-seconds": 30}},
       {"tool": "clean"},
       {"tool": "compile"},
       {"tool": "verify"},
@@ -486,9 +524,9 @@ makevn coverage-changes
   "tool": "composite_run",
   "args": {
     "steps": [
-      {"tool": "doctor", "args": {"compact": true}},
+      {"tool": "doctor", "arguments": {"compact": true}},
       {"tool": "docker_up"},
-      {"tool": "docker_ps_required", "args": {"wait-seconds": 30}},
+      {"tool": "docker_ps_required", "arguments": {"wait-seconds": 30}},
       {"tool": "clean"},
       {"tool": "verify_changes"},
       {"tool": "coverage_changes"}
@@ -529,9 +567,9 @@ makevn coverage-changes
   "tool": "composite_run",
   "args": {
     "steps": [
-      {"tool": "test", "args": {"name": "AuthTest"}},
-      {"tool": "test", "args": {"name": "PaymentTest"}},
-      {"tool": "test", "args": {"name": "NotificationTest"}},
+      {"tool": "test", "arguments": {"name": "AuthTest"}},
+      {"tool": "test", "arguments": {"name": "PaymentTest"}},
+      {"tool": "test", "arguments": {"name": "NotificationTest"}},
       {"tool": "coverage_changes"}
     ],
     "fail-fast": false
@@ -566,10 +604,10 @@ makevn coverage-changes
   "args": {
     "steps": [
       {"tool": "karate_docker_up"},
-      {"tool": "docker_ps_required", "args": {"compose": "karate", "wait-seconds": 30}},
+      {"tool": "docker_ps_required", "arguments": {"compose": "karate", "wait-seconds": 30}},
       {"tool": "package"},
       {"tool": "run_app_bg"},
-      {"tool": "karate_test", "args": {"tag": "@smoke"}},
+      {"tool": "karate_test", "arguments": {"tag": "@smoke"}},
       {"tool": "stop_app"},
       {"tool": "karate_docker_down"}
     ],
@@ -647,7 +685,7 @@ Task(description="makevn: adaptive test", prompt="
     "steps": [
       {"tool": "verify_ut_coverage"},
       {"tool": "docker_up"},
-      {"tool": "docker_ps_required", "args": {"wait-seconds": 30}},
+      {"tool": "docker_ps_required", "arguments": {"wait-seconds": 30}},
       {"tool": "verify_it_coverage"}
     ]
   }
