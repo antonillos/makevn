@@ -248,7 +248,7 @@ fn tool(spec: &ToolSpec) -> Value {
         "trace".into(),
         json!({
             "type": "boolean",
-            "description": "Show executed command lines. Disabled by default; result metadata is always included.",
+            "description": "Do not enable unless the user explicitly asks to see the exact executed command. Omit for normal runs, tests, verification, retries and failure diagnosis. This only echoes commands; results, errors and JSON metadata are always visible without it. Default false; do not carry true into later calls.",
             "default": false,
         }),
     );

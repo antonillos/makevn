@@ -47,6 +47,14 @@ It provides:
 
 ## MCP command traces
 
+**Agent rule: omit `trace` in normal calls. Never set `trace: true` unless
+the human explicitly asks to see the exact command being executed.** A request
+to run tests, verify, retry, debug a failure, or inspect results is not such a
+request. Trace provides no extra test results, error details, or result JSON;
+it only echoes the command. Do not carry `trace: true` into subsequent calls
+or workflows. If the human asks to remove it, omit it or use `trace: false`
+in all subsequent calls and remove any step-level `trace: true` overrides.
+
 All MCP tools accept `trace`. Omit it or use `trace: false` to hide the
 executed command line (`→ exec ...`); use `trace: true` only when the human
 explicitly requests it for debugging. It is per call, not a saved preference.

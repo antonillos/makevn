@@ -72,6 +72,14 @@ reload Codex after installing or upgrading makevn.
 
 ## Command trace control
 
+**Agent rule: omit `trace` in normal calls. Never set `trace: true` unless
+the human explicitly asks to see the exact command being executed.** A request
+to run tests, verify, retry, debug a failure, or inspect results is not such a
+request. Trace provides no extra test results, error details, or result JSON;
+it only echoes the command. Do not carry `trace: true` into subsequent calls
+or workflows. If the human asks to remove it, omit it or use `trace: false`
+in all subsequent calls and remove any step-level `trace: true` overrides.
+
 Every MCP tool accepts the optional boolean `trace`:
 
 | Setting | Executed command line (`→ exec ...`) |

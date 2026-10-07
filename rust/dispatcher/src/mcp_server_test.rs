@@ -401,6 +401,11 @@ fn all_tools_advertise_opt_in_trace_without_forwarding_it_to_cli() {
         let trace = &schema["inputSchema"]["properties"]["trace"];
         assert_eq!(trace["type"], "boolean");
         assert_eq!(trace["default"], false);
+        let description = trace["description"].as_str().unwrap();
+        assert!(description.contains("user explicitly asks"));
+        assert!(description.contains("exact executed command"));
+        assert!(description.contains("failure diagnosis"));
+        assert!(description.contains("do not carry true"));
         let mut flags = Vec::new();
         let args = json!({"trace": true, "steps": []});
         push_tool_flags(&mut flags, spec, args.as_object().unwrap()).unwrap();

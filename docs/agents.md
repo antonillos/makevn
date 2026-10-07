@@ -372,6 +372,14 @@ When the MCP server is active, the agent can call makevn commands as MCP tools
 (e.g. `doctor`, `test`, `verify`) in addition to running them via the CLI.
 MCP tools invoke the installed sibling `makevn` binary with compact,
 agent-safe output.
+**Agent rule: omit `trace` in normal calls. Never set `trace: true` unless
+the human explicitly asks to see the exact command being executed.** A request
+to run tests, verify, retry, debug a failure, or inspect results is not such a
+request. Trace provides no extra test results, error details, or result JSON;
+it only echoes the command. Do not carry `trace: true` into subsequent calls
+or workflows. If the human asks to remove it, omit it or use `trace: false`
+in all subsequent calls and remove any step-level `trace: true` overrides.
+
 Executed command lines (`→ exec ...`) are hidden by default;
 omit `trace` or pass `trace: false` to keep them hidden; pass `trace: true`
 explicitly on any MCP tool to show them for debugging. This setting is per call,
