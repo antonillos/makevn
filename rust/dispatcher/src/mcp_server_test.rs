@@ -436,7 +436,7 @@ fn execution_metadata_is_always_visible_even_on_failure() {
                 serde_json::from_str(content[1]["text"].as_str().unwrap()).unwrap();
             assert_eq!(
                 metadata,
-                json!({"tool": "format", "exitCode": exit_code, "durationMs": 42})
+                json!({"tool": "format", "exitCode": exit_code, "durationMs": 42, "logPaths": []})
             );
         }
         let content = super::tool_result_content(
@@ -448,7 +448,7 @@ fn execution_metadata_is_always_visible_even_on_failure() {
             serde_json::from_str(content[1]["text"].as_str().unwrap()).unwrap();
         assert_eq!(
             trace,
-            json!({"tool": "format", "exitCode": exit_code, "durationMs": 42})
+            json!({"tool": "format", "exitCode": exit_code, "durationMs": 42, "logPaths": []})
         );
     }
 }
@@ -481,7 +481,7 @@ fn command_trace_is_opt_in_for_tools_and_workflow_steps() {
     fs::create_dir(&dir).unwrap();
     let bin = dir.join("makevn");
     let runtime = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../libexec/makevn/common");
-    fs::write(&bin, format!("#!/bin/bash\nsource '{}'\nsource '{}'\nsource '{}'\nmakevn_load_config '{}'\nmakevn_load_config '{}'\nmakevn_trace_command exec mvn test\necho '[ok] 1m 06s'\necho '[ok] 1m 07s'\necho '[ok] final result'\necho '[ERROR] diagnostic' >&2\nexit 7\n", runtime.join("ui.sh").display(), runtime.join("backend_logging.sh").display(), runtime.join("core.sh").display(), dir.display(), dir.display())).unwrap();
+    fs::write(&bin, format!("#!/bin/bash\nsource '{}'\nsource '{}'\nsource '{}'\nmakevn_load_config '{}'\nmakevn_load_config '{}'\nmakevn_trace_command exec mvn test\necho '[..] makevn test | log: .makevn/logs/test.log'\necho '[ok] 1m 06s'\necho '[ok] 1m 07s'\necho '[ok] final result'\necho '[ERROR] diagnostic' >&2\nexit 7\n", runtime.join("ui.sh").display(), runtime.join("backend_logging.sh").display(), runtime.join("core.sh").display(), dir.display(), dir.display())).unwrap();
     fs::set_permissions(&bin, fs::Permissions::from_mode(0o700)).unwrap();
     fs::create_dir(dir.join(".makevn")).unwrap();
     for configured_trace in [0, 1] {
@@ -519,6 +519,11 @@ fn command_trace_is_opt_in_for_tools_and_workflow_steps() {
                     assert!(output.contains("final result"));
                     assert!(output.contains("diagnostic"));
                     assert_eq!(summary["steps"][i]["exitCode"], 7);
+                    assert_eq!(
+                        summary["steps"][i]["logPaths"],
+                        json!([".makevn/logs/test.log"])
+                    );
+                    assert!(!output.contains("| log:"));
                 }
             }
         }
@@ -557,5 +562,44 @@ fn redundant_success_timings_are_hidden_without_trace_but_results_survive() {
         "{\"message\":\"[ok] 2s\"}",
     ] {
         assert!(!super::is_success_timing(line), "must preserve: {line}");
+    }
+}
+
+#[test]
+fn log_headers_move_into_json_without_removing_diagnostics() {
+    let output = "[..] makevn test | log: .makevn/logs/test.log\n[ERROR] failure\n[..] makevn compile | log: .makevn/logs/compile.log\n[..] makevn test | log: .makevn/logs/test.log\nsummary: report.xml\n{\"result\":1}";
+    let expected_output = "[ERROR] failure\nsummary: report.xml\n{\"result\":1}";
+    for trace in [false, true] {
+        let result = super::ToolCallResult {
+            output: output.into(),
+            exit_code: 1,
+            duration_ms: 42,
+        };
+        let content = super::tool_result_content(
+            &result,
+            &json!({"name": "test", "arguments": {"trace": trace}}),
+        );
+        assert_eq!(content[0]["text"], expected_output);
+        let metadata: serde_json::Value =
+            serde_json::from_str(content[1]["text"].as_str().unwrap()).unwrap();
+        assert_eq!(
+            metadata["logPaths"],
+            json!([".makevn/logs/test.log", ".makevn/logs/compile.log"])
+        );
+        assert_eq!(metadata["exitCode"], 1);
+    }
+    let step = super::step_result(0, "test", output, 1, 42);
+    assert_eq!(step["output"], expected_output);
+    assert_eq!(
+        step["logPaths"],
+        json!([".makevn/logs/test.log", ".makevn/logs/compile.log"])
+    );
+    for line in [
+        "ordinary log: path",
+        "[..] makevn test",
+        "[..] makevn test | log: ",
+        "{\"message\":\"[..] makevn test | log: file\"}",
+    ] {
+        assert_eq!(super::extract_log_headers(line), (line.into(), vec![]));
     }
 }

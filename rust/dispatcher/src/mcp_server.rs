@@ -95,17 +95,50 @@ pub fn run_mcp_server(current_exe: PathBuf) -> Result<i32, String> {
 }
 
 fn tool_result_content(result: &ToolCallResult, params: &Value) -> Vec<Value> {
+    let (output, log_paths) = extract_log_headers(&result.output);
     vec![
-        json!({"type": "text", "text": result.output}),
+        json!({"type": "text", "text": output}),
         json!({
             "type": "text",
             "text": json!({
                 "exitCode": result.exit_code,
                 "durationMs": result.duration_ms,
                 "tool": params["name"].as_str().unwrap_or("unknown"),
+                "logPaths": log_paths,
             }).to_string()
         }),
     ]
+}
+
+fn extract_log_headers(output: &str) -> (String, Vec<String>) {
+    let mut log_paths = Vec::new();
+    let lines: Vec<_> = output
+        .lines()
+        .filter(|line| {
+            let Some(path) = log_header_path(line) else {
+                return true;
+            };
+            let path = path.to_owned();
+            if !log_paths.contains(&path) {
+                log_paths.push(path);
+            }
+            false
+        })
+        .collect();
+    (lines.join("\n"), log_paths)
+}
+
+fn log_header_path(line: &str) -> Option<&str> {
+    line.strip_prefix("[..] makevn ")?
+        .split_once(" | log: ")
+        .map(|(_, path)| path)
+        .filter(|path| !path.is_empty())
+}
+
+fn step_result(i: usize, tool: &str, output: &str, exit_code: i32, duration_ms: u128) -> Value {
+    let (output, log_paths) = extract_log_headers(output);
+    json!({"step": i, "tool": tool, "exitCode": exit_code, "durationMs": duration_ms,
+        "output": output, "logPaths": log_paths})
 }
 
 fn write_response(stdout: &mut io::Stdout, response: Value) -> Result<(), String> {
@@ -521,13 +554,7 @@ fn handle_composite_run(makevn_bin: &Path, args: &Map<String, Value>) -> Result<
                 Ok(result) => result,
                 Err(error) => (error, -1, 0),
             };
-        results.push(json!({
-            "step": i,
-            "tool": step_tool,
-            "exitCode": exit_code,
-            "durationMs": duration_ms,
-            "output": output,
-        }));
+        results.push(step_result(i, step_tool, &output, exit_code, duration_ms));
         if exit_code != 0 {
             overall_exit_code = exit_code;
             if fail_fast {
@@ -567,23 +594,9 @@ fn handle_parallel_run(makevn_bin: &Path, args: &Map<String, Value>) -> Result<S
             let step_tool = step["tool"].as_str().unwrap_or("unknown");
             match execute_single_step(&bin, &step, repo.as_deref(), global_trace) {
                 Ok((output, exit_code, duration_ms)) => {
-                    json!({
-                        "step": i,
-                        "tool": step_tool,
-                        "exitCode": exit_code,
-                        "durationMs": duration_ms,
-                        "output": output,
-                    })
+                    step_result(i, step_tool, &output, exit_code, duration_ms)
                 }
-                Err(err) => {
-                    json!({
-                        "step": i,
-                        "tool": step_tool,
-                        "exitCode": -1,
-                        "durationMs": 0,
-                        "output": err,
-                    })
-                }
+                Err(err) => step_result(i, step_tool, &err, -1, 0),
             }
         }));
     }

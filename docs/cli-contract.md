@@ -711,6 +711,22 @@ timing lines such as `[ok] 1m 06s`: the always-visible `durationMs` / `exitCode`
 JSON already provides that information. `trace: true` retains these lines for
 explicit diagnostics. This applies to ordinary tools and individual
 composite/parallel steps, following the same trace inheritance and overrides.
-Headers/log paths, meaningful results (including JSON), failure diagnostics and
-workflow summaries remain visible. CLI output and managed logs are unchanged.
+Meaningful results (including JSON), failure diagnostics and workflow summaries
+remain visible. Log paths are provided in JSON `logPaths` instead of standalone
+`[..] makevn ... | log: ...` headers. CLI output and managed logs are unchanged.
 Do not enable trace merely to obtain status or duration; use the JSON metadata.
+
+### MCP log paths in JSON
+
+MCP moves standalone `[..] makevn ... | log: ...` headers into the always-visible
+JSON metadata field `logPaths` (an array of unique paths in encounter order).
+For composite/parallel workflows, each step has its own `logPaths`. An empty
+array means no log header was reported, not that no logs exist. This applies
+with either trace setting; `trace: true` still shows command echoes and success
+timings. Normal results and failure diagnostics are untouched; CLI headers and
+managed log files are unchanged. Paths keep their original form, typically
+relative to the target repository, not the MCP server's working directory.
+
+```json
+{"durationMs": 6739, "exitCode": 0, "tool": "test", "logPaths": [".makevn/logs/test-SampleTest.log"]}
+```
