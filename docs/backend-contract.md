@@ -388,3 +388,13 @@ means unavailable telemetry. This is internal, read-only telemetry plumbing,
 not a public CLI option. Noninteractive commands do not request this channel.
 The frontend owns removal of the scope file, samples only IDs selected by the
 scope, and ignores telemetry failures without changing command results.
+
+### Trace precedence across repository configuration
+
+An explicit `MAKEVN_TRACE_OUTPUT` inherited from the caller takes precedence
+over `.makevn/config`, including repeated config loads. MCP always sets it
+from the call's `trace` option (or a workflow step override), so repository
+configuration cannot turn omitted/false tracing on or explicit true tracing off.
+For direct CLI calls without that environment variable, repository configuration
+can still select the backend echo behavior; the default remains enabled when
+neither the caller nor repository config selects a value.
