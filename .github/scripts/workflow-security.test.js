@@ -26,8 +26,8 @@ test("pins every external action to a full commit SHA", () => {
 test("release publishing uses the release App instead of a legacy PAT", () => {
   for (const name of ["release.yml", "release-test.yml", "publish-package-managers.yml"]) {
     const source = workflows.find((workflow) => workflow.name === name).source;
-    assert.match(source, /RELEASE_APP_CLIENT_ID/);
-    assert.match(source, /RELEASE_APP_PRIVATE_KEY/);
+    assert.match(source, /client-id: \$\{\{ vars\.RELEASE_APP_CLIENT_ID \}\}/);
+    assert.match(source, /private-key: \$\{\{ secrets\.RELEASE_APP_PRIVATE_KEY \}\}/);
     assert.doesNotMatch(source, /MAKEVN_RELEASE_TOKEN/);
   }
 });
