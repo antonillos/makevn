@@ -28,8 +28,8 @@ test("Smart Merge dispatches Verify with a base ratchet and no badge publication
 
 test("release App performs the merge while the workflow bot keeps approval duties", () => {
   assert.match(workflow, /id: merge-app-token/);
-  assert.match(workflow, /MAKEVN_RELEASE_APP_CLIENT_ID/);
-  assert.match(workflow, /MAKEVN_RELEASE_APP_PRIVATE_KEY/);
+  assert.match(workflow, /RELEASE_APP_CLIENT_ID/);
+  assert.match(workflow, /RELEASE_APP_PRIVATE_KEY/);
   assert.match(workflow, /permission-contents: write/);
   assert.match(workflow, /permission-pull-requests: write/);
   assert.match(workflow, /permission-workflows: write/);
