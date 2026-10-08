@@ -1,0 +1,7 @@
+# GitHub-hosted runner generally available since September 2026.
+# actionlint v1.7.12 does not yet include it in its built-in label catalog.
+# This setting adds one accepted label; it does not select a self-hosted runner.
+# https://github.com/actions/runner-images/issues/14748
+self-hosted-runner:
+  labels:
+    - ubuntu-26.04
