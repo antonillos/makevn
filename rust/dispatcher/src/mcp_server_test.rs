@@ -681,6 +681,8 @@ fn doctor_guidance_is_allowlisted_and_preserves_error_guidance() {
 fn docker_guidance_depends_on_tool_and_status_not_diagnostic_text() {
     for (tool, exit_code, expected) in [
         ("docker_ps", 0, "If Docker services are required"),
+        ("docker_up", 1, "Inspect untrustedData"),
+        ("docker_up", 0, "Use this result"),
         ("docker_ps_required", 1, "Run makevn doctor"),
         ("docker_ps_required", -1, "Run makevn doctor"),
         ("docker_ps", 1, "Inspect untrustedData"),
@@ -698,6 +700,12 @@ fn docker_guidance_depends_on_tool_and_status_not_diagnostic_text() {
         let suggestion = data["nextSuggestion"].as_str().unwrap();
         assert!(suggestion.starts_with(expected), "{tool}: {suggestion}");
         assert!(!suggestion.contains("malicious"));
+        if tool == "docker_up" && exit_code != 0 {
+            assert!(suggestion.contains("MCP doctor is noninteractive"));
+            assert!(suggestion.contains("MAKEVN_COMPOSE_FILE"));
+            assert!(suggestion.contains("without --compact"));
+            assert!(suggestion.contains("confirm which one"));
+        }
         assert_eq!(data["exitCode"], exit_code);
         assert_eq!(response["isError"], exit_code != 0);
         let fallback: serde_json::Value =

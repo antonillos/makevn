@@ -243,7 +243,7 @@ classify_result() {
       printf 'expected_unavailable\n'
       return 0
       ;;
-    *"Docker compose file not found"*|*"Karate docker compose file not found"*|*"No Karate Maven project detected"*)
+    *"Docker compose selection failed"*|*"Docker compose file not found"*|*"Karate docker compose file not found"*|*"No Karate Maven project detected"*)
       printf 'expected_unavailable\n'
       return 0
       ;;

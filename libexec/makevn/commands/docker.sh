@@ -263,7 +263,7 @@ cmd_docker_up() {
   compose_override_file="$(makevn_boot_compose_override_file_path "${repo_root}" || true)"
   if [[ ! -f "${compose_file}" ]]; then
     compose_error="$(makevn_boot_compose_resolution_error "${repo_root}")"
-    makevn_die "Docker compose file not found. ${compose_error}"
+    makevn_die "Docker compose selection failed. ${compose_error}"
   fi
 
   docker_compose_cmd="$(makevn_resolve_docker_compose_command || true)"
@@ -299,7 +299,7 @@ cmd_docker_down() {
   compose_override_file="$(makevn_boot_compose_override_file_path "${repo_root}" || true)"
   if [[ ! -f "${compose_file}" ]]; then
     compose_error="$(makevn_boot_compose_resolution_error "${repo_root}")"
-    makevn_die "Docker compose file not found. ${compose_error}"
+    makevn_die "Docker compose selection failed. ${compose_error}"
   fi
 
   docker_compose_cmd="$(makevn_resolve_docker_compose_command || true)"

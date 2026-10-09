@@ -1680,7 +1680,7 @@ test_docker_up_missing_compose_writes_log() {
   [[ ${status} -ne 0 ]] || fail "expected docker-up without compose to fail"
   assert_contains "${output_file}" "docker-up"
   assert_contains "${output_file}" ".makevn/logs/docker-up.log"
-  assert_contains "${repo}/.makevn/logs/docker-up.log" "Error: Docker compose file not found."
+  assert_contains "${repo}/.makevn/logs/docker-up.log" "Error: Docker compose selection failed."
   assert_contains "${repo}/.makevn/logs/docker-up.log" "command: makevn docker-up"
 }
 
