@@ -137,18 +137,9 @@ fn standard_tool_result(result: &ToolCallResult, params: &Value) -> Value {
         "composite_run" | "parallel_run" => serde_json::from_str::<Value>(&output).ok(),
         _ => None,
     };
-    if let Some(steps) = workflow.as_ref().and_then(|v| v["steps"].as_array()) {
-        for path in steps
-            .iter()
-            .flat_map(|step| step["logPaths"].as_array().into_iter().flatten())
-        {
-            if let Some(path) = path.as_str() {
-                if !log_paths.iter().any(|existing| existing == path) {
-                    log_paths.push(path.to_owned());
-                }
-            }
-        }
-    }
+    log_paths.extend(workflow_log_paths(workflow.as_ref()));
+    let mut seen = std::collections::HashSet::new();
+    log_paths.retain(|path| seen.insert(path.clone()));
     let failed = result.exit_code != 0;
     let structured = json!({
         "status": if failed { "error" } else { "success" },
@@ -160,6 +151,17 @@ fn standard_tool_result(result: &ToolCallResult, params: &Value) -> Value {
     });
     json!({"content": [{"type": "text", "text": structured.to_string()}],
         "structuredContent": structured, "isError": failed})
+}
+
+fn workflow_log_paths(workflow: Option<&Value>) -> Vec<String> {
+    workflow
+        .and_then(|value| value["steps"].as_array())
+        .into_iter()
+        .flatten()
+        .flat_map(|step| step["logPaths"].as_array().into_iter().flatten())
+        .filter_map(Value::as_str)
+        .map(str::to_owned)
+        .collect()
 }
 
 fn extract_log_headers(output: &str) -> (String, Vec<String>) {
@@ -667,6 +669,7 @@ fn handle_parallel_run(makevn_bin: &Path, args: &Map<String, Value>) -> Result<S
     let summary = json!({
         "steps": results,
         "totalSteps": steps.len(),
+        "executedSteps": results.len(),
         "failed": overall_exit_code != 0,
         "exitCode": overall_exit_code,
     });
