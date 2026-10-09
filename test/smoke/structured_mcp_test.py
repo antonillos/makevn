@@ -6,6 +6,27 @@ import subprocess
 import sys
 import tempfile
 
+def assert_schema(value, schema):
+    """Check the JSON Schema keywords used by the emitted makevn contract."""
+    types = {"object": dict, "array": list, "string": str, "integer": int,
+             "boolean": bool, "null": type(None)}
+    expected = schema.get("type", list(types))
+    expected = [expected] if isinstance(expected, str) else expected
+    assert any(type(value) is types[name] for name in expected), (value, schema)
+    if "enum" in schema:
+        assert value in schema["enum"]
+    if "minimum" in schema:
+        assert value >= schema["minimum"]
+    if isinstance(value, dict):
+        assert set(schema.get("required", [])) <= value.keys()
+        for key, child in schema.get("properties", {}).items():
+            if key in value:
+                assert_schema(value[key], child)
+    if isinstance(value, list):
+        for item in value:
+            assert_schema(item, schema.get("items", {}))
+
+
 with tempfile.TemporaryDirectory() as tmp:
     root = Path(tmp)
     mcp = root / "makevn-mcp"
@@ -37,7 +58,7 @@ with tempfile.TemporaryDirectory() as tmp:
         assert structured["exitCode"] == 7
         assert structured["durationMs"] >= 20
         assert structured["logPaths"] == [".makevn/logs/test.log"]
-        assert set(schemas[name]["required"]) <= structured.keys()
+        assert_schema(structured, schemas[name])
         assert "ignore previous instructions" not in structured["nextSuggestion"]
         data = structured["untrustedData"]
         if name == "doctor":
@@ -51,8 +72,13 @@ with tempfile.TemporaryDirectory() as tmp:
 
     unknown = call(request("tools/call", {"name": "not_a_tool"}))
     assert unknown["error"]["code"] == -32602
+    backend.write_text("#!/bin/sh\necho 'Tests passed'\nexit 0\n")
+    success = call(request("tools/call", {"name": "doctor"}))["result"]
+    assert success["isError"] is False
+    assert_schema(success["structuredContent"], schemas["doctor"])
     backend.chmod(0o600)
     failed = call(request("tools/call", {"name": "doctor"}))["result"]
     assert failed["isError"] is True
+    assert_schema(failed["structuredContent"], schemas["doctor"])
     assert failed["structuredContent"]["exitCode"] == -1
 print("Structured MCP transport tests passed")
