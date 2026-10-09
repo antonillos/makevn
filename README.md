@@ -26,13 +26,18 @@ so developers and AI agents can run the right workflow from the terminal.
 
 ## See it in action
 
+Operational demos are recorded from a matched CLI/MCP source build; installation
+shows the published distribution. See [recording status and regeneration](docs/demo/README.md)
+for pending recordings; an older GIF is not evidence of the current output.
+
 ### Developer
 
 ![Developer workflow: inspect a Java/Maven repository, run a targeted test, and verify it](docs/assets/makevn-developer.gif)
 
 ```bash
 makevn doctor
-makevn test --name UserRepositoryTest
+makevn init # only when doctor recommends it
+makevn test --name CalculatorTest
 makevn verify
 ```
 
@@ -54,33 +59,53 @@ makevn compile --tail
 
 ### Docker verification
 
-![makevn Docker verification with required service check](docs/assets/makevn-verify-docker.gif)
+Refresh pending: a running Docker daemon is required. [Previous recording](docs/assets/makevn-verify-docker.gif).
 
 ```bash
-makevn docker-up docker-ps-required verify
+makevn docker-up docker-ps-required --wait-seconds 30 verify
+makevn docker-down
 ```
 
 ### Codex agent
 
-![Codex agent running clean, compile, and package in a Maven project](docs/assets/makevn-agent.gif)
+Refresh pending: Codex’s configured model is unavailable to its CLI account. [Previous recording](docs/assets/makevn-agent.gif).
 
 ```bash
-codex exec --model gpt-5.4 'clean compile and package the project'
+codex exec 'Use makevn MCP: doctor, init if recommended, then composite_run with clean, compile, package.'
 ```
 
 ### OpenCode agent
 
-![OpenCode agent running clean, compile, and package in the same Maven project](docs/assets/makevn-opencode.gif)
+Refresh pending: OpenCode authentication needs renewal. [Previous recording](docs/assets/makevn-opencode.gif).
 
 ```bash
-opencode run -m openai/gpt-5.4 'clean compile and package the project'
+opencode run 'Use makevn MCP: doctor, init if recommended, then composite_run with clean, compile, package.'
 ```
+
+### Changed-code verification and coverage
+
+![Preview affected code, verify it, and check coverage](docs/assets/makevn-changes.gif)
+
+```bash
+makevn doctor --compact
+makevn init # only when recommended
+makevn verify-changes-preview
+makevn verify-changes
+makevn coverage-changes
+```
+
+### Direct MCP
+
+![Real MCP calls and structured workflow results](docs/assets/makevn-mcp.gif)
+
+The direct demo calls `doctor`, `init` and `composite_run` on `makevn-mcp`,
+showing real structured results without enabling trace or requiring an agent account.
 
 ## Installation
 
 ### Homebrew
 
-![Install makevn with Homebrew](docs/assets/makevn-install-brew.gif)
+Refresh pending: a disposable Homebrew environment is required. [Previous recording](docs/assets/makevn-install-brew.gif).
 
 ```bash
 brew install antonillos/tap/makevn
