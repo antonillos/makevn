@@ -64,6 +64,15 @@ class DemoMcpTest(unittest.TestCase):
             self.run_response({}, behavior="exit")
 
 
+class SessionFailureTest(unittest.TestCase):
+    def test_failed_command_exits_the_recording_shell(self):
+        session = Path(__file__).resolve().parents[2] / "docs/demo/session.sh"
+        proc = subprocess.run(["bash", "-c", 'source "$1"; false; makevn_demo_prompt', "demo", str(session)],
+                              capture_output=True, text=True)
+        self.assertEqual(proc.returncode, 1)
+        self.assertIn("recording rejected", proc.stderr)
+
+
 class AgentEventTest(unittest.TestCase):
     def test_completed_tool_detection(self):
         spec = importlib.util.spec_from_file_location("agent_demo", Path(__file__).resolve().parents[2] / "docs/demo/agent_demo.py")

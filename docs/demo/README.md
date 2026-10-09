@@ -55,7 +55,8 @@ temporary VHS 0.10.0. Use `--vhs /path/to/vhs` to select an alternate binary
 without replacing the personal installation.
 
 Tapes wait for the final Bash prompt, with a 15-minute limit, instead of guessing
-Maven durations. A returned prompt does **not** prove command success: inspect
+Maven durations. The sourced session helper exits immediately after a failed command, causing
+VHS to reject the recording rather than return a success prompt. Still inspect
 results and managed logs, then sample intermediate and final GIF frames for
 legibility, clipping, errors, prompts and secrets before publishing.
 
@@ -120,7 +121,7 @@ is resolved and a real successful run has been inspected.
 
 ## Validation results
 
-- Seven demo-client tests pass, including real subprocess transport failure cases.
+- Eight demo-client tests pass, including real subprocess transport failure cases.
 - All ten VHS tapes parse successfully.
 - Rust tests: 314 passed outside the filesystem sandbox. Inside it, a process
   sampling test was denied permission; this was not a product failure.

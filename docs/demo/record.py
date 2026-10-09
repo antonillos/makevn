@@ -19,11 +19,11 @@ def main():
         parser.error("use a disposable Homebrew/Docker environment and set MAKEVN_DEMO_DISPOSABLE=1")
     root = Path(__file__).resolve().parents[2]
     os.chdir(root)
+    os.environ["MAKEVN_DEMO_ROOT"] = str(root)
     if not args.demo.startswith("install-"):
         prefix = os.environ.get("MAKEVN_DEMO_PREFIX")
         if not prefix or not all((Path(prefix) / "bin" / binary).is_file() for binary in ["makevn", "makevn-mcp"]):
             parser.error("set MAKEVN_DEMO_PREFIX to the isolated prepared runtime")
-        os.environ["MAKEVN_DEMO_ROOT"] = str(root)
     with tempfile.TemporaryDirectory(prefix="makevn-vhs-") as tmp:
         gif = Path(tmp) / "recording.gif"
         status = pty.spawn([args.vhs, str(root / "docs/demo" / (args.demo + ".tape")), "-o", str(gif)])
