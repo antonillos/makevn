@@ -827,3 +827,16 @@ path in `.makevn/config`, or have the user select it through interactive
 `makevn doctor` without `--compact`. Doctor still decides whether initialization
 requires `init`, `init --force`, or neither; initialization does not resolve
 compose-selection authorization.
+
+### Required Docker readiness gate and authorized infrastructure
+
+After successful `docker-up`, run `docker-ps-required --compose boot` with an
+appropriate wait timeout before Docker-dependent tests. Continue only after this
+gate passes. `docker-ps` is diagnostic only and cannot replace the gate. If
+`docker-up` fails, diagnose and resolve startup first; listing containers does
+not establish readiness.
+
+Do not create or modify compose files, provision temporary or alternative
+infrastructure, or change `MAKEVN_COMPOSE_FILE` to work around a blocker without
+explicit user authorization. Explain the blocker, propose options, and wait for
+confirmation before altering that environment.

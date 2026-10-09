@@ -682,7 +682,7 @@ fn docker_guidance_depends_on_tool_and_status_not_diagnostic_text() {
     for (tool, exit_code, expected) in [
         ("docker_ps", 0, "If Docker services are required"),
         ("docker_up", 1, "Inspect untrustedData"),
-        ("docker_up", 0, "Use this result"),
+        ("docker_up", 0, "Before running tests"),
         ("docker_ps_required", 1, "Run makevn doctor"),
         ("docker_ps_required", -1, "Run makevn doctor"),
         ("docker_ps", 1, "Inspect untrustedData"),
@@ -711,6 +711,8 @@ fn docker_guidance_depends_on_tool_and_status_not_diagnostic_text() {
                 "Do not modify MAKEVN_COMPOSE_FILE or start Docker until the user confirms"
             ));
             assert!(suggestion.contains("no previously user-authorized selection exists"));
+            assert!(suggestion.contains("without explicit user authorization"));
+            assert!(suggestion.contains("temporary or alternative infrastructure"));
         }
         assert_eq!(data["exitCode"], exit_code);
         assert_eq!(response["isError"], exit_code != 0);
@@ -760,4 +762,33 @@ fn verify_changes_failure_guidance_preserves_diagnostics_and_status() {
             assert_eq!(&fallback, data);
         }
     }
+}
+
+#[test]
+fn docker_tool_descriptions_require_readiness_and_authorized_setup() {
+    let up = super::TOOL_SPECS
+        .iter()
+        .find(|s| s.name == "docker_up")
+        .unwrap()
+        .description;
+    assert!(up.contains("explicit user authorization"));
+    assert!(up.contains("temporary or alternative infrastructure"));
+    assert!(up.contains("ask the user and wait"));
+    assert!(up.contains("docker_ps_required with compose: boot"));
+    let ps = super::TOOL_SPECS
+        .iter()
+        .find(|s| s.name == "docker_ps")
+        .unwrap()
+        .description;
+    assert!(ps.contains("docker_ps cannot substitute"));
+    let result = super::ToolCallResult {
+        output: String::new(),
+        exit_code: 0,
+        duration_ms: 1,
+        next_suggestion: None,
+    };
+    let suggestion = super::tool_next_suggestion("docker_up", &result);
+    assert!(suggestion.contains("compose: boot"));
+    assert!(suggestion.contains("Continue only if it succeeds"));
+    assert!(suggestion.contains("not a substitute"));
 }
