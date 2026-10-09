@@ -814,3 +814,16 @@ structured envelope (or parse its single JSON text fallback).
   "nextSuggestion": "Use this result to continue the requested workflow; do not repeat successful commands unnecessarily."
 }
 ```
+
+### User confirmation for ambiguous Docker compose selection
+
+MCP doctor is noninteractive and cannot display the terminal compose selector.
+If several compose candidates exist and there is no previously user-authorized
+selection for this repository/workflow, ask the user which candidate to use and
+wait for their response. Do not modify `MAKEVN_COMPOSE_FILE` or start Docker
+before confirmation. Do not infer authorization from a candidate's name,
+location, or an agent's own assessment. After confirmation, persist the selected
+path in `.makevn/config`, or have the user select it through interactive
+`makevn doctor` without `--compact`. Doctor still decides whether initialization
+requires `init`, `init --force`, or neither; initialization does not resolve
+compose-selection authorization.

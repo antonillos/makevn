@@ -704,7 +704,13 @@ fn docker_guidance_depends_on_tool_and_status_not_diagnostic_text() {
             assert!(suggestion.contains("MCP doctor is noninteractive"));
             assert!(suggestion.contains("MAKEVN_COMPOSE_FILE"));
             assert!(suggestion.contains("without --compact"));
-            assert!(suggestion.contains("confirm which one"));
+            assert!(
+                suggestion.contains("ask the user which compose to use and wait for their answer")
+            );
+            assert!(suggestion.contains(
+                "Do not modify MAKEVN_COMPOSE_FILE or start Docker until the user confirms"
+            ));
+            assert!(suggestion.contains("no previously user-authorized selection exists"));
         }
         assert_eq!(data["exitCode"], exit_code);
         assert_eq!(response["isError"], exit_code != 0);
