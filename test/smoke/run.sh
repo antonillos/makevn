@@ -925,6 +925,7 @@ test_mcp_tool_listing() {
   assert_contains "${output_file}" '"name":"verify_changes_preview"'
   assert_contains "${output_file}" '"name":"jdk_list"'
   python3 "${ROOT_DIR}/test/smoke/doctor_mcp_test.py" "${prefix}/bin/makevn-mcp"
+  python3 "${ROOT_DIR}/test/smoke/structured_mcp_test.py" "${prefix}/bin/makevn-mcp"
 }
 
 test_init_does_not_touch_existing_makefile() {

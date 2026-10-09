@@ -19,7 +19,9 @@ with tempfile.TemporaryDirectory() as tmp:
         response = subprocess.run([mcp], input=json.dumps(request) + "\n",
                                   text=True, capture_output=True, check=True)
         result = json.loads(response.stdout)["result"]
-        output = "\n".join(item["text"] for item in result["content"])
+        output = result["structuredContent"]["untrustedData"]["output"]
+        assert json.loads(result["content"][0]["text"]) == result["structuredContent"]
+        assert result["isError"] is False
         assert "\x1b" not in output, output
         assert "Working for" not in output, output
         return output
