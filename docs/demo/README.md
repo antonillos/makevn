@@ -54,6 +54,13 @@ VHS may exit successfully without producing an output. In this environment VHS
 temporary VHS 0.10.0. Use `--vhs /path/to/vhs` to select an alternate binary
 without replacing the personal installation.
 
+The session helper removes inherited `NO_COLOR`, `MAKEVN_AGENT_OUTPUT` and
+`MAKEVN_COMPACT_OUTPUT`, and sets `TERM=xterm-256color` / `COLORTERM=truecolor`.
+This restores the real human-facing CLI colors even when VHS is launched by an
+agent with monochrome output enabled. The VHS theme only defines the palette;
+it cannot color output that lacks ANSI styles. MCP subprocesses still explicitly
+use their compact, colorless agent output; their behavior is unchanged.
+
 Tapes wait for the final Bash prompt, with a 15-minute limit, instead of guessing
 Maven durations. The sourced session helper exits immediately after a failed command, causing
 VHS to reject the recording rather than return a success prompt. Still inspect
@@ -104,11 +111,11 @@ MAKEVN_DEMO_DISPOSABLE=1 python3 docs/demo/record.py install-brew
 
 | Demo | Status |
 | --- | --- |
-| Developer | Refreshed from this branch; targeted test and verify passed |
-| Changed-code coverage | New; all three coverage gates passed at 100% |
+| Developer | Refreshed in color from this branch; targeted test and verify passed |
+| Changed-code coverage | New, in color; all three coverage gates passed at 100% |
 | Direct MCP | New; real structured results and three successful workflow steps |
-| Tail | Refreshed using the self-contained fixture |
-| Telemetry | Refreshed against a temporary cathode clone |
+| Tail | Refreshed in color using the self-contained fixture |
+| Telemetry | Refreshed in color against a temporary cathode clone |
 | asdf installation | Refreshed; published v0.1.15, isolated project selection |
 | Codex | Pending: configured model rejected by CLI account; previous GIF retained |
 | OpenCode | Pending: token refresh returned 401; previous GIF retained |
@@ -121,7 +128,8 @@ is resolved and a real successful run has been inspected.
 
 ## Validation results
 
-- Eight demo-client tests pass, including real subprocess transport failure cases.
+- Nine demo-client tests pass, including real subprocess transport failure cases
+  and color-environment regression coverage (including empty `NO_COLOR`).
 - All ten VHS tapes parse successfully.
 - Rust tests: 314 passed outside the filesystem sandbox. Inside it, a process
   sampling test was denied permission; this was not a product failure.

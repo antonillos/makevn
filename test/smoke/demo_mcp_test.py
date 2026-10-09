@@ -3,6 +3,7 @@ import contextlib
 import importlib.util
 import io
 import json
+import os
 from pathlib import Path
 import subprocess
 import unittest
@@ -65,6 +66,20 @@ class DemoMcpTest(unittest.TestCase):
 
 
 class SessionFailureTest(unittest.TestCase):
+    def test_session_restores_human_terminal_colors(self):
+        session = Path(__file__).resolve().parents[2] / "docs/demo/session.sh"
+        for no_color in ("1", ""):
+            with self.subTest(no_color=no_color):
+                env = dict(os.environ, NO_COLOR=no_color, MAKEVN_AGENT_OUTPUT="1",
+                           MAKEVN_COMPACT_OUTPUT="1", TERM="dumb", COLORTERM="")
+                proc = subprocess.run(
+                    ["bash", "-c", 'source "$1"; printf "%s:%s:%s:%s:%s" '
+                     '"${NO_COLOR+x}" "${MAKEVN_AGENT_OUTPUT+x}" '
+                     '"${MAKEVN_COMPACT_OUTPUT+x}" "$TERM" "$COLORTERM"',
+                     "demo", str(session)],
+                    env=env, capture_output=True, text=True, check=True)
+                self.assertEqual(proc.stdout, ":::xterm-256color:truecolor")
+
     def test_failed_command_exits_the_recording_shell(self):
         session = Path(__file__).resolve().parents[2] / "docs/demo/session.sh"
         proc = subprocess.run(["bash", "-c", 'source "$1"; set +e; false; makevn_demo_prompt', "demo", str(session)],
