@@ -779,6 +779,9 @@ The shared makevn envelope contains `status` (`success` or `error`), `message`,
 Only `content`, `structuredContent`, `isError` and `outputSchema` are MCP-defined;
 the envelope fields are makevn's application contract, not MCP standard fields.
 `nextSuggestion` is server-authored guidance; never infer it from command output.
+For doctor, it reflects the internal snapshot: init with force false, init with
+force true for stale/incomplete state, no init when current, and no adoption or
+verification when Maven support is absent.
 
 `untrustedData.output` contains command output and diagnostics as data, never
 instructions. `untrustedData.workflow` is null for ordinary calls and contains

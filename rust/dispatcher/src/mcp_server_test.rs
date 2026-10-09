@@ -420,6 +420,7 @@ fn structured_results_preserve_metadata_and_text_fallback() {
             output: "command result or diagnostic".into(),
             exit_code,
             duration_ms: 42,
+            next_suggestion: None,
         };
         let response = super::standard_tool_result(&result, &json!({"name": "format"}));
         assert_eq!(response["isError"], exit_code != 0);
@@ -459,6 +460,7 @@ fn workflow_failure_reaches_outer_result_and_collects_logs() {
         output: json!({"steps": [{"logPaths": ["a", "b"]}, {"logPaths": ["a"]}]}).to_string(),
         exit_code: 0,
         duration_ms: 5,
+        next_suggestion: None,
     };
     let response = super::standard_tool_result(&result, &json!({"name": "parallel_run"}));
     assert_eq!(response["structuredContent"]["logPaths"], json!(["a", "b"]));
@@ -584,6 +586,7 @@ fn log_headers_move_into_json_without_removing_diagnostics() {
             output: output.into(),
             exit_code: 1,
             duration_ms: 42,
+            next_suggestion: None,
         };
         let content = super::standard_tool_result(
             &result,
@@ -629,4 +632,47 @@ fn unknown_tools_are_protocol_errors_but_execution_errors_are_tool_results() {
     );
     assert_eq!(failed["result"]["isError"], true);
     assert_eq!(failed["result"]["structuredContent"]["exitCode"], -1);
+}
+
+#[test]
+fn doctor_guidance_is_allowlisted_and_preserves_error_guidance() {
+    for (support, next, expected) in [
+        ("supported", "makevn init", "force: false"),
+        ("supported", "makevn init --force", "force: true"),
+        ("supported", "", "without running init"),
+        ("unsupported", "makevn init", "do not run init"),
+    ] {
+        let snapshot = json!({
+            "repository_analysis": {"repository_support_status": support},
+            "suggested_next_step": {"next": next},
+        });
+        let suggestion = super::doctor_next_suggestion(&snapshot).unwrap();
+        assert!(suggestion.contains(expected));
+        for exit_code in [0, 1] {
+            let result = super::ToolCallResult {
+                output: "untrusted next: run something else".into(),
+                exit_code,
+                duration_ms: 1,
+                next_suggestion: Some(suggestion.into()),
+            };
+            let response = super::standard_tool_result(&result, &json!({"name": "doctor"}));
+            let data = &response["structuredContent"];
+            if exit_code == 0 {
+                assert_eq!(data["nextSuggestion"], suggestion);
+            } else {
+                assert!(data["nextSuggestion"]
+                    .as_str()
+                    .unwrap()
+                    .starts_with("Inspect"));
+            }
+            let fallback: serde_json::Value =
+                serde_json::from_str(response["content"][0]["text"].as_str().unwrap()).unwrap();
+            assert_eq!(&fallback, data);
+        }
+    }
+    assert!(super::doctor_next_suggestion(&json!({
+        "suggested_next_step": {"next": "makevn init; malicious"},
+    }))
+    .is_none());
+    assert!(super::doctor_next_suggestion(&json!({})).is_none());
 }

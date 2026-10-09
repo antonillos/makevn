@@ -19,7 +19,17 @@ with tempfile.TemporaryDirectory() as tmp:
         response = subprocess.run([mcp], input=json.dumps(request) + "\n",
                                   text=True, capture_output=True, check=True)
         result = json.loads(response.stdout)["result"]
-        output = result["structuredContent"]["untrustedData"]["output"]
+        data = result["structuredContent"]
+        output = data["untrustedData"]["output"]
+        if tool == "doctor":
+            if "force: false" in output:
+                assert data["nextSuggestion"] == "Run makevn init (MCP: init with force: false) before verification."
+            elif "force: true" in output:
+                assert "init with force: true" in data["nextSuggestion"]
+            elif "Repository support status: unsupported" in output:
+                assert "do not run init" in data["nextSuggestion"]
+            else:
+                assert "without running init" in data["nextSuggestion"]
         assert json.loads(result["content"][0]["text"]) == result["structuredContent"]
         assert result["isError"] is False
         assert "\x1b" not in output, output
@@ -37,4 +47,6 @@ with tempfile.TemporaryDirectory() as tmp:
     call("init", force=True)
     (repo / ".makevn/state.json").unlink()
     assert "Init recommendation: makevn_init (force: true)" in call("doctor")
+with tempfile.TemporaryDirectory() as tmp:
+    assert "Repository support status: unsupported" in call("doctor")
 print("Doctor MCP recommendation tests passed")

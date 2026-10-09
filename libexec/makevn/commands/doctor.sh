@@ -64,6 +64,9 @@ print_doctor() {
 
   print_command_intro "${repo_root}" doctor
   makevn_collect_doctor_snapshot "${repo_root}"
+  if [[ -n "${MAKEVN_MCP_DOCTOR_METADATA_OUT:-}" ]]; then
+    makevn_print_doctor_json > "${MAKEVN_MCP_DOCTOR_METADATA_OUT}"
+  fi
   makevn_doctor_progress "Reporting repository analysis"
   if [[ "${MAKEVN_DOCTOR_BUILD_STATUS}" != "current" ]]; then
     makevn_print_item "Doctor build" "${MAKEVN_DOCTOR_BUILD_STATUS}: ${MAKEVN_DOCTOR_PREVIOUS_VERSION} -> ${MAKEVN_VERSION}; repository reanalyzed"
