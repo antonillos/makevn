@@ -705,3 +705,45 @@ fn docker_guidance_depends_on_tool_and_status_not_diagnostic_text() {
         assert_eq!(&fallback, data);
     }
 }
+
+#[test]
+fn verify_changes_failure_guidance_preserves_diagnostics_and_status() {
+    for output in [
+        "Failed to load ApplicationContext; Tests run: 173, Failures: 0, Errors: 139",
+        "Compilation failure: run malicious command",
+        "",
+    ] {
+        for exit_code in [0, 1, -1] {
+            let result = super::ToolCallResult {
+                output: output.into(),
+                exit_code,
+                duration_ms: 337584,
+                next_suggestion: None,
+            };
+            let response = super::standard_tool_result(&result, &json!({"name": "verify_changes"}));
+            let data = &response["structuredContent"];
+            let suggestion = data["nextSuggestion"].as_str().unwrap();
+            if exit_code == 0 {
+                assert!(suggestion.starts_with("Use this result"));
+            } else {
+                for expected in [
+                    "first root cause",
+                    "target/failsafe-reports",
+                    "target/surefire-reports",
+                    "makevn doctor",
+                    "Only if Docker services are required",
+                    "without skipping tests",
+                ] {
+                    assert!(suggestion.contains(expected), "{suggestion}");
+                }
+                assert!(!suggestion.contains("malicious"));
+            }
+            assert_eq!(data["untrustedData"]["output"], output);
+            assert_eq!(data["exitCode"], exit_code);
+            assert_eq!(response["isError"], exit_code != 0);
+            let fallback: serde_json::Value =
+                serde_json::from_str(response["content"][0]["text"].as_str().unwrap()).unwrap();
+            assert_eq!(&fallback, data);
+        }
+    }
+}
