@@ -267,7 +267,7 @@ fn composite_run_stops_on_error_unless_fail_fast_is_disabled() {
     )
     .unwrap();
     let stopped: serde_json::Value = serde_json::from_str(&stopped.output).unwrap();
-    assert_eq!(stopped["executed_steps"], 1);
+    assert_eq!(stopped["executedSteps"], 1);
     assert_eq!(stopped["failed"], true);
     assert_eq!(stopped["steps"][0]["exitCode"], -1);
 
@@ -279,7 +279,7 @@ fn composite_run_stops_on_error_unless_fail_fast_is_disabled() {
     )
     .unwrap();
     let continued: serde_json::Value = serde_json::from_str(&continued.output).unwrap();
-    assert_eq!(continued["executed_steps"], 2);
+    assert_eq!(continued["executedSteps"], 2);
     assert_eq!(continued["steps"][1]["exitCode"], 0);
     assert!(continued["steps"][1]["output"]
         .as_str()
@@ -296,7 +296,7 @@ fn composite_run_stops_on_nonzero_exit_and_can_continue() {
     )
     .unwrap();
     let stopped: serde_json::Value = serde_json::from_str(&stopped.output).unwrap();
-    assert_eq!(stopped["executed_steps"], 1);
+    assert_eq!(stopped["executedSteps"], 1);
     assert_eq!(stopped["steps"][0]["exitCode"], 1);
 
     let continued = super::handle_tool_call(
@@ -307,7 +307,7 @@ fn composite_run_stops_on_nonzero_exit_and_can_continue() {
     )
     .unwrap();
     let continued: serde_json::Value = serde_json::from_str(&continued.output).unwrap();
-    assert_eq!(continued["executed_steps"], 2);
+    assert_eq!(continued["executedSteps"], 2);
     assert_eq!(continued["exitCode"], 1);
 }
 
@@ -322,7 +322,7 @@ fn parallel_run_reports_success_and_invalid_steps_in_input_order() {
     )
     .unwrap();
     let summary: serde_json::Value = serde_json::from_str(&result.output).unwrap();
-    assert_eq!(summary["total_steps"], 2);
+    assert_eq!(summary["totalSteps"], 2);
     assert_eq!(summary["failed"], true);
     assert_eq!(summary["steps"][0]["exitCode"], 0);
     assert!(summary["steps"][0]["output"]
@@ -414,58 +414,68 @@ fn all_tools_advertise_opt_in_trace_without_forwarding_it_to_cli() {
 }
 
 #[test]
-fn execution_metadata_is_always_visible_even_on_failure() {
-    for exit_code in [0, 7] {
+fn structured_results_preserve_metadata_and_text_fallback() {
+    for exit_code in [0, 7, -1] {
         let result = super::ToolCallResult {
             output: "command result or diagnostic".into(),
             exit_code,
             duration_ms: 42,
         };
-        for args in [
-            json!(null),
-            json!({}),
-            json!({"trace": false}),
-            json!({"trace": true}),
-            json!({"trace": "true"}),
-        ] {
-            let content =
-                super::tool_result_content(&result, &json!({"name": "format", "arguments": args}));
-            assert_eq!(content.len(), 2);
-            assert_eq!(content[0], json!({"type": "text", "text": result.output}));
-            let metadata: serde_json::Value =
-                serde_json::from_str(content[1]["text"].as_str().unwrap()).unwrap();
-            assert_eq!(
-                metadata,
-                json!({"tool": "format", "exitCode": exit_code, "durationMs": 42, "logPaths": []})
-            );
-        }
-        let content = super::tool_result_content(
-            &result,
-            &json!({"name": "format", "arguments": {"trace": true}}),
-        );
-        assert_eq!(content.len(), 2);
-        let trace: serde_json::Value =
-            serde_json::from_str(content[1]["text"].as_str().unwrap()).unwrap();
-        assert_eq!(
-            trace,
-            json!({"tool": "format", "exitCode": exit_code, "durationMs": 42, "logPaths": []})
-        );
+        let response = super::standard_tool_result(&result, &json!({"name": "format"}));
+        assert_eq!(response["isError"], exit_code != 0);
+        let data = &response["structuredContent"];
+        assert_eq!(data["exitCode"], exit_code);
+        assert_eq!(data["durationMs"], 42);
+        assert_eq!(data["untrustedData"]["output"], result.output);
+        assert_eq!(data["untrustedData"]["workflow"], json!(null));
+        let fallback: serde_json::Value =
+            serde_json::from_str(response["content"][0]["text"].as_str().unwrap()).unwrap();
+        assert_eq!(&fallback, data);
+        assert!(data["nextSuggestion"].as_str().unwrap().len() > 10);
     }
 }
 
 #[test]
-fn default_output_includes_zero_duration_workflow_metadata() {
+fn tools_advertise_shared_output_schema() {
+    for spec in TOOL_SPECS {
+        assert_eq!(super::tool(spec)["outputSchema"], super::result_schema());
+    }
+}
+
+#[test]
+fn workflow_failure_reaches_outer_result_and_collects_logs() {
+    for tool in ["composite_run", "parallel_run"] {
+        let params = json!({"name": tool, "arguments": {"steps": [{"tool": "doctor"}]}});
+        let result = super::handle_tool_call(Path::new("/usr/bin/false"), &params).unwrap();
+        assert_eq!(result.exit_code, 1);
+        let response = super::standard_tool_result(&result, &params);
+        assert_eq!(response["isError"], true);
+        assert_eq!(
+            response["structuredContent"]["untrustedData"]["workflow"]["steps"][0]["exitCode"],
+            1
+        );
+    }
     let result = super::ToolCallResult {
-        output: "workflow summary".into(),
+        output: json!({"steps": [{"logPaths": ["a", "b"]}, {"logPaths": ["a"]}]}).to_string(),
         exit_code: 0,
-        duration_ms: 0,
+        duration_ms: 5,
     };
-    let content = super::tool_result_content(&result, &json!({"name": "composite_run"}));
-    assert_eq!(content.len(), 2);
-    assert!(content[1]["text"]
-        .as_str()
-        .unwrap()
-        .contains("\"durationMs\":0"));
+    let response = super::standard_tool_result(&result, &json!({"name": "parallel_run"}));
+    assert_eq!(response["structuredContent"]["logPaths"], json!(["a", "b"]));
+}
+
+#[test]
+fn protocol_negotiation_supports_modern_and_legacy_clients() {
+    for version in ["2024-11-05", "2025-03-26", "2025-06-18", "2025-11-25"] {
+        assert_eq!(
+            super::negotiated_protocol(&json!({"protocolVersion": version})),
+            version
+        );
+    }
+    assert_eq!(
+        super::negotiated_protocol(&json!({"protocolVersion": "unknown"})),
+        "2025-11-25"
+    );
 }
 
 #[test]
@@ -575,13 +585,15 @@ fn log_headers_move_into_json_without_removing_diagnostics() {
             exit_code: 1,
             duration_ms: 42,
         };
-        let content = super::tool_result_content(
+        let content = super::standard_tool_result(
             &result,
             &json!({"name": "test", "arguments": {"trace": trace}}),
         );
-        assert_eq!(content[0]["text"], expected_output);
-        let metadata: serde_json::Value =
-            serde_json::from_str(content[1]["text"].as_str().unwrap()).unwrap();
+        assert_eq!(
+            content["structuredContent"]["untrustedData"]["output"],
+            expected_output
+        );
+        let metadata: serde_json::Value = content["structuredContent"].clone();
         assert_eq!(
             metadata["logPaths"],
             json!([".makevn/logs/test.log", ".makevn/logs/compile.log"])
@@ -602,4 +614,19 @@ fn log_headers_move_into_json_without_removing_diagnostics() {
     ] {
         assert_eq!(super::extract_log_headers(line), (line.into(), vec![]));
     }
+}
+
+#[test]
+fn unknown_tools_are_protocol_errors_but_execution_errors_are_tool_results() {
+    let unknown =
+        super::tool_failure_response(json!(1), &json!({"name": "unknown"}), "unknown tool".into());
+    assert_eq!(unknown["error"]["code"], -32602);
+    assert!(unknown.get("result").is_none());
+    let failed = super::tool_failure_response(
+        json!(2),
+        &json!({"name": "doctor"}),
+        "failed to execute makevn".into(),
+    );
+    assert_eq!(failed["result"]["isError"], true);
+    assert_eq!(failed["result"]["structuredContent"]["exitCode"], -1);
 }

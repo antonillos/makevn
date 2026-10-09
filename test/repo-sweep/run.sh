@@ -450,6 +450,11 @@ if "error" in response:
 content = response.get("result", {}).get("content", [])
 text_parts = [part.get("text", "") for part in content if part.get("type") == "text"]
 text = "\n".join(part for part in text_parts if part)
+structured = response.get("result", {}).get("structuredContent")
+if structured is not None:
+    data = structured["untrustedData"]
+    text = data["output"] or json.dumps(data["workflow"])
+    text += "\n" + json.dumps({key: structured[key] for key in ("exitCode", "durationMs", "tool", "logPaths")})
 if stderr.strip():
     if text:
         text += "\n"

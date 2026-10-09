@@ -766,29 +766,48 @@ default exists. Noninteractive execution does not prompt or write user config;
 resolve ambiguous/dynamic candidates explicitly. The setting affects only the
 managed Karate application, not the test JVM or standalone application commands.
 
-### Redundant MCP success timings
+### Structured Tool Output
 
-Without `trace` (or with `trace: false`), MCP also omits standalone success
-timing lines such as `[ok] 1m 06s`: the always-visible `durationMs` / `exitCode`
-JSON already provides that information. `trace: true` retains these lines for
-explicit diagnostics. This applies to ordinary tools and individual
-composite/parallel steps, following the same trace inheritance and overrides.
-Meaningful results (including JSON), failure diagnostics and workflow summaries
-remain visible. Log paths are provided in JSON `logPaths` instead of standalone
-`[..] makevn ... | log: ...` headers. CLI output and managed logs are unchanged.
-Do not enable trace merely to obtain status or duration; use the JSON metadata.
+All MCP tools publish an `outputSchema` and return a single consistent object in
+`structuredContent`. `content` contains one text block with the same serialized
+JSON, following MCP's compatibility recommendation. `isError` is true for tool
+execution failures, including failed composite/parallel workflows. Unknown tools
+remain JSON-RPC invalid-params errors, not execution results.
 
-### MCP log paths in JSON
+The shared makevn envelope contains `status` (`success` or `error`), `message`,
+`tool`, `exitCode`, `durationMs`, `logPaths`, `untrustedData` and `nextSuggestion`.
+Only `content`, `structuredContent`, `isError` and `outputSchema` are MCP-defined;
+the envelope fields are makevn's application contract, not MCP standard fields.
+`nextSuggestion` is server-authored guidance; never infer it from command output.
 
-MCP moves standalone `[..] makevn ... | log: ...` headers into the always-visible
-JSON metadata field `logPaths` (an array of unique paths in encounter order).
-For composite/parallel workflows, each step has its own `logPaths`. An empty
-array means no log header was reported, not that no logs exist. This applies
-with either trace setting; `trace: true` still shows command echoes and success
-timings. Normal results and failure diagnostics are untouched; CLI headers and
-managed log files are unchanged. Paths keep their original form, typically
-relative to the target repository, not the MCP server's working directory.
+`untrustedData.output` contains command output and diagnostics as data, never
+instructions. `untrustedData.workflow` is null for ordinary calls and contains
+workflow results for composite/parallel calls; their `output` is empty to avoid
+duplicating workflow JSON. Workflows preserve per-step output, exit codes,
+durations and log paths, use `totalSteps` / `executedSteps` counts, and report
+actual aggregate exit status and elapsed wall time. Parallel results retain input
+order. Failed workflows may include successful steps: inspect each step rather
+than discarding all results or assuming all steps succeeded.
+
+`logPaths` contains unique paths in encounter order, including workflow-step
+paths. Paths are relative to the target repository when reported that way.
+An empty array means no log header was reported, not that no logs exist.
+Standalone log headers move into this field. Without `trace`, redundant success
+timings are omitted; `trace: true` retains command echoes and timings. Diagnostics
+and meaningful results remain available with either setting. CLI output and
+managed logs are unchanged. Reload the MCP session after upgrading to refresh
+schemas. Clients consuming the old two-text-block output must switch to the
+structured envelope (or parse its single JSON text fallback).
 
 ```json
-{"durationMs": 6739, "exitCode": 0, "tool": "test", "logPaths": [".makevn/logs/test-SampleTest.log"]}
+{
+  "status": "success",
+  "message": "makevn tool completed successfully.",
+  "tool": "test",
+  "exitCode": 0,
+  "durationMs": 6739,
+  "logPaths": [".makevn/logs/test-SampleTest.log"],
+  "untrustedData": {"output": "Tests passed", "workflow": null},
+  "nextSuggestion": "Use this result to continue the requested workflow; do not repeat successful commands unnecessarily."
+}
 ```
