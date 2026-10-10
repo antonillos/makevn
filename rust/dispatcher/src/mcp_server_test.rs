@@ -848,3 +848,20 @@ fn workflows_preserve_server_authored_step_guidance() {
     );
     fs::remove_dir_all(dir).unwrap();
 }
+
+#[test]
+fn doctor_pending_questions_require_interactive_cli_not_mcp_retry() {
+    for next in ["makevn init", "makevn init --force", ""] {
+        let snapshot = json!({"repository_analysis": {"repository_support_status": "supported"}, "suggested_next_step": {"next": next}, "interactive_setup": {"required": true}});
+        let suggestion = super::doctor_next_suggestion(&snapshot).unwrap();
+        for expected in [
+            "launch the CLI command makevn doctor",
+            "real interactive terminal/PTY",
+            "Do NOT use MCP doctor again",
+            "Let the user answer every prompt",
+        ] {
+            assert!(suggestion.contains(expected));
+        }
+    }
+    assert!(super::doctor_next_suggestion(&json!({"repository_analysis": {"repository_support_status": "unsupported"}, "interactive_setup": {"required": true}})).unwrap().contains("do not run init"));
+}

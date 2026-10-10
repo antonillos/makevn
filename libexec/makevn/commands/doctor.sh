@@ -31,6 +31,9 @@ makevn_print_doctor_init_recommendation() {
 }
 
 makevn_print_doctor_suggestions() {
+  if [[ "${MAKEVN_DOCTOR_INTERACTIVE_REQUIRED:-false}" == true && "${MAKEVN_DOCTOR_REPO_SUPPORT_STATUS}" == supported ]]; then
+    makevn_print_item "interactive setup required" "Launch CLI makevn doctor in this repository in an interactive terminal/PTY without --compact or --json. Let the user answer all prompts; MCP doctor cannot ask them."
+  fi
   [[ -n "${MAKEVN_DOCTOR_SUGGESTED_NEXT}${MAKEVN_DOCTOR_SUGGESTED_NOTE}${MAKEVN_DOCTOR_SUGGESTED_OPTIONAL}" ]] || return 0
   [[ -n "${MAKEVN_FRONTEND_STATE_METADATA_OUT:-}" ]] || printf '\n'
   makevn_print_header "Suggested next step"

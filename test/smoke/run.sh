@@ -4777,4 +4777,5 @@ test_removed_exec_rejected() {
 
 source "${ROOT_DIR}/test/smoke/doctor_health_test.sh"
 
+bash "${ROOT_DIR}/test/smoke/reset_config_test.sh"
 main "$@"

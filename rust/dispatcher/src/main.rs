@@ -3864,7 +3864,7 @@ fn command_help(command: &str) -> Option<(&'static str, &'static str, &'static [
         "help" => Some(("makevn help", "Print the full makevn help.", &[])),
         "agent" => Some(("makevn agent install opencode", "Install the makevn MCP server in the global OpenCode configuration.", &[])),
         "doctor" => Some(("makevn [--repo PATH] doctor [--compact]", "Inspect repository setup and makevn configuration.", &["--compact  Print brief, noninteractive setup advice"])),
-        "init" => Some(("makevn [--repo PATH] init [--dry-run] [--force]", "Initialize .makevn configuration for the repository.", &["--dry-run  Show what would change without writing files", "--force    Refresh existing generated files"])),
+        "init" => Some(("makevn [--repo PATH] init [--dry-run] [--force] [--reset-config]", "Initialize .makevn configuration for the repository.", &["--dry-run  Show what would change without writing files", "--force    Refresh existing generated files", "--reset-config  Back up configuration and reset repository settings to defaults"])),
         "uninstall" => Some(("makevn [--repo PATH] uninstall [--dry-run]", "Remove makevn local repository state.", &["--dry-run  Show what would be removed"])),
         "refresh" => Some(("makevn [--repo PATH] refresh [--dry-run]", "Refresh initialization while preserving user configuration.", &["--dry-run  Show what would change without writing files"])),
         "profile" => Some(("makevn [--repo PATH] profile refresh", "Refresh detected repository profile information.", &[])),
@@ -3985,7 +3985,7 @@ fn print_help(with_header: bool) {
     println!("Usage:");
     println!("  makevn agent install opencode");
     println!("  makevn [--repo PATH] doctor");
-    println!("  makevn [--repo PATH] init [--dry-run] [--force]");
+    println!("  makevn [--repo PATH] init [--dry-run] [--force] [--reset-config]");
     println!("  makevn [--repo PATH] refresh [--dry-run]");
     println!("  makevn [--repo PATH] uninstall [--dry-run]");
     println!("  makevn [--repo PATH] profile refresh");

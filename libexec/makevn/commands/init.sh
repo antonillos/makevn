@@ -9,6 +9,11 @@ cmd_init_parse_options() {
         dry_run=true
         shift
         ;;
+      --reset-config)
+        reset_config=true
+        force=true
+        shift
+        ;;
       --force)
         force=true
         shift
@@ -25,6 +30,7 @@ cmd_init() {
   local repo_root="$1"
   local dry_run=false
   local force=false
+  local reset_config=false
   local state_dir
   local config_path
   local logs_dir
@@ -51,6 +57,7 @@ cmd_init() {
 
   if [[ "${dry_run}" == true ]]; then
     makevn_print_header "Dry run"
+    [[ "${reset_config}" != true ]] || makevn_print_item "would reset" "config and profile (with backup; installation and logs preserved)"
     makevn_print_item "repo root" "${repo_root}"
     makevn_print_item "would create" "${state_dir}"
     makevn_print_item "would create" "${config_path}"
@@ -60,6 +67,9 @@ cmd_init() {
   fi
 
   mkdir -p "${logs_dir}"
+  if [[ "${reset_config}" == true ]]; then
+    makevn_reset_repo_config "${repo_root}"
+  fi
   [[ -f "${config_path}" ]] || makevn_write_config "${repo_root}"
   makevn_refresh_profile "${repo_root}"
   makevn_update_config_generated_contract_clean_dirs "${repo_root}"
@@ -108,4 +118,19 @@ cmd_uninstall() {
 
   rm -rf "$(makevn_state_dir "${repo_root}")"
   printf '%s\n' "$(makevn_accent "makevn removed from ${repo_root}")"
+}
+
+# Keep installation, logs, and runtime state; back up user settings before reset.
+makevn_reset_repo_config() {
+  local repo_root="$1"
+  local state_dir backup file
+  state_dir="$(makevn_state_dir "${repo_root}")"
+  backup="$(mktemp -d "${state_dir}/config-backup.XXXXXX")"
+  for file in config profile.env; do
+    [[ ! -e "${state_dir}/${file}" ]] || cp -p "${state_dir}/${file}" "${backup}/${file}"
+  done
+  rm -f "${state_dir}/config" "${state_dir}/profile.env"
+  makevn_write_config "${repo_root}"
+  makevn_print_item "configuration backup" "${backup}"
+  makevn_print_item "next" "Run makevn doctor in an interactive terminal without --compact to answer setup questions."
 }

@@ -22,7 +22,10 @@ with tempfile.TemporaryDirectory() as tmp:
         data = result["structuredContent"]
         output = data["untrustedData"]["output"]
         if tool == "doctor":
-            if "force: false" in output:
+            if "interactive setup required:" in output:
+                assert "launch the CLI command makevn doctor" in data["nextSuggestion"]
+                assert "Do NOT use MCP doctor again" in data["nextSuggestion"]
+            elif "force: false" in output:
                 assert data["nextSuggestion"] == "Run makevn init (MCP: init with force: false) before verification."
             elif "force: true" in output:
                 assert "init with force: true" in data["nextSuggestion"]
@@ -47,6 +50,20 @@ with tempfile.TemporaryDirectory() as tmp:
     call("init", force=True)
     (repo / ".makevn/state.json").unlink()
     assert "Init recommendation: makevn_init (force: true)" in call("doctor")
+    for candidate in ["a", "b"]:
+        compose = repo / candidate / "docker-compose.yml"
+        compose.parent.mkdir()
+        compose.write_text("services: {}\n")
+    assert "interactive setup required:" in call("doctor")
+    config = repo / ".makevn/config"
+    config.write_text(config.read_text() + 'MAKEVN_RUN_CMD="custom"\n')
+    before = config.read_text()
+    call("init", **{"reset-config": True, "dry-run": True})
+    assert config.read_text() == before
+    call("init", **{"reset-config": True})
+    assert 'MAKEVN_RUN_CMD=""' in config.read_text()
+    backups = list((repo / ".makevn").glob("config-backup.*/config"))
+    assert len(backups) == 1 and backups[0].read_text() == before
 with tempfile.TemporaryDirectory() as tmp:
     assert "Repository support status: unsupported" in call("doctor")
 print("Doctor MCP recommendation tests passed")

@@ -581,13 +581,29 @@ makevn_collect_doctor_snapshot() {
   if [[ "${app_runnable}" == "yes" && -z "${detected_app_health_url}" ]]; then
     MAKEVN_DOCTOR_SUGGESTED_NOTE="Application HTTP readiness is not configured. Set MAKEVN_APP_HEALTH_URL in .makevn/config or run makevn doctor in an interactive terminal after initialization. karate-all requires this URL."
   fi
+  makevn_doctor_interactive_setup_status
   makevn_doctor_record_build "${repo_root}"
+}
+
+# Report questions that noninteractive clients cannot answer.
+makevn_doctor_interactive_setup_status() {
+  MAKEVN_DOCTOR_INTERACTIVE_REQUIRED=false
+  case "${MAKEVN_DOCTOR_COMPOSE_FILE} ${MAKEVN_DOCTOR_E2E_COMPOSE_FILE}" in
+    *ambiguous*) MAKEVN_DOCTOR_INTERACTIVE_REQUIRED=true ;;
+  esac
+  if [[ "${MAKEVN_DOCTOR_APP_RUNNABLE}" == yes && -z "${MAKEVN_APP_HEALTH_URL:-}" ]]; then
+    MAKEVN_DOCTOR_INTERACTIVE_REQUIRED=true
+  fi
+  if [[ -n "${verify_it_local_containers_default:-}" && "${local_containers_configured:-no}" != yes && -z "${LOCAL_CONTAINERS+x}" ]]; then
+    MAKEVN_DOCTOR_INTERACTIVE_REQUIRED=true
+  fi
 }
 
 makevn_print_doctor_json() {
   printf '{\n'
   printf '  "version": 1,\n'
   printf '  "command": "doctor",\n'
+  printf '  "interactive_setup": {"required": %s, "command": "makevn doctor", "requires_tty": true},\n' "${MAKEVN_DOCTOR_INTERACTIVE_REQUIRED:-false}"
   printf '  "doctor_build": {\n'
   printf '    "current_version": "%s",\n' "$(makevn_json_escape "${MAKEVN_VERSION}")"
   printf '    "previous_version": "%s",\n' "$(makevn_json_escape "${MAKEVN_DOCTOR_PREVIOUS_VERSION}")"
