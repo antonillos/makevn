@@ -283,11 +283,12 @@ answer prompts. Do not use `--compact`, `--json`, pipes or captured output. Let
 the user answer the questions; never send guessed answers. If interactive user
 input cannot be provided, ask the user to run the command and wait.
 
-With explicit user authorization, `makevn init --reset-config` resets all local
-configuration overrides to defaults and regenerates the detected profile, state
-and manifest. It backs up config/profile in `.makevn/config-backup.*`, preserves
-the installed binary, logs, app runtime files and project sources, and does not
-stop Docker or reset environment variables. `--dry-run` writes nothing. Ordinary
-`init --force` continues to preserve user settings. Run interactive CLI doctor
-after reset to make the configuration choices again. MCP equivalent: `init`
-with `reset-config: true`; never infer reset authorization from a build failure.
+With explicit user authorization, run `makevn doctor --reset-config` in an
+interactive terminal/PTY. It backs up config/profile in `.makevn/config-backup.*`,
+resets local overrides and the detected profile, then asks setup questions in
+the same execution. Initialization, installation, logs and runtime files are
+preserved; no additional init is required solely because of reset. The command
+rejects noninteractive, compact and JSON execution before changing anything.
+It does not reset environment variables or stop containers. Reset is CLI-only
+and is not an init option or MCP tool argument. Ordinary init --force still
+preserves settings. The repository must already be initialized and supported.

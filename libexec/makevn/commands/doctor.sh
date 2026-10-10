@@ -51,10 +51,15 @@ makevn_print_doctor_suggestions() {
 
 print_doctor() {
   local repo_root="$1"
+  local reset_config=false
 
   shift
   while [[ $# -gt 0 ]]; do
     case "$1" in
+      --reset-config)
+        reset_config=true
+        shift
+        ;;
       --compact)
         makevn_enable_compact_output
         shift
@@ -65,6 +70,9 @@ print_doctor() {
     esac
   done
 
+  if [[ "${reset_config}" == true ]]; then
+    makevn_doctor_reset_config "${repo_root}"
+  fi
   print_command_intro "${repo_root}" doctor
   makevn_collect_doctor_snapshot "${repo_root}"
   if [[ -n "${MAKEVN_MCP_DOCTOR_METADATA_OUT:-}" ]]; then
@@ -130,4 +138,27 @@ print_doctor() {
   fi
 
   makevn_print_doctor_suggestions
+}
+
+# Keep installation, logs, and runtime state; back up user settings before reset.
+makevn_reset_repo_config() {
+  local repo_root="$1"
+  local state_dir backup file
+  state_dir="$(makevn_state_dir "${repo_root}")"
+  backup="$(mktemp -d "${state_dir}/config-backup.XXXXXX")"
+  for file in config profile.env; do
+    [[ ! -e "${state_dir}/${file}" ]] || cp -p "${state_dir}/${file}" "${backup}/${file}"
+  done
+  rm -f "${state_dir}/config" "${state_dir}/profile.env"
+  makevn_write_config "${repo_root}"
+  makevn_print_item "configuration backup" "${backup}"
+  makevn_refresh_profile "${repo_root}"
+}
+
+makevn_doctor_reset_config() {
+  local repo_root="$1"
+  [[ -t 0 && -t 2 && "${MAKEVN_COMPACT_OUTPUT:-}" != 1 ]] || makevn_die "doctor --reset-config requires an interactive terminal/PTY without --compact or --json. Configuration was not changed."
+  [[ "$(makevn_repository_support_status "${repo_root}")" == supported ]] || makevn_die "No Maven project detected; configuration was not changed."
+  [[ -f "$(makevn_manifest_path "${repo_root}")" ]] || makevn_die "Initialize the repository with makevn init before resetting configuration."
+  makevn_reset_repo_config "${repo_root}"
 }

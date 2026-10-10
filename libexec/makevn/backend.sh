@@ -112,6 +112,9 @@ if [[ "${COMPACT_OUTPUT}" == "true" ]]; then
 fi
 
 if [[ "${COMMAND}" == "doctor" && "${FORMAT:-text}" == "json" ]]; then
+  for arg in "${FORWARD_ARGS[@]}"; do
+    [[ "${arg}" != --reset-config ]] || makevn_die "doctor --reset-config requires interactive CLI doctor, not JSON output."
+  done
   makevn_collect_doctor_snapshot "${REPO_ROOT}"
   makevn_print_doctor_json
   exit 0

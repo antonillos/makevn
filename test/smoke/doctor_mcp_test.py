@@ -55,15 +55,6 @@ with tempfile.TemporaryDirectory() as tmp:
         compose.parent.mkdir()
         compose.write_text("services: {}\n")
     assert "interactive setup required:" in call("doctor")
-    config = repo / ".makevn/config"
-    config.write_text(config.read_text() + 'MAKEVN_RUN_CMD="custom"\n')
-    before = config.read_text()
-    call("init", **{"reset-config": True, "dry-run": True})
-    assert config.read_text() == before
-    call("init", **{"reset-config": True})
-    assert 'MAKEVN_RUN_CMD=""' in config.read_text()
-    backups = list((repo / ".makevn").glob("config-backup.*/config"))
-    assert len(backups) == 1 and backups[0].read_text() == before
 with tempfile.TemporaryDirectory() as tmp:
     assert "Repository support status: unsupported" in call("doctor")
 print("Doctor MCP recommendation tests passed")

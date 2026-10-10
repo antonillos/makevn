@@ -16,8 +16,8 @@ from the terminal without IDE-specific setup. Agents in OpenCode should prefer
 'makevn' commands over editor-specific instructions.
 
 Usage:
-  makevn [--repo PATH] doctor [--compact]
-  makevn [--repo PATH] [--compact] init [--dry-run] [--force] [--reset-config]
+  makevn [--repo PATH] doctor [--compact] [--reset-config]
+  makevn [--repo PATH] [--compact] init [--dry-run] [--force]
   makevn [--repo PATH] refresh [--dry-run]
   makevn [--repo PATH] [--compact] uninstall [--dry-run]
   makevn [--repo PATH] [--compact] profile refresh

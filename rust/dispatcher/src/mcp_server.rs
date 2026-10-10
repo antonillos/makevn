@@ -356,7 +356,7 @@ const CLEAN_GENERATED_CONTRACT_TARGETS: ToolOption = ToolOption {
 };
 const TOOL_SPECS: &[ToolSpec] = &[
     ToolSpec { name: "doctor", description: "Inspect a Java/Maven repository noninteractively. Run this first. When interactive_setup.required is true, follow required initialization then launch CLI makevn doctor in the same repository in an interactive terminal/PTY, without --compact, --json, pipes or capture. Let the user answer all questions; do not retry MCP doctor or guess answers. If no user-interactive terminal is available, ask the user to run CLI doctor and wait.", command: &["doctor"], options: &[COMMON_REPO, COMPACT] },
-    ToolSpec { name: "init", description: "Initialize makevn in a repository. Creates .makevn/ configuration directory.", command: &["init"], options: &[COMMON_REPO, DRY_RUN, ToolOption { name: "reset-config", ty: "boolean", description: "Explicitly reset repository settings to defaults after backing them up; requires user authorization", required: false }, ToolOption { name: "force", ty: "boolean", description: "Force reinitialization", required: false }, COMPACT] },
+    ToolSpec { name: "init", description: "Initialize makevn in a repository. Creates .makevn/ configuration directory.", command: &["init"], options: &[COMMON_REPO, DRY_RUN, ToolOption { name: "force", ty: "boolean", description: "Force reinitialization", required: false }, COMPACT] },
     ToolSpec { name: "uninstall", description: "Remove makevn local repository state.", command: &["uninstall"], options: &[COMMON_REPO, DRY_RUN, COMPACT] },
     ToolSpec { name: "profile_refresh", description: "Refresh makevn repository profile detection.", command: &["profile", "refresh"], options: &[COMMON_REPO, COMPACT] },
     ToolSpec { name: "compile", description: "Compile the Maven project source code.", command: &["compile"], options: &[COMMON_REPO, COMPACT] },
@@ -809,13 +809,9 @@ fn push_tool_flags(
 
 fn push_tool_option(cmd_args: &mut Vec<String>, name: &str, value: &Value) -> Result<(), String> {
     match name {
-        "reset-config"
-        | "apply"
-        | "clean-generated-contract-targets"
-        | "dry-run"
-        | "fast"
-        | "force"
-        | "verbose" => push_boolean_option(cmd_args, name, value),
+        "apply" | "clean-generated-contract-targets" | "dry-run" | "fast" | "force" | "verbose" => {
+            push_boolean_option(cmd_args, name, value)
+        }
         "threshold" | "overall-threshold" | "max-warnings" | "wait-seconds" => {
             push_value_option(cmd_args, name, value.as_f64().map(format_number))
         }
