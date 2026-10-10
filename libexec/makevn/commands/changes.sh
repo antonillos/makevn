@@ -558,7 +558,7 @@ No modified Java or POM files detected. Skipping verify-changes."
     verify_args=("${MAKEVN_VERIFY_CHANGES_MAVEN_EXECUTABLE}")
   fi
 
-  if [[ -n "${MAKEVN_VERIFY_CHANGES_SRC_FILES}" || -n "${MAKEVN_VERIFY_CHANGES_POM_FILES:-}" || -z "${MAKEVN_VERIFY_CHANGES_TEST_FILES}" || "${MAKEVN_VERIFY_CHANGES_MODULE_SELECTION}" == . ]]; then
+  if [[ -n "${MAKEVN_VERIFY_CHANGES_SRC_FILES}" || -n "${MAKEVN_VERIFY_CHANGES_POM_FILES:-}" || -z "${MAKEVN_VERIFY_CHANGES_TEST_FILES}" ]]; then
     if [[ -z "${MAKEVN_VERIFY_CHANGES_MODULES}" || "${MAKEVN_VERIFY_CHANGES_MODULES}" == . ]]; then
       makevn_clear_verify_changes_plan "${repo_root}"
       cmd_verify "${repo_root}"
