@@ -130,14 +130,13 @@ makevn_prompt_doctor_app_health_url_paused() {
   local repo_root="$1"
   local health_input=""
   local default_health_url="${detected_app_health_url}"
-  printf '\n' >&2
   if [[ -n "${default_health_url}" ]]; then
-    printf '%s\n' "$(makevn_warn "Detected app health URL: ${default_health_url}")" >&2
+    makevn_print_question "Detected app health URL: ${default_health_url}"
   else
     default_health_url="$(makevn_doctor_suggest_app_health_url "${maven_base_path}")"
-    printf '%s\n' "No application health URL detected. Suggested URL (not verified): ${default_health_url}" >&2
+    makevn_print_question "No application health URL detected. Suggested URL (not verified): ${default_health_url}"
   fi
-  printf '%s\n' 'Edit the URL or press Enter to confirm it; type skip to leave configuration unchanged.' >&2
+  printf '%s\n' "$(makevn_dim 'Edit the URL or press Enter to confirm it; type skip to leave configuration unchanged.')" >&2
   while true; do
     health_input="$(makevn_read_editable_default "Health URL [${default_health_url}]: " "${default_health_url}")" || return 0
     [[ "${health_input}" != "skip" ]] || return 0
@@ -276,8 +275,7 @@ makevn_collect_doctor_snapshot() {
       # Multiple: ask interactively if we have a TTY
       if [[ -t 0 && -t 2 && "${MAKEVN_COMPACT_OUTPUT:-}" != "1" ]]; then
         makevn_pause_frontend_for_prompt
-        printf '\n' >&2
-        printf '%s\n' "$(makevn_warn "Multiple docker-compose.yml files found. Select one:")" >&2
+        makevn_print_question "Multiple docker-compose.yml files found. Select one:"
         local _i=1
         for _f in "${_found[@]}"; do
           printf '  [%d] %s\n' "${_i}" "${_f}" >&2
@@ -327,8 +325,7 @@ makevn_collect_doctor_snapshot() {
     else
       if [[ -t 0 && -t 2 && "${MAKEVN_COMPACT_OUTPUT:-}" != "1" ]]; then
         makevn_pause_frontend_for_prompt
-        printf '\n' >&2
-        printf '%s\n' "$(makevn_warn "Multiple e2e docker-compose.yml files found. Select one:")" >&2
+        makevn_print_question "Multiple e2e docker-compose.yml files found. Select one:"
         local _i=1
         for _ef in "${_e2e_found[@]}"; do
           printf '  [%d] %s\n' "${_i}" "${_ef}" >&2
@@ -441,8 +438,7 @@ makevn_collect_doctor_snapshot() {
   makevn_load_config "${repo_root}"
   if [[ -f "$(makevn_config_path "${repo_root}")" && -n "${verify_it_local_containers_default}" && -z "${LOCAL_CONTAINERS+x}" && "${local_containers_configured}" != "yes" && "${prompted_interactively}" != "yes" && -t 0 && -t 2 && "${MAKEVN_COMPACT_OUTPUT:-}" != "1" ]]; then
     makevn_pause_frontend_for_prompt
-    printf '\n' >&2
-    printf '%s\n' "$(makevn_warn "Use LOCAL_CONTAINERS=TRUE by default for makevn test/verify commands?")" >&2
+    makevn_print_question "Use LOCAL_CONTAINERS=TRUE by default for makevn test/verify commands?"
     printf '  [1] yes, use local containers\n' >&2
     printf '  [2] no, leave LOCAL_CONTAINERS unset unless I export it\n' >&2
     local _local_choice=""

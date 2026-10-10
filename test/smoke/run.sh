@@ -4778,6 +4778,7 @@ test_removed_exec_rejected() {
 
 source "${ROOT_DIR}/test/smoke/doctor_health_test.sh"
 
+python3 "${ROOT_DIR}/test/smoke/question_style_test.py"
 python3 "${ROOT_DIR}/test/smoke/install_build_test.py"
 bash "${ROOT_DIR}/test/smoke/reset_config_test.sh"
 main "$@"
