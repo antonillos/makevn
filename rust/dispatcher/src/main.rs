@@ -1216,7 +1216,7 @@ fn dispatch_backend_invocations(
             None
         };
 
-        let phase_files = if fallback_title == "karate-all"
+        let phase_files = if matches!(fallback_title.as_str(), "karate-all" | "test")
             || (use_frontend_loader && fallback_title == "doctor")
         {
             Some(BackendPhaseFiles::new()?)

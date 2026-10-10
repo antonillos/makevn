@@ -746,3 +746,9 @@ semantic checks. Empty host directories produce informational empty_source diagn
 See [the workflow guidance map](workflow-guidance.md) for Mermaid decision graphs
 and authoritative code locations. Update the affected graph and regression tests
 when changing a decision or required next step.
+
+Selected test sequences retain each completed test in the dashboard while later
+tests run, then show all statuses/durations/log paths and aggregate counts. A
+failed selected test is recorded and the remaining selected tests still run; the
+sequence fails overall if any test failed. Unexecuted tests are never recorded
+as completed.

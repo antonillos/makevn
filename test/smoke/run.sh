@@ -4778,6 +4778,7 @@ test_removed_exec_rejected() {
 
 source "${ROOT_DIR}/test/smoke/doctor_health_test.sh"
 
+bash "${ROOT_DIR}/test/smoke/multi_test_history_test.sh"
 python3 "${ROOT_DIR}/test/smoke/test_processes_test.py"
 python3 "${ROOT_DIR}/test/smoke/bind_mounts_test.py"
 bash "${ROOT_DIR}/test/smoke/doctor_pending_profiles_test.sh"
