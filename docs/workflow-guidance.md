@@ -192,3 +192,19 @@ mandatory full gates. It is also exposed without loading the skill: MCP tool and
 `focused` option descriptions, preview/success/failure `nextSuggestion` and CLI
 command help explain the same preview/execution mode, expected large preparation
 reactor and limited success claim. Keep these surfaces and guidance tests consistent.
+
+### Workflow input validation and dependent gates
+
+Workflow steps use `arguments`, never `args`. Both composite and parallel flows
+validate every step before starting any command, including `clean`. Unknown fields,
+unknown tools/options, non-object arguments and wrong option types are errors with
+the step number; they are not silently replaced with defaults. Nested workflows
+are rejected. The MCP schema and examples expose the same contract.
+
+For faster feedback, inspect a focused preview **outside** the composite run first,
+then execute the reviewed focused plan. Do not automatically prepend `clean`, which
+forces rebuilding. Use `fail-fast: true` for dependent verification/coverage/CRAP
+steps so failed prerequisite runs cannot be treated as fresh evidence. False is
+only appropriate when continued independent diagnostics are explicitly wanted.
+Focused verification does not automatically produce the global coverage required
+by coverage/CRAP gates: run the appropriate coverage-producing flow separately.

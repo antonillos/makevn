@@ -542,7 +542,7 @@ See `skills/makevn/SKILL.md` for detailed workflow definitions:
 | Workflow | Execution | Use case |
 |---|---|---|
 | `boot-verify-coverage` | `composite_run` | Docker + clean compile verify + coverage |
-| `changes-validator` | `composite_run` | PR review: verify changed modules + coverage |
+| `changes-validator` | Preview separately, then `composite_run` | Choose focused local feedback or separate full coverage gates |
 | `multi-test-runner` | `composite_run` | Multiple tests with consolidated results |
 | `karate-runner` | `composite_run` | Full Karate E2E lifecycle |
 | `adaptive-test` | Subagent Task | Auto-detect UT/IT, needs decision-making |
@@ -554,7 +554,7 @@ See `skills/makevn/SKILL.md` for detailed workflow definitions:
 // Boot verify + coverage (deterministic):
 {
   "tool": "composite_run",
-  "args": {
+  "arguments": {
     "steps": [
       {"tool": "docker_up"},
       {"tool": "docker_ps_required", "arguments": {"wait-seconds": 30}},
@@ -570,7 +570,7 @@ See `skills/makevn/SKILL.md` for detailed workflow definitions:
 // Parallel UT + IT (independent):
 {
   "tool": "parallel_run",
-  "args": {
+  "arguments": {
     "steps": [
       {"tool": "verify_ut_coverage"},
       {"tool": "verify_it_coverage"}
@@ -808,3 +808,13 @@ tests run, then show all statuses/durations/log paths and aggregate counts. A
 failed selected test is recorded and the remaining selected tests still run; the
 sequence fails overall if any test failed. Unexecuted tests are never recorded
 as completed.
+
+### Safe composite workflows
+
+Use step `arguments`, not `args`. Every step is validated before execution;
+unknown fields/tools/options or wrong types reject the entire workflow before even
+`clean` can run. Never add `clean` merely to obtain faster changed-code feedback.
+Inspect a focused preview separately before executing its reviewed plan. Set
+`fail-fast: true` for dependent verification/coverage/CRAP gates; reserve false for
+explicitly requested independent diagnostics or required cleanup (never to continue dependent gates). Focused success alone does not
+produce the global coverage needed by those gates.

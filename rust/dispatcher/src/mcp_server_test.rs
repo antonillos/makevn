@@ -256,35 +256,15 @@ fn tool_call_reports_success_and_unknown_tool_errors() {
 }
 
 #[test]
-fn composite_run_stops_on_error_unless_fail_fast_is_disabled() {
-    let steps = json!([
-        {"tool": "unknown"},
-        {"tool": "doctor", "arguments": {"repo": "/step"}}
-    ]);
-    let stopped = super::handle_tool_call(
-        Path::new("/bin/echo"),
-        &json!({"name": "composite_run", "arguments": {"steps": steps}}),
-    )
-    .unwrap();
-    let stopped: serde_json::Value = serde_json::from_str(&stopped.output).unwrap();
-    assert_eq!(stopped["executedSteps"], 1);
-    assert_eq!(stopped["failed"], true);
-    assert_eq!(stopped["steps"][0]["exitCode"], -1);
-
-    let continued = super::handle_tool_call(
-        Path::new("/bin/echo"),
-        &json!({"name": "composite_run", "arguments": {
-            "steps": steps, "fail-fast": false, "repo": "/global"
-        }}),
-    )
-    .unwrap();
-    let continued: serde_json::Value = serde_json::from_str(&continued.output).unwrap();
-    assert_eq!(continued["executedSteps"], 2);
-    assert_eq!(continued["steps"][1]["exitCode"], 0);
-    assert!(continued["steps"][1]["output"]
-        .as_str()
-        .unwrap()
-        .contains("--repo /step"));
+fn composite_run_rejects_invalid_steps_even_when_fail_fast_is_disabled() {
+    for fail_fast in [true, false] {
+        let error = super::handle_tool_call(
+            Path::new("/bin/echo"),
+            &json!({"name":"composite_run", "arguments":{"fail-fast":fail_fast,
+                "steps":[{"tool":"clean"},{"tool":"unknown"}]}}),
+        ).err().unwrap();
+        assert!(error.contains("step 2: unknown makevn tool"));
+    }
 }
 
 #[test]
@@ -312,24 +292,24 @@ fn composite_run_stops_on_nonzero_exit_and_can_continue() {
 }
 
 #[test]
-fn parallel_run_reports_success_and_invalid_steps_in_input_order() {
+fn parallel_run_reports_valid_steps_in_input_order() {
     let result = super::handle_tool_call(
         Path::new("/bin/echo"),
         &json!({"name": "parallel_run", "arguments": {
             "repo": "/global",
-            "steps": [{"tool": "doctor"}, {"tool": "unknown"}]
+            "steps": [{"tool": "doctor"}, {"tool": "verify_ut"}]
         }}),
     )
     .unwrap();
     let summary: serde_json::Value = serde_json::from_str(&result.output).unwrap();
     assert_eq!(summary["totalSteps"], 2);
-    assert_eq!(summary["failed"], true);
+    assert_eq!(summary["failed"], false);
     assert_eq!(summary["steps"][0]["exitCode"], 0);
     assert!(summary["steps"][0]["output"]
         .as_str()
         .unwrap()
         .contains("--repo /global"));
-    assert_eq!(summary["steps"][1]["exitCode"], -1);
+    assert_eq!(summary["steps"][1]["exitCode"], 0);
 }
 
 #[test]
@@ -383,8 +363,8 @@ fn removed_exec_is_not_advertised_or_available_in_workflows() {
             Path::new("/bin/echo"),
             &json!({"name": tool, "arguments": {"steps": [{"tool": "exec"}]}}),
         )
-        .unwrap();
-        assert!(result.output.contains("unknown makevn tool in step: exec"));
+        .err().unwrap();
+        assert!(result.contains("unknown makevn tool in step: exec"));
     }
 }
 
@@ -915,4 +895,94 @@ fn focused_agent_guidance_is_visible_without_loading_the_skill() {
     for text in ["actual mode", "focused checks passed", "not full verification", "CRAP gates"] {
         assert!(verification.contains(text));
     }
+}
+
+#[test]
+fn workflow_step_validation_rejects_silent_argument_loss() {
+    for step in [
+        json!({"tool":"clean","args":{}}),
+        json!({"tool":"test","arguments":null}),
+        json!({"tool":"test","arguments":[]}),
+        json!({"tool":"verify_changes","arguments":{"focused":"true"}}),
+        json!({"tool":"verify_changes","arguments":{"focussed":true}}),
+        json!({"tool":"test","arguments":{"name":42}}),
+        json!({"tool":"doctor","extra":true}),
+        json!({"tool":"unknown"}), json!({"tool":"parallel_run"}),
+        json!({"tool":42}), json!(false),
+    ] {
+        assert!(super::validate_workflow_step(&step).is_err(), "{step}");
+    }
+    assert!(super::validate_workflow_step(&json!({"tool":"verify_changes","arguments":{"focused":true,"trace":false}})).is_ok());
+    assert!(super::validate_workflow_step(&json!({"tool":"clean"})).is_ok());
+}
+
+#[test]
+fn workflow_validation_happens_before_clean_or_parallel_execution() {
+    let args = json!({"steps":[{"tool":"clean"},{"tool":"verify_changes","args":{"focused":true}}]});
+    // This executable cannot run: a validated workflow would instead return
+    // execution failures. Both handlers must reject step 2 before launching any step.
+    let nonexistent = Path::new("/makevn-test-executable-that-does-not-exist");
+    for result in [super::handle_composite_run(nonexistent, args.as_object().unwrap()),
+                   super::handle_parallel_run(nonexistent, args.as_object().unwrap())] {
+        let error = result.unwrap_err();
+        assert!(error.starts_with("step 2:"));
+        assert!(error.contains("use 'arguments', not 'args'"));
+    }
+}
+
+#[test]
+fn workflow_descriptions_and_schema_teach_arguments_not_args() {
+    for name in ["composite_run", "parallel_run"] {
+        let spec = TOOL_SPECS.iter().find(|spec| spec.name == name).unwrap();
+        let schema = super::tool(spec);
+        let step = &schema["inputSchema"]["properties"]["steps"]["items"];
+        assert_eq!(step["additionalProperties"], false);
+        assert!(step["properties"].get("arguments").is_some());
+        assert!(step["properties"].get("args").is_none());
+        let description = schema["inputSchema"]["properties"]["steps"]["description"].as_str().unwrap();
+        assert!(description.contains("\"arguments\""));
+        assert!(!description.contains("\"args\""));
+    }
+    let composite = TOOL_SPECS.iter().find(|spec| spec.name == "composite_run").unwrap();
+    for text in ["focused=true", "preview", "Do not add clean", "fail-fast=true"] {
+        assert!(composite.description.contains(text));
+    }
+}
+
+#[test]
+fn step_option_types_match_all_supported_value_types() {
+    for (ty, value) in [("boolean",json!(false)),("string",json!("repo")),
+                        ("number",json!(1.5)),("integer",json!(2)),("array",json!([]))] {
+        assert!(super::option_value_matches(ty, &value));
+        assert!(!super::option_value_matches(ty, &json!(null)));
+    }
+    assert!(!super::option_value_matches("unknown", &json!(true)));
+    assert!(!super::option_value_matches("integer", &json!(1.5)));
+    assert!(super::option_value_matches("integer", &json!(u64::MAX)));
+}
+
+#[test]
+fn valid_workflow_arguments_forward_focused_instead_of_defaulting() {
+    let result = super::handle_tool_call(Path::new("/bin/echo"), &json!({
+        "name":"composite_run", "arguments":{"steps":[
+            {"tool":"verify_changes","arguments":{"focused":true}}
+        ]}
+    })).unwrap();
+    let workflow: serde_json::Value = serde_json::from_str(&result.output).unwrap();
+    assert!(workflow["steps"][0]["output"].as_str().unwrap().contains("--focused"));
+}
+
+#[test]
+fn agent_templates_do_not_reintroduce_args_or_the_old_changes_pipeline() {
+    for document in [include_str!("../../../docs/agents.md"),
+                     include_str!("../../../skills/makevn/SKILL.md"),
+                     include_str!("../../../mcp/README.md")] {
+        assert!(!document.contains("\"args\":"));
+    }
+    let skill = include_str!("../../../skills/makevn/SKILL.md");
+    let workflow = skill.split("### `changes-validator`").nth(1).unwrap()
+        .split("### `multi-test-runner`").next().unwrap();
+    assert!(workflow.contains("\"focused\": true"));
+    assert!(!workflow.contains("{\"tool\": \"clean\"}"));
+    assert!(!workflow.contains("{\"tool\": \"coverage_changes\"}"));
 }

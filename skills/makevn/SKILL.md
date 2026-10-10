@@ -486,7 +486,7 @@ If a command times out, check the log at `.makevn/logs/<command>-*.log`. If `doc
 ```json
 {
   "tool": "composite_run",
-  "args": {
+  "arguments": {
     "steps": [
       {"tool": "docker_up"},
       {"tool": "docker_ps_required", "arguments": {"wait-seconds": 30}},
@@ -513,48 +513,43 @@ makevn coverage-changes
 
 **Troubleshooting**: If `verify` fails, check `.makevn/logs/verify-*.log`. If `coverage-changes` reports "JaCoCo report contains no classes", configure coverage flags and retry.
 
-### `changes-validator` — PR review: verify changed modules + coverage
+### `changes-validator` — Choose scoped feedback versus full gates
 
-**Use**: Review all changes in a PR or working tree. Most common workflow.
+**First decide intent**: for user-requested faster local feedback, explain focused
+scope; for mandatory full verification/coverage, choose the full flow. Do not copy
+one generic clean + verify_changes + coverage workflow for both intents.
 
-**Execution** (prefer `composite_run` — deterministic sequence with conditional Docker):
+1. Run doctor separately and finish required setup. Only if Docker is required,
+   start the configured services and run docker_ps_required before testing.
+2. For focused feedback, call verify_changes_preview with focused=true separately,
+   inspect its owner suites/tests, then execute the same focused mode:
 
 ```json
 {
   "tool": "composite_run",
-  "args": {
+  "arguments": {
     "steps": [
-      {"tool": "doctor", "arguments": {"compact": true}},
-      {"tool": "docker_up"},
-      {"tool": "docker_ps_required", "arguments": {"wait-seconds": 30}},
-      {"tool": "clean"},
-      {"tool": "verify_changes"},
-      {"tool": "coverage_changes"}
+      {"tool": "verify_changes", "arguments": {"focused": true}}
     ],
     "fail-fast": true
   }
 }
 ```
 
-Note: `docker_up` and `docker_ps_required` should only be included if `doctor` detects Docker is needed (Docker compose file, LOCAL_CONTAINERS, or tests under `src/test/resources/compose`). If not needed, omit those steps.
-
-**CLI equivalent**:
+**CLI equivalents**, after setup/readiness:
 
 ```bash
-makevn doctor --compact
-# If Docker needed:
-makevn docker-up
-makevn docker-ps-required --wait-seconds 30
-makevn clean                          # optional, if build state is uncertain
-makevn verify-changes
-makevn coverage-changes
+makevn verify-changes-preview --focused
+makevn verify-changes --focused
 ```
 
-**When to use `clean`**: If there are previous builds that may contaminate results, after rebase/merge, or if tests fail inconsistently. Omit by default to save time (makevn uses cache).
-
-**Timeouts**: 120s for docker-up, 30s for docker-ps-required, 1800s for verify-changes, 120s for coverage-changes.
-
-**Troubleshooting**: If `verify-changes` detects no changes, verify there are commits on the branch. If Docker fails, check `makevn docker-ps` for service status.
+Do not prepend clean by default: it forces rebuilding. A large preparation reactor
+is normal; its UT/IT suites must be disabled, followed by owner verify without -am.
+Focused checks do not produce a fresh global coverage gate. If full coverage is
+requested, run the appropriate full verify_ut_coverage or verify_it_coverage flow
+then coverage_changes, with fail-fast=true; preserve required CRAP gates too.
+Unknown impact rejects focused mode; explain any switch to CLI --exhaustive/full
+verify instead of hiding the broader scope. Report focused success honestly.
 
 ### `multi-test-runner` — Multiple tests with consolidated results
 
@@ -565,19 +560,18 @@ makevn coverage-changes
 ```json
 {
   "tool": "composite_run",
-  "args": {
+  "arguments": {
     "steps": [
       {"tool": "test", "arguments": {"name": "AuthTest"}},
       {"tool": "test", "arguments": {"name": "PaymentTest"}},
-      {"tool": "test", "arguments": {"name": "NotificationTest"}},
-      {"tool": "coverage_changes"}
+      {"tool": "test", "arguments": {"name": "NotificationTest"}}
     ],
     "fail-fast": false
   }
 }
 ```
 
-Note: `fail-fast: false` so all tests run even if one fails. `coverage_changes` runs regardless.
+Note: `fail-fast: false` is only for collecting independent test results. Do not run coverage_changes after a failed prerequisite or assume selected tests produce global coverage; run a separate successful coverage-producing flow before the gate.
 
 **CLI equivalent**:
 
@@ -601,7 +595,7 @@ makevn coverage-changes
 ```json
 {
   "tool": "composite_run",
-  "args": {
+  "arguments": {
     "steps": [
       {"tool": "karate_docker_up"},
       {"tool": "docker_ps_required", "arguments": {"compose": "karate", "wait-seconds": 30}},
@@ -681,7 +675,7 @@ Task(description="makevn: adaptive test", prompt="
 ```json
 {
   "tool": "parallel_run",
-  "args": {
+  "arguments": {
     "steps": [
       {"tool": "verify_ut_coverage"},
       {"tool": "docker_up"},
@@ -910,3 +904,13 @@ MCP `focused: false` or omission is that default, **not** explicit CLI exhaustiv
 Never pass Maven test/skip/reactor overrides to focus or disable fresh-report checks.
 See `docs/agents.md` and the visible graph in `docs/workflow-guidance.md` for the
 maintained decision contract.
+
+### Safe composite workflows
+
+Use step `arguments`, not `args`. Every step is validated before execution;
+unknown fields/tools/options or wrong types reject the entire workflow before even
+`clean` can run. Never add `clean` merely to obtain faster changed-code feedback.
+Inspect a focused preview separately before executing its reviewed plan. Set
+`fail-fast: true` for dependent verification/coverage/CRAP gates; reserve false for
+explicitly requested independent diagnostics or required cleanup (never to continue dependent gates). Focused success alone does not
+produce the global coverage needed by those gates.

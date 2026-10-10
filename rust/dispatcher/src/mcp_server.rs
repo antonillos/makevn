@@ -431,8 +431,8 @@ const TOOL_SPECS: &[ToolSpec] = &[
     ToolSpec { name: "jdk_current", description: "Show the currently resolved JDK version.", command: &["jdk", "current"], options: &[COMMON_REPO] },
     ToolSpec { name: "jdk_list", description: "List discovered JDK installations.", command: &["jdk", "list"], options: &[COMMON_REPO] },
     ToolSpec { name: "mutation", description: "Run PIT mutation testing. Detects pitest-maven plugin automatically. WARNING: Very slow (30+ min for large projects).", command: &["mutation"], options: &[COMMON_REPO, MODULE, VERBOSE, COMPACT] },
-    ToolSpec { name: "composite_run", description: "Execute a sequence of makevn commands with step-by-step progress. Each step is a tool call with optional args. Returns JSON with per-step results. Use fail-fast to stop on first error.", command: &[], options: &[COMMON_REPO, ToolOption { name: "steps", ty: "array", description: "JSON array of command steps. Each step: {\"tool\":\"verify_ut\",\"args\":{\"compact\":true}}", required: true }, ToolOption { name: "fail-fast", ty: "boolean", description: "Stop on first non-zero step (default: true)", required: false }] },
-    ToolSpec { name: "parallel_run", description: "Execute independent makevn commands in parallel. Each step runs in a separate thread. Returns JSON with per-step results. Use for independent operations like parallel UT+IT.", command: &[], options: &[COMMON_REPO, ToolOption { name: "steps", ty: "array", description: "JSON array of command steps. Each step: {\"tool\":\"verify_ut\",\"args\":{\"compact\":true}}", required: true }] },
+    ToolSpec { name: "composite_run", description: "Execute a sequence of makevn commands. Each step uses tool and optional arguments (NEVER args); all steps are validated before any execution. For user-requested faster local feedback, explain focused scope, inspect verify_changes_preview with focused=true separately, then use verify_changes with arguments.focused=true. Do not add clean automatically. Use fail-fast=true for dependent verification/coverage/CRAP gates; focused success does not produce a global coverage gate. Ask when intended scope is unclear.", command: &[], options: &[COMMON_REPO, ToolOption { name: "steps", ty: "array", description: "JSON array of command steps. Each step: {\"tool\":\"verify_ut\",\"arguments\":{\"compact\":true}}. Use only independent operations; validate all steps before execution.", required: true }, ToolOption { name: "fail-fast", ty: "boolean", description: "Stop on first non-zero step (default: true)", required: false }] },
+    ToolSpec { name: "parallel_run", description: "Execute independent makevn commands in parallel. Each step runs in a separate thread. Returns JSON with per-step results. Use for independent operations like parallel UT+IT.", command: &[], options: &[COMMON_REPO, ToolOption { name: "steps", ty: "array", description: "JSON array of command steps. Each step: {\"tool\":\"verify_ut\",\"arguments\":{\"compact\":true}}. Use only independent operations; validate all steps before execution.", required: true }] },
 ];
 
 fn tools_list() -> Vec<Value> {
@@ -468,6 +468,12 @@ fn tool(spec: &ToolSpec) -> Value {
         "type": "object",
         "properties": properties,
     });
+    if properties_for_workflow(spec) {
+        schema["properties"]["steps"]["items"] = json!({
+            "type": "object", "required": ["tool"], "additionalProperties": false,
+            "properties": {"tool": {"type": "string"}, "arguments": {"type": "object"}}
+        });
+    }
     if !required.is_empty() {
         schema["required"] = json!(required);
     }
@@ -627,7 +633,59 @@ fn parse_steps(args: &Map<String, Value>) -> Result<Vec<Value>, String> {
     if steps_array.is_empty() {
         return Err(String::from("steps must not be empty"));
     }
+    for (index, step) in steps_array.iter().enumerate() {
+        validate_workflow_step(step).map_err(|error| format!("step {}: {error}", index + 1))?;
+    }
     Ok(steps_array.clone())
+}
+
+fn properties_for_workflow(spec: &ToolSpec) -> bool {
+    matches!(spec.name, "composite_run" | "parallel_run")
+}
+
+fn validate_workflow_step(step: &Value) -> Result<(), String> {
+    let object = step.as_object().ok_or("each step must be an object")?;
+    for key in object.keys() {
+        if key != "tool" && key != "arguments" {
+            return Err(format!("unknown step field '{key}'; use 'arguments', not 'args'"));
+        }
+    }
+    let name = step["tool"].as_str().ok_or("each step must have a string 'tool' field")?;
+    let spec = TOOL_SPECS.iter().find(|spec| spec.name == name)
+        .ok_or_else(|| format!("unknown makevn tool in step: {name}"))?;
+    if properties_for_workflow(spec) {
+        return Err(String::from("nested workflow steps are not supported"));
+    }
+    validate_step_arguments(spec, object.get("arguments"))
+}
+
+fn validate_step_arguments(spec: &ToolSpec, arguments: Option<&Value>) -> Result<(), String> {
+    let Some(arguments) = arguments else { return Ok(()); };
+    let arguments = arguments.as_object().ok_or("step 'arguments' must be an object")?;
+    for (key, value) in arguments {
+        let ty = step_option_type(spec, key)?;
+        if !option_value_matches(ty, value) {
+            return Err(format!("argument '{key}' for {} must be {ty}", spec.name));
+        }
+    }
+    Ok(())
+}
+
+fn step_option_type<'a>(spec: &'a ToolSpec, key: &str) -> Result<&'a str, String> {
+    if key == "trace" { return Ok("boolean"); }
+    spec.options.iter().find(|option| option.name == key).map(|option| option.ty)
+        .ok_or_else(|| format!("unknown argument '{key}' for {}", spec.name))
+}
+
+fn option_value_matches(ty: &str, value: &Value) -> bool {
+    match ty {
+        "boolean" => value.is_boolean(),
+        "string" => value.is_string(),
+        "number" => value.is_number(),
+        "integer" => value.is_i64() || value.is_u64(),
+        "array" => value.is_array(),
+        _ => false,
+    }
 }
 
 fn execute_single_step(

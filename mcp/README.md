@@ -318,3 +318,13 @@ CLI `--exhaustive`. Use CLI for explicit selected-owner/dependency exhaustive su
 or `makevn verify` for the whole project. The tool descriptions and server-authored
 `nextSuggestion` expose these rules even when the skill is not loaded. See the
 maintained decision rule in `docs/agents.md` and graph in `docs/workflow-guidance.md`.
+
+### Safe composite workflows
+
+Use step `arguments`, not `args`. Every step is validated before execution;
+unknown fields/tools/options or wrong types reject the entire workflow before even
+`clean` can run. Never add `clean` merely to obtain faster changed-code feedback.
+Inspect a focused preview separately before executing its reviewed plan. Set
+`fail-fast: true` for dependent verification/coverage/CRAP gates; reserve false for
+explicitly requested independent diagnostics or required cleanup (never to continue dependent gates). Focused success alone does not
+produce the global coverage needed by those gates.
