@@ -93,6 +93,7 @@ makevn_crap_module_root_for_xml() {
 
 makevn_crap_run() {
   local repo_root="$1"
+  repo_root="$(cd "${repo_root}" && pwd -P)" || return 2
   local command_name="${2:-crap}"
   local external_jar="${MAKEVN_CRAP4JAVA_JAR:-}"
   local maven_base_path=""
@@ -318,9 +319,12 @@ makevn_crap_run() {
     raw_log="${raw_dir}/report-${report_index}.log"
     raw_json="${raw_log%.log}.json"
     set +e
-    "${java_bin}" -jar "${analyzer_jar}" \
-      --format json --jacoco-xml "${xml_path}" --report-only --threshold "${threshold}" \
-      "${java_sources[@]}" >"${raw_json}" 2>"${raw_log}"
+    (
+      cd "${repo_root}" || exit 2
+      "${java_bin}" -jar "${analyzer_jar}" \
+        --format json --jacoco-xml "${xml_path}" --report-only --threshold "${threshold}" \
+        "${java_sources[@]}"
+    ) >"${raw_json}" 2>"${raw_log}"
     rc=$?
     set -e
     if [[ ${rc} -ne 0 ]]; then
