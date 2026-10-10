@@ -781,6 +781,15 @@ fn format_tool_output(output: &ToolOutput) -> (String, i32) {
     (result, exit_code)
 }
 
+fn execute_workflow_step(
+    makevn_bin: &Path, step: &Value, global_repo: Option<&str>, global_trace: bool,
+) -> ToolCallResult {
+    execute_single_step(makevn_bin, step, global_repo, global_trace)
+        .unwrap_or_else(|error| ToolCallResult {
+            output: error, exit_code: -1, duration_ms: 0, next_suggestion: None,
+        })
+}
+
 fn handle_composite_run(makevn_bin: &Path, args: &Map<String, Value>) -> Result<String, String> {
     let steps = parse_steps(args)?;
     let fail_fast = args
@@ -800,16 +809,7 @@ fn handle_composite_run(makevn_bin: &Path, args: &Map<String, Value>) -> Result<
             .as_str()
             .ok_or_else(|| String::from("each step must have a 'tool' field"))?;
 
-        let result =
-            match execute_single_step(makevn_bin, step, global_repo, trace_output(args) == "1") {
-                Ok(result) => result,
-                Err(error) => ToolCallResult {
-                    output: error,
-                    exit_code: -1,
-                    duration_ms: 0,
-                    next_suggestion: None,
-                },
-            };
+        let result = execute_workflow_step(makevn_bin, step, global_repo, trace_output(args) == "1");
         let exit_code = result.exit_code;
         results.push(step_tool_result(i, step_tool, &result));
         if exit_code != 0 {

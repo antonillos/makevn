@@ -998,3 +998,11 @@ fn focused_defaults_and_explicit_exhaustive_are_consistent() {
     }
     assert!(super::push_tool_option(&mut vec![], "focused", &json!("false")).is_err());
 }
+
+#[test]
+fn valid_workflow_execution_errors_remain_failed_tool_results() {
+    let result = super::execute_workflow_step(Path::new("/makevn-missing-executable"),
+        &json!({"tool":"clean"}), None, false);
+    assert_eq!(result.exit_code, -1);
+    assert!(result.output.contains("failed to execute makevn"));
+}
