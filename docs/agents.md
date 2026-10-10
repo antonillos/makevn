@@ -717,3 +717,12 @@ rejects noninteractive, compact and JSON execution before changing anything.
 It does not reset environment variables or stop containers. Reset is CLI-only
 and is not an init option or MCP tool argument. Ordinary init --force still
 preserves settings. The repository must already be initialized and supported.
+
+### Installing current sources
+
+`./install.sh` builds the current Rust CLI and MCP sources before installing
+anything. `git pull && ./install.sh` is sufficient for a source update. Build
+failure leaves the existing installation unchanged. `--no-build` is an explicit
+prebuilt-artifact option for controlled packaging/test workflows, not the normal
+update path; it does not check source freshness. Reload/restart MCP clients
+after installation. Build metadata is published only after a successful build.

@@ -868,7 +868,7 @@ test_checkstyle_requires_configured_plugin() {
 
 test_installer() {
   local prefix="${TMP_ROOT}/install-prefix"
-  PREFIX="${prefix}" "${ROOT_DIR}/install.sh" >/dev/null
+  PREFIX="${prefix}" "${ROOT_DIR}/install.sh" --no-build >/dev/null
   assert_file_exists "${prefix}/bin/makevn"
   assert_file_exists "${prefix}/bin/makevn-mcp"
   assert_file_exists "${prefix}/libexec/makevn/jdk/manager.sh"
@@ -910,7 +910,7 @@ test_mcp_tool_listing() {
   [[ -x "${ROOT_DIR}/target/release/makevn" ]] || return 0
   [[ -x "${ROOT_DIR}/target/release/makevn-mcp" ]] || return 0
 
-  PREFIX="${prefix}" "${ROOT_DIR}/install.sh" >/dev/null
+  PREFIX="${prefix}" "${ROOT_DIR}/install.sh" --no-build >/dev/null
 
   printf '%s\n%s\n' \
     '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"smoke","version":"0"}}}' \
@@ -1094,7 +1094,7 @@ test_tail_degrades_without_tty() {
   printf '<project/>\n' > "${repo}/pom.xml"
   java_home="$(detect_java_home)"
 
-  PREFIX="${install_prefix}" "${ROOT_DIR}/install.sh" --rust >/dev/null
+  PREFIX="${install_prefix}" "${ROOT_DIR}/install.sh" --no-build --rust >/dev/null
   "${tail_cli}" --repo "${repo}" init >/dev/null
   cat > "${repo}/mvnw" <<'EOF'
 #!/usr/bin/env bash
@@ -1218,7 +1218,7 @@ test_compact_tty_omits_color_and_loader() {
   printf '<project/>\n' > "${repo}/pom.xml"
   java_home="$(detect_java_home)"
 
-  PREFIX="${install_prefix}" "${ROOT_DIR}/install.sh" --rust >/dev/null
+  PREFIX="${install_prefix}" "${ROOT_DIR}/install.sh" --no-build --rust >/dev/null
   "${compact_cli}" --repo "${repo}" init >/dev/null
   cat > "${repo}/mvnw" <<'EOF'
 #!/usr/bin/env bash
@@ -1258,7 +1258,7 @@ test_loader_defers_backend_stderr_until_progress_is_cleared() {
   mkdir -p "${repo}"
   printf '<project/>\n' > "${repo}/pom.xml"
   java_home="$(detect_java_home)"
-  PREFIX="${install_prefix}" "${ROOT_DIR}/install.sh" --rust >/dev/null
+  PREFIX="${install_prefix}" "${ROOT_DIR}/install.sh" --no-build --rust >/dev/null
   "${warning_cli}" --repo "${repo}" init >/dev/null
   cat > "${repo}/mvnw" <<'EOF'
 #!/usr/bin/env bash
@@ -1668,7 +1668,7 @@ test_docker_up_missing_compose_writes_log() {
   local output_file="${repo}/docker-up.out"
 
   [[ -x "${ROOT_DIR}/target/release/makevn" ]] || return 0
-  PREFIX="${install_prefix}" "${ROOT_DIR}/install.sh" --rust >/dev/null
+  PREFIX="${install_prefix}" "${ROOT_DIR}/install.sh" --no-build --rust >/dev/null
 
   mkdir -p "${repo}"
 
@@ -2012,7 +2012,7 @@ test_run_app_tail_shows_application_log() {
   local rc=0
 
   [[ -x "${ROOT_DIR}/target/release/makevn" ]] || return 0
-  PREFIX="${install_prefix}" "${ROOT_DIR}/install.sh" --rust >/dev/null
+  PREFIX="${install_prefix}" "${ROOT_DIR}/install.sh" --no-build --rust >/dev/null
 
   mkdir -p "${repo}/code/boot/src/main/java/com/example"
   mkdir -p "${repo}/code/boot/target"
@@ -2307,7 +2307,7 @@ test_karate_all_rust_frontend_reports_run_app_bg_failure() {
   local clean_output_file="${TMP_ROOT}/karate-all-run-app-bg-failure.clean.out"
 
   [[ -x "${ROOT_DIR}/target/release/makevn" ]] || return 0
-  PREFIX="${install_prefix}" "${ROOT_DIR}/install.sh" --rust >/dev/null
+  PREFIX="${install_prefix}" "${ROOT_DIR}/install.sh" --no-build --rust >/dev/null
 
   mkdir -p "${repo}/code/boot/src/main/resources"
   mkdir -p "${repo}/code/boot/src/main/java/com/example"
@@ -3988,7 +3988,7 @@ test_sequential_commands() {
   local java_home
 
   [[ -x "${ROOT_DIR}/target/release/makevn" ]] || return 0
-  PREFIX="${install_prefix}" "${ROOT_DIR}/install.sh" --rust >/dev/null
+  PREFIX="${install_prefix}" "${ROOT_DIR}/install.sh" --no-build --rust >/dev/null
 
   mkdir -p "${repo}"
   mkdir -p "${repo}/code/boot/src/test/resources/compose"
@@ -4158,7 +4158,7 @@ test_command_typo_rejected_before_backend() {
   local output=""
 
   [[ -x "${ROOT_DIR}/target/release/makevn" ]] || return 0
-  PREFIX="${install_prefix}" "${ROOT_DIR}/install.sh" --rust >/dev/null
+  PREFIX="${install_prefix}" "${ROOT_DIR}/install.sh" --no-build --rust >/dev/null
 
   mkdir -p "${repo}"
   printf '<project/>\n' > "${repo}/pom.xml"
@@ -4179,7 +4179,7 @@ test_command_failure_summary_omits_duplicate_elapsed() {
   local output=""
 
   [[ -x "${ROOT_DIR}/target/release/makevn" ]] || return 0
-  PREFIX="${install_prefix}" "${ROOT_DIR}/install.sh" --rust >/dev/null
+  PREFIX="${install_prefix}" "${ROOT_DIR}/install.sh" --no-build --rust >/dev/null
 
   mkdir -p "${repo}"
   printf '<project/>\n' > "${repo}/pom.xml"
@@ -4777,5 +4777,6 @@ test_removed_exec_rejected() {
 
 source "${ROOT_DIR}/test/smoke/doctor_health_test.sh"
 
+python3 "${ROOT_DIR}/test/smoke/install_build_test.py"
 bash "${ROOT_DIR}/test/smoke/reset_config_test.sh"
 main "$@"
