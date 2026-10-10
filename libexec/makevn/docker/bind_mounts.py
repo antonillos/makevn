@@ -15,7 +15,14 @@ def query(argv, cwd):
 
 
 def compose_command(repo, compose, override):
-    command = ["docker", "compose"] if shutil.which("docker") else ["docker-compose"]
+    # Match commands/docker.sh: standalone first, then an available plugin.
+    if shutil.which("docker-compose"):
+        command = ["docker-compose"]
+    else:
+        version = query(["docker", "compose", "version"], repo)
+        if version is None or version.returncode:
+            return None
+        command = ["docker", "compose"]
     command += ["-f", compose]
     if override and Path(override).is_file():
         command += ["-f", override]
@@ -39,6 +46,8 @@ def diagnostics(mode, repo, compose, override=""):
     if not compose or not Path(compose).is_file():
         return {"status": "unavailable", "checks": []}
     command = compose_command(repo, compose, override)
+    if command is None:
+        return {"status": "unavailable", "checks": [], "note": "No usable Docker Compose command found."}
     result = query(command + ["config", "--format", "json"], repo)
     if result is None or result.returncode:
         return {"status": "unavailable", "checks": [], "note": "Resolved compose JSON unavailable; bind mounts were not verified."}

@@ -13,6 +13,22 @@ module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(module)
 
 class BindMountTests(unittest.TestCase):
+    def setUp(self):
+        availability = patch.object(module.shutil, "which", return_value="/fixture/docker-compose")
+        availability.start()
+        self.addCleanup(availability.stop)
+
+    def test_compose_resolution_matches_shell_resolver(self):
+        with patch.object(module.shutil, "which", return_value="/fixture/docker-compose"), patch.object(module, "query") as probe:
+            self.assertEqual(module.compose_command("/tmp", "/compose", ""), ["docker-compose", "-f", "/compose"])
+            probe.assert_not_called()
+        with patch.object(module.shutil, "which", return_value=None):
+            with patch.object(module, "query", return_value=subprocess.CompletedProcess([], 0, "version", "")) as probe:
+                self.assertEqual(module.compose_command("/tmp", "/compose", ""), ["docker", "compose", "-f", "/compose"])
+                probe.assert_called_once_with(["docker", "compose", "version"], "/tmp")
+            with patch.object(module, "query", return_value=subprocess.CompletedProcess([], 1, "", "plugin missing")):
+                self.assertIsNone(module.compose_command("/tmp", "/compose", ""))
+
     def test_visible_missing_unknown_and_no_mutation(self):
         with tempfile.TemporaryDirectory() as tmp:
             compose = Path(tmp) / "compose.yml"
