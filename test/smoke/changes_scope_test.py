@@ -45,6 +45,17 @@ class ScopeTests(unittest.TestCase):
                 "code/client/src/main/java/Owner.java", "code/client/src/test/java/OwnerTest.java",
                 "code/boot/src/test/java/OwnerIT.java"]), "boot,client")
 
+    def test_unclassified_build_paths_require_broad_verification(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repo = pathlib.Path(directory)
+            for path in ['.mvn/maven.config', '.mvn/extensions.xml', 'build.sh', 'code/build.sh']:
+                with self.subTest(path=path):
+                    self.assertEqual(scope.selection(repo, repo / 'code', 'HEAD', [path]), '.')
+                    with self.assertRaises(ValueError):
+                        scope.focused_plan(repo, repo / 'code', 'HEAD', [path])
+            self.assertEqual(scope.selection(repo, repo / 'code', 'HEAD', ['README.md', 'docs/guide.md']), '')
+            self.assertEqual(scope.selection(repo, repo / 'code', 'HEAD', ['code/client/src/main/resources/config.txt']), 'client')
+
     def test_root_java_requires_full_reactor(self):
         with tempfile.TemporaryDirectory() as directory:
             repo = pathlib.Path(directory)

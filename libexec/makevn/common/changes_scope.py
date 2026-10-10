@@ -72,12 +72,20 @@ def bump_consumers(base, previous, current):
     return consumers or None
 
 
+def documentation_path(path):
+    if '/src/' in path or path.startswith(('src/', '.mvn/')):
+        return False
+    return pathlib.Path(path).suffix.lower() in {'.md', '.rst'} or path.startswith('docs/') or pathlib.Path(path).name in {'LICENSE', 'NOTICE', 'README.txt'}
+
+
 def selection(repo, base, reference, paths):
     modules = set()
     for path in paths:
         absolute = repo / path
-        if not absolute.is_relative_to(base):
+        if documentation_path(path):
             continue
+        if not absolute.is_relative_to(base):
+            return "."
         relative = absolute.relative_to(base).as_posix()
         if "/src/" in relative:
             modules.add(relative.split("/src/", 1)[0])
@@ -92,6 +100,8 @@ def selection(repo, base, reference, paths):
             if consumers is None:
                 return "."
             modules.update(consumers)
+        else:
+            return "."  # Unclassified files may alter the whole build.
     return ",".join(sorted(modules))
 
 
