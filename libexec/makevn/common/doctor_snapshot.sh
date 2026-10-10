@@ -581,9 +581,20 @@ makevn_collect_doctor_snapshot() {
   if command -v python3 >/dev/null 2>&1; then
     MAKEVN_DOCTOR_BIND_MOUNTS="$(python3 "${MAKEVN_LIBEXEC_DIR}/docker/bind_mounts.py" doctor "${repo_root}" "${compose_file}" "$(makevn_boot_compose_override_file_path "${repo_root}" || true)" || printf '{"status":"unavailable","checks":[]}')"
   fi
+  makevn_doctor_refresh_setup_answers "${repo_root}"
   makevn_doctor_interactive_setup_status
   makevn_doctor_interaction_status
   makevn_doctor_record_build "${repo_root}"
+}
+
+# Prompt persistence must be reflected in this invocation's final setup verdict.
+makevn_doctor_refresh_setup_answers() {
+  local repo_root="$1"
+  makevn_load_config "${repo_root}"
+  local_containers_configured=no
+  if [[ -f "$(makevn_config_path "${repo_root}")" ]] && grep -q '^MAKEVN_LOCAL_CONTAINERS=' "$(makevn_config_path "${repo_root}")"; then
+    local_containers_configured=yes
+  fi
 }
 
 # Report questions that noninteractive clients cannot answer.

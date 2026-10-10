@@ -33,3 +33,23 @@ makevn_doctor_interaction_status
 MAKEVN_DOCTOR_INTERACTIVE_REQUIRED=false
 makevn_doctor_interaction_status
 [[ "${MAKEVN_DOCTOR_SETUP_STATUS}" == ready && -z "${MAKEVN_DOCTOR_INTERACTION_BLOCKERS}" ]]
+# Saved answers must refresh the final verdict without a second doctor run.
+tmp="$(mktemp -d)"
+trap 'rm -rf "${tmp}"' EXIT
+mkdir "${tmp}/.makevn"
+makevn_write_config "${tmp}"
+MAKEVN_APP_HEALTH_URL=''
+local_containers_configured=no
+verify_it_local_containers_default=TRUE
+MAKEVN_DOCTOR_KARATE_APP_PROFILES='standalone,local'
+makevn_update_config_app_health_url "${tmp}" 'http://localhost/health'
+for preference in TRUE ''; do
+  makevn_update_config_local_containers "${tmp}" "${preference}"
+  MAKEVN_APP_HEALTH_URL=''
+  local_containers_configured=no
+  makevn_doctor_refresh_setup_answers "${tmp}"
+  makevn_doctor_interactive_setup_status
+  [[ "${MAKEVN_APP_HEALTH_URL}" == 'http://localhost/health' ]]
+  [[ "${local_containers_configured}" == yes ]]
+  [[ "${MAKEVN_DOCTOR_INTERACTIVE_REQUIRED}" == false ]]
+done
