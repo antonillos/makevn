@@ -545,6 +545,8 @@ makevn verify-changes
 
 Do not prepend clean by default: it forces rebuilding. A large preparation reactor
 is normal; its UT/IT suites must be disabled, followed by owner verify without -am.
+After focused success, run coverage_changes then crap_changes with fail-fast=true:
+both use the same fresh changed-class UT/IT snapshot without repeating tests.
 Focused checks do not produce a fresh global coverage gate. If full coverage is
 requested, run the appropriate full verify_ut_coverage or verify_it_coverage flow
 then coverage_changes, with fail-fast=true; preserve required CRAP gates too.
@@ -914,8 +916,9 @@ unknown fields/tools/options or wrong types reject the entire workflow before ev
 `clean` can run. Never add `clean` merely to obtain faster changed-code feedback.
 Inspect a focused preview separately before executing its reviewed plan. Set
 `fail-fast: true` for dependent verification/coverage/CRAP gates; reserve false for
-explicitly requested independent diagnostics or required cleanup (never to continue dependent gates). Focused success alone does not
-produce the global coverage needed by those gates.
+explicitly requested independent diagnostics or required cleanup (never to continue dependent gates).
+Focused verify_changes coordinates fresh changed-class evidence for coverage_changes
+and crap_changes; it does not produce global coverage. Do not substitute it for full CI gates.
 
 Focused is now the default for both changed-code commands. Explicit `--focused`
 remains a compatible alias; broader selected suites require `--exhaustive` (MCP

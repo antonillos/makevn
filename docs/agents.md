@@ -833,3 +833,36 @@ Focused is now the default for both changed-code commands. Explicit `--focused`
 remains a compatible alias; broader selected suites require `--exhaustive` (MCP
 `focused: false`). Unknown impact requires a scope decision, never an automatic
 full verification fallback.
+
+### Coordinated focused verification, coverage and CRAP
+
+After doctor/setup and Docker readiness where needed, run:
+
+```bash
+makevn verify-changes-preview
+makevn verify-changes coverage-changes crap-changes
+```
+
+Focused verification moves previous `.exec`/`.coverage` files under selected
+module `target` directories to one `.before-focused` backup before Maven starts.
+Only a successful run publishes isolated execution-data and changed-class
+bytecode snapshots under `.makevn/focused-coverage`. Failed/interrupted
+runs invalidate previous focused evidence. A new run replaces its old snapshot.
+
+`coverage-changes` merges fresh UT/IT data into a changed-class JaCoCo report
+without running Maven lifecycle phases or tests. Its first report may resolve
+pinned JaCoCo CLI 0.8.14 via Maven's dependency plugin against a standalone POM;
+subsequent `crap-changes` uses the same cached XML and method coverage. Source,
+configuration, comparison-ref and evidence hashes guard against stale reuse.
+No data, missing bytecode or mismatched data blocks the gate instead of falling
+back to an old global aggregate. Nonstandard data paths outside module `target`,
+test/POM-only changes without changed production classes, and unsupported
+bytecode require the explicit full coverage flow; no automatic broad rerun.
+An explicit `--overall-threshold` is rejected on focused evidence, not ignored. Successful
+verify-ut-coverage/verify-it-coverage retires focused evidence so subsequent
+coverage-changes uses that full report.
+
+This is **focused changed-class coverage**, not overall-project coverage. The
+overall-project gate is explicitly not evaluated on this scoped report; required
+full coverage/CI gates remain separate. For MCP use `arguments`, not `args`, and
+`fail-fast: true` for the coordinated verification/coverage/CRAP sequence.

@@ -138,7 +138,9 @@ flowchart TD
   Mode -->|Yes| Verify[Selected module suites plus Maven -am dependencies]
   Mode -->|No - focused default| Prepare[Install dependencies without UT/IT]
   Prepare --> Focus[Production owner suites and changed tests without -am]
-  Focus --> Separate
+  Focus --> Snapshot[Fresh UT/IT and bytecode snapshot]
+  Snapshot --> ScopedReport[coverage-changes: changed-class report, no tests]
+  ScopedReport --> ScopedCRAP[crap-changes: same XML and method coverage]
   Consumers --> Mode
   Verify --> Separate[Aggregate is not automatically selected]
   Separate --> Gate[Separate full coverage-enabled verify before global coverage gate]
@@ -153,9 +155,10 @@ local consumers; unknown models fall back to full verification.
 
 Verification recalculates its plan rather than trusting a preview after local
 content edits. `coverage-changes` rejects an aggregate report older than the last
-scoped run. This timestamp guard does **not** establish freshness of every execution
-file: fresh scoped coverage remains separate follow-up work. Focused verification does
-not claim a global coverage result.
+scoped run when using the legacy aggregate path. Focused runs now publish isolated
+fresh UT/IT and bytecode evidence; coverage-changes generates a changed-class
+report and crap-changes reuses it. Source/config/base changes or failed runs
+reject that evidence. Focused verification does not claim a global coverage result.
 
 ### Explicit focused execution
 
@@ -208,8 +211,9 @@ then execute the reviewed focused plan. Do not automatically prepend `clean`, wh
 forces rebuilding. Use `fail-fast: true` for dependent verification/coverage/CRAP
 steps so failed prerequisite runs cannot be treated as fresh evidence. False is
 only appropriate when continued independent diagnostics are explicitly wanted.
-Focused verification does not automatically produce the global coverage required
-by coverage/CRAP gates: run the appropriate coverage-producing flow separately.
+Use verify_changes → coverage_changes → crap_changes for focused changed-code
+gates: one fresh UT/IT snapshot, no repeated tests. Overall-project coverage still
+requires the separate full coverage-producing flow.
 
 Focused is now the default for both changed-code commands. Explicit `--focused`
 remains a compatible alias; broader selected suites require `--exhaustive` (MCP

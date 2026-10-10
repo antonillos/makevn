@@ -271,6 +271,7 @@ cmd_verify_ut_coverage() {
   fi
   [[ ${rc} -eq 0 ]] || return ${rc}
   makevn_require_jacoco_xml_report "${maven_base_path}"
+  rm -f "$(makevn_state_dir "${repo_root}")/focused-coverage/run.json"
   makevn_print_jacoco_report_hint "${maven_base_path}"
   return ${rc}
 }
@@ -301,6 +302,7 @@ cmd_verify_it_coverage() {
   fi
   [[ ${rc} -eq 0 ]] || return ${rc}
   makevn_require_jacoco_xml_report "${maven_base_path}"
+  rm -f "$(makevn_state_dir "${repo_root}")/focused-coverage/run.json"
   makevn_print_jacoco_report_hint "${maven_base_path}"
   return ${rc}
 }

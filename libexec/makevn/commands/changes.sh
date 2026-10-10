@@ -3,6 +3,7 @@ set -euo pipefail
 
 # shellcheck source=focused_changes.sh
 source "${SCRIPT_DIR}/commands/focused_changes.sh"
+source "${SCRIPT_DIR}/commands/scoped_coverage.sh"
 
 makevn_effective_coverage_threshold() {
   local repo_root="$1"
@@ -557,7 +558,9 @@ No modified Java or POM files detected. Skipping verify-changes."
   # A narrowed run is not evidence for a previously generated global report.
   mkdir -p "$(makevn_state_dir "${repo_root}")"
   touch "$(makevn_state_dir "${repo_root}")/verify-changes-started"
+  rm -f "$(makevn_scoped_coverage_state "${repo_root}")/run.json"
   cli_flags_value="$(makevn_maven_cli_flags_for_command "${repo_root}" verify)"
+  cli_flags_value="$(makevn_append_coverage_cli_flags "${repo_root}" "${cli_flags_value}")"
   cli_flags_value="$(makevn_append_word "${cli_flags_value}" "-nsu")"
   if [[ -n "${cli_flags_value}" ]]; then
     read -r -a cli_flags <<< "${cli_flags_value}"
@@ -579,7 +582,11 @@ No modified Java or POM files detected. Skipping verify-changes."
   if [[ "${MAKEVN_VERIFY_CHANGES_MODE}" == focused ]]; then
     [[ ${#extra_args[@]} -eq 0 ]] || makevn_die "Focused verification does not accept Maven passthrough; use --exhaustive."
     makevn_validate_focused_flags ${cli_flags[@]+"${cli_flags[@]}"} ${prop_flags[@]+"${prop_flags[@]}"}
-    if makevn_run_focused_changes "${repo_root}"; then rc=0; else rc=$?; fi
+    makevn_scoped_coverage_prepare "${repo_root}" || return $?
+    if makevn_run_focused_changes "${repo_root}"; then
+      makevn_scoped_coverage_finish "${repo_root}" || return $?
+      rc=0
+    else rc=$?; fi
     makevn_clear_verify_changes_plan "${repo_root}"
     return "${rc}"
   fi
@@ -641,6 +648,7 @@ cmd_coverage_changes() {
   local threshold=""
   local overall_threshold=""
   local verbose=false
+  local explicit_overall=false
   local coverage_script=""
   local coverage_output=""
   local coverage_output_file=""
@@ -665,6 +673,7 @@ cmd_coverage_changes() {
       --overall-threshold)
         [[ $# -ge 2 ]] || makevn_die "Missing value for --overall-threshold"
         overall_threshold="$2"
+        explicit_overall=true
         shift 2
         ;;
       --verbose)
@@ -697,11 +706,17 @@ cmd_coverage_changes() {
     maven_base_rel="${physical_maven_base_path#${physical_git_root}/}"
   fi
 
+  local focused_state="$(makevn_scoped_coverage_state "${repo_root}")"
+  if [[ -f "${focused_state}/run.json" ]]; then
+    [[ "${explicit_overall}" == false ]] || makevn_die "--overall-threshold requires a full coverage report; run verify-ut-coverage or verify-it-coverage first."
+    report_dir="$(makevn_scoped_coverage_report "${repo_root}" "${maven_base_path}")" || return $?
+    makevn_print_detail_line "Focused coverage: current changed classes, merged UT/IT evidence; not a global coverage gate."
+  else
   report_dir="$(makevn_jacoco_report_dir "${maven_base_path}" || true)"
   [[ -n "${report_dir}" ]] || makevn_die "No JaCoCo aggregate module detected under ${maven_base_path}"
   local scoped_run_stamp="$(makevn_state_dir "${repo_root}")/verify-changes-started"
   if [[ -f "${scoped_run_stamp}" && ! "${report_dir}/index.html" -nt "${scoped_run_stamp}" ]]; then
-    makevn_die "Aggregate coverage is older than the last scoped verification. Run a separate full coverage-enabled verify (verify-ut-coverage or verify-it-coverage); verify-changes no longer builds the global aggregator."
+    makevn_die "Aggregate coverage is older than the last scoped verification. Rerun focused verify-changes with this version to publish fresh UT/IT evidence, or run full verify-ut-coverage/verify-it-coverage for the global gate; verify-changes no longer builds the global aggregator."
   fi
 
   if [[ ! -f "${report_dir}/index.html" ]]; then
@@ -739,6 +754,8 @@ cmd_coverage_changes() {
     [[ -f "${report_dir}/index.html" ]] || makevn_die "Could not generate JaCoCo report. Run 'makevn verify' first."
   fi
 
+  fi
+
   makevn_require_jacoco_csv_classes "${report_dir}/jacoco.csv"
 
   parent_spec="$(makevn_detect_parent_branch_spec "${repo_root}")"
@@ -749,7 +766,7 @@ cmd_coverage_changes() {
   coverage_output_file="$(mktemp "${TMPDIR:-/tmp}/makevn-coverage-changes.XXXXXX")"
   set +e
   (
-    cd "${git_root}" && BASE_PATH="${maven_base_rel}" COVERAGE_VERBOSE="${verbose}" MAKEVN_COVERAGE_FIRST_PARENT_ONLY=1 bash "${coverage_script}" "${report_dir}" "${parent_spec}" "${threshold}" "${overall_threshold}"
+    cd "${git_root}" && BASE_PATH="${maven_base_rel}" COVERAGE_VERBOSE="${verbose}" MAKEVN_COVERAGE_SCOPED="$(test -f "${focused_state}/run.json" && printf true || printf false)" MAKEVN_COVERAGE_FIRST_PARENT_ONLY=1 bash "${coverage_script}" "${report_dir}" "${parent_spec}" "${threshold}" "${overall_threshold}"
   ) > "${coverage_output_file}" 2>&1
   rc=$?
   set -e
