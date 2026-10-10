@@ -682,13 +682,15 @@ makevn_run_selected_test_phase() (
 
 makevn_archive_selected_test() {
   local repo_root="$1" test_name="$2" rc="$3" duration="$4"
+  local command_key="${5:-test}" phase_title="${test_name}"
+  [[ "${command_key}" != test ]] || phase_title="test ${test_name}"
   [[ -n "${MAKEVN_BACKEND_PHASE_DIR:-}" ]] || return 0
   local record="${MAKEVN_BACKEND_PHASE_DIR}/${index}" tmp
   tmp="$(mktemp "${record}.tmp.XXXXXX")"
   if [[ -s "${MAKEVN_BACKEND_METADATA_OUT:-}" ]]; then
     cp "${MAKEVN_BACKEND_METADATA_OUT}" "${tmp}"
   else
-    printf 'command=test\nrepo=%s\ncwd=%s\nlog_path=\nrelative_log_path=\ncommand_display=makevn test\ntitle=test %s\n' "${repo_root}" "${repo_root}" "${test_name}" > "${tmp}"
+    printf 'command=%s\nrepo=%s\ncwd=%s\nlog_path=\nrelative_log_path=\ncommand_display=makevn %s\ntitle=%s\n' "${command_key}" "${repo_root}" "${repo_root}" "${command_key}" "${phase_title}" > "${tmp}"
   fi
   printf '\nduration_seconds=%s\nexit_code=%s\n' "${duration}" "${rc}" >> "${tmp}"
   [[ -z "${MAKEVN_BACKEND_DETAIL_OUT:-}" ]] || cp "${MAKEVN_BACKEND_DETAIL_OUT}" "${record}.detail"

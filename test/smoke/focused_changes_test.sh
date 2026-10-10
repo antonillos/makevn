@@ -32,6 +32,8 @@ sed -n '1p' "${tmp}/commands" | grep -Fq -- '-pl boot,client -am install -DskipT
 sed -n '2p' "${tmp}/commands" | grep -Fq -- '-pl boot verify -DskipTests=false -DskipUTs=false -DskipITs=false -Dtest=!%regex[.*] -Dit.test=example.OwnersIT'
 sed -n '3p' "${tmp}/commands" | grep -q -- '-pl client verify -DskipTests=false -DskipUTs=false -DskipITs=false$'
 ! tail -n 2 "${tmp}/commands" | grep -q -- '-am'
+grep -q 'command=verify-changes' "${MAKEVN_BACKEND_PHASE_DIR}/1"
+grep -q 'title=prepare dependencies (no tests)' "${MAKEVN_BACKEND_PHASE_DIR}/1"
 [[ -f "${MAKEVN_BACKEND_PHASE_DIR}/1" && -f "${MAKEVN_BACKEND_PHASE_DIR}/2" && -f "${MAKEVN_BACKEND_PHASE_DIR}/3" ]]
 : > "${tmp}/commands"
 FAIL_PREPARE=1

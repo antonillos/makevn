@@ -3377,10 +3377,25 @@ EOF
   [[ "${output}" == *'verify boot: example.OwnersIT'* ]] || fail 'missing boot IT selection'
   [[ "${output}" == *'verify client: entire module suite'* ]] || fail 'missing production suite'
   [[ ! -f "${repo}/.mvnw.log" ]] || fail 'focused preview executed Maven'
+  mkdir -p "${repo}/.makevn/logs"
+  printf 'previous prepare diagnostic\n' > "${repo}/.makevn/logs/verify-changes-1.log"
+  chmod 444 "${repo}/.makevn/logs/verify-changes-1.log"
   ${CLI} --repo "${repo}" verify-changes >/dev/null
   assert_contains "${repo}/.mvnw.log" '-pl boot,client -am install -DskipTests=true -DskipUTs=true -DskipITs=true'
   assert_contains "${repo}/.mvnw.log" '-pl boot verify -DskipTests=false -DskipUTs=false -DskipITs=false -Dtest=!%regex[.*] -Dit.test=example.OwnersIT'
   assert_matches "${repo}/.mvnw.log" '.*-pl client verify -DskipTests=false -DskipUTs=false -DskipITs=false$'
+  assert_contains "${repo}/.makevn/logs/verify-changes-1.log.previous" 'previous prepare diagnostic'
+  local before_log_failure
+  before_log_failure="$(wc -l < "${repo}/.mvnw.log")"
+  rm "${repo}/.makevn/logs/verify-changes-1.log"
+  mkdir "${repo}/.makevn/logs/verify-changes-1.log"
+  if output="$(${CLI} --repo "${repo}" verify-changes 2>&1)"; then
+    fail 'nonregular log accepted'
+  fi
+  [[ "${output}" == *'Cannot prepare log'* ]] || fail 'missing prepare log diagnostic'
+  [[ "${output}" != *'test prepare dependencies'* ]] || fail 'wrong fallback phase title'
+  [[ "$(wc -l < "${repo}/.mvnw.log")" == "${before_log_failure}" ]] || fail 'Maven launched after log failure'
+  rmdir "${repo}/.makevn/logs/verify-changes-1.log"
   touch "${repo}/.missing-reports"
   if output="$(${CLI} --repo "${repo}" verify-changes 2>&1)"; then
     fail 'stale test evidence accepted'
@@ -4840,6 +4855,7 @@ bash "${ROOT_DIR}/test/smoke/init_presentation_test.sh"
 python3 "${ROOT_DIR}/test/smoke/question_style_test.py"
 python3 "${ROOT_DIR}/test/smoke/install_build_test.py"
 bash "${ROOT_DIR}/test/smoke/reset_config_test.sh"
+bash "${ROOT_DIR}/test/smoke/log_reuse_test.sh"
 bash "${ROOT_DIR}/test/smoke/focused_changes_test.sh"
 python3 "${ROOT_DIR}/test/smoke/selected_test_reports_test.py"
 python3 "${ROOT_DIR}/test/smoke/changes_scope_test.py"

@@ -31,7 +31,7 @@ makevn_focused_changes_phase() (
   if [[ "${rc}" == 0 ]]; then
     makevn_require_focused_test_reports || rc=$?
   fi
-  makevn_archive_selected_test "${repo_root}" "${phase}" "${rc}" "$((SECONDS - started))"
+  makevn_archive_selected_test "${repo_root}" "${phase}" "${rc}" "$((SECONDS - started))" verify-changes
   exit "${rc}"
 )
 

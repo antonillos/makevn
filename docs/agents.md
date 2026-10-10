@@ -706,6 +706,14 @@ than discarding all results or assuming all steps succeeded.
 `logPaths` contains unique paths in encounter order, including workflow-step
 paths. Paths are relative to the target repository when reported that way.
 An empty array means no log header was reported, not that no logs exist.
+Before each logged command, makevn prepares a fresh owner-writable log file
+and retains one preceding run as `<log-name>.log.previous` (bounded rotation).
+An old read-only log does not prevent reuse when its directory permits renaming.
+Symlinks and non-regular log/backup paths are rejected; directory permission or
+rotation failures stop before launching the command and report the affected
+path, rather than displaying stale diagnostics. Fixed log names do not provide
+isolation for simultaneous executions of the same command in one checkout.
+
 Standalone log headers move into this field. Without `trace`, redundant success
 timings are omitted; `trace: true` retains command echoes and timings. Diagnostics
 and meaningful results remain available with either setting. CLI output and

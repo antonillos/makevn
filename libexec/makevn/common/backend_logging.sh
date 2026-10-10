@@ -1,6 +1,37 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+makevn_require_regular_log_path() {
+  if [[ -L "$1" || ( -e "$1" && ! -f "$1" ) ]]; then
+    printf 'Log path is not a regular file: %s\n' "$1" >&2
+    return 1
+  fi
+}
+
+makevn_rotate_logfile() (
+  local logfile="$1" fresh
+  mkdir -p "$(dirname "${logfile}")" || return 1
+  makevn_require_regular_log_path "${logfile}" || return 1
+  makevn_require_regular_log_path "${logfile}.previous" || return 1
+  fresh="$(mktemp "${logfile}.new.XXXXXX")" || return 1
+  trap 'rm -f "${fresh}"' EXIT
+  if [[ -e "${logfile}" ]]; then
+    mv -f "${logfile}" "${logfile}.previous" || return 1
+  fi
+  mv -f "${fresh}" "${logfile}" || return 1
+)
+
+makevn_prepare_logfile() {
+  local diagnostic
+  if diagnostic="$(makevn_rotate_logfile "$1" 2>&1)"; then return 0; fi
+  diagnostic="Cannot prepare log $1: ${diagnostic}. Command was not started; check log-directory permissions and file type."
+  printf '%s\n' "${diagnostic}" >&2
+  if [[ -n "${MAKEVN_BACKEND_DETAIL_OUT:-}" ]]; then
+    printf '%s\n' "${diagnostic}" > "${MAKEVN_BACKEND_DETAIL_OUT}"
+  fi
+  return 1
+}
+
 makevn_metadata_escape_value() {
   local value="$1"
   value="${value//$'\n'/ }"
@@ -56,8 +87,8 @@ makevn_write_quick_backend_log() {
   local metadata_out="${MAKEVN_BACKEND_METADATA_OUT:-}"
 
   logs_dir="$(makevn_logs_dir "${repo_root}")"
-  mkdir -p "${logs_dir}"
   logfile="${logs_dir}/${log_name}.log"
+  makevn_prepare_logfile "${logfile}" || return $?
   relative_log_path=".makevn/logs/${log_name}.log"
 
   {
@@ -226,8 +257,8 @@ makevn_run_logged_in_context() {
   fi
 
   logs_dir="$(makevn_logs_dir "${repo_root}")"
-  mkdir -p "${logs_dir}"
   logfile="${logs_dir}/${log_name}.log"
+  makevn_prepare_logfile "${logfile}" || return $?
   relative_log_path=".makevn/logs/${log_name}.log"
 
   start_epoch="$(date +%s)"
@@ -385,8 +416,8 @@ makevn_run_logged() {
   shift 4
 
   logs_dir="$(makevn_logs_dir "${repo_root}")"
-  mkdir -p "${logs_dir}"
   logfile="${logs_dir}/${log_name}.log"
+  makevn_prepare_logfile "${logfile}" || return $?
   relative_log_path=".makevn/logs/${log_name}.log"
 
   start_epoch="$(date +%s)"
