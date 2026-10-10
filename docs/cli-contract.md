@@ -730,3 +730,13 @@ relative to the target repository, not the MCP server's working directory.
 ```json
 {"durationMs": 6739, "exitCode": 0, "tool": "test", "logPaths": [".makevn/logs/test-SampleTest.log"]}
 ```
+
+
+### Interactive tail visibility
+
+During a managed-log command, `t` or `T` toggles the live tail without
+interrupting the command or stopping log capture. Hiding it restores the normal
+dashboard; showing it again follows the current phase's log and preserves the
+chosen tail height within that command. `+/-` adjusts the visible log rows.
+The telemetry and control hints are the last row of the live block, below the
+tail (including its reserved empty rows), not fixed to the terminal's bottom.
