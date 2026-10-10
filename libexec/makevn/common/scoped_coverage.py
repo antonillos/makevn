@@ -33,6 +33,8 @@ def fingerprint(repo):
 def data_files(base, owners):
     for owner in owners:
         target = base / owner / 'target'
+        if target.is_symlink():
+            raise ValueError('Refusing linked coverage target: ' + str(target))
         for path in sorted(target.rglob('*')):
             if path.is_file() and path.suffix in {'.exec', '.coverage'}:
                 yield path
@@ -129,12 +131,13 @@ def report(repo, state, maven, java, reference=""):
         return
     jar = state / ('org.jacoco.cli-' + VERSION + '-nodeps.jar')
     if not jar.is_file():
-        pom = state / 'report-tool.pom.xml'
-        pom.write_text('<project><modelVersion>4.0.0</modelVersion><groupId>makevn</groupId><artifactId>coverage-tool</artifactId><version>1</version></project>')
-        environment = dict(os.environ, JAVA_HOME=str(Path(java).parent.parent))
-        subprocess.run([maven, '-f', str(pom), 'org.apache.maven.plugins:maven-dependency-plugin:3.8.1:copy',
-                        '-Dartifact=org.jacoco:org.jacoco.cli:' + VERSION + ':jar:nodeps',
-                        '-DoutputDirectory=' + str(state)], check=True, cwd=tempfile.gettempdir(), env=environment)
+        with tempfile.TemporaryDirectory(prefix='makevn-coverage-tool-') as directory:
+            pom = Path(directory) / 'pom.xml'
+            pom.write_text('<project><modelVersion>4.0.0</modelVersion><groupId>makevn</groupId><artifactId>coverage-tool</artifactId><version>1</version></project>')
+            environment = dict(os.environ, JAVA_HOME=str(Path(java).parent.parent))
+            subprocess.run([maven, '-f', str(pom), 'org.apache.maven.plugins:maven-dependency-plugin:3.8.1:copy',
+                            '-Dartifact=org.jacoco:org.jacoco.cli:' + VERSION + ':jar:nodeps',
+                            '-DoutputDirectory=' + str(state)], check=True, cwd=directory, env=environment)
     command = [java, '-jar', str(jar), 'report', *manifest['data'], '--classfiles', manifest['classes'],
                '--name', 'makevn focused changes (not global coverage)', '--xml', str(output / 'jacoco.xml'),
                '--csv', str(output / 'jacoco.csv'), '--html', str(output)]

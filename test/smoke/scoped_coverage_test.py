@@ -76,6 +76,15 @@ class ScopedTests(unittest.TestCase):
         self.ut.write_bytes(b'new')
         scoped.finish(self.repo, self.state)
 
+    def test_linked_target_is_rejected_before_data_is_rotated(self):
+        target = self.repo / 'client/target'
+        moved = self.repo / 'linked-target'
+        target.rename(moved)
+        target.symlink_to(moved, target_is_directory=True)
+        with self.assertRaisesRegex(ValueError, 'linked coverage target'):
+            scoped.prepare(self.repo, self.state, self.repo, ['client'], [self.source])
+        self.assertEqual((moved / 'jacoco.exec').read_bytes(), b'old UT')
+
     def test_changed_comparison_ref_is_rejected(self):
         subprocess.run(['git', '-C', str(self.repo), 'branch', 'comparison'], check=True)
         scoped.prepare(self.repo, self.state, self.repo, ['client', 'boot'], [self.source], 'comparison...HEAD')
@@ -95,6 +104,7 @@ class ScopedTests(unittest.TestCase):
                 return original_run(command, **kwargs)
             if command[0] == 'mvn':
                 self.assertIn('org.apache.maven.plugins:maven-dependency-plugin:3.8.1:copy', command)
+                self.assertFalse(Path(command[2]).is_relative_to(self.repo))
                 self.assertNotIn('-am', command)
                 self.assertNotIn('verify', command)
                 (self.state / ('org.jacoco.cli-' + scoped.VERSION + '-nodeps.jar')).touch()
