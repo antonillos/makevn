@@ -12,6 +12,32 @@ spec.loader.exec_module(scope)
 
 
 class ScopeTests(unittest.TestCase):
+    def test_focused_plan_keeps_production_suite_and_selects_boot_it(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repo = pathlib.Path(directory)
+            for owner in ("client", "boot"):
+                repo.joinpath(owner).mkdir()
+                repo.joinpath(owner, "pom.xml").write_text("<project/>")
+            it = repo / "boot/src/test/java/example/OwnersIT.java"
+            it.parent.mkdir(parents=True)
+            it.write_text("class OwnersIT {}")
+            self.assertEqual(scope.focused_plan(repo, repo, "HEAD", [
+                "client/src/main/java/example/Owner.java", "boot/src/test/java/example/OwnersIT.java"]),
+                "boot\texample.OwnersIT\nclient\t*")
+
+    def test_focused_helper_or_deleted_test_runs_entire_owner(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repo = pathlib.Path(directory)
+            repo.joinpath("boot").mkdir()
+            repo.joinpath("boot/pom.xml").write_text("<project/>")
+            self.assertEqual(scope.focused_plan(repo, repo, "HEAD", ["boot/src/test/java/DeletedIT.java"]), "boot\t*")
+
+    def test_focused_unknown_root_change_fails_closed(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repo = pathlib.Path(directory)
+            with self.assertRaises(ValueError):
+                scope.focused_plan(repo, repo, "HEAD", ["src/main/java/Owner.java"])
+
     def test_production_and_it_owner_without_aggregator(self):
         with tempfile.TemporaryDirectory() as directory:
             repo = pathlib.Path(directory)

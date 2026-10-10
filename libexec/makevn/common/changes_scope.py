@@ -95,10 +95,42 @@ def selection(repo, base, reference, paths):
     return ",".join(sorted(modules))
 
 
+def focused_plan(repo, base, reference, paths):
+    """Full suites for production/POM owners, changed tests in other owners."""
+    production = [path for path in paths if "/src/test/java/" not in path]
+    full = selection(repo, base, reference, production)
+    if full == ".":
+        raise ValueError("Unknown or root-level impact; use --exhaustive")
+    suites = set(filter(None, full.split(",")))
+    tests = {}
+    for path in paths:
+        if "/src/test/java/" not in path:
+            continue
+        absolute = repo / path
+        if not absolute.is_relative_to(base):
+            continue
+        owner, name = absolute.relative_to(base).as_posix().split("/src/test/java/", 1)
+        if not absolute.is_file() or not name.endswith(("Test.java", "IT.java", "Tests.java", "TestCase.java")):
+            suites.add(owner)  # Helpers/deletions require the owner's entire suite.
+        else:
+            tests.setdefault(owner, set()).add(name[:-5].replace("/", "."))
+    records = []
+    for owner in sorted(suites | tests.keys()):
+        if not (base / owner / "pom.xml").is_file():
+            raise ValueError("No owner POM for " + owner + "; use --exhaustive")
+        records.append(owner + "\t" + ("*" if owner in suites else ",".join(sorted(tests[owner]))))
+    return "\n".join(records)
+
+
 if __name__ == "__main__":
+    focused = "--focused-plan" in sys.argv
     try:
-        print(selection(pathlib.Path(sys.argv[1]).resolve(), pathlib.Path(sys.argv[2]).resolve(),
-                        sys.argv[3], sys.stdin.read().splitlines()))
-    except (OSError, ValueError, ET.ParseError, subprocess.CalledProcessError):
+        planner = focused_plan if focused else selection
+        print(planner(pathlib.Path(sys.argv[1]).resolve(), pathlib.Path(sys.argv[2]).resolve(),
+                      sys.argv[3], sys.stdin.read().splitlines()))
+    except (OSError, ValueError, ET.ParseError, subprocess.CalledProcessError) as error:
+        if focused:
+            print("Cannot safely focus verification: " + str(error), file=sys.stderr)
+            sys.exit(2)
         # Unknown model/deletion must not silently omit verification.
         print(".")

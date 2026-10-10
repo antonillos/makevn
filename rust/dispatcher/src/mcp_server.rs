@@ -355,6 +355,12 @@ const COMPACT: ToolOption = ToolOption {
     description: "Use compact output",
     required: false,
 };
+const FOCUSED: ToolOption = ToolOption {
+    name: "focused",
+    ty: "boolean",
+    description: "Prepare dependencies without tests, then verify production owners and selected changed tests; not a full integration or global coverage gate",
+    required: false,
+};
 const VERBOSE: ToolOption = ToolOption {
     name: "verbose",
     ty: "boolean",
@@ -398,8 +404,8 @@ const TOOL_SPECS: &[ToolSpec] = &[
     ToolSpec { name: "verify_it", description: "Run integration-test-only verification.", command: &["verify-it"], options: &[COMMON_REPO, COMPACT] },
     ToolSpec { name: "verify_it_coverage", description: "Run integration-test-only verification with coverage.", command: &["verify-it-coverage"], options: &[COMMON_REPO, COMPACT] },
     ToolSpec { name: "verify", description: "Run full combined verification (unit tests + integration tests).", command: &["verify"], options: &[COMMON_REPO, COMPACT] },
-    ToolSpec { name: "verify_changes_preview", description: "Preview the changed production modules or tests without running Maven.", command: &["verify-changes-preview"], options: &[COMMON_REPO, COMPACT] },
-    ToolSpec { name: "verify_changes", description: "Verify only the changed production modules or tests.", command: &["verify-changes"], options: &[COMMON_REPO, COMPACT] },
+    ToolSpec { name: "verify_changes_preview", description: "Preview the changed production modules or tests without running Maven.", command: &["verify-changes-preview"], options: &[COMMON_REPO, COMPACT, FOCUSED] },
+    ToolSpec { name: "verify_changes", description: "Verify only the changed production modules or tests.", command: &["verify-changes"], options: &[COMMON_REPO, COMPACT, FOCUSED] },
     ToolSpec { name: "coverage", description: "Check the latest JaCoCo aggregate coverage report.", command: &["coverage"], options: &[COMMON_REPO, ToolOption { name: "threshold", ty: "number", description: "Coverage threshold percentage", required: false }, COMPACT] },
     ToolSpec { name: "coverage_changes", description: "Check incremental and per-module coverage.", command: &["coverage-changes"], options: &[COMMON_REPO, ToolOption { name: "threshold", ty: "number", description: "Per-module coverage threshold", required: false }, ToolOption { name: "overall-threshold", ty: "number", description: "Overall coverage threshold", required: false }, VERBOSE, COMPACT] },
     ToolSpec { name: "crap", description: "Calculate Java CRAP metrics from an existing JaCoCo XML report. This tool never generates coverage or downloads the analyzer.", command: &["crap"], options: &[COMMON_REPO, ToolOption { name: "jacoco-xml", ty: "string", description: "Path to an existing JaCoCo XML report", required: false }, ToolOption { name: "threshold", ty: "number", description: "CRAP score warning threshold (default 8)", required: false }, ToolOption { name: "max-warnings", ty: "integer", description: "Maximum allowed warnings before the gate fails", required: false }, COMPACT] },
@@ -849,7 +855,7 @@ fn push_tool_flags(
 
 fn push_tool_option(cmd_args: &mut Vec<String>, name: &str, value: &Value) -> Result<(), String> {
     match name {
-        "apply" | "clean-generated-contract-targets" | "dry-run" | "fast" | "force" | "verbose" => {
+        "apply" | "clean-generated-contract-targets" | "dry-run" | "fast" | "focused" | "force" | "verbose" => {
             push_boolean_option(cmd_args, name, value)
         }
         "threshold" | "overall-threshold" | "max-warnings" | "wait-seconds" => {

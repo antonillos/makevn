@@ -340,6 +340,7 @@ fn tool_option_dispatch_preserves_type_filtering_and_command_errors() {
         "clean-generated-contract-targets",
         "dry-run",
         "fast",
+        "focused",
         "force",
         "verbose",
     ] {
@@ -888,4 +889,12 @@ fn pending_doctor_message_distinguishes_analysis_from_setup() {
         super::tool_result_message("doctor", &result),
         "makevn tool completed successfully."
     );
+}
+
+#[test]
+fn focused_changes_option_is_exposed_in_both_tools() {
+    for name in ["verify_changes", "verify_changes_preview"] {
+        let spec = super::TOOL_SPECS.iter().find(|spec| spec.name == name).unwrap();
+        assert!(spec.options.iter().any(|option| option.name == "focused"));
+    }
 }

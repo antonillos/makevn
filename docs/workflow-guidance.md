@@ -133,7 +133,11 @@ flowchart TD
   Diff --> POM{Root POM change understood?}
   POM -->|Only directly managed version properties| Consumers[Direct dependency consumers]
   POM -->|Other, unresolved, deleted or profile-dependent| Full[Full verify fallback]
-  Owners --> Verify[Selected module suites plus Maven -am dependencies]
+  Owners --> Mode{Explicit focused mode?}
+  Mode -->|No| Verify[Selected module suites plus Maven -am dependencies]
+  Mode -->|Yes| Prepare[Install dependencies without UT/IT]
+  Prepare --> Focus[Production owner suites and changed tests without -am]
+  Focus --> Separate
   Consumers --> Verify
   Verify --> Separate[Aggregate is not automatically selected]
   Separate --> Gate[Separate full coverage-enabled verify before global coverage gate]
@@ -149,5 +153,32 @@ local consumers; unknown models fall back to full verification.
 Verification recalculates its plan rather than trusting a preview after local
 content edits. `coverage-changes` rejects an aggregate report older than the last
 scoped run. This timestamp guard does **not** establish freshness of every execution
-file: fresh scoped coverage and dependency preparation without suites remain
-separate follow-up work. No focused or exhaustive mode is implemented by this change.
+file: fresh scoped coverage remains separate follow-up work. Focused verification does
+not claim a global coverage result.
+
+### Explicit focused execution
+
+```bash
+makevn verify-changes-preview --focused
+makevn verify-changes --focused
+```
+
+The preview lists a dependency-preparation phase and the exact per-owner test
+scope. Preparation uses `install -am` with UT/IT execution disabled but test
+compilation retained (test-jar dependencies can be necessary); it updates local
+Maven artifacts so the following phases use this checkout's snapshots.
+Verification then runs **without `-am`**: full suites for production/POM consumer
+owners, selected changed test classes for test-only owners. Test helpers and deleted
+tests expand to the complete owner suite. Unknown/root impact rejects focused
+execution; choose `--exhaustive` to run all selected owner/dependency suites.
+Default invocation retains the previous conservative behavior, including selected
+tests for test-only changes.
+
+Focused Maven passthrough and configured reactor/test-filter overrides are rejected.
+Each selected class must have a fresh, non-skipped testcase in Surefire/Failsafe XML;
+Maven success with an inactive test profile or an old report is not accepted.
+Phase history includes preparation and each verification, with independent logs.
+A large **preparation** reactor is expected; the expensive dependency suites do not
+run in that phase. Custom plugins may still perform additional work. Do not infer
+full integration or global coverage from focused success; keep the separate CI and
+coverage gates.

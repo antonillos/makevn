@@ -34,8 +34,8 @@ Usage:
   makevn [--repo PATH] verify-it [--clean-generated-contract-targets] [-- EXTRA_MAVEN_ARGS...]
   makevn [--repo PATH] verify-it-coverage [--clean-generated-contract-targets] [-- EXTRA_MAVEN_ARGS...]
   makevn [--repo PATH] verify [--clean-generated-contract-targets] [-- EXTRA_MAVEN_ARGS...]
-  makevn [--repo PATH] verify-changes-preview
-  makevn [--repo PATH] verify-changes [--clean-generated-contract-targets] [-- EXTRA_MAVEN_ARGS...]
+  makevn [--repo PATH] verify-changes-preview [--focused|--exhaustive]
+  makevn [--repo PATH] verify-changes [--focused|--exhaustive] [--clean-generated-contract-targets] [-- EXTRA_MAVEN_ARGS...]
   makevn [--repo PATH] coverage [--threshold PCT]
   makevn [--repo PATH] coverage-changes [--threshold PCT] [--overall-threshold PCT] [--verbose]
   makevn [--repo PATH] crap [--jacoco-xml PATH] [--threshold SCORE] [--max-warnings COUNT]

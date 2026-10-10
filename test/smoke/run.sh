@@ -3344,6 +3344,50 @@ EOF
   done
 )
 
+test_verify_changes_focused_command() {
+  local repo="${TMP_ROOT}/verify-changes-focused" java_home output
+  mkdir -p "${repo}/client/src/main/java/example" "${repo}/boot/src/test/java/example"
+  printf '<project><modules><module>client</module><module>boot</module></modules></project>\n' > "${repo}/pom.xml"
+  printf '<project/>\n' > "${repo}/client/pom.xml"
+  printf '<project/>\n' > "${repo}/boot/pom.xml"
+  printf 'class Owner {}\n' > "${repo}/client/src/main/java/example/Owner.java"
+  printf 'class OwnersIT {}\n' > "${repo}/boot/src/test/java/example/OwnersIT.java"
+  git init --initial-branch=main "${repo}" >/dev/null
+  git -C "${repo}" add .
+  git -C "${repo}" -c user.name=Test -c user.email=test@example.com commit -qm base
+  printf '// changed\n' >> "${repo}/client/src/main/java/example/Owner.java"
+  printf '// changed\n' >> "${repo}/boot/src/test/java/example/OwnersIT.java"
+  ${CLI} --repo "${repo}" init >/dev/null
+  java_home="$(detect_java_home)"
+  printf 'MAKEVN_JAVA_HOME="%s"\n' "${java_home}" > "${repo}/.makevn/config"
+  cat > "${repo}/mvnw" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\n' "$*" >> .mvnw.log
+if [[ "$*" == *' install '* ]]; then touch .fresh-artifacts; fi
+if [[ "$*" == *' verify '* ]]; then [[ -f .fresh-artifacts ]] || exit 44; fi
+if [[ "$*" == *'-pl boot verify '* && ! -f .missing-reports ]]; then
+  mkdir -p boot/target/failsafe-reports
+  printf '<testsuite><testcase classname="example.OwnersIT" name="works"/></testsuite>' > boot/target/failsafe-reports/TEST-example.OwnersIT.xml
+fi
+EOF
+  chmod +x "${repo}/mvnw"
+  output="$(${CLI} --repo "${repo}" verify-changes-preview --focused)"
+  [[ "${output}" == *'mode: focused'* ]] || fail 'missing focused preview label'
+  [[ "${output}" == *'verify boot: example.OwnersIT'* ]] || fail 'missing boot IT selection'
+  [[ "${output}" == *'verify client: entire module suite'* ]] || fail 'missing production suite'
+  [[ ! -f "${repo}/.mvnw.log" ]] || fail 'focused preview executed Maven'
+  ${CLI} --repo "${repo}" verify-changes --focused >/dev/null
+  assert_contains "${repo}/.mvnw.log" '-pl boot,client -am install -DskipTests=true -DskipUTs=true -DskipITs=true'
+  assert_contains "${repo}/.mvnw.log" '-pl boot verify -DskipTests=false -DskipUTs=false -DskipITs=false -Dtest=example.OwnersIT'
+  assert_matches "${repo}/.mvnw.log" '.*-pl client verify -DskipTests=false -DskipUTs=false -DskipITs=false$'
+  touch "${repo}/.missing-reports"
+  if output="$(${CLI} --repo "${repo}" verify-changes --focused 2>&1)"; then
+    fail 'stale test evidence accepted'
+  fi
+  [[ "${output}" == *'No fresh executed-test evidence'* ]] || fail 'missing report diagnostic'
+}
+
 test_verify_changes_nested_maven_base_strips_git_prefix() {
   local repo="${TMP_ROOT}/verify-changes-nested-maven-base"
   local code_repo="${repo}/code"
@@ -4629,6 +4673,7 @@ test_crap_install_analyzer_requires_cache_home() {
 }
 
 main() {
+  test_verify_changes_focused_command
   test_doctor_unsupported
   test_backend_doctor_json
   test_doctor_counts_custom_jacoco_xml_path
@@ -4786,5 +4831,7 @@ bash "${ROOT_DIR}/test/smoke/init_presentation_test.sh"
 python3 "${ROOT_DIR}/test/smoke/question_style_test.py"
 python3 "${ROOT_DIR}/test/smoke/install_build_test.py"
 bash "${ROOT_DIR}/test/smoke/reset_config_test.sh"
+bash "${ROOT_DIR}/test/smoke/focused_changes_test.sh"
+python3 "${ROOT_DIR}/test/smoke/selected_test_reports_test.py"
 python3 "${ROOT_DIR}/test/smoke/changes_scope_test.py"
 main "$@"

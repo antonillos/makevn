@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# shellcheck source=focused_changes.sh
+source "${SCRIPT_DIR}/commands/focused_changes.sh"
+
 makevn_effective_coverage_threshold() {
   local repo_root="$1"
 
@@ -310,6 +313,10 @@ makevn_collect_verify_changes_scope() {
   MAKEVN_VERIFY_CHANGES_POM_FILES="$(printf '%s\n' "${changed_paths}" | grep -E '(^|/)pom\.xml$' || true)"
   MAKEVN_VERIFY_CHANGES_MODULES="$(printf '%s\n' "${changed_paths}" | python3 "${SCRIPT_DIR}/common/changes_scope.py" "${git_root}" "${MAKEVN_VERIFY_CHANGES_MAVEN_BASE_PATH}" "${comparison_base}")"
   MAKEVN_VERIFY_CHANGES_MODULE_SELECTION="${MAKEVN_VERIFY_CHANGES_MODULES}"
+  MAKEVN_VERIFY_CHANGES_FOCUSED_PLAN=''
+  if [[ "${MAKEVN_VERIFY_CHANGES_MODE:-exhaustive}" == focused ]]; then
+    MAKEVN_VERIFY_CHANGES_FOCUSED_PLAN="$(printf '%s\n' "${changed_paths}" | python3 "${SCRIPT_DIR}/common/changes_scope.py" "${git_root}" "${MAKEVN_VERIFY_CHANGES_MAVEN_BASE_PATH}" "${comparison_base}" --focused-plan)" || makevn_die "Cannot safely focus this change; use --exhaustive."
+  fi
   MAKEVN_VERIFY_CHANGES_CLASSES="$(printf '%s\n' "${MAKEVN_VERIFY_CHANGES_SRC_FILES}" | sed '/^$/d' | sed 's|^.*src/main/java/||' | sed 's|\.java$||' | tr '/' '.' | paste -sd, -)"
 
   MAKEVN_VERIFY_CHANGES_TEST_LIST=''
@@ -337,7 +344,12 @@ makevn_print_verify_changes_preflight() {
     makevn_print_item "test files" "$(makevn_count_non_empty_lines "${MAKEVN_VERIFY_CHANGES_TEST_FILES}")"
   fi
 
-  if [[ -n "${MAKEVN_VERIFY_CHANGES_SRC_FILES}" || -n "${MAKEVN_VERIFY_CHANGES_POM_FILES:-}" || -z "${MAKEVN_VERIFY_CHANGES_TEST_FILES}" ]]; then
+  if [[ "${MAKEVN_VERIFY_CHANGES_MODE:-exhaustive}" == focused ]]; then
+    makevn_print_focused_changes_plan
+    return 0
+  fi
+
+  if [[ -n "${MAKEVN_VERIFY_CHANGES_SRC_FILES}" || -n "${MAKEVN_VERIFY_CHANGES_POM_FILES:-}" || -z "${MAKEVN_VERIFY_CHANGES_TEST_FILES}" || "${MAKEVN_VERIFY_CHANGES_MODE:-}:${MAKEVN_VERIFY_CHANGES_MODE_ARGS:-0}" == exhaustive:1 ]]; then
     if [[ -n "${MAKEVN_VERIFY_CHANGES_MODULES}" && "${MAKEVN_VERIFY_CHANGES_MODULES}" != . ]]; then
       strategy="run verify for affected modules"
       makevn_print_item "modules" "${MAKEVN_VERIFY_CHANGES_MODULES}"
@@ -362,7 +374,9 @@ cmd_verify_changes_preview() {
   local repo_root="$1"
 
   shift
-  [[ $# -eq 0 ]] || makevn_die "verify-changes-preview does not accept extra arguments"
+  makevn_changes_mode "$@"
+  shift "${MAKEVN_VERIFY_CHANGES_MODE_ARGS}"
+  [[ $# -eq 0 ]] || makevn_die "Usage: verify-changes-preview [--focused|--exhaustive]"
 
   if ! makevn_frontend_owns_loader; then
     print_command_intro "${repo_root}" verify-changes-preview
@@ -504,6 +518,8 @@ cmd_verify_changes() {
 
   shift
   makevn_load_profile "${repo_root}"
+  makevn_changes_mode "$@"
+  shift "${MAKEVN_VERIFY_CHANGES_MODE_ARGS}"
   extra_args=()
   if [[ "${1:-}" == "--" ]]; then
     shift
@@ -558,7 +574,15 @@ No modified Java or POM files detected. Skipping verify-changes."
     verify_args=("${MAKEVN_VERIFY_CHANGES_MAVEN_EXECUTABLE}")
   fi
 
-  if [[ -n "${MAKEVN_VERIFY_CHANGES_SRC_FILES}" || -n "${MAKEVN_VERIFY_CHANGES_POM_FILES:-}" || -z "${MAKEVN_VERIFY_CHANGES_TEST_FILES}" ]]; then
+  if [[ "${MAKEVN_VERIFY_CHANGES_MODE}" == focused ]]; then
+    [[ ${#extra_args[@]} -eq 0 ]] || makevn_die "Focused verification does not accept Maven passthrough; use --exhaustive."
+    makevn_validate_focused_flags ${cli_flags[@]+"${cli_flags[@]}"} ${prop_flags[@]+"${prop_flags[@]}"}
+    if makevn_run_focused_changes "${repo_root}"; then rc=0; else rc=$?; fi
+    makevn_clear_verify_changes_plan "${repo_root}"
+    return "${rc}"
+  fi
+
+  if [[ -n "${MAKEVN_VERIFY_CHANGES_SRC_FILES}" || -n "${MAKEVN_VERIFY_CHANGES_POM_FILES:-}" || -z "${MAKEVN_VERIFY_CHANGES_TEST_FILES}" || "${MAKEVN_VERIFY_CHANGES_MODE:-}:${MAKEVN_VERIFY_CHANGES_MODE_ARGS:-0}" == exhaustive:1 ]]; then
     if [[ -z "${MAKEVN_VERIFY_CHANGES_MODULES}" || "${MAKEVN_VERIFY_CHANGES_MODULES}" == . ]]; then
       makevn_clear_verify_changes_plan "${repo_root}"
       cmd_verify "${repo_root}"

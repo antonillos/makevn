@@ -864,3 +864,13 @@ rejects noninteractive, compact and JSON execution before changing anything.
 It does not reset environment variables or stop containers. Reset is CLI-only
 and is not an init option or MCP tool argument. Ordinary init --force still
 preserves settings. The repository must already be initialized and supported.
+
+## Focused changed-code feedback
+
+When the user explicitly wants faster scoped feedback, run
+`makevn verify-changes-preview --focused`, inspect the listed owner suites/tests,
+then `makevn verify-changes --focused`. MCP equivalents accept `focused: true`.
+Dependencies are built/installed without UT/IT execution first; verification phases
+have no `-am`. A successful focused run is not a full integration/global coverage
+gate. Unknown impact rejects focus; explicit `--exhaustive` retains all selected
+owner and dependency suites. Never pass Maven test/skip/reactor overrides to focus.

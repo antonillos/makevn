@@ -69,6 +69,19 @@ makevn verify-changes-preview
 makevn verify-changes
 ```
 
+For explicitly requested focused feedback, use the same mode in preview and execution:
+
+```bash
+makevn verify-changes-preview --focused
+makevn verify-changes --focused
+```
+
+This prepares dependencies without UT/IT execution, verifies complete production
+owner suites and selected changed tests in other owners, and requires fresh test
+reports. It is not full integration or global coverage verification. Use explicit
+`--exhaustive` for all selected owner/dependency suites. Do not silently substitute
+focused verification for a required full gate.
+
 Changed-code coverage uses a separate full coverage-producing run (choose UT or IT
 coverage according to doctor; a scoped verification is not a global coverage gate):
 

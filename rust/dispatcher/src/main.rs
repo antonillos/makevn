@@ -1216,7 +1216,7 @@ fn dispatch_backend_invocations(
             None
         };
 
-        let phase_files = if matches!(fallback_title.as_str(), "karate-all" | "test")
+        let phase_files = if matches!(fallback_title.as_str(), "karate-all" | "test" | "verify-changes")
             || (use_frontend_loader && fallback_title == "doctor")
         {
             Some(BackendPhaseFiles::new()?)
@@ -3881,7 +3881,7 @@ fn command_help(command: &str) -> Option<(&'static str, &'static str, &'static [
         "verify-it" => maven_command_help("verify-it", "Run integration-test-only verification.", true),
         "verify-it-coverage" => maven_command_help("verify-it-coverage", "Run integration-test-only verification with coverage.", true),
         "verify" => maven_command_help("verify", "Run full combined verification.", true),
-        "verify-changes-preview" => Some(("makevn [--repo PATH] verify-changes-preview", "Preview changed production modules or modified tests without running Maven.", &[])),
+        "verify-changes-preview" => Some(("makevn [--repo PATH] verify-changes-preview [--focused|--exhaustive]", "Preview changed production modules or modified tests without running Maven.", &[])),
         "verify-changes" => maven_command_help("verify-changes", "Verify changed production modules or modified tests.", true),
         "coverage" => Some(("makevn [--repo PATH] coverage [--threshold PCT]", "Check the latest aggregate coverage report.", &["--threshold  Required coverage percentage"])),
         "coverage-changes" => Some(("makevn [--repo PATH] coverage-changes [--threshold PCT] [--overall-threshold PCT] [--verbose]", "Check incremental and per-module coverage.", &["--threshold          Per-module coverage percentage", "--overall-threshold  Overall coverage percentage", "--verbose            Print detailed coverage output"])),
@@ -3927,7 +3927,7 @@ fn maven_command_help(
         ("verify-it", "makevn [--repo PATH] [--compact] verify-it [--tail] [--clean-generated-contract-targets] [-- EXTRA_MAVEN_ARGS...]"),
         ("verify-it-coverage", "makevn [--repo PATH] [--compact] verify-it-coverage [--tail] [--clean-generated-contract-targets] [-- EXTRA_MAVEN_ARGS...]"),
         ("verify", "makevn [--repo PATH] [--compact] verify [--tail] [--clean-generated-contract-targets] [-- EXTRA_MAVEN_ARGS...]"),
-        ("verify-changes", "makevn [--repo PATH] [--compact] verify-changes [--tail] [--clean-generated-contract-targets] [-- EXTRA_MAVEN_ARGS...]"),
+        ("verify-changes", "makevn [--repo PATH] [--compact] verify-changes [--tail] [--focused|--exhaustive] [--clean-generated-contract-targets] [-- EXTRA_MAVEN_ARGS...]"),
         ("pr-verify", "makevn [--repo PATH] [--compact] pr-verify [--tail] [-- EXTRA_MAVEN_ARGS...]"),
     ];
     let usage = usages.iter().find(|(name, _)| *name == command)?.1;
@@ -4008,8 +4008,8 @@ fn print_help(with_header: bool) {
         "  makevn [--repo PATH] [--compact] verify-it-coverage [--tail] [--clean-generated-contract-targets] [-- EXTRA_MAVEN_ARGS...]"
     );
     println!("  makevn [--repo PATH] [--compact] verify [--tail] [--clean-generated-contract-targets] [-- EXTRA_MAVEN_ARGS...]");
-    println!("  makevn [--repo PATH] verify-changes-preview");
-    println!("  makevn [--repo PATH] [--compact] verify-changes [--tail] [--clean-generated-contract-targets] [-- EXTRA_MAVEN_ARGS...]");
+    println!("  makevn [--repo PATH] verify-changes-preview [--focused|--exhaustive]");
+    println!("  makevn [--repo PATH] [--compact] verify-changes [--tail] [--focused|--exhaustive] [--clean-generated-contract-targets] [-- EXTRA_MAVEN_ARGS...]");
     println!("  makevn [--repo PATH] coverage [--threshold PCT]");
     println!("  makevn [--repo PATH] coverage-changes [--threshold PCT] [--overall-threshold PCT] [--verbose]");
     println!("  makevn [--repo PATH] crap [--jacoco-xml PATH] [--threshold SCORE] [--max-warnings COUNT]");
@@ -4056,7 +4056,7 @@ fn print_help(with_header: bool) {
     println!("  makevn verify-ut");
     println!("  makevn verify-ut-coverage");
     println!("  makevn verify-it");
-    println!("  makevn verify-changes-preview");
+    println!("  makevn verify-changes-preview [--focused|--exhaustive]");
     println!("  makevn verify-changes");
     println!("  makevn coverage");
     println!("  makevn coverage-changes");
