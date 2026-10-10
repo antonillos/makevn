@@ -111,6 +111,8 @@ print_command_intro() {
   local repo_root="$1"
   local title="$2"
 
+  # The Rust dashboard already labels the command; avoid a duplicate detail row.
+  [[ -z "${MAKEVN_FRONTEND_STATE_METADATA_OUT:-}" ]] || return 0
   makevn_print_header "makevn ${title}"
 }
 

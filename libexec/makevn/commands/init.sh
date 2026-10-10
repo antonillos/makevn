@@ -59,6 +59,7 @@ cmd_init() {
     return 0
   fi
 
+  makevn_start_state_phase "Initializing repository configuration"
   mkdir -p "${logs_dir}"
   [[ -f "${config_path}" ]] || makevn_write_config "${repo_root}"
   makevn_refresh_profile "${repo_root}"
@@ -66,7 +67,7 @@ cmd_init() {
   makevn_write_state_json "${repo_root}"
   makevn_write_manifest "${repo_root}"
 
-  printf '%s\n' "$(makevn_accent "Initialized makevn.")"
+  printf '%s\n' "$(makevn_dim "Initialized makevn.")"
   makevn_print_item "created" ".makevn/config"
   makevn_print_item "created" ".makevn/profile.env"
   makevn_print_item "created" ".makevn/logs/"
