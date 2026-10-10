@@ -25,6 +25,7 @@ with tempfile.TemporaryDirectory() as tmp:
         assert not list((repo / ".makevn").glob("config-backup.*"))
     assert run("init", "--force").returncode == 0
     assert config.read_text() == before
+    manifest = (repo / ".makevn/manifest").read_bytes()
     master, slave = pty.openpty()
     try:
         result = subprocess.run([cli, "--repo", tmp, "doctor", "--reset-config"], stdin=slave, stderr=slave, stdout=subprocess.PIPE, timeout=60, env={**os.environ, "NO_COLOR": "1"})
