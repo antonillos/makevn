@@ -2965,10 +2965,10 @@ MAKEVN_RUN_CMD=""
 MAKEVN_LOCAL_CONTAINERS="TRUE"
 EOF
 
-  output="$(${CLI} --repo "${repo}" verify-changes)"
+  output="$(${CLI} --repo "${repo}" verify-changes --exhaustive)"
 
   [[ "${output}" == *"[ok] "* ]] || fail "expected verify-changes output to include success summary"
-  assert_matches "${repo}/.mvnw.log" '^ARGS=-nsu -f .*/pom\.xml verify -Djacoco\.skip=false -DskipUTs=false -Dtest=com\.example\.ChangedTest -Dit\.test=com\.example\.ChangedTest -Dfailsafe\.failIfNoSpecifiedTests=false -Dsurefire\.failIfNoSpecifiedTests=false -Dawaitility\.defaultPollInterval=200ms -Dawaitility\.defaultTimeout=2m -Dmaven\.build\.cache\.enabled=false$'
+  assert_matches "${repo}/.mvnw.log" '^ARGS=-nsu -f .*/pom\.xml -pl module-a -am verify -Djacoco\.skip=false -DskipTests=false -Dmaven\.test\.failure\.ignore=false -Dmaven\.build\.cache\.enabled=false$'
   assert_contains "${repo}/.mvnw.log" "JAVA_HOME=${java_home}"
   assert_contains "${repo}/.mvnw.log" "LOCAL_CONTAINERS=TRUE"
 
@@ -3012,17 +3012,17 @@ MAKEVN_KARATE_TOOL_VERSIONS=""
 MAKEVN_RUN_CMD=""
 EOF
 
-  output="$(${CLI} --repo "${repo}" verify-changes-preview)"
+  output="$(${CLI} --repo "${repo}" verify-changes-preview --exhaustive)"
 
-  [[ "${output}" == *"strategy: run selected tests only"* ]] || fail "expected preview output to describe selected-test strategy"
+  [[ "${output}" == *"strategy: run verify for affected modules"* ]] || fail "expected preview output to describe selected-test strategy"
   [[ "${output}" == *"tests: com.example.ChangedTest"* ]] || fail "expected preview output to include selected tests"
   [[ -f "${repo}/.makevn/verify-changes-plan.env" ]] || fail "expected preview to persist a verify-changes plan"
   [[ ! -f "${repo}/.mvnw.log" ]] || fail "preview must not invoke Maven"
 
-  ${CLI} --repo "${repo}" verify-changes >/dev/null
+  ${CLI} --repo "${repo}" verify-changes --exhaustive >/dev/null
 
   [[ ! -f "${repo}/.makevn/verify-changes-plan.env" ]] || fail "expected verify-changes to clear the cached preview plan"
-  assert_matches "${repo}/.mvnw.log" '^ARGS=-nsu -f .*/pom\.xml verify -Djacoco\.skip=false -DskipUTs=false -Dtest=com\.example\.ChangedTest -Dit\.test=com\.example\.ChangedTest -Dfailsafe\.failIfNoSpecifiedTests=false -Dsurefire\.failIfNoSpecifiedTests=false -Dawaitility\.defaultPollInterval=200ms -Dawaitility\.defaultTimeout=2m -Dmaven\.build\.cache\.enabled=false$'
+  assert_matches "${repo}/.mvnw.log" '^ARGS=-nsu -f .*/pom\.xml -pl module-a -am verify -Djacoco\.skip=false -DskipTests=false -Dmaven\.test\.failure\.ignore=false -Dmaven\.build\.cache\.enabled=false$'
 
   ${CLI} --repo "${repo}" uninstall >/dev/null
 }
@@ -3044,7 +3044,7 @@ test_verify_changes_excludes_checked_out_release_candidate() {
   git -C "${repo}" -c user.name='Smoke Test' -c user.email='smoke@example.com' commit -m 'release work' >/dev/null
 
   ${CLI} --repo "${repo}" init >/dev/null
-  output="$(${CLI} --repo "${repo}" verify-changes-preview)"
+  output="$(${CLI} --repo "${repo}" verify-changes-preview --exhaustive)"
 
   [[ "${output}" == *"compare against: main...HEAD"* ]] \
     || fail "expected checked-out release branch to use main as its parent, got: ${output}"
@@ -3078,7 +3078,7 @@ test_verify_changes_uses_hotfix_parent_branch() {
   git -C "${repo}" -c user.name='Smoke Test' -c user.email='smoke@example.com' commit -m 'hotfix work' >/dev/null
 
   ${CLI} --repo "${repo}" init >/dev/null
-  output="$(${CLI} --repo "${repo}" verify-changes-preview)"
+  output="$(${CLI} --repo "${repo}" verify-changes-preview --exhaustive)"
 
   [[ "${output}" == *"compare against: main...HEAD"* ]] \
     || fail "expected a hotfix to compare against main, got: ${output}"
@@ -3121,7 +3121,7 @@ test_verify_changes_uses_develop_after_it_advances() {
   git -C "${repo}" checkout feature/issue-456 >/dev/null
 
   ${CLI} --repo "${repo}" init >/dev/null
-  output="$(${CLI} --repo "${repo}" verify-changes-preview)"
+  output="$(${CLI} --repo "${repo}" verify-changes-preview --exhaustive)"
 
   [[ "${output}" == *"compare against: develop...HEAD"* ]] \
     || fail "expected a feature to retain develop as its parent, got: ${output}"
@@ -3162,7 +3162,7 @@ test_verify_changes_preserves_first_parent_after_sync_merge() {
   git -C "${repo}" -c user.name='Smoke Test' -c user.email='smoke@example.com' merge --no-ff main -m 'Merge main into feature' >/dev/null
 
   ${CLI} --repo "${repo}" init >/dev/null
-  output="$(${CLI} --repo "${repo}" verify-changes-preview)"
+  output="$(${CLI} --repo "${repo}" verify-changes-preview --exhaustive)"
 
   grep -Fq 'compare against: develop...HEAD' <<< "${output}" \
     || fail "expected the first-parent develop base after sync merge, got: ${output}"
@@ -3194,7 +3194,7 @@ test_verify_changes_ignores_reverted_first_parent_paths() {
   git -C "${repo}" -c user.name='Smoke Test' -c user.email='smoke@example.com' revert --no-edit HEAD >/dev/null
 
   ${CLI} --repo "${repo}" init >/dev/null
-  output="$(${CLI} --repo "${repo}" verify-changes-preview)"
+  output="$(${CLI} --repo "${repo}" verify-changes-preview --exhaustive)"
 
   [[ "${output}" == *"compare against: develop...HEAD"* ]] \
     || fail "expected develop as the parent, got: ${output}"
@@ -3233,7 +3233,7 @@ test_verify_changes_keeps_post_merge_first_parent_edits() {
   git -C "${repo}" -c user.name='Smoke Test' -c user.email='smoke@example.com' commit -m 'feature edits import' >/dev/null
 
   ${CLI} --repo "${repo}" init >/dev/null
-  output="$(${CLI} --repo "${repo}" verify-changes-preview)"
+  output="$(${CLI} --repo "${repo}" verify-changes-preview --exhaustive)"
 
   [[ "${output}" == *"production files: 1"* && "${output}" == *"Imported"* ]] \
     || fail "expected post-merge first-parent edit to be selected, got: ${output}"
@@ -3271,7 +3271,7 @@ test_verify_changes_keeps_merge_resolution_paths() {
   git -C "${repo}" -c user.name='Smoke Test' -c user.email='smoke@example.com' commit -m 'Resolve merge' >/dev/null
 
   ${CLI} --repo "${repo}" init >/dev/null
-  output="$(${CLI} --repo "${repo}" verify-changes-preview)"
+  output="$(${CLI} --repo "${repo}" verify-changes-preview --exhaustive)"
 
   [[ "${output}" == *"production files: 1"* && "${output}" == *"Shared"* ]] \
     || fail "expected merge resolution path to be selected, got: ${output}"
@@ -3330,15 +3330,15 @@ EOF
         printf 'MAKEVN_PROFILE_VERIFY_IT_LOCAL_CONTAINERS=""\n' > "${repo}/.makevn/profile.env"
         expected=__UNSET__ ;;
       cached_override)
-        ${CLI} --repo "${repo}" verify-changes-preview >/dev/null
+        ${CLI} --repo "${repo}" verify-changes-preview --exhaustive >/dev/null
         export LOCAL_CONTAINERS=FALSE
         expected=FALSE ;;
       cached_config)
-        ${CLI} --repo "${repo}" verify-changes-preview >/dev/null
+        ${CLI} --repo "${repo}" verify-changes-preview --exhaustive >/dev/null
         printf 'MAKEVN_LOCAL_CONTAINERS=FALSE\n' >> "${repo}/.makevn/config"
         expected=FALSE ;;
     esac
-    ${CLI} --repo "${repo}" verify-changes >/dev/null
+    ${CLI} --repo "${repo}" verify-changes --exhaustive >/dev/null
     assert_contains "${repo}/.mvnw.log" "LOCAL_CONTAINERS=${expected}"
     assert_contains "${repo}/.mvnw.log" "-pl module-a -am verify"
   done
@@ -3372,20 +3372,29 @@ if [[ "$*" == *'-pl boot verify '* && ! -f .missing-reports ]]; then
 fi
 EOF
   chmod +x "${repo}/mvnw"
-  output="$(${CLI} --repo "${repo}" verify-changes-preview --focused)"
+  output="$(${CLI} --repo "${repo}" verify-changes-preview)"
   [[ "${output}" == *'mode: focused'* ]] || fail 'missing focused preview label'
   [[ "${output}" == *'verify boot: example.OwnersIT'* ]] || fail 'missing boot IT selection'
   [[ "${output}" == *'verify client: entire module suite'* ]] || fail 'missing production suite'
   [[ ! -f "${repo}/.mvnw.log" ]] || fail 'focused preview executed Maven'
-  ${CLI} --repo "${repo}" verify-changes --focused >/dev/null
+  ${CLI} --repo "${repo}" verify-changes >/dev/null
   assert_contains "${repo}/.mvnw.log" '-pl boot,client -am install -DskipTests=true -DskipUTs=true -DskipITs=true'
   assert_contains "${repo}/.mvnw.log" '-pl boot verify -DskipTests=false -DskipUTs=false -DskipITs=false -Dtest=!%regex[.*] -Dit.test=example.OwnersIT'
   assert_matches "${repo}/.mvnw.log" '.*-pl client verify -DskipTests=false -DskipUTs=false -DskipITs=false$'
   touch "${repo}/.missing-reports"
-  if output="$(${CLI} --repo "${repo}" verify-changes --focused 2>&1)"; then
+  if output="$(${CLI} --repo "${repo}" verify-changes 2>&1)"; then
     fail 'stale test evidence accepted'
   fi
   [[ "${output}" == *'No fresh executed-test evidence'* ]] || fail 'missing report diagnostic'
+  local before
+  before="$(wc -l < "${repo}/.mvnw.log")"
+  printf '<project><properties><unknown.version>2</unknown.version></properties><modules><module>client</module><module>boot</module></modules></project>\n' > "${repo}/pom.xml"
+  if output="$(${CLI} --repo "${repo}" verify-changes 2>&1)"; then
+    fail 'unknown focused impact silently broadened'
+  fi
+  [[ "${output}" == *'use --exhaustive'* ]] || fail 'missing explicit exhaustive recommendation'
+  [[ "$(wc -l < "${repo}/.mvnw.log")" == "${before}" ]] || fail 'unknown impact executed Maven'
+  ${CLI} --repo "${repo}" verify-changes --exhaustive >/dev/null
 }
 
 test_verify_changes_nested_maven_base_strips_git_prefix() {
@@ -3431,7 +3440,7 @@ MAKEVN_RUN_CMD=""
 MAKEVN_LOCAL_CONTAINERS="TRUE"
 EOF
 
-  ${CLI} --repo "${code_repo}" verify-changes >/dev/null
+  ${CLI} --repo "${code_repo}" verify-changes --exhaustive >/dev/null
 
   assert_matches "${code_repo}/.mvnw.log" '^CWD=.*/verify-changes-nested-maven-base/code$'
   assert_contains "${code_repo}/.mvnw.log" 'LOCAL_CONTAINERS=TRUE'
@@ -3491,7 +3500,7 @@ EOF
   fi
 
   ${CLI} --repo "${repo}" init >/dev/null
-  verify_output="$(${CLI} --repo "${repo}" verify-changes-preview)"
+  verify_output="$(${CLI} --repo "${repo}" verify-changes-preview --exhaustive)"
   output="$(cd "${repo}" && BASE_PATH=. MAKEVN_COVERAGE_FIRST_PARENT_ONLY=1 bash "${coverage_script}" jacoco-report-aggregate/target/site/jacoco-aggregate develop...HEAD 90 2>&1)"
 
   [[ "${verify_output}" == *"strategy: skip"* ]] \

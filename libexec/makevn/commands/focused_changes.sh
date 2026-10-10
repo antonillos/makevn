@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 makevn_changes_mode() {
-  MAKEVN_VERIFY_CHANGES_MODE=exhaustive
+  MAKEVN_VERIFY_CHANGES_MODE=focused
   MAKEVN_VERIFY_CHANGES_MODE_ARGS=0
   case "${1:-}" in
     --focused|--exhaustive)

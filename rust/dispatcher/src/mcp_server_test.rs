@@ -320,7 +320,6 @@ fn tool_option_dispatch_preserves_type_filtering_and_command_errors() {
         "clean-generated-contract-targets",
         "dry-run",
         "fast",
-        "focused",
         "force",
         "verbose",
     ] {
@@ -985,4 +984,17 @@ fn agent_templates_do_not_reintroduce_args_or_the_old_changes_pipeline() {
     assert!(workflow.contains("\"focused\": true"));
     assert!(!workflow.contains("{\"tool\": \"clean\"}"));
     assert!(!workflow.contains("{\"tool\": \"coverage_changes\"}"));
+}
+
+#[test]
+fn focused_defaults_and_explicit_exhaustive_are_consistent() {
+    let spec = TOOL_SPECS.iter().find(|spec| spec.name == "verify_changes").unwrap();
+    assert_eq!(super::tool(spec)["inputSchema"]["properties"]["focused"]["default"], true);
+    for (arguments, expected) in [(json!({}),vec![]),(json!({"focused":true}),vec!["--focused"]),
+                                   (json!({"focused":false}),vec!["--exhaustive"])] {
+        let mut flags = vec![];
+        push_tool_flags(&mut flags, spec, arguments.as_object().unwrap()).unwrap();
+        assert_eq!(flags, expected);
+    }
+    assert!(super::push_tool_option(&mut vec![], "focused", &json!("false")).is_err());
 }

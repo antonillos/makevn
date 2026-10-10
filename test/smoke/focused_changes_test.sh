@@ -44,5 +44,5 @@ makevn_changes_mode --focused
 makevn_changes_mode --exhaustive
 [[ "${MAKEVN_VERIFY_CHANGES_MODE}" == exhaustive && "${MAKEVN_VERIFY_CHANGES_MODE_ARGS}" == 1 ]]
 makevn_changes_mode
-[[ "${MAKEVN_VERIFY_CHANGES_MODE}" == exhaustive ]]
+[[ "${MAKEVN_VERIFY_CHANGES_MODE}" == focused ]]
 printf 'Focused changes phases regression passed\n'

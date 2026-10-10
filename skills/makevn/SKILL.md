@@ -539,8 +539,8 @@ one generic clean + verify_changes + coverage workflow for both intents.
 **CLI equivalents**, after setup/readiness:
 
 ```bash
-makevn verify-changes-preview --focused
-makevn verify-changes --focused
+makevn verify-changes-preview
+makevn verify-changes
 ```
 
 Do not prepend clean by default: it forces rebuilding. A large preparation reactor
@@ -861,15 +861,17 @@ preserves settings. The repository must already be initialized and supported.
 
 ## Choosing focused versus complete verification (mandatory agent rule)
 
-For a user request for **faster local feedback on a limited change**, explain the
-focused scope and use `--focused` in **both** preview and execution. The user does
-not need to name the flag. If intent is unclear, ask which scope is wanted. Never
-replace requested full verification, release/CI parity or coverage with focused
-success. Doctor/setup and required Docker readiness still come first.
+Changed-code preview and verification are **focused by default**. Explain the
+scope; the user need not name `--focused`. No flag or explicit `--focused` uses
+focused execution. Only explicit CLI `--exhaustive` or MCP `focused: false` broadens
+to complete selected owner/dependency suites. Keep the same mode in preview and
+execution. Unknown/root impact stops and recommends exhaustive; never silently
+broaden a run. Full verification/CI/coverage requirements still need their gates.
+Doctor/setup and required Docker readiness come first.
 
 ```bash
-makevn verify-changes-preview --focused
-makevn verify-changes --focused
+makevn verify-changes-preview
+makevn verify-changes
 ```
 
 For MCP, use `focused: true` in both `verify_changes_preview` and `verify_changes`
@@ -899,8 +901,8 @@ must not use `-am`. If preparation really executes dependency suites, investigat
 project configuration instead of blindly retrying.
 
 CLI `--exhaustive` runs complete selected owner/dependency suites; whole-project
-verification is `makevn verify`. No flag preserves the prior default behavior;
-MCP `focused: false` or omission is that default, **not** explicit CLI exhaustive.
+verification is `makevn verify`. No flag/MCP omission selects focused;
+MCP `focused: false` is explicit exhaustive.
 Never pass Maven test/skip/reactor overrides to focus or disable fresh-report checks.
 See `docs/agents.md` and the visible graph in `docs/workflow-guidance.md` for the
 maintained decision contract.
@@ -914,3 +916,8 @@ Inspect a focused preview separately before executing its reviewed plan. Set
 `fail-fast: true` for dependent verification/coverage/CRAP gates; reserve false for
 explicitly requested independent diagnostics or required cleanup (never to continue dependent gates). Focused success alone does not
 produce the global coverage needed by those gates.
+
+Focused is now the default for both changed-code commands. Explicit `--focused`
+remains a compatible alias; broader selected suites require `--exhaustive` (MCP
+`focused: false`). Unknown impact requires a scope decision, never an automatic
+full verification fallback.

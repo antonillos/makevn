@@ -132,13 +132,14 @@ flowchart TD
   Diff[Java and POM diff] --> Owners[Production and changed test owner modules]
   Diff --> POM{Root POM change understood?}
   POM -->|Only directly managed version properties| Consumers[Direct dependency consumers]
-  POM -->|Other, unresolved, deleted or profile-dependent| Full[Full verify fallback]
-  Owners --> Mode{User requests faster scoped feedback?}
-  Mode -->|No| Verify[Selected module suites plus Maven -am dependencies]
-  Mode -->|Yes| Prepare[Install dependencies without UT/IT]
+  POM -->|Other, unresolved, deleted or profile-dependent| Stop[Stop focused and recommend exhaustive]
+  Stop -->|User explicitly chooses exhaustive| Full[Full verify fallback]
+  Owners --> Mode{Explicit exhaustive requested?}
+  Mode -->|Yes| Verify[Selected module suites plus Maven -am dependencies]
+  Mode -->|No - focused default| Prepare[Install dependencies without UT/IT]
   Prepare --> Focus[Production owner suites and changed tests without -am]
   Focus --> Separate
-  Consumers --> Verify
+  Consumers --> Mode
   Verify --> Separate[Aggregate is not automatically selected]
   Separate --> Gate[Separate full coverage-enabled verify before global coverage gate]
 ```
@@ -159,8 +160,8 @@ not claim a global coverage result.
 ### Explicit focused execution
 
 ```bash
-makevn verify-changes-preview --focused
-makevn verify-changes --focused
+makevn verify-changes-preview
+makevn verify-changes
 ```
 
 The preview lists a dependency-preparation phase and the exact per-owner test
@@ -171,8 +172,9 @@ Verification then runs **without `-am`**: full suites for production/POM consume
 owners, selected changed test classes for test-only owners. Test helpers and deleted
 tests expand to the complete owner suite. Unknown/root impact rejects focused
 execution; choose `--exhaustive` to run all selected owner/dependency suites.
-Default invocation retains the previous conservative behavior, including selected
-tests for test-only changes.
+Default invocation is focused. Explicit CLI --exhaustive or MCP focused:false
+runs complete selected owner/dependency suites. Unknown focused impact stops
+instead of silently expanding; the user chooses whether to broaden the run.
 
 Focused Maven passthrough and configured reactor/test-filter overrides are rejected.
 UT and IT selectors are separated so an IT is not run again by Surefire.
@@ -208,3 +210,8 @@ steps so failed prerequisite runs cannot be treated as fresh evidence. False is
 only appropriate when continued independent diagnostics are explicitly wanted.
 Focused verification does not automatically produce the global coverage required
 by coverage/CRAP gates: run the appropriate coverage-producing flow separately.
+
+Focused is now the default for both changed-code commands. Explicit `--focused`
+remains a compatible alias; broader selected suites require `--exhaustive` (MCP
+`focused: false`). Unknown impact requires a scope decision, never an automatic
+full verification fallback.

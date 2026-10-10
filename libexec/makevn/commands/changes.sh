@@ -314,7 +314,7 @@ makevn_collect_verify_changes_scope() {
   MAKEVN_VERIFY_CHANGES_MODULES="$(printf '%s\n' "${changed_paths}" | python3 "${SCRIPT_DIR}/common/changes_scope.py" "${git_root}" "${MAKEVN_VERIFY_CHANGES_MAVEN_BASE_PATH}" "${comparison_base}")"
   MAKEVN_VERIFY_CHANGES_MODULE_SELECTION="${MAKEVN_VERIFY_CHANGES_MODULES}"
   MAKEVN_VERIFY_CHANGES_FOCUSED_PLAN=''
-  if [[ "${MAKEVN_VERIFY_CHANGES_MODE:-exhaustive}" == focused ]]; then
+  if [[ "${MAKEVN_VERIFY_CHANGES_MODE:-focused}" == focused ]]; then
     MAKEVN_VERIFY_CHANGES_FOCUSED_PLAN="$(printf '%s\n' "${changed_paths}" | python3 "${SCRIPT_DIR}/common/changes_scope.py" "${git_root}" "${MAKEVN_VERIFY_CHANGES_MAVEN_BASE_PATH}" "${comparison_base}" --focused-plan)" || makevn_die "Cannot safely focus this change; use --exhaustive."
   fi
   MAKEVN_VERIFY_CHANGES_CLASSES="$(printf '%s\n' "${MAKEVN_VERIFY_CHANGES_SRC_FILES}" | sed '/^$/d' | sed 's|^.*src/main/java/||' | sed 's|\.java$||' | tr '/' '.' | paste -sd, -)"
@@ -342,12 +342,14 @@ makevn_print_verify_changes_preflight() {
   fi
   if [[ -n "${MAKEVN_VERIFY_CHANGES_TEST_FILES}" ]]; then
     makevn_print_item "test files" "$(makevn_count_non_empty_lines "${MAKEVN_VERIFY_CHANGES_TEST_FILES}")"
+    makevn_print_item "changed tests" "${MAKEVN_VERIFY_CHANGES_TEST_LIST}"
   fi
 
-  if [[ "${MAKEVN_VERIFY_CHANGES_MODE:-exhaustive}" == focused ]]; then
+  if [[ "${MAKEVN_VERIFY_CHANGES_MODE:-focused}" == focused ]]; then
     makevn_print_focused_changes_plan
     return 0
   fi
+  makevn_print_item "mode" "exhaustive"
 
   if [[ -n "${MAKEVN_VERIFY_CHANGES_SRC_FILES}" || -n "${MAKEVN_VERIFY_CHANGES_POM_FILES:-}" || -z "${MAKEVN_VERIFY_CHANGES_TEST_FILES}" || "${MAKEVN_VERIFY_CHANGES_MODE:-}:${MAKEVN_VERIFY_CHANGES_MODE_ARGS:-0}" == exhaustive:1 ]]; then
     if [[ -n "${MAKEVN_VERIFY_CHANGES_MODULES}" && "${MAKEVN_VERIFY_CHANGES_MODULES}" != . ]]; then

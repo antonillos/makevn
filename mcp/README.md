@@ -313,9 +313,10 @@ Selected classes require fresh evidence from the expected test plugin. Unknown
 impact rejects focus instead of guessing. Report “focused checks passed” and the
 actual scope, not full integration/global coverage success. Keep full gates.
 
-`focused: false` or omission retains prior default behavior; it is **not** explicit
-CLI `--exhaustive`. Use CLI for explicit selected-owner/dependency exhaustive suites
-or `makevn verify` for the whole project. The tool descriptions and server-authored
+Omission or `focused: true` selects focused execution (the default).
+Explicit `focused: false` selects exhaustive owner/dependency suites, equivalent
+to CLI `--exhaustive`. Whole-project verification remains `makevn verify`.
+Unknown focused impact stops and recommends exhaustive; it never expands silently. The tool descriptions and server-authored
 `nextSuggestion` expose these rules even when the skill is not loaded. See the
 maintained decision rule in `docs/agents.md` and graph in `docs/workflow-guidance.md`.
 
@@ -328,3 +329,8 @@ Inspect a focused preview separately before executing its reviewed plan. Set
 `fail-fast: true` for dependent verification/coverage/CRAP gates; reserve false for
 explicitly requested independent diagnostics or required cleanup (never to continue dependent gates). Focused success alone does not
 produce the global coverage needed by those gates.
+
+Focused is now the default for both changed-code commands. Explicit `--focused`
+remains a compatible alias; broader selected suites require `--exhaustive` (MCP
+`focused: false`). Unknown impact requires a scope decision, never an automatic
+full verification fallback.

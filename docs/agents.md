@@ -71,11 +71,12 @@ makevn verify-changes
 
 ### Choosing verification scope (agent decision rule)
 
-A request for **fast local feedback on a small change** authorizes proposing
-focused verification; the user need not know the word `focused`. Explain its scope
-before running it. If the request requires full verification, release readiness,
-CI parity or a coverage gate, **do not substitute focused success**. When intent
-is ambiguous, explain the trade-off and ask rather than silently reducing scope.
+`verify-changes-preview` and `verify-changes` are **focused by default**.
+Use this default for changed-code feedback and explain its scope. The user need
+not name a mode. For explicitly required full verification, release readiness,
+CI parity or coverage, use the appropriate broader flow; focused success never
+substitutes for those gates. Unknown/root impact stops with an exhaustive
+recommendation: do not silently expand the run.
 
 | User's intent | Agent action |
 | --- | --- |
@@ -86,8 +87,8 @@ is ambiguous, explain the trade-off and ask rather than silently reducing scope.
 After doctor/setup and any required Docker readiness check, use the **same mode**:
 
 ```bash
-makevn verify-changes-preview --focused
-makevn verify-changes --focused
+makevn verify-changes-preview
+makevn verify-changes
 ```
 
 MCP equivalents (same repository, same `focused` value):
@@ -118,9 +119,10 @@ verification should contain `verify` without `-am`. If dependency suites actuall
 run during preparation, stop and investigate the effective project configuration.
 Do not retry merely because preparation lists many modules.
 
-No flag retains prior behavior (including selected tests for test-only changes);
-explicit `--exhaustive` runs complete selected owner/dependency suites. MCP
-`focused: false`/omission retains default behavior, not explicit CLI exhaustive.
+No flag (or explicit `--focused`) selects focused execution. CLI `--exhaustive`
+explicitly runs complete selected owner/dependency suites. MCP omission/true is
+focused; `focused: false` explicitly selects the same exhaustive CLI mode.
+Use the same selection in preview and execution.
 Do not pass scope-changing Maven overrides to focus or disable report checks.
 Report the mode and actual scope on completion: **focused checks passed**, not
 “full verification/coverage passed.” Keep mandatory full CI, coverage and CRAP gates.
@@ -818,3 +820,8 @@ Inspect a focused preview separately before executing its reviewed plan. Set
 `fail-fast: true` for dependent verification/coverage/CRAP gates; reserve false for
 explicitly requested independent diagnostics or required cleanup (never to continue dependent gates). Focused success alone does not
 produce the global coverage needed by those gates.
+
+Focused is now the default for both changed-code commands. Explicit `--focused`
+remains a compatible alias; broader selected suites require `--exhaustive` (MCP
+`focused: false`). Unknown impact requires a scope decision, never an automatic
+full verification fallback.
