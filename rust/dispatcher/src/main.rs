@@ -786,7 +786,7 @@ fn validate_command(
         | "docker-ps-required" | "karate-docker-up" | "karate-docker-down" | "run-app"
         | "run-app-bg" | "stop-app" | "run" => Ok(CommandValidation::Valid),
         "doctor" => {
-            if let Some(extra_arg) = trailing_args.iter().find(|arg| *arg != "--compact") {
+            if let Some(extra_arg) = trailing_args.iter().find(|arg| *arg != "--compact" && *arg != "--reset-config") {
                 Err(format!("Unknown doctor option: {}", Lossy(extra_arg)))
             } else {
                 Ok(CommandValidation::Valid)

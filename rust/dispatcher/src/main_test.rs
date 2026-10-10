@@ -2561,3 +2561,12 @@ fn format_help_does_not_advertise_removed_file_option() {
     assert!(options.iter().all(|option| !option.contains("--file")));
     assert!(options.iter().any(|option| option.contains("--apply")));
 }
+
+#[test]
+fn doctor_reset_option_is_accepted_by_rust_dispatcher() {
+    for args in [vec!["--reset-config"], vec!["--compact", "--reset-config"]] {
+        let args: Vec<std::ffi::OsString> = args.into_iter().map(Into::into).collect();
+        assert!(super::validate_command(&"doctor".into(), &args).is_ok());
+    }
+    assert!(super::validate_command(&"doctor".into(), &["--unknown".into()]).is_err());
+}
