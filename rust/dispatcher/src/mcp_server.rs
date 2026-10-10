@@ -259,14 +259,18 @@ fn log_header_path(line: &str) -> Option<&str> {
 }
 
 fn step_result(i: usize, tool: &str, output: &str, exit_code: i32, duration_ms: u128) -> Value {
-    let (output, log_paths) = extract_log_headers(output);
     let result = ToolCallResult {
-        output: String::new(),
+        output: output.into(),
         exit_code,
         duration_ms,
         next_suggestion: None,
     };
-    json!({"step": i, "tool": tool, "exitCode": exit_code, "durationMs": duration_ms,
+    step_tool_result(i, tool, &result)
+}
+
+fn step_tool_result(i: usize, tool: &str, result: &ToolCallResult) -> Value {
+    let (output, log_paths) = extract_log_headers(&result.output);
+    json!({"step": i, "tool": tool, "exitCode": result.exit_code, "durationMs": result.duration_ms,
         "output": output, "logPaths": log_paths,
         "nextSuggestion": tool_next_suggestion(tool, &result)})
 }
@@ -601,7 +605,7 @@ fn execute_single_step(
     step: &Value,
     global_repo: Option<&str>,
     global_trace: bool,
-) -> Result<(String, i32, u128), String> {
+) -> Result<ToolCallResult, String> {
     let step_tool = step["tool"]
         .as_str()
         .ok_or_else(|| String::from("each step must have a 'tool' field"))?;
@@ -627,16 +631,26 @@ fn execute_single_step(
     cmd_args.extend(spec.command.iter().map(|part| (*part).to_owned()));
     push_tool_flags(&mut cmd_args, spec, &step_args)?;
 
+    if step_tool == "doctor" {
+        if let Some(repo) = repo {
+            step_args.insert("repo".into(), json!(repo));
+        }
+        return handle_tool_call(
+            makevn_bin,
+            &json!({"name": "doctor", "arguments": step_args}),
+        );
+    }
     let start = Instant::now();
     let output = execute_tool_process(makevn_bin, &cmd_args, trace_output(&step_args))?;
     let duration_ms = start.elapsed().as_millis();
 
     let (result, exit_code) = format_tool_output(&output);
-    Ok((
-        suppress_success_timings(result, trace_output(&step_args)),
+    Ok(ToolCallResult {
+        output: suppress_success_timings(result, trace_output(&step_args)),
         exit_code,
         duration_ms,
-    ))
+        next_suggestion: None,
+    })
 }
 
 fn execute_tool_process(
@@ -695,12 +709,18 @@ fn handle_composite_run(makevn_bin: &Path, args: &Map<String, Value>) -> Result<
             .as_str()
             .ok_or_else(|| String::from("each step must have a 'tool' field"))?;
 
-        let (output, exit_code, duration_ms) =
+        let result =
             match execute_single_step(makevn_bin, step, global_repo, trace_output(args) == "1") {
                 Ok(result) => result,
-                Err(error) => (error, -1, 0),
+                Err(error) => ToolCallResult {
+                    output: error,
+                    exit_code: -1,
+                    duration_ms: 0,
+                    next_suggestion: None,
+                },
             };
-        results.push(step_result(i, step_tool, &output, exit_code, duration_ms));
+        let exit_code = result.exit_code;
+        results.push(step_tool_result(i, step_tool, &result));
         if exit_code != 0 {
             overall_exit_code = exit_code;
             if fail_fast {
@@ -739,9 +759,7 @@ fn handle_parallel_run(makevn_bin: &Path, args: &Map<String, Value>) -> Result<S
         handles.push(thread::spawn(move || {
             let step_tool = step["tool"].as_str().unwrap_or("unknown");
             match execute_single_step(&bin, &step, repo.as_deref(), global_trace) {
-                Ok((output, exit_code, duration_ms)) => {
-                    step_result(i, step_tool, &output, exit_code, duration_ms)
-                }
+                Ok(result) => step_tool_result(i, step_tool, &result),
                 Err(err) => step_result(i, step_tool, &err, -1, 0),
             }
         }));

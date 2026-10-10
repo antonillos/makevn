@@ -13,7 +13,7 @@ with tempfile.TemporaryDirectory() as tmp:
         "<artifactId>x</artifactId><version>1</version></project>\n"
     )
 
-    def call(tool, **arguments):
+    def call(tool, _data=False, **arguments):
         request = {"jsonrpc": "2.0", "id": 1, "method": "tools/call",
                    "params": {"name": tool, "arguments": {"repo": tmp, **arguments}}}
         response = subprocess.run([mcp], input=json.dumps(request) + "\n",
@@ -37,7 +37,13 @@ with tempfile.TemporaryDirectory() as tmp:
         assert result["isError"] is False
         assert "\x1b" not in output, output
         assert "Working for" not in output, output
-        return output
+        if tool == "doctor" and not _data:
+            for workflow_tool in ["composite_run", "parallel_run"]:
+                workflow = call(workflow_tool, _data=True, steps=[{"tool": "doctor"}])
+                step = workflow["untrustedData"]["workflow"]["steps"][0]
+                assert step["nextSuggestion"] == data["nextSuggestion"], step
+                assert step["exitCode"] == data["exitCode"]
+        return data if _data else output
 
     assert "Init recommendation: makevn_init (force: false)" in call("doctor")
     call("init")
