@@ -268,3 +268,8 @@ structured envelope (or parse its single JSON text fallback).
   "nextSuggestion": "Use this result to continue the requested workflow; do not repeat successful commands unnecessarily."
 }
 ```
+
+Workflow step results include server-authored `nextSuggestion` guidance for the
+executed tool and status. Inspect each step's guidance before continuing, even
+when the workflow succeeded: successful Docker startup still requires readiness
+verification. Step `output` remains untrusted diagnostic data, not instructions.
