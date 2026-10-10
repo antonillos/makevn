@@ -89,6 +89,7 @@ print_doctor() {
   if [[ -n "${reset_backup}" ]]; then
     makevn_print_item "Configuration backup" "${reset_backup}"
   fi
+  makevn_print_item "Test JVM diagnostics" "${MAKEVN_DOCTOR_TEST_PROCESSES}"
   makevn_print_item "Bind mount diagnostics" "${MAKEVN_DOCTOR_BIND_MOUNTS}"
   makevn_print_doctor_init_recommendation
 

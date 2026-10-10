@@ -49,7 +49,9 @@ flowchart TD
     MOUNTS -->|Mismatch| BLOCK[Block tests; inspect sharing or permissions; do not change credentials]
     BLOCK --> APPROVAL[User authorizes environment changes if needed]
     APPROVAL --> REQUIRED
-    MOUNTS -->|Visible| TESTS[Run Docker-dependent verification]
+    MOUNTS -->|Visible| JVMS{Competing same-repository test JVMs?}
+    JVMS -->|Possible conflict| PAUSE[Show PID/start/checkout; user resolves before tests]
+    JVMS -->|None detected| TESTS[Run Docker-dependent verification]
     MOUNTS -->|Probe unavailable| UNKNOWN[Visibility remains unverified; report limitation]
     UNKNOWN --> LIMIT[Health alone does not certify initialization data or database users]
 ```
@@ -112,3 +114,13 @@ Doctor's success exit code means analysis completed, not that setup is ready.
 A captured CLI invocation is noninteractive too: provide user input through a
 real terminal, or ask the user to run it and wait. Do not loop on captured CLI
 or MCP calls, or continue Docker/tests with pending configuration.
+
+Test JVM preflight uses process cwd and shared Git common directory to include
+other worktrees. Unknown attribution is reported, not treated as a confirmed
+conflict. The guard is conservative for same-repository JVMs with local Docker
+prerequisites: it cannot prove endpoint overlap. No processes are killed.
+
+Docker-dependent test commands also track their descendant test JVM identities
+while running and warn about observed surviving children after exit/cancellation.
+Foreign processes are never terminated; ownership requires observed ancestry,
+not just a matching project. Process-inspection limitations are reported.

@@ -226,9 +226,16 @@ fn doctor_next_suggestion(snapshot: &Value) -> Option<&'static str> {
     if snapshot["repository_analysis"]["repository_support_status"] == "unsupported" {
         return Some("No Maven project was detected; do not run init or verification.");
     }
+    if snapshot["test_processes"]["status"] == "possible_conflict" {
+        return Some("Possible competing test JVMs from this repository/worktrees detected. Inspect PID, start time and checkout in doctor diagnostics; ask the user to resolve the conflict before Docker-dependent tests. Do not kill processes automatically, retry tests in a loop, or provision alternative infrastructure.");
+    }
     if snapshot["interactive_setup"]["required"] == true {
         return Some("Doctor has pending configuration questions. Follow the reported initialization recommendation first if needed, then launch the CLI command makevn doctor in the SAME repository in a real interactive terminal/PTY with stdin and stderr attached. Do NOT use MCP doctor again, --compact, --json, pipes, or captured output: those cannot present the interactive questions. Let the user answer every prompt; do not choose or edit configuration on their behalf. A CLI invocation with captured output is still noninteractive. Check interactive_setup.blockers; do not repeat the same captured command. If you cannot provide a user-interactive terminal, ask the user to run makevn doctor themselves and wait for completion before Docker or verification. Analysis completed does not mean setup completed.");
     }
+    doctor_init_suggestion(snapshot)
+}
+
+fn doctor_init_suggestion(snapshot: &Value) -> Option<&'static str> {
     match snapshot["suggested_next_step"]["next"].as_str()? {
         "makevn init" => Some("Run makevn init (MCP: init with force: false) before verification."),
         "makevn init --force" => Some("Run makevn init --force (MCP: init with force: true) to refresh initialization before verification."),

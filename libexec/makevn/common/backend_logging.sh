@@ -191,6 +191,7 @@ makevn_command_working_directory() {
 makevn_run_logged_in_context() {
   local repo_root="$1"
   local context="$2"
+  local watch_test_jvms=false
   local maven_base_path="$3"
   local log_name="$4"
   local command_key="$5"
@@ -211,7 +212,11 @@ makevn_run_logged_in_context() {
   local interrupted_by_shell=false
   local command_cwd=""
 
+  makevn_test_process_preflight "${repo_root}" "${command_key}" || return $?
   shift 6
+  if [[ "${watch_test_jvms}" == true ]]; then
+    set -- python3 "${MAKEVN_LIBEXEC_DIR}/common/test_processes.py" watch "${repo_root}" -- "$@"
+  fi
 
   command_cwd="$(makevn_command_working_directory "${repo_root}" "${maven_base_path}" "$@")"
 
@@ -514,4 +519,18 @@ makevn_run_logged() {
 
   printf '\r\033[2K%s %s\n' "$(makevn_warn 'fail')" "$(makevn_warn "exit ${exit_code} after ${duration_display}; check the log for details")"
   return ${exit_code}
+}
+
+# Only Docker-dependent test execution is guarded; ordinary builds are unaffected.
+makevn_test_process_preflight() {
+  local repo_root="$1" command_key="$2"
+  case "${command_key}" in
+    test|verify|verify-it|verify-it-coverage|verify-changes) ;;
+    *) return 0 ;;
+  esac
+  [[ "${test_mode:-integration}" != unit ]] || return 0
+  makevn_verify_requires_boot_docker "${repo_root}" || return 0
+  command -v python3 >/dev/null 2>&1 || return 0
+  watch_test_jvms=true
+  python3 "${MAKEVN_LIBEXEC_DIR}/common/test_processes.py" required "${repo_root}"
 }
