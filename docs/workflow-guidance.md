@@ -175,6 +175,7 @@ Default invocation retains the previous conservative behavior, including selecte
 tests for test-only changes.
 
 Focused Maven passthrough and configured reactor/test-filter overrides are rejected.
+UT and IT selectors are separated so an IT is not run again by Surefire.
 Each selected class must have a fresh, non-skipped testcase in Surefire/Failsafe XML;
 Maven success with an inactive test profile or an old report is not accepted.
 Phase history includes preparation and each verification, with independent logs.

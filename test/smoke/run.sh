@@ -3379,7 +3379,7 @@ EOF
   [[ ! -f "${repo}/.mvnw.log" ]] || fail 'focused preview executed Maven'
   ${CLI} --repo "${repo}" verify-changes --focused >/dev/null
   assert_contains "${repo}/.mvnw.log" '-pl boot,client -am install -DskipTests=true -DskipUTs=true -DskipITs=true'
-  assert_contains "${repo}/.mvnw.log" '-pl boot verify -DskipTests=false -DskipUTs=false -DskipITs=false -Dtest=example.OwnersIT'
+  assert_contains "${repo}/.mvnw.log" '-pl boot verify -DskipTests=false -DskipUTs=false -DskipITs=false -Dtest=!%regex[.*] -Dit.test=example.OwnersIT'
   assert_matches "${repo}/.mvnw.log" '.*-pl client verify -DskipTests=false -DskipUTs=false -DskipITs=false$'
   touch "${repo}/.missing-reports"
   if output="$(${CLI} --repo "${repo}" verify-changes --focused 2>&1)"; then

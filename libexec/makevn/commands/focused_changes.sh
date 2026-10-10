@@ -52,17 +52,24 @@ makevn_run_focused_changes() {
 makevn_verify_focused_owner() {
   local repo_root="$1" owner="$2" tests="$3"
   shift 3
+  makevn_focused_test_selection "${MAKEVN_VERIFY_CHANGES_MAVEN_BASE_PATH}/${owner}" "${tests}" || return $?
   local stamp rc=0
   stamp="$(mktemp "$(makevn_state_dir "${repo_root}")/verify-changes-tests.XXXXXX")"
   local MAKEVN_FOCUSED_SELECTED_TESTS='' MAKEVN_FOCUSED_REPORT_STAMP="${stamp}" MAKEVN_FOCUSED_REPORT_MODULE="${MAKEVN_VERIFY_CHANGES_MAVEN_BASE_PATH}/${owner}"
-  local -a selection=()
   if [[ "${tests}" != '*' ]]; then
     MAKEVN_FOCUSED_SELECTED_TESTS="${tests}"
-    selection=(-Dtest="${tests}" -Dit.test="${tests}" -Dsurefire.failIfNoSpecifiedTests=false -Dfailsafe.failIfNoSpecifiedTests=false)
   fi
-  if makevn_focused_changes_phase "${repo_root}" "verify ${owner} (${tests})" "$@" -pl "${owner}" verify -DskipTests=false -DskipUTs=false -DskipITs=false ${selection[@]+"${selection[@]}"}; then rc=0; else rc=$?; fi
+  if makevn_focused_changes_phase "${repo_root}" "verify ${owner} (${tests})" "$@" -pl "${owner}" verify -DskipTests=false -DskipUTs=false -DskipITs=false ${MAKEVN_FOCUSED_SELECTION[@]+"${MAKEVN_FOCUSED_SELECTION[@]}"}; then rc=0; else rc=$?; fi
   rm -f "${stamp}"
   return "${rc}"
+}
+
+makevn_focused_test_selection() {
+  MAKEVN_FOCUSED_SELECTION=()
+  [[ "$2" != '*' ]] || return 0
+  local flags flag
+  flags="$(python3 "${SCRIPT_DIR}/common/selected_test_reports.py" --flags "$1" "$2")" || return $?
+  while IFS= read -r flag; do MAKEVN_FOCUSED_SELECTION+=("${flag}"); done <<< "${flags}"
 }
 
 makevn_require_focused_test_reports() {
