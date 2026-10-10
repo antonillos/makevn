@@ -730,3 +730,14 @@ relative to the target repository, not the MCP server's working directory.
 ```json
 {"durationMs": 6739, "exitCode": 0, "tool": "test", "logPaths": [".makevn/logs/test-SampleTest.log"]}
 ```
+
+### Docker runtime recovery hints
+
+Failed managed Docker commands retain their original exit status and diagnostics.
+When the log identifies a Docker daemon connection failure, makevn adds a
+recovery hint to the log and terminal summary. Colima socket paths receive a
+`colima start` suggestion (with the matching profile for non-default sockets).
+Other runtimes receive generic guidance to start the configured engine and check
+`DOCKER_HOST` / the active Docker context. An installed runtime alone is not
+evidence that it is selected. makevn never starts or switches runtimes
+automatically.
