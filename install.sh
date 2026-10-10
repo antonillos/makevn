@@ -12,6 +12,11 @@ RUST_BIN="${RUST_TARGET_DIR}/release/makevn"
 RUST_MCP_BIN="${RUST_TARGET_DIR}/release/makevn-mcp"
 VERSION_ENV="${RUST_TARGET_DIR}/makevn-version.env"
 BUILD_SCRIPT="${SCRIPT_DIR}/build-rust-dispatcher.sh"
+BUILD=true
+if [[ -n "${MAKEVN_RUST_TARGET:-}" ]]; then
+  RUST_BIN="${RUST_TARGET_DIR}/${MAKEVN_RUST_TARGET}/release/makevn"
+  RUST_MCP_BIN="${RUST_TARGET_DIR}/${MAKEVN_RUST_TARGET}/release/makevn-mcp"
+fi
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -19,11 +24,15 @@ while [[ $# -gt 0 ]]; do
       printf 'Error: shell frontend installation is no longer supported. Build and install the Rust frontend instead.\n' >&2
       exit 1
       ;;
+    --no-build)
+      BUILD=false
+      shift
+      ;;
     --rust)
       shift
       ;;
     --help|-h)
-      printf 'Usage: ./install.sh [--rust]\n'
+      printf 'Usage: ./install.sh [--rust] [--no-build]\nBuilds current sources before installing. --no-build explicitly installs prebuilt binaries.\n'
       exit 0
       ;;
     *)
@@ -33,7 +42,12 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-mkdir -p "${BIN_DIR}" "${LIBEXEC_DIR}" "${SHARE_DIR}" "${SKILL_DIR}"
+if [[ "${BUILD}" == true ]]; then
+  printf 'Building current makevn sources before installation...\n'
+  bash "${BUILD_SCRIPT}"
+else
+  printf 'Warning: --no-build installs prebuilt binaries; source freshness is not checked.\n' >&2
+fi
 
 install_executable() {
   local source="$1"
@@ -51,6 +65,8 @@ if [[ ! -x "${RUST_BIN}" || ! -x "${RUST_MCP_BIN}" ]]; then
   printf 'Build it first with %s\n' "${BUILD_SCRIPT}" >&2
   exit 1
 fi
+
+mkdir -p "${BIN_DIR}" "${LIBEXEC_DIR}" "${SHARE_DIR}" "${SKILL_DIR}"
 
 install_executable "${RUST_BIN}" "${BIN_DIR}/makevn"
 install_executable "${RUST_MCP_BIN}" "${BIN_DIR}/makevn-mcp"
@@ -80,3 +96,4 @@ printf 'Installed makevn to %s\n' "${PREFIX}"
 printf 'Installed Rust dispatcher from %s\n' "${RUST_BIN}"
 printf 'Installed Rust MCP server from %s\n' "${RUST_MCP_BIN}"
 printf 'Add %s to PATH if needed.\n' "${BIN_DIR}"
+printf 'Restart/reload MCP clients to use the newly installed server.\n'

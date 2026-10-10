@@ -712,6 +712,10 @@ PY
 fi
 
 echo "│"
+if [[ "${MAKEVN_COVERAGE_SCOPED:-false}" == true ]]; then
+  echo "├  Focused coverage only; overall project gate requires full coverage"
+  exit "$EXIT_CODE"
+fi
 echo "├  Overall project"
 echo "│"
 if [ -f "$JACOCO_BASE/jacoco.csv" ]; then

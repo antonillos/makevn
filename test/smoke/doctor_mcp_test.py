@@ -13,7 +13,7 @@ with tempfile.TemporaryDirectory() as tmp:
         "<artifactId>x</artifactId><version>1</version></project>\n"
     )
 
-    def call(tool, **arguments):
+    def call(tool, _data=False, **arguments):
         request = {"jsonrpc": "2.0", "id": 1, "method": "tools/call",
                    "params": {"name": tool, "arguments": {"repo": tmp, **arguments}}}
         response = subprocess.run([mcp], input=json.dumps(request) + "\n",
@@ -22,7 +22,14 @@ with tempfile.TemporaryDirectory() as tmp:
         data = result["structuredContent"]
         output = data["untrustedData"]["output"]
         if tool == "doctor":
-            if "force: false" in output:
+            if "interactive setup required:" in output:
+                assert "launch the CLI command makevn doctor" in data["nextSuggestion"]
+                assert "Do NOT use MCP doctor again" in data["nextSuggestion"]
+                assert "configuration is pending" in data["message"]
+                assert "Setup status: pending" in output
+                assert "stdin_not_tty" in output
+                assert "do not repeat the same captured command" in data["nextSuggestion"]
+            elif "force: false" in output:
                 assert data["nextSuggestion"] == "Run makevn init (MCP: init with force: false) before verification."
             elif "force: true" in output:
                 assert "init with force: true" in data["nextSuggestion"]
@@ -34,7 +41,13 @@ with tempfile.TemporaryDirectory() as tmp:
         assert result["isError"] is False
         assert "\x1b" not in output, output
         assert "Working for" not in output, output
-        return output
+        if tool == "doctor" and not _data:
+            for workflow_tool in ["composite_run", "parallel_run"]:
+                workflow = call(workflow_tool, _data=True, steps=[{"tool": "doctor"}])
+                step = workflow["untrustedData"]["workflow"]["steps"][0]
+                assert step["nextSuggestion"] == data["nextSuggestion"], step
+                assert step["exitCode"] == data["exitCode"]
+        return data if _data else output
 
     assert "Init recommendation: makevn_init (force: false)" in call("doctor")
     call("init")
@@ -47,6 +60,11 @@ with tempfile.TemporaryDirectory() as tmp:
     call("init", force=True)
     (repo / ".makevn/state.json").unlink()
     assert "Init recommendation: makevn_init (force: true)" in call("doctor")
+    for candidate in ["a", "b"]:
+        compose = repo / candidate / "docker-compose.yml"
+        compose.parent.mkdir()
+        compose.write_text("services: {}\n")
+    assert "interactive setup required:" in call("doctor")
 with tempfile.TemporaryDirectory() as tmp:
     assert "Repository support status: unsupported" in call("doctor")
 print("Doctor MCP recommendation tests passed")

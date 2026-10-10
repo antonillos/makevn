@@ -228,6 +228,14 @@ cmd_docker_ps_required() {
     elapsed=$((elapsed + 1))
   done
 
+  if [[ -z "${output}" ]] && command -v python3 >/dev/null 2>&1; then
+    local mount_output=""
+    if mount_output="$(python3 "${MAKEVN_LIBEXEC_DIR}/docker/bind_mounts.py" required "${repo_root}" "${compose_file}" "${compose_override_file}")"; then
+      [[ -z "${mount_output}" ]] || printf '%s\n' "${mount_output}"
+    else
+      output="${mount_output:-Bind mount validation failed without diagnostics.}"
+    fi
+  fi
   if ! makevn_run_logged "${repo_root}" docker-ps-required docker-ps-required docker-ps-required bash -c '
     output="$1"
     wait_seconds="$2"
@@ -240,10 +248,7 @@ cmd_docker_ps_required() {
       exit 1
     fi
   ' bash "${output}" "${wait_seconds}" "${elapsed}"; then
-    if [[ "${compose_kind}" == "karate" ]]; then
-      makevn_die "Required Docker services are not running or healthy. Run 'makevn karate-docker-up' first."
-    fi
-    makevn_die "Required Docker services are not running or healthy. Run 'makevn docker-up' first."
+    makevn_die "Required Docker services are not running or healthy, or bind mounts failed validation. Inspect diagnostics before retrying; do not repeat tests until prerequisites are corrected."
   fi
 }
 
@@ -263,7 +268,7 @@ cmd_docker_up() {
   compose_override_file="$(makevn_boot_compose_override_file_path "${repo_root}" || true)"
   if [[ ! -f "${compose_file}" ]]; then
     compose_error="$(makevn_boot_compose_resolution_error "${repo_root}")"
-    makevn_die "Docker compose file not found. ${compose_error}"
+    makevn_die "Docker compose selection failed. ${compose_error}"
   fi
 
   docker_compose_cmd="$(makevn_resolve_docker_compose_command || true)"
@@ -299,7 +304,7 @@ cmd_docker_down() {
   compose_override_file="$(makevn_boot_compose_override_file_path "${repo_root}" || true)"
   if [[ ! -f "${compose_file}" ]]; then
     compose_error="$(makevn_boot_compose_resolution_error "${repo_root}")"
-    makevn_die "Docker compose file not found. ${compose_error}"
+    makevn_die "Docker compose selection failed. ${compose_error}"
   fi
 
   docker_compose_cmd="$(makevn_resolve_docker_compose_command || true)"

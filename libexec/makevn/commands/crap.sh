@@ -93,6 +93,7 @@ makevn_crap_module_root_for_xml() {
 
 makevn_crap_run() {
   local repo_root="$1"
+  repo_root="$(cd "${repo_root}" && pwd -P)" || return 2
   local command_name="${2:-crap}"
   local external_jar="${MAKEVN_CRAP4JAVA_JAR:-}"
   local maven_base_path=""
@@ -181,6 +182,12 @@ makevn_crap_run() {
   maven_base_path="$(makevn_detect_maven_base_path "${repo_root}" || true)"
   [[ -n "${maven_base_path}" ]] || { printf 'Error: No Maven project detected in %s.\n' "${repo_root}" >&2; return 2; }
 
+  if [[ "${command_name}" == crap-changes && -f "$(makevn_scoped_coverage_state "${repo_root}")/run.json" ]]; then
+    local scoped_report
+    scoped_report="$(makevn_scoped_coverage_report "${repo_root}" "${maven_base_path}" "${base_ref}")" || return $?
+    explicit_xml="${scoped_report}/jacoco.xml"
+    printf 'CRAP changes: using focused UT/IT coverage (not global coverage).\n'
+  fi
   if [[ -n "${explicit_xml}" ]]; then
     [[ "${explicit_xml}" = /* ]] || explicit_xml="${repo_root}/${explicit_xml}"
     [[ -f "${explicit_xml}" ]] || { printf 'Error: JaCoCo XML not found: %s\n' "${explicit_xml}" >&2; return 2; }
@@ -312,9 +319,12 @@ makevn_crap_run() {
     raw_log="${raw_dir}/report-${report_index}.log"
     raw_json="${raw_log%.log}.json"
     set +e
-    "${java_bin}" -jar "${analyzer_jar}" \
-      --format json --jacoco-xml "${xml_path}" --report-only --threshold "${threshold}" \
-      "${java_sources[@]}" >"${raw_json}" 2>"${raw_log}"
+    (
+      cd "${repo_root}" || exit 2
+      "${java_bin}" -jar "${analyzer_jar}" \
+        --format json --jacoco-xml "${xml_path}" --report-only --threshold "${threshold}" \
+        "${java_sources[@]}"
+    ) >"${raw_json}" 2>"${raw_log}"
     rc=$?
     set -e
     if [[ ${rc} -ne 0 ]]; then

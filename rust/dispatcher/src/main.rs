@@ -786,7 +786,7 @@ fn validate_command(
         | "docker-ps-required" | "karate-docker-up" | "karate-docker-down" | "run-app"
         | "run-app-bg" | "stop-app" | "run" => Ok(CommandValidation::Valid),
         "doctor" => {
-            if let Some(extra_arg) = trailing_args.iter().find(|arg| *arg != "--compact") {
+            if let Some(extra_arg) = trailing_args.iter().find(|arg| *arg != "--compact" && *arg != "--reset-config") {
                 Err(format!("Unknown doctor option: {}", Lossy(extra_arg)))
             } else {
                 Ok(CommandValidation::Valid)
@@ -1216,7 +1216,7 @@ fn dispatch_backend_invocations(
             None
         };
 
-        let phase_files = if fallback_title == "karate-all"
+        let phase_files = if matches!(fallback_title.as_str(), "karate-all" | "test" | "verify-changes")
             || (use_frontend_loader && fallback_title == "doctor")
         {
             Some(BackendPhaseFiles::new()?)
@@ -3863,7 +3863,7 @@ fn command_help(command: &str) -> Option<(&'static str, &'static str, &'static [
     match command {
         "help" => Some(("makevn help", "Print the full makevn help.", &[])),
         "agent" => Some(("makevn agent install opencode", "Install the makevn MCP server in the global OpenCode configuration.", &[])),
-        "doctor" => Some(("makevn [--repo PATH] doctor [--compact]", "Inspect repository setup and makevn configuration.", &["--compact  Print brief, noninteractive setup advice"])),
+        "doctor" => Some(("makevn [--repo PATH] doctor [--compact] [--reset-config]", "Inspect repository setup and makevn configuration.", &["--compact  Print brief, noninteractive setup advice", "--reset-config  Back up settings and ask setup questions again (interactive CLI only)"])),
         "init" => Some(("makevn [--repo PATH] init [--dry-run] [--force]", "Initialize .makevn configuration for the repository.", &["--dry-run  Show what would change without writing files", "--force    Refresh existing generated files"])),
         "uninstall" => Some(("makevn [--repo PATH] uninstall [--dry-run]", "Remove makevn local repository state.", &["--dry-run  Show what would be removed"])),
         "refresh" => Some(("makevn [--repo PATH] refresh [--dry-run]", "Refresh initialization while preserving user configuration.", &["--dry-run  Show what would change without writing files"])),
@@ -3881,8 +3881,8 @@ fn command_help(command: &str) -> Option<(&'static str, &'static str, &'static [
         "verify-it" => maven_command_help("verify-it", "Run integration-test-only verification.", true),
         "verify-it-coverage" => maven_command_help("verify-it-coverage", "Run integration-test-only verification with coverage.", true),
         "verify" => maven_command_help("verify", "Run full combined verification.", true),
-        "verify-changes-preview" => Some(("makevn [--repo PATH] verify-changes-preview", "Preview changed production modules or modified tests without running Maven.", &[])),
-        "verify-changes" => maven_command_help("verify-changes", "Verify changed production modules or modified tests.", true),
+        "verify-changes-preview" => Some(("makevn [--repo PATH] verify-changes-preview [--focused|--exhaustive]", "Preview changed-code scope without Maven; focused by default. For user-requested faster local feedback, explain --focused limitations and use the same mode in preview and execution. A large preparation reactor does not mean its test suites run.", &[])),
+        "verify-changes" => maven_command_help("verify-changes", "Verify changed-code scope; focused by default, --exhaustive is explicit. --focused prepares dependencies without UT/IT then verifies production owner suites and selected changed tests without -am; not a full integration/coverage gate. Use the same mode as preview and report its scope.", true),
         "coverage" => Some(("makevn [--repo PATH] coverage [--threshold PCT]", "Check the latest aggregate coverage report.", &["--threshold  Required coverage percentage"])),
         "coverage-changes" => Some(("makevn [--repo PATH] coverage-changes [--threshold PCT] [--overall-threshold PCT] [--verbose]", "Check incremental and per-module coverage.", &["--threshold          Per-module coverage percentage", "--overall-threshold  Overall coverage percentage", "--verbose            Print detailed coverage output"])),
         "crap" => Some(("makevn [--repo PATH] crap [install-analyzer] [--jacoco-xml PATH] [--threshold SCORE] [--max-warnings COUNT]", "Calculate Java CRAP metrics from existing JaCoCo XML coverage.", &["install-analyzer  Download and verify the pinned crap4java release", "--jacoco-xml      Use a specific existing JaCoCo XML report", "--threshold       CRAP score warning threshold (default: 8)", "--max-warnings    Fail when the warning count exceeds this ratchet"])),
@@ -3927,7 +3927,7 @@ fn maven_command_help(
         ("verify-it", "makevn [--repo PATH] [--compact] verify-it [--tail] [--clean-generated-contract-targets] [-- EXTRA_MAVEN_ARGS...]"),
         ("verify-it-coverage", "makevn [--repo PATH] [--compact] verify-it-coverage [--tail] [--clean-generated-contract-targets] [-- EXTRA_MAVEN_ARGS...]"),
         ("verify", "makevn [--repo PATH] [--compact] verify [--tail] [--clean-generated-contract-targets] [-- EXTRA_MAVEN_ARGS...]"),
-        ("verify-changes", "makevn [--repo PATH] [--compact] verify-changes [--tail] [--clean-generated-contract-targets] [-- EXTRA_MAVEN_ARGS...]"),
+        ("verify-changes", "makevn [--repo PATH] [--compact] verify-changes [--tail] [--focused|--exhaustive] [--clean-generated-contract-targets] [-- EXTRA_MAVEN_ARGS...]"),
         ("pr-verify", "makevn [--repo PATH] [--compact] pr-verify [--tail] [-- EXTRA_MAVEN_ARGS...]"),
     ];
     let usage = usages.iter().find(|(name, _)| *name == command)?.1;
@@ -4008,8 +4008,8 @@ fn print_help(with_header: bool) {
         "  makevn [--repo PATH] [--compact] verify-it-coverage [--tail] [--clean-generated-contract-targets] [-- EXTRA_MAVEN_ARGS...]"
     );
     println!("  makevn [--repo PATH] [--compact] verify [--tail] [--clean-generated-contract-targets] [-- EXTRA_MAVEN_ARGS...]");
-    println!("  makevn [--repo PATH] verify-changes-preview");
-    println!("  makevn [--repo PATH] [--compact] verify-changes [--tail] [--clean-generated-contract-targets] [-- EXTRA_MAVEN_ARGS...]");
+    println!("  makevn [--repo PATH] verify-changes-preview [--focused|--exhaustive]");
+    println!("  makevn [--repo PATH] [--compact] verify-changes [--tail] [--focused|--exhaustive] [--clean-generated-contract-targets] [-- EXTRA_MAVEN_ARGS...]");
     println!("  makevn [--repo PATH] coverage [--threshold PCT]");
     println!("  makevn [--repo PATH] coverage-changes [--threshold PCT] [--overall-threshold PCT] [--verbose]");
     println!("  makevn [--repo PATH] crap [--jacoco-xml PATH] [--threshold SCORE] [--max-warnings COUNT]");
@@ -4056,7 +4056,7 @@ fn print_help(with_header: bool) {
     println!("  makevn verify-ut");
     println!("  makevn verify-ut-coverage");
     println!("  makevn verify-it");
-    println!("  makevn verify-changes-preview");
+    println!("  makevn verify-changes-preview [--focused|--exhaustive]");
     println!("  makevn verify-changes");
     println!("  makevn coverage");
     println!("  makevn coverage-changes");

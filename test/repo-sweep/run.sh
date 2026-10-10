@@ -162,7 +162,7 @@ if [[ -n "${MAKEVN_REPO_SWEEP_INSTALL_PREFIX:-}" && -x "${INSTALL_BIN_DIR}/makev
   MAKEVN_BIN="${INSTALL_BIN_DIR}/makevn"
   MCP_BIN="${INSTALL_BIN_DIR}/makevn-mcp"
 elif [[ -x "${ROOT_DIR}/target/release/makevn" && -x "${ROOT_DIR}/target/release/makevn-mcp" ]]; then
-  PREFIX="${INSTALL_PREFIX}" "${ROOT_DIR}/install.sh" >/dev/null
+  PREFIX="${INSTALL_PREFIX}" "${ROOT_DIR}/install.sh" --no-build >/dev/null
   MAKEVN_BIN="${INSTALL_BIN_DIR}/makevn"
   MCP_BIN="${INSTALL_BIN_DIR}/makevn-mcp"
 else
@@ -243,7 +243,7 @@ classify_result() {
       printf 'expected_unavailable\n'
       return 0
       ;;
-    *"Docker compose file not found"*|*"Karate docker compose file not found"*|*"No Karate Maven project detected"*)
+    *"Docker compose selection failed"*|*"Docker compose file not found"*|*"Karate docker compose file not found"*|*"No Karate Maven project detected"*)
       printf 'expected_unavailable\n'
       return 0
       ;;

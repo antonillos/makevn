@@ -37,6 +37,11 @@ makevn_warn() {
   makevn_style "33" "$*"
 }
 
+# Consistent spacing and color for interactive setup question blocks.
+makevn_print_question() {
+  printf '\n%s\n' "$(makevn_warn "$*")" >&2
+}
+
 makevn_print_header() {
   local title="$1"
   if [[ -n "${MAKEVN_FRONTEND_STATE_METADATA_OUT:-}" && -n "${MAKEVN_BACKEND_DETAIL_OUT:-}" ]]; then

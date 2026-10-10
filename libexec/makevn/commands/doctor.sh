@@ -31,6 +31,12 @@ makevn_print_doctor_init_recommendation() {
 }
 
 makevn_print_doctor_suggestions() {
+  if [[ "${MAKEVN_DOCTOR_INTERACTIVE_REQUIRED:-false}" == true && "${MAKEVN_DOCTOR_REPO_SUPPORT_STATUS}" == supported ]]; then
+    makevn_print_item "Analysis status" "completed (diagnosis only; setup is not complete)"
+    makevn_print_item "Setup status" "pending"
+    makevn_print_item "Interaction blockers" "${MAKEVN_DOCTOR_INTERACTION_BLOCKERS:-answers_unresolved}"
+    makevn_print_item "interactive setup required" "Launch CLI makevn doctor in this repository in an interactive terminal/PTY without --compact or --json. Provide a USER-INTERACTIVE terminal, not merely a captured CLI invocation. If that is unavailable, ask the user to run doctor themselves and wait. Do not retry the same captured command or continue Docker/tests while setup is pending. Let the user answer all prompts; MCP doctor cannot ask them."
+  fi
   [[ -n "${MAKEVN_DOCTOR_SUGGESTED_NEXT}${MAKEVN_DOCTOR_SUGGESTED_NOTE}${MAKEVN_DOCTOR_SUGGESTED_OPTIONAL}" ]] || return 0
   [[ -n "${MAKEVN_FRONTEND_STATE_METADATA_OUT:-}" ]] || printf '\n'
   makevn_print_header "Suggested next step"
@@ -48,10 +54,16 @@ makevn_print_doctor_suggestions() {
 
 print_doctor() {
   local repo_root="$1"
+  local reset_config=false
+  local reset_backup=""
 
   shift
   while [[ $# -gt 0 ]]; do
     case "$1" in
+      --reset-config)
+        reset_config=true
+        shift
+        ;;
       --compact)
         makevn_enable_compact_output
         shift
@@ -62,6 +74,9 @@ print_doctor() {
     esac
   done
 
+  if [[ "${reset_config}" == true ]]; then
+    makevn_doctor_reset_config "${repo_root}"
+  fi
   print_command_intro "${repo_root}" doctor
   makevn_collect_doctor_snapshot "${repo_root}"
   if [[ -n "${MAKEVN_MCP_DOCTOR_METADATA_OUT:-}" ]]; then
@@ -71,6 +86,11 @@ print_doctor() {
   if [[ "${MAKEVN_DOCTOR_BUILD_STATUS}" != "current" ]]; then
     makevn_print_item "Doctor build" "${MAKEVN_DOCTOR_BUILD_STATUS}: ${MAKEVN_DOCTOR_PREVIOUS_VERSION} -> ${MAKEVN_VERSION}; repository reanalyzed"
   fi
+  if [[ -n "${reset_backup}" ]]; then
+    makevn_print_item "Configuration backup" "${reset_backup}"
+  fi
+  makevn_print_item "Test JVM diagnostics" "${MAKEVN_DOCTOR_TEST_PROCESSES}"
+  makevn_print_item "Bind mount diagnostics" "${MAKEVN_DOCTOR_BIND_MOUNTS}"
   makevn_print_doctor_init_recommendation
 
   if [[ "${MAKEVN_COMPACT_OUTPUT:-}" == "1" ]]; then
@@ -127,4 +147,28 @@ print_doctor() {
   fi
 
   makevn_print_doctor_suggestions
+}
+
+# Keep installation, logs, and runtime state; back up user settings before reset.
+makevn_reset_repo_config() {
+  local repo_root="$1"
+  local state_dir backup file
+  state_dir="$(makevn_state_dir "${repo_root}")"
+  backup="$(mktemp -d "${state_dir}/config-backup.XXXXXX")"
+  for file in config profile.env; do
+    [[ ! -e "${state_dir}/${file}" ]] || cp -p "${state_dir}/${file}" "${backup}/${file}"
+  done
+  rm -f "${state_dir}/config" "${state_dir}/profile.env"
+  makevn_write_config "${repo_root}"
+  reset_backup="${backup}"
+  makevn_print_item "configuration backup" "${backup}"
+  makevn_refresh_profile "${repo_root}"
+}
+
+makevn_doctor_reset_config() {
+  local repo_root="$1"
+  [[ -t 0 && -t 2 && "${MAKEVN_COMPACT_OUTPUT:-}" != 1 ]] || makevn_die "doctor --reset-config requires an interactive terminal/PTY without --compact or --json. Configuration was not changed."
+  [[ "$(makevn_repository_support_status "${repo_root}")" == supported ]] || makevn_die "No Maven project detected; configuration was not changed."
+  [[ -f "$(makevn_manifest_path "${repo_root}")" ]] || makevn_die "Initialize the repository with makevn init before resetting configuration."
+  makevn_reset_repo_config "${repo_root}"
 }

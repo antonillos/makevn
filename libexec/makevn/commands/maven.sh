@@ -135,21 +135,21 @@ makevn_run_all_tests() {
 # Uses the owning command's local option/argument state (Bash dynamic scope).
 makevn_run_test_sequence() {
   local repo_root="$1"
+  local passed=0 failed=0
   total=${#test_names[@]}
   printf '%s\n' "$(makevn_accent "Running ${total} tests sequentially.")"
   for test_name in "${test_names[@]-}"; do
     index=$((index + 1))
     printf '%s\n' "$(makevn_dim "[${index}/${total}] ${test_name}")"
-    if [[ ${#extra_args[@]} -gt 0 ]]; then
-      makevn_run_selected_test "${repo_root}" "${test_name}" "${fast_mode}" "${extra_args[@]}"
+    if makevn_run_selected_test_phase "${repo_root}" "${test_name}" "${fast_mode}" ${extra_args[@]+"${extra_args[@]}"}; then
+      passed=$((passed + 1))
     else
-      makevn_run_selected_test "${repo_root}" "${test_name}" "${fast_mode}"
-    fi
-    if [[ $? -ne 0 ]]; then
+      failed=$((failed + 1))
       failed_names="$(makevn_append_word "${failed_names}" "${test_name}")"
     fi
   done
 
+  makevn_test_sequence_summary "${repo_root}" "${total}" "${passed}" "${failed}"
   if [[ -n "${failed_names}" ]]; then
     printf '%s\n' "$(makevn_warn "fail some selected tests failed: ${failed_names}")" >&2
     return 1
@@ -271,6 +271,7 @@ cmd_verify_ut_coverage() {
   fi
   [[ ${rc} -eq 0 ]] || return ${rc}
   makevn_require_jacoco_xml_report "${maven_base_path}"
+  rm -f "$(makevn_state_dir "${repo_root}")/focused-coverage/run.json"
   makevn_print_jacoco_report_hint "${maven_base_path}"
   return ${rc}
 }
@@ -301,6 +302,7 @@ cmd_verify_it_coverage() {
   fi
   [[ ${rc} -eq 0 ]] || return ${rc}
   makevn_require_jacoco_xml_report "${maven_base_path}"
+  rm -f "$(makevn_state_dir "${repo_root}")/focused-coverage/run.json"
   makevn_print_jacoco_report_hint "${maven_base_path}"
   return ${rc}
 }
@@ -666,4 +668,45 @@ makevn_detect_checkstyle_plugin_goal() {
       \( -path '*/target/*' -o -path '*/node_modules/*' -o -path "${maven_base_path}/pom.xml" \) -prune \
       -o -name pom.xml -type f -print 2>/dev/null | LC_ALL=C sort
   )
+}
+
+# Each selected test owns an immutable completion record, including failures.
+makevn_run_selected_test_phase() (
+  local repo_root="$1" test_name="$2" started="${SECONDS}" rc=0
+  if [[ -n "${MAKEVN_BACKEND_METADATA_OUT:-}" ]]; then
+    : > "${MAKEVN_BACKEND_METADATA_OUT}"
+  fi
+  [[ -z "${MAKEVN_BACKEND_DETAIL_OUT:-}" ]] || : > "${MAKEVN_BACKEND_DETAIL_OUT}"
+  if makevn_run_selected_test "$@"; then rc=0; else rc=$?; fi
+  makevn_archive_selected_test "${repo_root}" "${test_name}" "${rc}" "$((SECONDS - started))"
+  exit "${rc}"
+)
+
+makevn_archive_selected_test() {
+  local repo_root="$1" test_name="$2" rc="$3" duration="$4"
+  local command_key="${5:-test}" phase_title="${test_name}"
+  [[ "${command_key}" != test ]] || phase_title="test ${test_name}"
+  [[ -n "${MAKEVN_BACKEND_PHASE_DIR:-}" ]] || return 0
+  local record="${MAKEVN_BACKEND_PHASE_DIR}/${index}" tmp
+  tmp="$(mktemp "${record}.tmp.XXXXXX")"
+  if [[ -s "${MAKEVN_BACKEND_METADATA_OUT:-}" ]]; then
+    cp "${MAKEVN_BACKEND_METADATA_OUT}" "${tmp}"
+  else
+    printf 'command=%s\nrepo=%s\ncwd=%s\nlog_path=\nrelative_log_path=\ncommand_display=makevn %s\ntitle=%s\n' "${command_key}" "${repo_root}" "${repo_root}" "${command_key}" "${phase_title}" > "${tmp}"
+  fi
+  printf '\nduration_seconds=%s\nexit_code=%s\n' "${duration}" "${rc}" >> "${tmp}"
+  [[ -z "${MAKEVN_BACKEND_DETAIL_OUT:-}" ]] || cp "${MAKEVN_BACKEND_DETAIL_OUT}" "${record}.detail"
+  mv "${tmp}" "${record}"
+}
+
+makevn_test_sequence_summary() {
+  local repo_root="$1" total="$2" passed="$3" failed="$4"
+  local summary="Tests: ${total} executed, ${passed} passed, ${failed} failed"
+  printf '%s\n' "${summary}"
+  [[ -n "${MAKEVN_BACKEND_PHASE_DIR:-}" ]] || return 0
+  local rc=0
+  [[ "${failed}" == 0 ]] || rc=1
+  local test_name="${summary}" index="$((index + 1))"
+  local MAKEVN_BACKEND_METADATA_OUT='' MAKEVN_BACKEND_DETAIL_OUT=''
+  makevn_archive_selected_test "${repo_root}" "${test_name}" "${rc}" 0
 }
