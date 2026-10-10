@@ -2636,29 +2636,16 @@ impl LogTailWindow {
         let render_width = terminal_width().max(8);
         let output_lines = self.rendered_output_lines(render_width, visible_capacity);
         let previous_rows = physical_rows_for_width(&self.rendered_line_widths, render_width);
-        let clear_rows = previous_rows.max(output_lines.len()) + usize::from(previous_rows > 0);
-
         if previous_rows > 0 {
-            write!(io::stdout(), "\u{1b}[{}A", previous_rows)?;
+            clear_tail_rows(&mut io::stdout(), previous_rows)?;
         }
-
-        for index in 0..clear_rows {
-            write!(io::stdout(), "\r\u{1b}[2K")?;
-            if index + 1 < clear_rows {
+        // Keep the cursor on the footer, like the dashboard: a final newline
+        // would create a blank terminal row below the telemetry.
+        for (index, line) in output_lines.iter().enumerate() {
+            if index > 0 {
                 write!(io::stdout(), "\n")?;
             }
-        }
-
-        if clear_rows > 1 {
-            write!(io::stdout(), "\u{1b}[{}A", clear_rows - 1)?;
-        }
-
-        if clear_rows > 0 {
-            write!(io::stdout(), "\r")?;
-        }
-
-        for line in &output_lines {
-            writeln!(io::stdout(), "{line}")?;
+            write!(io::stdout(), "\r\u{1b}[2K{line}")?;
         }
 
         io::stdout().flush()?;
@@ -2707,14 +2694,12 @@ impl LogTailWindow {
 }
 
 fn clear_tail_rows(writer: &mut impl Write, rows: usize) -> io::Result<()> {
-    write!(writer, "\u{1b}[{}A", rows)?;
-    for index in 0..=rows {
-        write!(writer, "\r\u{1b}[2K")?;
-        if index < rows {
-            write!(writer, "\n")?;
+    for index in 0..rows {
+        if index > 0 {
+            write!(writer, "\u{1b}[1A")?;
         }
+        write!(writer, "\r\u{1b}[2K")?;
     }
-    write!(writer, "\u{1b}[{}A\r", rows)?;
     writer.flush()
 }
 
