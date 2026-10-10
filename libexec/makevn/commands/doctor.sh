@@ -52,6 +52,7 @@ makevn_print_doctor_suggestions() {
 print_doctor() {
   local repo_root="$1"
   local reset_config=false
+  local reset_backup=""
 
   shift
   while [[ $# -gt 0 ]]; do
@@ -81,6 +82,9 @@ print_doctor() {
   makevn_doctor_progress "Reporting repository analysis"
   if [[ "${MAKEVN_DOCTOR_BUILD_STATUS}" != "current" ]]; then
     makevn_print_item "Doctor build" "${MAKEVN_DOCTOR_BUILD_STATUS}: ${MAKEVN_DOCTOR_PREVIOUS_VERSION} -> ${MAKEVN_VERSION}; repository reanalyzed"
+  fi
+  if [[ -n "${reset_backup}" ]]; then
+    makevn_print_item "Configuration backup" "${reset_backup}"
   fi
   makevn_print_doctor_init_recommendation
 
@@ -151,6 +155,7 @@ makevn_reset_repo_config() {
   done
   rm -f "${state_dir}/config" "${state_dir}/profile.env"
   makevn_write_config "${repo_root}"
+  reset_backup="${backup}"
   makevn_print_item "configuration backup" "${backup}"
   makevn_refresh_profile "${repo_root}"
 }

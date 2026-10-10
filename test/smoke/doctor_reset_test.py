@@ -29,11 +29,13 @@ with tempfile.TemporaryDirectory() as tmp:
     try:
         result = subprocess.run([cli, "--repo", tmp, "doctor", "--reset-config"], stdin=slave, stderr=slave, stdout=subprocess.PIPE, timeout=60, env={**os.environ, "NO_COLOR": "1"})
         assert result.returncode == 0, result.stdout
+        assert b"Configuration backup:" in result.stdout, result.stdout
     finally:
         os.close(slave)
         os.close(master)
     backups = list((repo / ".makevn").glob("config-backup.*/config"))
     assert len(backups) == 1 and backups[0].read_text() == before
+    assert str(backups[0].parent).encode() in result.stdout, result.stdout
     assert 'MAKEVN_RUN_CMD=""' in config.read_text()
     assert "MAKEVN_APP_HEALTH_URL" not in config.read_text()
     assert (repo / ".makevn/manifest").read_bytes() == manifest
