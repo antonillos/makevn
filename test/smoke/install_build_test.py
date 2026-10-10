@@ -6,6 +6,7 @@ import subprocess
 import tempfile
 
 root = Path(__file__).resolve().parents[2]
+trace_fds = (int(os.environ["BASH_XTRACEFD"]),) if os.environ.get("BASH_XTRACEFD") else ()
 with tempfile.TemporaryDirectory() as tmp:
     fixture = Path(tmp) / "repo"
     fixture.mkdir()
@@ -36,7 +37,7 @@ done
     env = {**os.environ, "PATH": str(fakebin) + os.pathsep + os.environ["PATH"], "PREFIX": str(prefix), "CALLS": str(calls)}
     env.pop("MAKEVN_RUST_TARGET", None)
     def run(*args, **overrides):
-        return subprocess.run(["bash", str(fixture / "install.sh"), *args], env={**env, **overrides}, capture_output=True, text=True)
+        return subprocess.run(["bash", str(fixture / "install.sh"), *args], env={**env, **overrides}, capture_output=True, text=True, pass_fds=trace_fds)
     assert run("--help").returncode == 0
     assert not prefix.exists() and not calls.exists()
     release = fixture / "target/release"

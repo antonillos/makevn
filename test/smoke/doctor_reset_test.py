@@ -7,11 +7,13 @@ import tempfile
 from pathlib import Path
 
 cli = sys.argv[1]
+# Preserve coverage tracing instead of spilling xtrace into an undrained PTY.
+trace_fds = (int(os.environ["BASH_XTRACEFD"]),) if os.environ.get("BASH_XTRACEFD") else ()
 with tempfile.TemporaryDirectory() as tmp:
     repo = Path(tmp)
     (repo / "pom.xml").write_text("<project><modelVersion>4.0.0</modelVersion><groupId>x</groupId><artifactId>x</artifactId><version>1</version></project>")
     def run(*args):
-        return subprocess.run([cli, "--repo", tmp, *args], capture_output=True, text=True)
+        return subprocess.run([cli, "--repo", tmp, *args], capture_output=True, text=True, pass_fds=trace_fds)
     assert run("doctor", "--compact").returncode == 0
     assert run("init").returncode == 0
     config = repo / ".makevn/config"
@@ -28,7 +30,7 @@ with tempfile.TemporaryDirectory() as tmp:
     manifest = (repo / ".makevn/manifest").read_bytes()
     master, slave = pty.openpty()
     try:
-        result = subprocess.run([cli, "--repo", tmp, "doctor", "--reset-config"], stdin=slave, stderr=slave, stdout=subprocess.PIPE, timeout=60, env={**os.environ, "NO_COLOR": "1"})
+        result = subprocess.run([cli, "--repo", tmp, "doctor", "--reset-config"], stdin=slave, stderr=slave, stdout=subprocess.PIPE, timeout=60, env={**os.environ, "NO_COLOR": "1"}, pass_fds=trace_fds)
         assert result.returncode == 0, result.stdout
         assert b"Configuration backup:" in result.stdout, result.stdout
     finally:
