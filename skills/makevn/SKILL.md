@@ -529,7 +529,9 @@ one generic clean + verify_changes + coverage workflow for both intents.
   "tool": "composite_run",
   "arguments": {
     "steps": [
-      {"tool": "verify_changes", "arguments": {"focused": true}}
+      {"tool": "verify_changes", "arguments": {"focused": true}},
+      {"tool": "coverage_changes", "arguments": {}},
+      {"tool": "crap_changes", "arguments": {}}
     ],
     "fail-fast": true
   }
@@ -540,7 +542,7 @@ one generic clean + verify_changes + coverage workflow for both intents.
 
 ```bash
 makevn verify-changes-preview
-makevn verify-changes
+makevn verify-changes coverage-changes crap-changes
 ```
 
 Do not prepend clean by default: it forces rebuilding. A large preparation reactor

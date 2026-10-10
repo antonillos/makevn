@@ -77,3 +77,7 @@ if output="$(makevn_crap_run "${tmp}" crap-changes 2>&1)"; then exit 1; fi
 [[ "${output}" == *'crap4java is not installed'* ]]
 [[ -f "${report}/jacoco.xml" ]]
 printf 'Coverage/CRAP command coordination passed\n'
+
+makevn_effective_java_home() { printf ''; }
+if makevn_scoped_coverage_report "${tmp}" "${tmp}" > "${tmp}/jdk-failure" 2>&1; then exit 1; fi
+grep -q 'configured code JDK is required' "${tmp}/jdk-failure"

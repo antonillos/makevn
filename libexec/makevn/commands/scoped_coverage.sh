@@ -16,6 +16,7 @@ makevn_scoped_coverage_report() {
   local repo_root="$1" base="$2" maven java_home output_file result rc=0
   maven="$(makevn_maven_executable "${repo_root}" "${base}")" || return $?
   java_home="$(makevn_effective_java_home "${repo_root}" code "${base}")" || return $?
+  [[ -n "${java_home}" && -x "${java_home}/bin/java" ]] || { printf "Error: configured code JDK is required for focused coverage; run makevn doctor.\n" >&2; return 1; }
   output_file="$(mktemp)"
   if python3 "${MAKEVN_LIBEXEC_DIR}/common/scoped_coverage.py" report "${repo_root}" "$(makevn_scoped_coverage_state "${repo_root}")" "${maven}" "${java_home}/bin/java" "${3:-}" > "${output_file}"; then
     result="$(tail -n 1 "${output_file}")"
