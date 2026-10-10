@@ -41,7 +41,7 @@ class BindMountTests(unittest.TestCase):
                 self.assertEqual(module.diagnostics("doctor", tmp, str(compose))["checks"][0]["status"], "unverified")
             (source / "data.json").unlink()
             with patch.object(module, "query", return_value=subprocess.CompletedProcess([], 0, json.dumps(config), "")):
-                self.assertEqual(module.diagnostics("required", tmp, str(compose))["checks"][0]["status"], "warning")
+                self.assertEqual(module.diagnostics("required", tmp, str(compose))["checks"][0]["status"], "empty_source")
             source.rmdir()
             with patch.object(module, "query", return_value=subprocess.CompletedProcess([], 0, json.dumps(config), "")):
                 self.assertEqual(module.diagnostics("doctor", tmp, str(compose))["checks"][0]["status"], "warning")

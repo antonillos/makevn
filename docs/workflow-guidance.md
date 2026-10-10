@@ -54,8 +54,8 @@ flowchart TD
     UNKNOWN --> LIMIT[Health alone does not certify initialization data or database users]
 ```
 
-A source missing or empty on the host yields a warning, not proof of a VM mount
-failure. A confirmed absent/inaccessible host entry inside a container blocks
+A missing host source yields a warning; an empty source yields informational
+empty_source status, not evidence of missing initialization data or VM failure. A confirmed absent/inaccessible host entry inside a container blocks
 readiness. These checks are read-only: no helper images, VM reconfiguration,
 credential edits or volume deletion. Initialization semantics need project-specific
 checks; visibility alone cannot prove them.

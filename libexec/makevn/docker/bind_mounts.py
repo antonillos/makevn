@@ -59,7 +59,7 @@ def diagnostics(mode, repo, compose, override=""):
             if samples is None:
                 check.update(status="warning", reason="Host source is missing or unreadable; remote daemon paths may differ.")
             elif not samples:
-                check.update(status="warning", reason="Host source directory is empty; initialization data may be missing.")
+                check.update(status="empty_source", reason="Host source directory is empty; no entries are available for visibility comparison. This does not establish missing initialization data or a mount failure.")
             elif mode == "required":
                 verify_visible(command, repo, service, target, samples, check)
             checks.append(check)
@@ -93,8 +93,9 @@ def main():
         if result["status"] == "unavailable":
             print("Bind mount visibility unverified: resolved compose JSON unavailable.")
         for check in result["checks"]:
-            if check["status"] in ("error", "warning", "unverified"):
-                print(f"Bind mount {check['status']}: {check['service']} {check['source']} -> {check['target']}: {check.get('reason', 'visibility not verified')}")
+            if check["status"] in ("error", "warning", "unverified", "empty_source"):
+                level = "info" if check["status"] == "empty_source" else check["status"]
+                print(f"Bind mount {level}: {check['service']} {check['source']} -> {check['target']}: {check.get('reason', 'visibility not verified')}")
         if result["status"] == "error":
             print("Do not repeat tests or change credentials. Confirm mount sharing/checkout accessibility with the user, then recreate affected services and verify initialization. Do not reconfigure the VM or delete volumes without authorization.")
             return 1
