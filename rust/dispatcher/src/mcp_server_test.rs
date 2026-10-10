@@ -741,7 +741,8 @@ fn verify_changes_failure_guidance_preserves_diagnostics_and_status() {
             let data = &response["structuredContent"];
             let suggestion = data["nextSuggestion"].as_str().unwrap();
             if exit_code == 0 {
-                assert!(suggestion.starts_with("Use this result"));
+                assert!(suggestion.contains("Report the actual mode"));
+                assert!(suggestion.contains("not full verification"));
             } else {
                 for expected in [
                     "first root cause",
@@ -896,5 +897,22 @@ fn focused_changes_option_is_exposed_in_both_tools() {
     for name in ["verify_changes", "verify_changes_preview"] {
         let spec = super::TOOL_SPECS.iter().find(|spec| spec.name == name).unwrap();
         assert!(spec.options.iter().any(|option| option.name == "focused"));
+        assert!(spec.description.contains("focused"));
+        assert!(spec.description.contains("gate"));
+    }
+}
+
+#[test]
+fn focused_agent_guidance_is_visible_without_loading_the_skill() {
+    let result = super::ToolCallResult {
+        output: String::new(), exit_code: 0, duration_ms: 1, next_suggestion: None,
+    };
+    let preview = super::tool_next_suggestion("verify_changes_preview", &result);
+    for text in ["BOTH", "user need not name the flag", "large focused preparation reactor", "required full"] {
+        assert!(preview.contains(text));
+    }
+    let verification = super::tool_next_suggestion("verify_changes", &result);
+    for text in ["actual mode", "focused checks passed", "not full verification", "CRAP gates"] {
+        assert!(verification.contains(text));
     }
 }

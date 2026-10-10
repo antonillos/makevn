@@ -69,18 +69,61 @@ makevn verify-changes-preview
 makevn verify-changes
 ```
 
-For explicitly requested focused feedback, use the same mode in preview and execution:
+### Choosing verification scope (agent decision rule)
+
+A request for **fast local feedback on a small change** authorizes proposing
+focused verification; the user need not know the word `focused`. Explain its scope
+before running it. If the request requires full verification, release readiness,
+CI parity or a coverage gate, **do not substitute focused success**. When intent
+is ambiguous, explain the trade-off and ask rather than silently reducing scope.
+
+| User's intent | Agent action |
+| --- | --- |
+| Faster scoped feedback | Explain the exclusions, then preview and execute with focused enabled |
+| Complete selected owner/dependency suites | Use CLI `--exhaustive`; for a whole-project gate use `makevn verify` |
+| Coverage requirement | Run the appropriate full coverage-producing flow separately |
+
+After doctor/setup and any required Docker readiness check, use the **same mode**:
 
 ```bash
 makevn verify-changes-preview --focused
 makevn verify-changes --focused
 ```
 
-This prepares dependencies without UT/IT execution, verifies complete production
-owner suites and selected changed tests in other owners, and requires fresh test
-reports. It is not full integration or global coverage verification. Use explicit
-`--exhaustive` for all selected owner/dependency suites. Do not silently substitute
-focused verification for a required full gate.
+MCP equivalents (same repository, same `focused` value):
+
+```json
+{"tool": "verify_changes_preview", "arguments": {"repo": "/absolute/repository", "focused": true}}
+{"tool": "verify_changes", "arguments": {"repo": "/absolute/repository", "focused": true}}
+```
+
+Inspect the preview before execution. Explain these phases to the user:
+
+1. **Prepare dependencies:** `install -am` compiles/packages/installs current
+   checkout artifacts with UT/IT execution disabled. It updates the local Maven
+   repository and retains test compilation/test jars. A 34-module reactor here
+   can be correct; it does **not** mean 34 suites will run.
+2. **Verify owners:** no `-am`. Complete suites run in production/POM-consumer
+   owners; only listed changed tests run in other owners. For the categories/boot
+   example, this means the categories module suite plus `OwnersRepositoryIT`,
+   not the entire boot or dependency suites. UT and IT selectors are separate.
+3. **Check evidence:** explicitly selected classes must have fresh, non-skipped
+   reports from the correct Surefire/Failsafe plugin. Exit code zero alone is
+   insufficient. Helpers/deleted tests broaden to the complete owner suite;
+   unknown/root impact rejects focus and requires an explained broader run.
+
+Do not diagnose excessive testing from the reactor list alone: inspect the phase
+and command. Preparation should contain `-am install` and skip flags;
+verification should contain `verify` without `-am`. If dependency suites actually
+run during preparation, stop and investigate the effective project configuration.
+Do not retry merely because preparation lists many modules.
+
+No flag retains prior behavior (including selected tests for test-only changes);
+explicit `--exhaustive` runs complete selected owner/dependency suites. MCP
+`focused: false`/omission retains default behavior, not explicit CLI exhaustive.
+Do not pass scope-changing Maven overrides to focus or disable report checks.
+Report the mode and actual scope on completion: **focused checks passed**, not
+“full verification/coverage passed.” Keep mandatory full CI, coverage and CRAP gates.
 
 Changed-code coverage uses a separate full coverage-producing run (choose UT or IT
 coverage according to doctor; a scoped verification is not a global coverage gate):

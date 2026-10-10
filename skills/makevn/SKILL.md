@@ -865,12 +865,48 @@ It does not reset environment variables or stop containers. Reset is CLI-only
 and is not an init option or MCP tool argument. Ordinary init --force still
 preserves settings. The repository must already be initialized and supported.
 
-## Focused changed-code feedback
+## Choosing focused versus complete verification (mandatory agent rule)
 
-When the user explicitly wants faster scoped feedback, run
-`makevn verify-changes-preview --focused`, inspect the listed owner suites/tests,
-then `makevn verify-changes --focused`. MCP equivalents accept `focused: true`.
-Dependencies are built/installed without UT/IT execution first; verification phases
-have no `-am`. A successful focused run is not a full integration/global coverage
-gate. Unknown impact rejects focus; explicit `--exhaustive` retains all selected
-owner and dependency suites. Never pass Maven test/skip/reactor overrides to focus.
+For a user request for **faster local feedback on a limited change**, explain the
+focused scope and use `--focused` in **both** preview and execution. The user does
+not need to name the flag. If intent is unclear, ask which scope is wanted. Never
+replace requested full verification, release/CI parity or coverage with focused
+success. Doctor/setup and required Docker readiness still come first.
+
+```bash
+makevn verify-changes-preview --focused
+makevn verify-changes --focused
+```
+
+For MCP, use `focused: true` in both `verify_changes_preview` and `verify_changes`
+with the same repository. Inspect the preview's per-owner suites/test list before
+execution; do not preview focused and execute the default mode.
+
+**What the agent must understand and explain:**
+
+- Preparation compiles/packages/installs necessary checkout dependencies with
+  UT/IT execution disabled, while retaining test compilation/test jars. It updates
+  local Maven artifacts. Its `-am install` reactor may still list 34 modules:
+  that is not evidence that all their suites ran.
+- Verification runs without `-am`: full production/POM-consumer owner suites,
+  selected changed test classes in other owners. A categories change plus a boot
+  IT therefore does not require the complete boot suite in this mode.
+- UT and IT selectors are separated; selected tests must have fresh non-skipped
+  XML evidence from the expected plugin. Maven exit zero is not enough.
+- Changed helpers/deleted tests expand to their complete owner suite. Unknown/root
+  impact rejects focus; explain the reason before choosing a broader run.
+- Focused success does not prove all impacted integration behavior or global
+  coverage. Report “focused checks passed” with the tested scope, and retain
+  mandatory full CI/coverage/CRAP gates.
+
+To diagnose a large reactor, read the **phase and Maven command**, not just the
+module list. Preparation must use `-am install` with skip flags; owner verification
+must not use `-am`. If preparation really executes dependency suites, investigate
+project configuration instead of blindly retrying.
+
+CLI `--exhaustive` runs complete selected owner/dependency suites; whole-project
+verification is `makevn verify`. No flag preserves the prior default behavior;
+MCP `focused: false` or omission is that default, **not** explicit CLI exhaustive.
+Never pass Maven test/skip/reactor overrides to focus or disable fresh-report checks.
+See `docs/agents.md` and the visible graph in `docs/workflow-guidance.md` for the
+maintained decision contract.

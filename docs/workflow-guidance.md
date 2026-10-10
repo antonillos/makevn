@@ -133,7 +133,7 @@ flowchart TD
   Diff --> POM{Root POM change understood?}
   POM -->|Only directly managed version properties| Consumers[Direct dependency consumers]
   POM -->|Other, unresolved, deleted or profile-dependent| Full[Full verify fallback]
-  Owners --> Mode{Explicit focused mode?}
+  Owners --> Mode{User requests faster scoped feedback?}
   Mode -->|No| Verify[Selected module suites plus Maven -am dependencies]
   Mode -->|Yes| Prepare[Install dependencies without UT/IT]
   Prepare --> Focus[Production owner suites and changed tests without -am]
@@ -183,3 +183,12 @@ A large **preparation** reactor is expected; the expensive dependency suites do 
 run in that phase. Custom plugins may still perform additional work. Do not infer
 full integration or global coverage from focused success; keep the separate CI and
 coverage gates.
+
+### Agent discoverability
+
+The mode-selection rule lives in `docs/agents.md` and the makevn skill; agents must
+explain scope when choosing focused feedback, ask if intent is unclear and preserve
+mandatory full gates. It is also exposed without loading the skill: MCP tool and
+`focused` option descriptions, preview/success/failure `nextSuggestion` and CLI
+command help explain the same preview/execution mode, expected large preparation
+reactor and limited success claim. Keep these surfaces and guidance tests consistent.

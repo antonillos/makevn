@@ -292,3 +292,29 @@ rejects noninteractive, compact and JSON execution before changing anything.
 It does not reset environment variables or stop containers. Reset is CLI-only
 and is not an init option or MCP tool argument. Ordinary init --force still
 preserves settings. The repository must already be initialized and supported.
+
+### Agent rule: choosing focused changed-code feedback
+
+A user request for faster local feedback on a small change is a reason to explain
+and select focused mode; the user need not know the flag. If intent is unclear,
+ask. Never substitute focused success for required full verification/CI/coverage.
+After doctor/setup and required Docker readiness, preview and execute in the same
+repository with the **same** `focused` value:
+
+```json
+{"tool": "verify_changes_preview", "arguments": {"repo": "/absolute/repository", "focused": true}}
+{"tool": "verify_changes", "arguments": {"repo": "/absolute/repository", "focused": true}}
+```
+
+Read the planned owner suites/tests first. Preparation installs checkout dependencies
+without UT/IT execution; a large reactor here is normal. Owner verification has no
+`-am`: full production/POM-consumer suites, selected changed tests in other owners.
+Selected classes require fresh evidence from the expected test plugin. Unknown
+impact rejects focus instead of guessing. Report “focused checks passed” and the
+actual scope, not full integration/global coverage success. Keep full gates.
+
+`focused: false` or omission retains prior default behavior; it is **not** explicit
+CLI `--exhaustive`. Use CLI for explicit selected-owner/dependency exhaustive suites
+or `makevn verify` for the whole project. The tool descriptions and server-authored
+`nextSuggestion` expose these rules even when the skill is not loaded. See the
+maintained decision rule in `docs/agents.md` and graph in `docs/workflow-guidance.md`.
