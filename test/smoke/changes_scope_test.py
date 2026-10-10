@@ -45,6 +45,12 @@ class ScopeTests(unittest.TestCase):
                 "code/client/src/main/java/Owner.java", "code/client/src/test/java/OwnerTest.java",
                 "code/boot/src/test/java/OwnerIT.java"]), "boot,client")
 
+    def test_empty_diff_lines_do_not_become_unclassified_files(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repo = pathlib.Path(directory)
+            self.assertEqual(scope.selection(repo, repo, 'HEAD', ['', '']), '')
+            self.assertEqual(scope.focused_plan(repo, repo, 'HEAD', ['', '']), '')
+
     def test_unclassified_build_paths_require_broad_verification(self):
         with tempfile.TemporaryDirectory() as directory:
             repo = pathlib.Path(directory)

@@ -82,7 +82,7 @@ def selection(repo, base, reference, paths):
     modules = set()
     for path in paths:
         absolute = repo / path
-        if documentation_path(path):
+        if not path or documentation_path(path):
             continue
         if not absolute.is_relative_to(base):
             return "."
