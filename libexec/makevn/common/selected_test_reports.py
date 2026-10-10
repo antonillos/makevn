@@ -5,10 +5,9 @@ import xml.etree.ElementTree as ET
 
 
 def is_integration(module, name):
-    annotations = ("@SpringBootTest", "@DataMongoTest", "@WebMvcTest", "@Testcontainers")
-    source = module / "src/test/java" / (name.replace(".", "/") + ".java")
-    content = source.read_text() if source.is_file() else ""
-    return name.endswith("IT") or any(marker in content for marker in annotations)
+    # Plugin naming conventions, not Spring annotations, determine ownership.
+    simple_name = name.rsplit(".", 1)[-1]
+    return simple_name.startswith("IT") or simple_name.endswith(("IT", "ITCase"))
 
 
 def selection_flags(module, names):

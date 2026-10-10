@@ -19,6 +19,27 @@ class ReportTests(unittest.TestCase):
         flags = reports.selection_flags(pathlib.Path("/nonexistent"), ["example.OwnerTest", "example.OwnerIT"])
         self.assertEqual(flags[:2], ["-Dtest=example.OwnerTest", "-Dit.test=example.OwnerIT"])
 
+    def test_spring_annotations_do_not_change_surefire_ownership(self):
+        with tempfile.TemporaryDirectory() as directory:
+            module = pathlib.Path(directory)
+            for name in ['ExampleTest', 'ExampleTests']:
+                source = module / ('src/test/java/example/' + name + '.java')
+                source.parent.mkdir(parents=True, exist_ok=True)
+                source.write_text('@SpringBootTest @Testcontainers class ' + name + ' {}')
+                self.assertEqual(reports.selection_flags(module, ['example.' + name])[:2],
+                                 ['-Dtest=example.' + name, '-Dit.test=!%regex[.*]'])
+                stamp = module / 'stamp'
+                stamp.touch()
+                target = module / 'target/surefire-reports'
+                target.mkdir(parents=True, exist_ok=True)
+                (target / ('TEST-example.' + name + '.xml')).write_text('<testsuite><testcase classname="example.' + name + '" name="test"/></testsuite>')
+                self.assertEqual(reports.missing_tests(module, ['example.' + name], stamp), [])
+
+    def test_failsafe_default_prefix_and_itcase_suffix(self):
+        for name in ['example.ITExample', 'example.ExampleITCase']:
+            self.assertEqual(reports.selection_flags(pathlib.Path('/nonexistent'), [name])[:2],
+                             ['-Dtest=!%regex[.*]', '-Dit.test=' + name])
+
     def test_requires_fresh_non_skipped_case_for_every_class(self):
         with tempfile.TemporaryDirectory() as directory:
             module = pathlib.Path(directory)
