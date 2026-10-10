@@ -584,6 +584,9 @@ makevn_collect_doctor_snapshot() {
 # Report questions that noninteractive clients cannot answer.
 makevn_doctor_interactive_setup_status() {
   MAKEVN_DOCTOR_INTERACTIVE_REQUIRED=false
+  if [[ "${MAKEVN_DOCTOR_KARATE_APP_PROFILES:-}" == 'unresolved (explicit selection required)' && -z "${SPRING_PROFILES_ACTIVE+x}" && -z "${MAKEVN_KARATE_APP_PROFILES:-}" ]]; then
+    MAKEVN_DOCTOR_INTERACTIVE_REQUIRED=true
+  fi
   case "${MAKEVN_DOCTOR_COMPOSE_FILE} ${MAKEVN_DOCTOR_E2E_COMPOSE_FILE}" in
     *ambiguous*) MAKEVN_DOCTOR_INTERACTIVE_REQUIRED=true ;;
   esac
