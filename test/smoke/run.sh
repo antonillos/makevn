@@ -3524,6 +3524,53 @@ EOF
     || fail "expected reverted first-parent path to be excluded from coverage, got: ${output}"
 }
 
+test_unclassified_build_change_requires_explicit_exhaustive() {
+  local repo="${TMP_ROOT}/unknown-build-change" java_home output
+  mkdir -p "${repo}/.mvn"
+  printf '<project/>\n' > "${repo}/pom.xml"
+  printf 'initial\n' > "${repo}/.mvn/maven.config"
+  git init -q "${repo}"
+  git -C "${repo}" add .
+  git -C "${repo}" -c user.name=Test -c user.email=test@example.com commit -qm base
+  printf 'changed\n' >> "${repo}/.mvn/maven.config"
+  ${CLI} --repo "${repo}" init >/dev/null
+  java_home="$(detect_java_home)"
+  printf 'MAKEVN_JAVA_HOME="%s"\n' "${java_home}" > "${repo}/.makevn/config"
+  cat > "${repo}/mvnw" <<'EOF'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> .mvnw.log
+EOF
+  chmod +x "${repo}/mvnw"
+  if output="$(${CLI} --repo "${repo}" verify-changes 2>&1)"; then fail 'unclassified build change skipped'; fi
+  [[ "${output}" == *'use --exhaustive'* ]] || fail 'missing broad-run recommendation'
+  [[ ! -f "${repo}/.mvnw.log" ]] || fail 'unknown focus executed Maven'
+  ${CLI} --repo "${repo}" verify-changes --exhaustive >/dev/null
+  assert_contains "${repo}/.mvnw.log" 'verify'
+}
+
+test_coverage_rejects_old_global_after_scoped_verification() {
+  local repo="${TMP_ROOT}/coverage-stale-global" report output
+  report="${repo}/jacoco-report-aggregate/target/site/jacoco-aggregate"
+  mkdir -p "${report}" "${repo}/.makevn"
+  printf '<project/>\n' > "${repo}/pom.xml"
+  printf '<html/>\n' > "${report}/index.html"
+  cat > "${report}/jacoco.csv" <<'EOF'
+GROUP,PACKAGE,CLASS,INSTRUCTION_MISSED,INSTRUCTION_COVERED,BRANCH_MISSED,BRANCH_COVERED,LINE_MISSED,LINE_COVERED,COMPLEXITY_MISSED,COMPLEXITY_COVERED,METHOD_MISSED,METHOD_COVERED
+makevn,example,Owner,0,10,0,0,0,1,0,1,0,1
+EOF
+  touch "${repo}/.makevn/verify-changes-started"
+  python3 - "${report}/jacoco.csv" <<'PY'
+import os, sys
+os.utime(sys.argv[1], (1, 1))
+PY
+  if output="$(${CLI} --repo "${repo}" coverage 2>&1)"; then fail 'stale global report passed'; fi
+  [[ "${output}" == *'Global coverage is older'* ]] || fail 'missing freshness diagnostic'
+  [[ "${output}" != *'Quality gate conditions met'* ]] || fail 'stale global gate evaluated'
+  touch "${report}/jacoco.csv"
+  output="$(${CLI} --repo "${repo}" coverage)"
+  [[ "${output}" == *'Quality gate conditions met'* ]] || fail 'fresh global report rejected'
+}
+
 test_coverage_changes_command() {
   local repo="${TMP_ROOT}/coverage-changes"
   local output
@@ -4697,6 +4744,8 @@ test_crap_install_analyzer_requires_cache_home() {
 }
 
 main() {
+  test_unclassified_build_change_requires_explicit_exhaustive
+  test_coverage_rejects_old_global_after_scoped_verification
   test_verify_changes_focused_command
   test_doctor_unsupported
   test_backend_doctor_json

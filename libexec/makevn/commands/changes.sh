@@ -391,6 +391,16 @@ cmd_verify_changes_preview() {
   makevn_print_verify_changes_preflight "verify-changes-preview"
 }
 
+makevn_require_global_coverage_fresh() {
+  local repo_root="$1" report_dirs="$2" report_dir
+  local stamp="$(makevn_state_dir "${repo_root}")/verify-changes-started"
+  [[ -f "${stamp}" ]] || return 0
+  [[ -n "${report_dirs}" ]] || makevn_die "Global coverage is unavailable after scoped verification. Run verify-ut-coverage or verify-it-coverage first."
+  while IFS= read -r report_dir; do
+    [[ "${report_dir}/jacoco.csv" -nt "${stamp}" ]] || makevn_die "Global coverage is older than the last scoped verification. Run verify-ut-coverage or verify-it-coverage first; focused coverage is not a global gate."
+  done <<< "${report_dirs}"
+}
+
 cmd_coverage() {
   local repo_root="$1"
   local maven_base_path=""
@@ -435,6 +445,7 @@ cmd_coverage() {
   [[ -n "${maven_base_path}" ]] || makevn_die "No Maven project detected in ${repo_root}"
   makevn_write_coverage_frontend_metadata "${repo_root}" "${maven_base_path}"
   report_dirs="$(makevn_jacoco_report_dirs "${maven_base_path}" | sed '/^$/d' || true)"
+  makevn_require_global_coverage_fresh "${repo_root}" "${report_dirs}"
   if [[ -z "${report_dirs}" ]]; then
     coverage_cli_flags_value="$(makevn_coverage_cli_flags "${repo_root}")"
     if [[ -n "${coverage_cli_flags_value}" ]]; then
