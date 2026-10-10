@@ -69,11 +69,11 @@ makevn verify-changes-preview
 makevn verify-changes
 ```
 
-Changed-code coverage after a coverage-producing run:
+Changed-code coverage uses a separate full coverage-producing run (choose UT or IT
+coverage according to doctor; a scoped verification is not a global coverage gate):
 
 ```bash
-makevn verify-changes-preview
-makevn verify-changes
+makevn verify-ut-coverage # or verify-it-coverage when integration coverage is needed
 makevn coverage-changes
 ```
 

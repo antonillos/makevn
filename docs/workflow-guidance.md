@@ -124,3 +124,30 @@ Docker-dependent test commands also track their descendant test JVM identities
 while running and warn about observed surviving children after exit/cancellation.
 Foreign processes are never terminated; ownership requires observed ancestry,
 not just a matching project. Process-inspection limitations are reported.
+
+## Changed-code selection
+
+```mermaid
+flowchart TD
+  Diff[Java and POM diff] --> Owners[Production and changed test owner modules]
+  Diff --> POM{Root POM change understood?}
+  POM -->|Only directly managed version properties| Consumers[Direct dependency consumers]
+  POM -->|Other, unresolved, deleted or profile-dependent| Full[Full verify fallback]
+  Owners --> Verify[Selected module suites plus Maven -am dependencies]
+  Consumers --> Verify
+  Verify --> Separate[Aggregate is not automatically selected]
+  Separate --> Gate[Separate full coverage-enabled verify before global coverage gate]
+```
+
+`verify-changes-preview` shows the selected modules and warns that `-am` still
+executes dependency suites: selecting `boot` can legitimately remain expensive.
+It includes changed IT owners even when production changes are in another module.
+POM-only changes are never silently skipped. Static narrowing only recognizes a
+root property-text bump directly referenced in dependencyManagement with direct
+local consumers; unknown models fall back to full verification.
+
+Verification recalculates its plan rather than trusting a preview after local
+content edits. `coverage-changes` rejects an aggregate report older than the last
+scoped run. This timestamp guard does **not** establish freshness of every execution
+file: fresh scoped coverage and dependency preparation without suites remain
+separate follow-up work. No focused or exhaustive mode is implemented by this change.

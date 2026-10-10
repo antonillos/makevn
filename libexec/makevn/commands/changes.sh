@@ -301,20 +301,16 @@ makevn_collect_verify_changes_scope() {
     MAKEVN_VERIFY_CHANGES_TEST_FILES="$(printf '%s\n%s\n' "${diff_base}" "${diff_local}" | grep -E "${path_prefix_regex}.*src/test/java/.*\.java$" | LC_ALL=C sort -u || true)"
   fi
 
-  MAKEVN_VERIFY_CHANGES_MODULES=''
-  MAKEVN_VERIFY_CHANGES_CLASSES=''
-  MAKEVN_VERIFY_CHANGES_MODULE_SELECTION=''
-  if [[ -n "${MAKEVN_VERIFY_CHANGES_SRC_FILES}" ]]; then
-    MAKEVN_VERIFY_CHANGES_MODULES="$(printf '%s\n' "${MAKEVN_VERIFY_CHANGES_SRC_FILES}" | sed "s|^${strip_prefix}||" | sed 's|/src/.*||' | sed 's|^src/.*||' | LC_ALL=C sort -u | sed '/^$/d' | paste -sd, -)"
-    MAKEVN_VERIFY_CHANGES_CLASSES="$(printf '%s\n' "${MAKEVN_VERIFY_CHANGES_SRC_FILES}" | sed 's|^.*src/main/java/||' | sed 's|\.java$||' | tr '/' '.' | paste -sd, -)"
-    if [[ -n "${MAKEVN_VERIFY_CHANGES_MODULES}" ]]; then
-      jacoco_module="$(makevn_detect_jacoco_module_name "${MAKEVN_VERIFY_CHANGES_MAVEN_BASE_PATH}" || true)"
-      MAKEVN_VERIFY_CHANGES_MODULE_SELECTION="${MAKEVN_VERIFY_CHANGES_MODULES}"
-      if [[ -n "${jacoco_module}" && ",${MAKEVN_VERIFY_CHANGES_MODULES}," != *",${jacoco_module},"* ]]; then
-        MAKEVN_VERIFY_CHANGES_MODULE_SELECTION="${MAKEVN_VERIFY_CHANGES_MODULES},${jacoco_module}"
-      fi
-    fi
+  local changed_paths=""
+  local comparison_base="HEAD"
+  changed_paths="$(printf '%s\n%s\n' "${diff_base:-}" "${diff_local}" | LC_ALL=C sort -u | sed '/^$/d')"
+  if [[ "${MAKEVN_VERIFY_CHANGES_PARENT_SPEC}" != HEAD ]]; then
+    comparison_base="$(git -C "${git_root}" merge-base "${MAKEVN_VERIFY_CHANGES_PARENT_SPEC%...HEAD}" HEAD)"
   fi
+  MAKEVN_VERIFY_CHANGES_POM_FILES="$(printf '%s\n' "${changed_paths}" | grep -E '(^|/)pom\.xml$' || true)"
+  MAKEVN_VERIFY_CHANGES_MODULES="$(printf '%s\n' "${changed_paths}" | python3 "${SCRIPT_DIR}/common/changes_scope.py" "${git_root}" "${MAKEVN_VERIFY_CHANGES_MAVEN_BASE_PATH}" "${comparison_base}")"
+  MAKEVN_VERIFY_CHANGES_MODULE_SELECTION="${MAKEVN_VERIFY_CHANGES_MODULES}"
+  MAKEVN_VERIFY_CHANGES_CLASSES="$(printf '%s\n' "${MAKEVN_VERIFY_CHANGES_SRC_FILES}" | sed '/^$/d' | sed 's|^.*src/main/java/||' | sed 's|\.java$||' | tr '/' '.' | paste -sd, -)"
 
   MAKEVN_VERIFY_CHANGES_TEST_LIST=''
   if [[ -n "${MAKEVN_VERIFY_CHANGES_TEST_FILES}" ]]; then
@@ -328,9 +324,9 @@ makevn_print_verify_changes_preflight() {
 
   makevn_print_item "compare against" "${MAKEVN_VERIFY_CHANGES_PARENT_SPEC}"
 
-  if [[ -z "${MAKEVN_VERIFY_CHANGES_SRC_FILES}" && -z "${MAKEVN_VERIFY_CHANGES_TEST_FILES}" ]]; then
+  if [[ -z "${MAKEVN_VERIFY_CHANGES_MODULE_SELECTION}" && -z "${MAKEVN_VERIFY_CHANGES_TEST_FILES}" ]]; then
     makevn_print_item "strategy" "skip"
-    makevn_print_detail_line "No modified Java files detected. Skipping ${command_name}."
+    makevn_print_detail_line "No modified Java or POM files detected. Skipping ${command_name}."
     return 0
   fi
 
@@ -341,11 +337,13 @@ makevn_print_verify_changes_preflight() {
     makevn_print_item "test files" "$(makevn_count_non_empty_lines "${MAKEVN_VERIFY_CHANGES_TEST_FILES}")"
   fi
 
-  if [[ -n "${MAKEVN_VERIFY_CHANGES_SRC_FILES}" ]]; then
-    if [[ -n "${MAKEVN_VERIFY_CHANGES_MODULES}" ]]; then
+  if [[ -n "${MAKEVN_VERIFY_CHANGES_SRC_FILES}" || -n "${MAKEVN_VERIFY_CHANGES_POM_FILES:-}" || -z "${MAKEVN_VERIFY_CHANGES_TEST_FILES}" ]]; then
+    if [[ -n "${MAKEVN_VERIFY_CHANGES_MODULES}" && "${MAKEVN_VERIFY_CHANGES_MODULES}" != . ]]; then
       strategy="run verify for affected modules"
       makevn_print_item "modules" "${MAKEVN_VERIFY_CHANGES_MODULES}"
       makevn_print_item "verify selection" "${MAKEVN_VERIFY_CHANGES_MODULE_SELECTION}"
+      makevn_print_item "dependency suites" "included by Maven -am; boot may still expand the reactor"
+      makevn_print_item "aggregate coverage" "not added to verification; use a separate coverage-enabled full verify"
     else
       strategy="run full verify fallback"
     fi
@@ -518,12 +516,11 @@ cmd_verify_changes() {
     print_command_intro "${repo_root}" verify-changes
   fi
 
-  if ! makevn_load_verify_changes_plan "${repo_root}"; then
-    makevn_collect_verify_changes_scope "${repo_root}"
-  fi
+  # Always re-plan: a preview cache cannot detect content-only local edits.
+  makevn_collect_verify_changes_scope "${repo_root}"
   makevn_print_verify_changes_preflight "verify-changes"
 
-  if [[ -z "${MAKEVN_VERIFY_CHANGES_SRC_FILES}" && -z "${MAKEVN_VERIFY_CHANGES_TEST_FILES}" ]]; then
+  if [[ -z "${MAKEVN_VERIFY_CHANGES_MODULE_SELECTION}" && -z "${MAKEVN_VERIFY_CHANGES_TEST_FILES}" ]]; then
     makevn_clear_verify_changes_plan "${repo_root}"
     if makevn_frontend_owns_loader; then
       makevn_write_quick_backend_log \
@@ -534,11 +531,14 @@ cmd_verify_changes() {
         "makevn verify-changes" \
         "compare against: ${MAKEVN_VERIFY_CHANGES_PARENT_SPEC}
 strategy: skip
-No modified Java files detected. Skipping verify-changes."
+No modified Java or POM files detected. Skipping verify-changes."
     fi
     return 0
   fi
 
+  # A narrowed run is not evidence for a previously generated global report.
+  mkdir -p "$(makevn_state_dir "${repo_root}")"
+  touch "$(makevn_state_dir "${repo_root}")/verify-changes-started"
   cli_flags_value="$(makevn_maven_cli_flags_for_command "${repo_root}" verify)"
   cli_flags_value="$(makevn_append_word "${cli_flags_value}" "-nsu")"
   if [[ -n "${cli_flags_value}" ]]; then
@@ -558,8 +558,8 @@ No modified Java files detected. Skipping verify-changes."
     verify_args=("${MAKEVN_VERIFY_CHANGES_MAVEN_EXECUTABLE}")
   fi
 
-  if [[ -n "${MAKEVN_VERIFY_CHANGES_SRC_FILES}" ]]; then
-    if [[ -z "${MAKEVN_VERIFY_CHANGES_MODULES}" ]]; then
+  if [[ -n "${MAKEVN_VERIFY_CHANGES_SRC_FILES}" || -n "${MAKEVN_VERIFY_CHANGES_POM_FILES:-}" || -z "${MAKEVN_VERIFY_CHANGES_TEST_FILES}" || "${MAKEVN_VERIFY_CHANGES_MODULE_SELECTION}" == . ]]; then
+    if [[ -z "${MAKEVN_VERIFY_CHANGES_MODULES}" || "${MAKEVN_VERIFY_CHANGES_MODULES}" == . ]]; then
       makevn_clear_verify_changes_plan "${repo_root}"
       cmd_verify "${repo_root}"
       return $?
@@ -673,6 +673,10 @@ cmd_coverage_changes() {
 
   report_dir="$(makevn_jacoco_report_dir "${maven_base_path}" || true)"
   [[ -n "${report_dir}" ]] || makevn_die "No JaCoCo aggregate module detected under ${maven_base_path}"
+  local scoped_run_stamp="$(makevn_state_dir "${repo_root}")/verify-changes-started"
+  if [[ -f "${scoped_run_stamp}" && ! "${report_dir}/index.html" -nt "${scoped_run_stamp}" ]]; then
+    makevn_die "Aggregate coverage is older than the last scoped verification. Run a separate full coverage-enabled verify (verify-ut-coverage or verify-it-coverage); verify-changes no longer builds the global aggregator."
+  fi
 
   if [[ ! -f "${report_dir}/index.html" ]]; then
     jacoco_module="$(makevn_detect_jacoco_module_name "${maven_base_path}" || true)"

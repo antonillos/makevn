@@ -3391,7 +3391,7 @@ EOF
 
   assert_matches "${code_repo}/.mvnw.log" '^CWD=.*/verify-changes-nested-maven-base/code$'
   assert_contains "${code_repo}/.mvnw.log" 'LOCAL_CONTAINERS=TRUE'
-  assert_matches "${code_repo}/.mvnw.log" '^ARGS=-nsu -f .*/code/pom\.xml -pl boot,jacoco-report-aggregate -am verify -Djacoco\.skip=false -DskipTests=false -Dmaven\.test\.failure\.ignore=false -Dmaven\.build\.cache\.enabled=false$'
+  assert_matches "${code_repo}/.mvnw.log" '^ARGS=-nsu -f .*/code/pom\.xml -pl boot -am verify -Djacoco\.skip=false -DskipTests=false -Dmaven\.test\.failure\.ignore=false -Dmaven\.build\.cache\.enabled=false$'
 
   ${CLI} --repo "${repo}" uninstall >/dev/null
 }
@@ -4786,4 +4786,5 @@ bash "${ROOT_DIR}/test/smoke/init_presentation_test.sh"
 python3 "${ROOT_DIR}/test/smoke/question_style_test.py"
 python3 "${ROOT_DIR}/test/smoke/install_build_test.py"
 bash "${ROOT_DIR}/test/smoke/reset_config_test.sh"
+python3 "${ROOT_DIR}/test/smoke/changes_scope_test.py"
 main "$@"
