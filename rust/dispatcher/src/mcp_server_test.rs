@@ -865,3 +865,27 @@ fn doctor_pending_questions_require_interactive_cli_not_mcp_retry() {
     }
     assert!(super::doctor_next_suggestion(&json!({"repository_analysis": {"repository_support_status": "unsupported"}, "interactive_setup": {"required": true}})).unwrap().contains("do not run init"));
 }
+
+#[test]
+fn pending_doctor_message_distinguishes_analysis_from_setup() {
+    let snapshot = json!({"repository_analysis": {"repository_support_status": "supported"}, "interactive_setup": {"required": true}});
+    let mut result = super::ToolCallResult {
+        output: String::new(),
+        exit_code: 0,
+        duration_ms: 1,
+        next_suggestion: super::doctor_next_suggestion(&snapshot).map(str::to_owned),
+    };
+    assert!(super::tool_result_message("doctor", &result).contains("configuration is pending"));
+    assert_eq!(
+        super::tool_result_message("test", &result),
+        "makevn tool completed successfully."
+    );
+    result.exit_code = 1;
+    assert!(super::tool_result_message("doctor", &result).contains("failed"));
+    result.exit_code = 0;
+    result.next_suggestion = None;
+    assert_eq!(
+        super::tool_result_message("doctor", &result),
+        "makevn tool completed successfully."
+    );
+}

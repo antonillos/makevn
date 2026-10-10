@@ -32,7 +32,10 @@ makevn_print_doctor_init_recommendation() {
 
 makevn_print_doctor_suggestions() {
   if [[ "${MAKEVN_DOCTOR_INTERACTIVE_REQUIRED:-false}" == true && "${MAKEVN_DOCTOR_REPO_SUPPORT_STATUS}" == supported ]]; then
-    makevn_print_item "interactive setup required" "Launch CLI makevn doctor in this repository in an interactive terminal/PTY without --compact or --json. Let the user answer all prompts; MCP doctor cannot ask them."
+    makevn_print_item "Analysis status" "completed (diagnosis only; setup is not complete)"
+    makevn_print_item "Setup status" "pending"
+    makevn_print_item "Interaction blockers" "${MAKEVN_DOCTOR_INTERACTION_BLOCKERS:-answers_unresolved}"
+    makevn_print_item "interactive setup required" "Launch CLI makevn doctor in this repository in an interactive terminal/PTY without --compact or --json. Provide a USER-INTERACTIVE terminal, not merely a captured CLI invocation. If that is unavailable, ask the user to run doctor themselves and wait. Do not retry the same captured command or continue Docker/tests while setup is pending. Let the user answer all prompts; MCP doctor cannot ask them."
   fi
   [[ -n "${MAKEVN_DOCTOR_SUGGESTED_NEXT}${MAKEVN_DOCTOR_SUGGESTED_NOTE}${MAKEVN_DOCTOR_SUGGESTED_OPTIONAL}" ]] || return 0
   [[ -n "${MAKEVN_FRONTEND_STATE_METADATA_OUT:-}" ]] || printf '\n'

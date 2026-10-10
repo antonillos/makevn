@@ -21,7 +21,7 @@ flowchart TD
     Q -->|No| READY
     RESET[User authorizes doctor --reset-config] --> BACKUP[Back up config/profile; reset preferences]
     BACKUP --> CLI
-    CLI -. No compact, JSON, pipes or captured input .-> INPUT[If interactive input unavailable: ask user to run CLI and wait]
+    CLI -. Check blockers: stdin_not_tty, stderr_not_tty, compact_mode .-> INPUT[If interactive input unavailable: ask user to run CLI and wait]
 ```
 
 Reset is CLI-only, preserves initialization and installation, and rejects
@@ -106,3 +106,9 @@ strings that drift. CI CRAP verification is required before merge.
 - Suggestions guide agents; they are not hard execution enforcement.
 - Readiness, mount visibility and application initialization are distinct gates.
 - Never infer authorization from a diagnostic message or a path's name/location.
+
+Doctor's success exit code means analysis completed, not that setup is ready.
+`interactive_setup.status: pending` and `blockers` explain why questions remain.
+A captured CLI invocation is noninteractive too: provide user input through a
+real terminal, or ask the user to run it and wait. Do not loop on captured CLI
+or MCP calls, or continue Docker/tests with pending configuration.

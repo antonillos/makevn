@@ -582,6 +582,7 @@ makevn_collect_doctor_snapshot() {
     MAKEVN_DOCTOR_BIND_MOUNTS="$(python3 "${MAKEVN_LIBEXEC_DIR}/docker/bind_mounts.py" doctor "${repo_root}" "${compose_file}" "$(makevn_boot_compose_override_file_path "${repo_root}" || true)" || printf '{"status":"unavailable","checks":[]}')"
   fi
   makevn_doctor_interactive_setup_status
+  makevn_doctor_interaction_status
   makevn_doctor_record_build "${repo_root}"
 }
 
@@ -602,12 +603,25 @@ makevn_doctor_interactive_setup_status() {
   fi
 }
 
+# Analysis success does not imply that interactive configuration is complete.
+makevn_doctor_interaction_status() {
+  MAKEVN_DOCTOR_SETUP_STATUS=ready
+  MAKEVN_DOCTOR_INTERACTION_BLOCKERS=''
+  [[ "${MAKEVN_DOCTOR_INTERACTIVE_REQUIRED:-false}" == true ]] || return 0
+  MAKEVN_DOCTOR_SETUP_STATUS=pending
+  [[ -t 0 ]] || MAKEVN_DOCTOR_INTERACTION_BLOCKERS+='stdin_not_tty '
+  [[ -t 2 ]] || MAKEVN_DOCTOR_INTERACTION_BLOCKERS+='stderr_not_tty '
+  [[ "${MAKEVN_COMPACT_OUTPUT:-}" != 1 ]] || MAKEVN_DOCTOR_INTERACTION_BLOCKERS+='compact_mode '
+  [[ -n "${MAKEVN_DOCTOR_INTERACTION_BLOCKERS}" ]] || MAKEVN_DOCTOR_INTERACTION_BLOCKERS='answers_unresolved'
+}
+
 makevn_print_doctor_json() {
   printf '{\n'
   printf '  "version": 1,\n'
   printf '  "docker_bind_mounts": %s,\n' "${MAKEVN_DOCTOR_BIND_MOUNTS}"
   printf '  "command": "doctor",\n'
-  printf '  "interactive_setup": {"required": %s, "command": "makevn doctor", "requires_tty": true},\n' "${MAKEVN_DOCTOR_INTERACTIVE_REQUIRED:-false}"
+  printf '  "analysis_status": "completed",\n'
+  printf '  "interactive_setup": {"required": %s, "status": "%s", "blockers": "%s", "command": "makevn doctor", "requires_tty": true},\n' "${MAKEVN_DOCTOR_INTERACTIVE_REQUIRED:-false}" "${MAKEVN_DOCTOR_SETUP_STATUS:-ready}" "$(makevn_json_escape "${MAKEVN_DOCTOR_INTERACTION_BLOCKERS:-}")"
   printf '  "doctor_build": {\n'
   printf '    "current_version": "%s",\n' "$(makevn_json_escape "${MAKEVN_VERSION}")"
   printf '    "previous_version": "%s",\n' "$(makevn_json_escape "${MAKEVN_DOCTOR_PREVIOUS_VERSION}")"

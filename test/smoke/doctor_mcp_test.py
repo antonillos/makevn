@@ -25,6 +25,10 @@ with tempfile.TemporaryDirectory() as tmp:
             if "interactive setup required:" in output:
                 assert "launch the CLI command makevn doctor" in data["nextSuggestion"]
                 assert "Do NOT use MCP doctor again" in data["nextSuggestion"]
+                assert "configuration is pending" in data["message"]
+                assert "Setup status: pending" in output
+                assert "stdin_not_tty" in output
+                assert "do not repeat the same captured command" in data["nextSuggestion"]
             elif "force: false" in output:
                 assert data["nextSuggestion"] == "Run makevn init (MCP: init with force: false) before verification."
             elif "force: true" in output:
