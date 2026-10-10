@@ -726,3 +726,17 @@ failure leaves the existing installation unchanged. `--no-build` is an explicit
 prebuilt-artifact option for controlled packaging/test workflows, not the normal
 update path; it does not check source freshness. Reload/restart MCP clients
 after installation. Build metadata is published only after a successful build.
+
+### Bind mount visibility
+
+Doctor reports resolved boot compose bind source diagnostics in
+`docker_bind_mounts`; this is read-only and does not prove VM sharing. Required
+Docker readiness checks additionally probe bounded host entries inside running
+service containers. A confirmed absent/inaccessible entry blocks readiness as
+`bind_mount_visibility_mismatch`. Do not retry verification or change credentials
+until sharing/permissions are resolved. Changes to VM sharing, checkout location,
+container recreation or volume deletion require user authorization. No image is
+pulled and no helper container is provisioned. Missing compose JSON, remote paths
+or images without a working `test` probe remain unverified, not confirmed failures.
+Visibility does not prove database/user initialization: that needs project-specific
+semantic checks. Empty host directories produce warnings rather than failures.

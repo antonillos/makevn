@@ -577,6 +577,10 @@ makevn_collect_doctor_snapshot() {
   if [[ "${app_runnable}" == "yes" && -z "${detected_app_health_url}" ]]; then
     MAKEVN_DOCTOR_SUGGESTED_NOTE="Application HTTP readiness is not configured. Set MAKEVN_APP_HEALTH_URL in .makevn/config or run makevn doctor in an interactive terminal after initialization. karate-all requires this URL."
   fi
+  MAKEVN_DOCTOR_BIND_MOUNTS='{"status":"unavailable","checks":[]}'
+  if command -v python3 >/dev/null 2>&1; then
+    MAKEVN_DOCTOR_BIND_MOUNTS="$(python3 "${MAKEVN_LIBEXEC_DIR}/docker/bind_mounts.py" doctor "${repo_root}" "${compose_file}" "$(makevn_boot_compose_override_file_path "${repo_root}" || true)" || printf '{"status":"unavailable","checks":[]}')"
+  fi
   makevn_doctor_interactive_setup_status
   makevn_doctor_record_build "${repo_root}"
 }
@@ -601,6 +605,7 @@ makevn_doctor_interactive_setup_status() {
 makevn_print_doctor_json() {
   printf '{\n'
   printf '  "version": 1,\n'
+  printf '  "docker_bind_mounts": %s,\n' "${MAKEVN_DOCTOR_BIND_MOUNTS}"
   printf '  "command": "doctor",\n'
   printf '  "interactive_setup": {"required": %s, "command": "makevn doctor", "requires_tty": true},\n' "${MAKEVN_DOCTOR_INTERACTIVE_REQUIRED:-false}"
   printf '  "doctor_build": {\n'
