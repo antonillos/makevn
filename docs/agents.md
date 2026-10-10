@@ -740,3 +740,9 @@ pulled and no helper container is provisioned. Missing compose JSON, remote path
 or images without a working `test` probe remain unverified, not confirmed failures.
 Visibility does not prove database/user initialization: that needs project-specific
 semantic checks. Empty host directories produce warnings rather than failures.
+
+## Visible workflow guidance
+
+See [the workflow guidance map](workflow-guidance.md) for Mermaid decision graphs
+and authoritative code locations. Update the affected graph and regression tests
+when changing a decision or required next step.
