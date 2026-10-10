@@ -99,8 +99,29 @@ class ScopeTests(unittest.TestCase):
             subprocess.run(['git', '-C', str(repo), '-c', 'user.name=Test', '-c', 'user.email=test@example.com',
                             'commit', '-qm', 'base'], check=True)
             base.joinpath('pom.xml').write_text(xml.format('3.5.1'))
-            self.assertEqual(scope.focused_plan(repo, base, 'HEAD', ['code/pom.xml',
+            self.assertEqual(scope.focused_plan(repo, base, 'HEAD', ['.gitignore', 'code/pom.xml',
                 'code/boot/src/test/resources/compose/schema_registry/schemas/event/type.avsc']), 'boot\t*')
+
+    def test_gitignore_only_does_not_require_verification(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repo = pathlib.Path(directory)
+            for paths in (['.gitignore'], ['code/.gitignore'], ['code/boot/.gitignore']):
+                with self.subTest(paths=paths):
+                    self.assertEqual(scope.selection(repo, repo / 'code', 'HEAD', paths), '')
+                    self.assertEqual(scope.focused_plan(repo, repo / 'code', 'HEAD', paths), '')
+
+    def test_gitignore_does_not_hide_build_or_resource_impact(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repo = pathlib.Path(directory)
+            base = repo / 'code'
+            base.joinpath('boot').mkdir(parents=True)
+            base.joinpath('boot/pom.xml').write_text('<project/>')
+            self.assertEqual(scope.focused_plan(repo, base, 'HEAD', ['.gitignore',
+                'code/boot/src/test/resources/.gitignore']), 'boot\t*')
+            for path in ('.mvn/.gitignore', 'code/build.sh', '.gitattributes'):
+                with self.subTest(path=path):
+                    with self.assertRaises(ValueError):
+                        scope.focused_plan(repo, base, 'HEAD', ['.gitignore', path])
 
     def test_inherited_versions_reject_ambiguous_usage(self):
         xml = '<project><artifactId>root</artifactId><properties><event.version>{}</event.version></properties></project>'

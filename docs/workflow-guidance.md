@@ -130,6 +130,7 @@ not just a matching project. Process-inspection limitations are reported.
 ```mermaid
 flowchart TD
   Diff[Source, resource and POM diff] --> Owners[Production, resource and changed test owner modules]
+  Diff --> Ignore[Exclude documentation and .gitignore outside source/build inputs]
   Diff --> POM{Root POM change understood?}
   POM -->|Managed versions or inherited direct dependency versions| Consumers[Direct dependency consumers]
   POM -->|Other, unresolved, deleted or profile-dependent| Stop[Stop focused and recommend exhaustive]
@@ -158,6 +159,11 @@ parents reject narrowing. Module resources (including test Avro schemas and comp
 fixtures) select the complete owner suite, not individual tests. Unknown models
 stop focused planning and identify the blocking paths; they never silently broaden
 verification.
+
+Git ignore-rule files outside `src` and `.mvn` do not select tests or block
+focused planning, including a repository-root `.gitignore` outside the Maven
+`code` directory. This exception does not apply to `.gitattributes`, build
+configuration or source resources, and does not alter Git's changed-file discovery.
 
 Verification recalculates its plan rather than trusting a preview after local
 content edits. `coverage-changes` rejects an aggregate report older than the last

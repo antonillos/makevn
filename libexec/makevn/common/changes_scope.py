@@ -104,17 +104,18 @@ def inherited_version_consumers(base, current, changed):
     return consumers if used == tokens and consumers else None
 
 
-def documentation_path(path):
+def non_verification_path(path):
+    """Documentation and Git ignore rules outside source/build inputs."""
     if '/src/' in path or path.startswith(('src/', '.mvn/')):
         return False
-    return pathlib.Path(path).suffix.lower() in {'.md', '.rst'} or path.startswith('docs/') or pathlib.Path(path).name in {'LICENSE', 'NOTICE', 'README.txt'}
+    return pathlib.Path(path).suffix.lower() in {'.md', '.rst'} or path.startswith('docs/') or pathlib.Path(path).name in {'LICENSE', 'NOTICE', 'README.txt', '.gitignore'}
 
 
 def selection(repo, base, reference, paths):
     modules = set()
     for path in paths:
         absolute = repo / path
-        if not path or documentation_path(path):
+        if not path or non_verification_path(path):
             continue
         if not absolute.is_relative_to(base):
             return "."
