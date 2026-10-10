@@ -740,3 +740,6 @@ dashboard; showing it again follows the current phase's log and preserves the
 chosen tail height within that command. `+/-` adjusts the visible log rows.
 The telemetry and control hints are the last row of the live block, below the
 tail (including its reserved empty rows), not fixed to the terminal's bottom.
+Live redraws leave the cursor on that footer, without a trailing newline or an
+extra blank row underneath. Hiding tail or changing phases clears only the painted
+rows before restoring the dashboard.

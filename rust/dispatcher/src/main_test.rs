@@ -187,7 +187,16 @@ fn known_command_help_can_be_printed() {
 fn clear_tail_rows_erases_each_physical_row() {
     let mut output = Vec::new();
     clear_tail_rows(&mut output, 2).unwrap();
-    assert_eq!(output, b"\x1b[2A\r\x1b[2K\n\r\x1b[2K\n\r\x1b[2K\x1b[2A\r");
+    assert_eq!(output, b"\r\x1b[2K\x1b[1A\r\x1b[2K");
+}
+
+#[test]
+fn clear_tail_rows_does_not_move_below_footer_or_above_single_row() {
+    for (rows, expected) in [(0, b"".as_slice()), (1, b"\r\x1b[2K".as_slice())] {
+        let mut output = Vec::new();
+        clear_tail_rows(&mut output, rows).unwrap();
+        assert_eq!(output, expected);
+    }
 }
 
 #[test]

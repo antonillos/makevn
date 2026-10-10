@@ -129,9 +129,10 @@ not just a matching project. Process-inspection limitations are reported.
 
 ```mermaid
 flowchart TD
-  Diff[Java and POM diff] --> Owners[Production and changed test owner modules]
+  Diff[Source, resource and POM diff] --> Owners[Production, resource and changed test owner modules]
+  Diff --> Ignore[Exclude documentation and .gitignore outside source/build inputs]
   Diff --> POM{Root POM change understood?}
-  POM -->|Only directly managed version properties| Consumers[Direct dependency consumers]
+  POM -->|Managed versions or inherited direct dependency versions| Consumers[Direct dependency consumers]
   POM -->|Other, unresolved, deleted or profile-dependent| Stop[Stop focused and recommend exhaustive]
   Stop -->|User explicitly chooses exhaustive| Full[Full verify fallback]
   Owners --> Mode{Explicit exhaustive requested?}
@@ -151,7 +152,18 @@ executes dependency suites: selecting `boot` can legitimately remain expensive.
 It includes changed IT owners even when production changes are in another module.
 POM-only changes are never silently skipped. Static narrowing only recognizes a
 root property-text bump directly referenced in dependencyManagement with direct
-local consumers; unknown models fall back to full verification.
+local consumers, or parent version properties referenced only by direct dependency
+versions in immediate local children. The latter requires every changed property
+to have a known consumer; overrides, plugins, profiles, interpolation and indirect
+parents reject narrowing. Module resources (including test Avro schemas and compose
+fixtures) select the complete owner suite, not individual tests. Unknown models
+stop focused planning and identify the blocking paths; they never silently broaden
+verification.
+
+Git ignore-rule files outside `src` and `.mvn` do not select tests or block
+focused planning, including a repository-root `.gitignore` outside the Maven
+`code` directory. This exception does not apply to `.gitattributes`, build
+configuration or source resources, and does not alter Git's changed-file discovery.
 
 Verification recalculates its plan rather than trusting a preview after local
 content edits. `coverage-changes` rejects an aggregate report older than the last

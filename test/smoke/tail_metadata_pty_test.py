@@ -174,8 +174,8 @@ def verify(binary, exit_code=0, tail_enabled=True, hide_at_end=False):
                     return (any(f'LOG_STAGE_{index}' in line for line in lines)
                             and any(f'makevn {phase}' in line for line in lines)
                             and len(notices) == 1
-                            and screen.row - notices[0] - 1 == 7
-                            and screen.column == 0)
+                            and screen.row - notices[0] == 7
+                            and screen.column > 0)
                 until(complete_phase)
                 lines = screen.lines()
                 assert sum('Working for ' in line for line in lines) == 1, '\n'.join(lines)
@@ -183,9 +183,10 @@ def verify(binary, exit_code=0, tail_enabled=True, hide_at_end=False):
                 if tail_enabled:
                     assert sum('tailing log:' in line for line in lines) == 1, '\n'.join(lines)
                     notice_row = next(row for row, line in enumerate(lines) if 'tailing log:' in line)
-                    assert screen.row - notice_row - 1 == 7, f'row={screen.row} notice={notice_row}\n' + '\n'.join(lines)
+                    assert screen.row - notice_row == 7, f'row={screen.row} notice={notice_row}\n' + '\n'.join(lines)
                     footers = [row for row, line in enumerate(lines) if 't hide tail' in line]
-                    assert footers == [screen.row - 1], '\n'.join(lines)
+                    assert footers == [screen.row], '\n'.join(lines)
+                    assert not any(line.strip() for line in lines[screen.row + 1:]), '\n'.join(lines)
                     if index > 0:
                         assert any('karate-docker-up |' in line and '1s' in line for line in lines), '\n'.join(lines)
                     if index == 3:
@@ -206,7 +207,7 @@ def verify(binary, exit_code=0, tail_enabled=True, hide_at_end=False):
                         os.write(fd, b'-')
                         until(lambda: screen.row - next(
                             (row for row, line in enumerate(screen.lines())
-                             if 'tailing log:' in line), screen.row) - 1 == 6)
+                             if 'tailing log:' in line), screen.row) == 6)
                         os.write(fd, b'+')
                         until(complete_phase)
                 (repo / f'ack-{index}').touch()

@@ -911,6 +911,11 @@ Never pass Maven test/skip/reactor overrides to focus or disable fresh-report ch
 See `docs/agents.md` and the visible graph in `docs/workflow-guidance.md` for the
 maintained decision contract.
 
+Root version properties used only as direct dependency versions in immediate
+local children can select consumer suites without dependencyManagement. Module
+resources, including Avro test schemas, select their complete owner suite.
+Unknown impact still stops focused planning and names the blocking paths.
+
 ### Safe composite workflows
 
 Use step `arguments`, not `args`. Every step is validated before execution;
