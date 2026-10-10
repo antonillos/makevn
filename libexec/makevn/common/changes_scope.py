@@ -37,6 +37,8 @@ def bump_consumers(base, previous, current):
     changed = property_bumps(previous, current)
     if not changed or any(not key.endswith("version") for key in changed):
         return None
+    if not any("${" + key + "}" in (node.text or "") for key in changed for node in current.iter()):
+        return inherited_version_consumers(base, current, changed)
     managed = {}
     for dependency in current.findall("./dependencyManagement/dependencies/dependency"):
         version = dependency.findtext("version", "")
@@ -70,6 +72,36 @@ def bump_consumers(base, previous, current):
                     return None
                 consumers.add(pom.parent.relative_to(base).as_posix())
     return consumers or None
+
+
+def inherited_version_consumers(base, current, changed):
+    """Accept parent properties used only as direct child dependency versions."""
+    tokens = {"${" + key + "}" for key in changed}
+    if any(token in value for node in current.iter() for value in node.attrib.values() for token in tokens):
+        return None
+    consumers, used = set(), set()
+    for pom in base.rglob("pom.xml"):
+        if "target" in pom.relative_to(base).parts or pom == base / "pom.xml":
+            continue
+        root = parse(pom.read_text())
+        if any(root.find("./properties/" + key) is not None for key in changed):
+            return None
+        versions = root.findall("./dependencies/dependency/version")
+        references = [node for node in root.iter()
+                      if any(token in (node.text or "") or
+                             any(token in value for value in node.attrib.values())
+                             for token in tokens)]
+        if not references:
+            continue
+        parent = root.find("parent")
+        if (parent is None or parent.findtext("artifactId") != current.findtext("artifactId") or
+                (pom.parent / parent.findtext("relativePath", "../pom.xml")).resolve() != (base / "pom.xml").resolve()):
+            return None
+        if any(node not in versions or node.text not in tokens or node.attrib for node in references):
+            return None  # Profiles, plugins and interpolation are not understood.
+        used.update(node.text for node in references)
+        consumers.add(pom.parent.relative_to(base).as_posix())
+    return consumers if used == tokens and consumers else None
 
 
 def documentation_path(path):
@@ -110,7 +142,8 @@ def focused_plan(repo, base, reference, paths):
     production = [path for path in paths if "/src/test/java/" not in path]
     full = selection(repo, base, reference, production)
     if full == ".":
-        raise ValueError("Unknown or root-level impact; use --exhaustive")
+        blockers = [path for path in production if selection(repo, base, reference, [path]) == "."]
+        raise ValueError("Unknown or root-level impact in " + ", ".join(blockers) + "; use --exhaustive")
     suites = set(filter(None, full.split(",")))
     tests = {}
     for path in paths:

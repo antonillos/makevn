@@ -84,6 +84,68 @@ class ScopeTests(unittest.TestCase):
         self.assertIsNone(scope.property_bumps(scope.parse('<project><properties><v>1</v></properties></project>'),
                                               scope.parse('<project><properties><v>2</v></properties><modules/></project>')))
 
+    def test_inherited_version_bump_with_avro_resources_selects_boot(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repo = pathlib.Path(directory)
+            base = repo / 'code'
+            base.joinpath('boot').mkdir(parents=True)
+            xml = '<project><artifactId>root</artifactId><properties><event.version>{}</event.version></properties></project>'
+            base.joinpath('pom.xml').write_text(xml.format('3.0'))
+            base.joinpath('boot/pom.xml').write_text('''<project><parent><artifactId>root</artifactId></parent>
+                <dependencies><dependency><groupId>api</groupId><artifactId>event</artifactId>
+                <version>${event.version}</version></dependency></dependencies></project>''')
+            subprocess.run(['git', 'init', '-q', str(repo)], check=True)
+            subprocess.run(['git', '-C', str(repo), 'add', '.'], check=True)
+            subprocess.run(['git', '-C', str(repo), '-c', 'user.name=Test', '-c', 'user.email=test@example.com',
+                            'commit', '-qm', 'base'], check=True)
+            base.joinpath('pom.xml').write_text(xml.format('3.5.1'))
+            self.assertEqual(scope.focused_plan(repo, base, 'HEAD', ['code/pom.xml',
+                'code/boot/src/test/resources/compose/schema_registry/schemas/event/type.avsc']), 'boot\t*')
+
+    def test_inherited_versions_reject_ambiguous_usage(self):
+        xml = '<project><artifactId>root</artifactId><properties><event.version>{}</event.version></properties></project>'
+        dependency = '<dependencies><dependency><version>${event.version}</version></dependency></dependencies>'
+        cases = [
+            '<profiles><profile>' + dependency + '</profile></profiles>',
+            '<build><plugins><plugin><version>${event.version}</version></plugin></plugins></build>',
+            '<properties><alias>${event.version}</alias></properties>',
+            '<properties><event.version>9</event.version></properties>' + dependency,
+            dependency.replace('${event.version}', '${event.version}-suffix'),
+            '<parent><artifactId>other</artifactId></parent>' + dependency,
+            '<parent><artifactId>root</artifactId><relativePath/></parent>' + dependency,
+            '<parent><artifactId>root</artifactId><relativePath>../../pom.xml</relativePath></parent>' + dependency,
+            '<configuration value="${event.version}"/>',
+        ]
+        with tempfile.TemporaryDirectory() as directory:
+            base = pathlib.Path(directory)
+            base.joinpath('boot').mkdir()
+            for body in cases:
+                with self.subTest(body=body):
+                    if '<parent>' not in body:
+                        body = '<parent><artifactId>root</artifactId></parent>' + body
+                    base.joinpath('boot/pom.xml').write_text('<project>' + body + '</project>')
+                    self.assertIsNone(scope.bump_consumers(base, scope.parse(xml.format('3')), scope.parse(xml.format('4'))))
+
+    def test_unknown_impact_names_blocking_file(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repo = pathlib.Path(directory)
+            with self.assertRaisesRegex(ValueError, r'in build.sh; use --exhaustive'):
+                scope.focused_plan(repo, repo, 'HEAD', ['boot/src/test/resources/type.avsc', 'build.sh'])
+
+    def test_inherited_version_selects_all_consumers_and_rejects_unused_bump(self):
+        xml = '<project><artifactId>root</artifactId><properties><event.version>{}</event.version></properties></project>'
+        with tempfile.TemporaryDirectory() as directory:
+            base = pathlib.Path(directory)
+            for owner in ('boot', 'client'):
+                base.joinpath(owner).mkdir()
+                base.joinpath(owner, 'pom.xml').write_text('''<project><parent><artifactId>root</artifactId></parent>
+                    <dependencies><dependency><version>${event.version}</version></dependency>
+                    <dependency><version>${event.version}</version></dependency></dependencies></project>''')
+            self.assertEqual(scope.bump_consumers(base, scope.parse(xml.format('3')), scope.parse(xml.format('4'))), {'boot', 'client'})
+            extra = xml.replace('</properties>', '<unused.version>1</unused.version></properties>')
+            self.assertIsNone(scope.bump_consumers(base, scope.parse(extra.format('3')),
+                scope.parse(extra.format('4').replace('<unused.version>1', '<unused.version>2'))))
+
     def test_pom_only_unknown_change_requires_full_reactor(self):
         with tempfile.TemporaryDirectory() as directory:
             repo = pathlib.Path(directory)

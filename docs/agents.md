@@ -829,6 +829,12 @@ Inspect a focused preview separately before executing its reviewed plan. Set
 explicitly requested independent diagnostics or required cleanup (never to continue dependent gates). Focused success alone does not
 produce the global coverage needed by those gates.
 
+Root version properties used only in direct dependency versions of immediate local
+children can select those consumer suites even without dependencyManagement.
+Changed module resources (including Avro test schemas) select the entire owner
+suite. Unresolved models still stop and name the blocking paths; do not infer
+individual schema-related tests or silently broaden verification.
+
 Focused is now the default for both changed-code commands. Explicit `--focused`
 remains a compatible alias; broader selected suites require `--exhaustive` (MCP
 `focused: false`). Unknown impact requires a scope decision, never an automatic
