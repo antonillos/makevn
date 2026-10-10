@@ -14,8 +14,14 @@ for no_color in [False, True]:
     env.pop("NO_COLOR", None)
     if no_color:
         env["NO_COLOR"] = "1"
+    # Keep bashcov's tracing channel separate from the terminal under coverage.
+    trace_fds = ()
+    if env.get("BASH_XTRACEFD"):
+        trace_fd = int(env["BASH_XTRACEFD"])
+        os.fstat(trace_fd)
+        trace_fds = (trace_fd,)
     try:
-        proc = subprocess.Popen(["bash", "-c", script, "bash", str(root / "libexec/makevn/common/ui.sh")], stdout=slave, stderr=slave, env=env)
+        proc = subprocess.Popen(["bash", "-c", script, "bash", str(root / "libexec/makevn/common/ui.sh")], stdout=slave, stderr=slave, env=env, pass_fds=trace_fds)
         os.close(slave)
         slave = None
         data = b""
