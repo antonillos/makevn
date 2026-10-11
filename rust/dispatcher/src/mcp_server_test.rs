@@ -803,7 +803,7 @@ fn workflows_preserve_server_authored_step_guidance() {
             assert!(step["nextSuggestion"]
                 .as_str()
                 .unwrap()
-                .starts_with(expected));
+                .starts_with(expected), "workflow={workflow_tool} tool={tool} expected={expected}; step={step}");
             assert!(!step["nextSuggestion"]
                 .as_str()
                 .unwrap()
