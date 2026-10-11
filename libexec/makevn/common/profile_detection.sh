@@ -1712,6 +1712,7 @@ makevn_refresh_profile() {
 
 # Derived inspection state, never a source of verification ownership decisions.
 makevn_refresh_impact() {
+  [[ "${3:-false}" != true ]] || return 0
   local repo_root="$1" base="${2:-}" git_root summary
   [[ -n "${base}" ]] || base="$(makevn_detect_maven_base_path "${repo_root}" || true)"
   [[ -n "${base}" ]] || return 0

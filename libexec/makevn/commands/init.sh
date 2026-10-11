@@ -41,7 +41,7 @@ cmd_init() {
 
   existing_manifest="$(makevn_manifest_path "${repo_root}")"
   if [[ -f "${existing_manifest}" && "${force}" != true ]]; then
-    [[ "${dry_run}" == true ]] || makevn_refresh_impact "${repo_root}"
+    makevn_refresh_impact "${repo_root}" "" "${dry_run}"
     printf '%s\n' "$(makevn_warn "makevn is already initialized.")"
     return 0
   fi
