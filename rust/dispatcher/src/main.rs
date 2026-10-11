@@ -1372,19 +1372,23 @@ fn dispatch_backend_invocations(
             detail_lines: stderr_details,
             ..summary.clone()
         };
-        completed_summaries.extend(phases);
-        if needs_fallback {
-            completed_summaries.push(summary);
+        if fallback_title == "verify-changes" && has_phases {
+            completed_summaries.push(focused_summary(summary, phases));
+        } else {
+            completed_summaries.extend(phases);
+            if needs_fallback {
+                completed_summaries.push(summary);
+            }
         }
-        append_command_diagnostics(&mut completed_summaries, diagnostics, has_phases);
+        append_command_diagnostics(
+            &mut completed_summaries, diagnostics,
+            has_phases && fallback_title != "verify-changes",
+        );
 
         if last_exit_code != 0 {
             if let Some(r) = renderer.as_mut() {
                 r.clear_line();
                 r.show_cursor();
-            }
-            if backend_invocation.tail && last_exit_code == 130 {
-                return Ok(last_exit_code);
             }
             if use_dashboard {
                 print_final_dashboard(started_at.elapsed(), &completed_summaries, false)
@@ -1392,7 +1396,7 @@ fn dispatch_backend_invocations(
                 let _ = writeln!(
                     io::stdout(),
                     "[{}]{}",
-                    warn_text("fail"),
+                    terminal_failure_label(last_exit_code),
                     dim_text(&format_failure_summary(
                         last_exit_code,
                         None,
@@ -1404,7 +1408,7 @@ fn dispatch_backend_invocations(
                 let _ = writeln!(
                     io::stdout(),
                     "[{}]{}",
-                    warn_text("fail"),
+                    terminal_failure_label(last_exit_code),
                     dim_text(&format_failure_summary(
                         last_exit_code,
                         Some(duration.as_str()),
@@ -1502,6 +1506,10 @@ fn stream_backend_output(
     io::copy(&mut file, output)
 }
 
+fn terminal_failure_label(exit_code: i32) -> String {
+    if exit_code == 130 { dim_text("cancelled") } else { warn_text("fail") }
+}
+
 fn format_failure_summary(
     exit_code: i32,
     duration: Option<&str>,
@@ -1510,6 +1518,9 @@ fn format_failure_summary(
     let mut summary = format!(" exit {exit_code}");
     if let Some(duration) = duration {
         summary.push_str(&format!(" | {duration}"));
+    }
+    if exit_code == 130 {
+        return summary;
     }
     if let Some(hint) = failure_hint.filter(|hint| !hint.is_empty()) {
         summary.push_str(" | ");
@@ -1691,7 +1702,14 @@ fn run_backend_with_loader(
         }
         let mut live_summaries = completed_summaries.to_vec();
         if let Some(phases) = phase_files {
-            live_summaries.extend(phases.read());
+            if fallback_title == "verify-changes" {
+                let parent = summary_from_backend_metadata(
+                    0, format_duration(started_at.elapsed()), fallback_title, None,
+                );
+                live_summaries.push(focused_summary(parent, phases.read()));
+            } else {
+                live_summaries.extend(phases.read());
+            }
         }
         let completed_summaries = live_summaries.as_slice();
         if let Some(metadata_file) = metadata_file {
@@ -2111,6 +2129,8 @@ fn detail_line(text: &str) -> String {
 fn completed_summary_line(summary: &CommandSummary) -> String {
     let mark = if summary.exit_code == 0 {
         accent_text("✓")
+    } else if summary.exit_code == 130 {
+        dim_text("-")
     } else {
         warn_text("x")
     };
@@ -2120,6 +2140,72 @@ fn completed_summary_line(summary: &CommandSummary) -> String {
     };
 
     format!("[{}]{}", mark, dim_text(&rest))
+}
+
+fn focused_phase_title(title: &str) -> &str {
+    title.strip_prefix("verify ").unwrap_or(title)
+}
+
+fn focused_phase_mark(exit_code: i32) -> String {
+    match exit_code {
+        0 => dim_text("✓"),
+        130 => dim_text("-"),
+        _ => warn_text("x"),
+    }
+}
+
+fn focused_phase_summary_line(phase: &CommandSummary) -> String {
+    let title = focused_phase_title(&phase.title);
+    let rest = match phase.relative_log_path.as_deref() {
+        Some(log) => format!(" {title} | {} | {log}", phase.duration),
+        None => format!(" {title} | {}", phase.duration),
+    };
+    format!("{}{}", focused_phase_mark(phase.exit_code), dim_text(&rest))
+}
+
+fn focused_summary(mut parent: CommandSummary, phases: Vec<CommandSummary>) -> CommandSummary {
+    let mut details = Vec::new();
+    for phase in phases {
+        details.push(format!("│  {}", focused_phase_summary_line(&phase)));
+        details.extend(phase.detail_lines.iter().map(|line| format!("│    {line}")));
+    }
+    details.extend(parent.detail_lines);
+    parent.title = "verify-changes".to_owned();
+    parent.relative_log_path = None;
+    parent.detail_lines = details;
+    parent
+}
+
+fn live_summary_lines(summaries: &[CommandSummary], metadata: &BackendMetadata) -> Vec<String> {
+    let mut lines = Vec::new();
+    for (index, summary) in summaries.iter().enumerate() {
+        if metadata.command == "verify-changes"
+            && index + 1 == summaries.len()
+            && summary.title == "verify-changes"
+        {
+            lines.push(format!("{} {}", active_action_text("[•]"), active_action_text("makevn verify-changes")));
+            lines.extend(summary.detail_lines.iter().map(|line| detail_line(line)));
+        } else {
+            lines.extend(completed_summary_lines(std::slice::from_ref(summary)));
+        }
+    }
+    lines
+}
+
+fn live_phase_line(metadata: &BackendMetadata, tail: bool) -> String {
+    if metadata.command == "verify-changes" {
+        let title = active_action_text(focused_phase_title(&metadata.title));
+        let log = if tail || metadata.relative_log_path.is_empty() {
+            String::new()
+        } else {
+            dim_text(&format!(" | {}", metadata.relative_log_path))
+        };
+        format!("{} {} {title}{log}", dim_text("│ "), dim_text("•"))
+    } else if tail {
+        backend_header_line(metadata)
+    } else {
+        running_command_line(metadata)
+    }
 }
 
 fn completed_summary_lines(completed_summaries: &[CommandSummary]) -> Vec<String> {
@@ -2143,8 +2229,8 @@ fn tail_status_lines(
         "Working for {} >",
         format_duration(global_elapsed)
     )));
-    lines.extend(completed_summary_lines(completed_summaries));
-    lines.push(backend_header_line(metadata));
+    lines.extend(live_summary_lines(completed_summaries, metadata));
+    lines.push(live_phase_line(metadata, true));
     lines.push(backend_tail_notice_line(metadata));
     lines
 }
@@ -3331,13 +3417,8 @@ fn dashboard_output_lines(
             format_duration(global_elapsed)
         ))
     ));
-    for summary in completed_summaries {
-        lines.push(completed_summary_line(summary));
-        for dl in &summary.detail_lines {
-            lines.push(detail_line(dl));
-        }
-    }
-    lines.push(running_command_line(metadata));
+    lines.extend(live_summary_lines(completed_summaries, metadata));
+    lines.push(live_phase_line(metadata, false));
     for dl in current_detail_lines {
         lines.push(detail_line(dl));
     }

@@ -312,6 +312,7 @@ makevn_collect_verify_changes_scope() {
     comparison_base="$(git -C "${git_root}" merge-base "${MAKEVN_VERIFY_CHANGES_PARENT_SPEC%...HEAD}" HEAD)"
   fi
   MAKEVN_VERIFY_CHANGES_POM_FILES="$(printf '%s\n' "${changed_paths}" | grep -E '(^|/)pom\.xml$' || true)"
+  makevn_refresh_impact "${repo_root}" "${MAKEVN_VERIFY_CHANGES_MAVEN_BASE_PATH}"
   MAKEVN_VERIFY_CHANGES_MODULES="$(printf '%s\n' "${changed_paths}" | python3 "${SCRIPT_DIR}/common/changes_scope.py" "${git_root}" "${MAKEVN_VERIFY_CHANGES_MAVEN_BASE_PATH}" "${comparison_base}")"
   MAKEVN_VERIFY_CHANGES_MODULE_SELECTION="${MAKEVN_VERIFY_CHANGES_MODULES}"
   MAKEVN_VERIFY_CHANGES_FOCUSED_PLAN=''

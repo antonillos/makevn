@@ -41,6 +41,7 @@ cmd_init() {
 
   existing_manifest="$(makevn_manifest_path "${repo_root}")"
   if [[ -f "${existing_manifest}" && "${force}" != true ]]; then
+    makevn_refresh_impact "${repo_root}" "" "${dry_run}"
     printf '%s\n' "$(makevn_warn "makevn is already initialized.")"
     return 0
   fi
@@ -66,6 +67,7 @@ cmd_init() {
   makevn_update_config_generated_contract_clean_dirs "${repo_root}"
   makevn_write_state_json "${repo_root}"
   makevn_write_manifest "${repo_root}"
+  makevn_refresh_impact "${repo_root}"
 
   printf '%s\n' "$(makevn_dim "Initialized makevn.")"
   makevn_print_item "created" ".makevn/config"

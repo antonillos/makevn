@@ -2,11 +2,13 @@ import importlib.util
 import json
 from pathlib import Path
 import subprocess
+import sys
 import tempfile
 import unittest
 from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT / 'libexec/makevn/common'))
 spec = importlib.util.spec_from_file_location('scoped', ROOT / 'libexec/makevn/common/scoped_coverage.py')
 scoped = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(scoped)
@@ -32,6 +34,44 @@ class ScopedTests(unittest.TestCase):
         self.it.parent.mkdir(parents=True)
         self.ut.write_bytes(b'old UT')
         self.it.write_bytes(b'old IT')
+
+    def test_preparation_fixture_changes_are_tested_from_new_baseline(self):
+        (self.repo / 'pom.xml').write_text('<project><packaging>pom</packaging><modules><module>client</module><module>boot</module></modules></project>')
+        for owner in ['client', 'boot']:
+            (self.repo / owner / 'pom.xml').write_text('<project/>')
+        fixture = self.repo / 'src/test/resources/shared/schema.avsc'
+        fixture.parent.mkdir(parents=True)
+        fixture.write_text('before')
+        scoped.prepare(self.repo, self.state, self.repo, ['client', 'boot'], [])
+        fixture.write_text('generated')
+        plan = 'client\t*\nboot\t*'
+        with self.assertRaisesRegex(ValueError, 'schema.avsc'):
+            scoped.checkpoint(self.repo, self.state, 'client\t*\nboot\texample.Test')
+        self.ut.write_bytes(b'preparation data')
+        scoped.checkpoint(self.repo, self.state, plan)
+        self.assertFalse(self.ut.exists())
+        scoped.finish(self.repo, self.state)
+        scoped.load(self.repo, self.state)
+        fixture.write_text('during tests')
+        with self.assertRaisesRegex(ValueError, 'schema.avsc'):
+            scoped.finish(self.repo, self.state)
+
+    def test_checkpoint_blocks_config_edits_and_duplicate_checkpoint(self):
+        scoped.prepare(self.repo, self.state, self.repo, ['client', 'boot'], [])
+        config = self.repo / '.makevn/config'
+        config.write_text('changed')
+        with self.assertRaisesRegex(ValueError, '.makevn/config'):
+            scoped.checkpoint(self.repo, self.state, 'client\t*\nboot\t*')
+        config.unlink()
+        scoped.checkpoint(self.repo, self.state, 'client\t*\nboot\t*')
+        with self.assertRaisesRegex(ValueError, 'Invalid focused'):
+            scoped.checkpoint(self.repo, self.state, 'client\t*\nboot\t*')
+
+    def test_checkpoint_rejects_source_edits_and_partial_suites(self):
+        scoped.prepare(self.repo, self.state, self.repo, ['client', 'boot'], [])
+        (self.repo / self.source).write_text('changed')
+        with self.assertRaisesRegex(ValueError, 'Owner.java'):
+            scoped.checkpoint(self.repo, self.state, 'client\t*\nboot\t*')
 
     def ready(self):
         scoped.prepare(self.repo, self.state, self.repo, ['client', 'boot'], [self.source])
@@ -59,6 +99,39 @@ class ScopedTests(unittest.TestCase):
         path.write_text('class Owner {}')
         Path(manifest['data'][0]).write_bytes(b'tamper')
         with self.assertRaisesRegex(ValueError, 'evidence changed'):
+            scoped.load(self.repo, self.state)
+
+    def test_legacy_config_is_not_authoritative_but_shared_inputs_are_hashed(self):
+        config = self.repo / 'makevn-impact.json'
+        config.write_text(json.dumps({'version': 1, 'sharedResources': [{'path': 'src/test/resources/shared', 'modules': ['client'], 'externalChecks': []}]}))
+        fixture = self.repo / 'src/test/resources/shared/schema.avsc'
+        fixture.parent.mkdir(parents=True)
+        fixture.write_text('schema before')
+        binary = fixture.with_name('fixture.bin')
+        binary.write_bytes(b'before')
+        (self.repo / '.gitignore').write_text('*.bin\n')
+        self.ready()
+        config.write_text('{}')
+        scoped.load(self.repo, self.state)
+        config.unlink()
+        scoped.load(self.repo, self.state)
+        for path, value in [(fixture, b'schema after'), (binary, b'after')]:
+            before = path.read_bytes()
+            path.write_bytes(value)
+            with self.assertRaisesRegex(ValueError, 'sources/config changed'):
+                scoped.load(self.repo, self.state)
+            path.write_bytes(before)
+
+    def test_automatic_shared_input_hashing_without_authored_configuration(self):
+        fixture = self.repo / 'src/test/resources/shared/input.bin'
+        fixture.parent.mkdir(parents=True)
+        fixture.write_bytes(b'before')
+        (self.repo / '.gitignore').write_text('*.bin\n')
+        self.ready()
+        (self.repo / '.makevn/impact.json').write_text('{"tampered":true}')
+        scoped.load(self.repo, self.state)  # Generated state is not an authority.
+        fixture.write_bytes(b'after')
+        with self.assertRaisesRegex(ValueError, 'sources/config changed'):
             scoped.load(self.repo, self.state)
 
     def test_no_data_and_missing_classes_fail_not_fall_back(self):

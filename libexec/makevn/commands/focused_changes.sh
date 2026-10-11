@@ -42,6 +42,7 @@ makevn_run_focused_changes() {
   # Install is necessary: verification without -am must consume this checkout's
   # freshly built dependencies, not older snapshots from another worktree.
   makevn_focused_changes_phase "${repo_root}" "prepare dependencies (no tests)" "${base_args[@]}" -pl "${MAKEVN_VERIFY_CHANGES_MODULE_SELECTION}" -am install -DskipTests=true -DskipUTs=true -DskipITs=true || return $?
+  makevn_scoped_coverage_checkpoint "${repo_root}" || return $?
   while IFS=$'\t' read -r owner tests; do
     [[ -n "${owner}" ]] || continue
     MAKEVN_FOCUSED_PHASE_INDEX=$((MAKEVN_FOCUSED_PHASE_INDEX + 1))

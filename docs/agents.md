@@ -875,3 +875,16 @@ This is **focused changed-class coverage**, not overall-project coverage. The
 overall-project gate is explicitly not evaluated on this scoped report; required
 full coverage/CI gates remain separate. For MCP use `arguments`, not `args`, and
 `fail-fast: true` for the coordinated verification/coverage/CRAP sequence.
+
+### Generic contract and shared-resource impact
+
+Nested leaf dependency-version bumps select local transitive consumer suites.
+No manually maintained impact JSON is required. Init/doctor and every preview/run
+refresh disposable `.makevn/impact.json`; selection never trusts that snapshot.
+Shared root test resources in a plain unconditional aggregator default to all
+reactor module suites, visibly listed in the plan. This classified Maven-only
+scope does not prove external/E2E or global gates. Ambiguous models still stop;
+never infer owners from company/module/schema names or ignore fixtures.
+Impact state is internal only: do not create or maintain root impact overrides.
+Keep required external checks separate; automatic Maven scope does not prove them.
+See [Focused impact](focused-impact.md).

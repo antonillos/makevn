@@ -937,3 +937,11 @@ Focused is now the default for both changed-code commands. Explicit `--focused`
 remains a compatible alias; broader selected suites require `--exhaustive` (MCP
 `focused: false`). Unknown impact requires a scope decision, never an automatic
 full verification fallback.
+
+Shared root fixtures do not require manually maintained configuration. Init/doctor
+and previews/runs regenerate `.makevn/impact.json` from the current reactor;
+selection never trusts generated state. Plain aggregator shared test resources
+conservatively select all reactor module suites. Explain the visible scope and
+that external/E2E/global gates are not evaluated; unknown models still reject.
+Impact state is internal only; do not create or maintain root impact overrides.
+Read `docs/focused-impact.md`; keep required external checks separate.

@@ -4,8 +4,10 @@ import pathlib
 import tempfile
 import unittest
 import subprocess
+import sys
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT / "libexec/makevn/common"))
 spec = importlib.util.spec_from_file_location("scope", ROOT / "libexec/makevn/common/changes_scope.py")
 scope = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(scope)
