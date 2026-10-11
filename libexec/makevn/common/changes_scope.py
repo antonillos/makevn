@@ -155,9 +155,7 @@ def selection(repo, base, reference, paths):
         if not absolute.is_relative_to(base):
             return "."
         relative = absolute.relative_to(base).as_posix()
-        if "/src/" in relative:
-            modules.add(relative.split("/src/", 1)[0])
-        elif relative.startswith("src/"):
+        if relative.startswith("src/"):
             if not relative.startswith("src/test/resources/"):
                 return "."
             reactor = declared_modules(base, parse((base / "pom.xml").read_text()))
@@ -167,7 +165,9 @@ def selection(repo, base, reference, paths):
             if not owners:
                 raise ValueError("No declared shared-resource scope for " + path + "; declare its Maven consumers and externalChecks in makevn-impact.json, or use --exhaustive")
             modules.update(owners)
-        elif relative.endswith("pom.xml"):
+        elif "/src/" in relative:
+            modules.add(relative.split("/src/", 1)[0])
+        elif pathlib.Path(relative).name == "pom.xml":
             old = subprocess.run(["git", "-C", str(repo), "show", reference + ":" + path],
                                  capture_output=True, text=True, check=True).stdout
             current = parse(absolute.read_text())

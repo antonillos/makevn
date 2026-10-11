@@ -65,7 +65,7 @@ class ImpactTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.plan(path)
         self.mapping()
-        self.assertEqual(self.plan(path, 'workspace/src/test/resources/shared/examples.yml'), 'adapter\t*\nrunner\t*')
+        self.assertEqual(self.plan(path, 'workspace/src/test/resources/shared/examples.yml', 'workspace/src/test/resources/shared/src/nested.avsc'), 'adapter\t*\nrunner\t*')
         with self.assertRaises(ValueError):
             self.plan('workspace/src/test/resources/shared-other/schema.avsc')
 
@@ -167,6 +167,14 @@ class ImpactTests(unittest.TestCase):
         self.assertEqual(result.returncode, 2)
         self.assertIn('browser E2E', result.stderr)
         self.assertEqual(result.stdout, '')
+
+    def test_non_pom_filename_does_not_gain_contract_classification(self):
+        other = self.base / 'contracts/event/alternate-pom.xml'
+        other.write_text('<project>' + self.contract + '</project>')
+        self.commit()
+        other.write_text(other.read_text().replace('<wire.version>1', '<wire.version>2'))
+        with self.assertRaises(ValueError):
+            self.plan('workspace/contracts/event/alternate-pom.xml')
 
     def test_mapping_cannot_hide_java_or_build_changes(self):
         self.mapping()

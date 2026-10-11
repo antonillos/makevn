@@ -45,7 +45,7 @@ def resource_rules(repo, base, modules, parse):
         checks = rule['externalChecks']
         if not isinstance(owners, list) or not owners or any(str(literal_path(owner)) not in modules for owner in owners):
             raise ValueError('Shared resource modules must be nonempty declared reactor owners')
-        if not isinstance(checks, list) or any(not isinstance(check, str) or not check.strip() or '\n' in check or '\r' in check for check in checks):
+        if not isinstance(checks, list) or any(not isinstance(check, str) or not check.strip() or any(ord(char) < 32 for char in check) for check in checks):
             raise ValueError('externalChecks must be an array of nonempty single-line descriptions')
         for owner in owners:
             root = parse((base / owner / 'pom.xml').read_text())
