@@ -6,9 +6,10 @@ names. It uses the current local, unconditional reactor and POM relationships.
 
 ## Generated state, not maintained policy
 
-`init`, `doctor`, `verify-changes-preview` and `verify-changes` refresh
+`init`, initialized-repository `doctor`, `verify-changes-preview` and `verify-changes` refresh
 `.makevn/impact.json` automatically. It describes the detected Maven base and
-shared-resource strategy. If Python 3 is unavailable, init/doctor visibly defer
+shared-resource strategy. Before initialization, doctor remains inspection-only
+and defers state creation until init. If Python 3 is unavailable, init/doctor visibly defer
 impact generation without failing adoption; focused planning already requires
 Python and generates state once available. It is disposable inspection state: never edit/version
 it, and never rely on its contents to select tests. Every preview/run recomputes

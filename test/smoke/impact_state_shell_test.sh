@@ -20,6 +20,9 @@ makevn_refresh_profile() { :; }
 makevn_update_config_generated_contract_clean_dirs() { :; }
 makevn_write_state_json() { :; }
 makevn_write_manifest() { touch "$1/.makevn/manifest"; }
+makevn_refresh_impact "${tmp}" "" doctor > "${tmp}/initial-doctor"
+[[ ! -e "${tmp}/.makevn" ]]
+grep -q 'deferred until init' "${tmp}/initial-doctor"
 cmd_init "${tmp}" --dry-run > "${tmp}/dry-run"
 [[ ! -e "${tmp}/.makevn/impact.json" ]]
 cmd_init "${tmp}" > "${tmp}/init"
