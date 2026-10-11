@@ -386,6 +386,38 @@ fn failure_hint_suggests_docker_runtime_recovery() {
 }
 
 #[test]
+fn failure_hint_preserves_detected_docker_runtime_recovery() {
+    let path = env::temp_dir().join(format!("makevn-detected-docker-hint-{}", process::id()));
+    for (error, expected) in [
+        (
+            "Cannot connect to the Docker daemon at unix:///Users/test/.colima/work/docker.sock",
+            "The Colima Docker socket is unavailable. Run 'colima start --profile work', then retry the makevn command.",
+        ),
+        (
+            "failed to connect to the docker API at unix:///Users/test/.colima/default/docker.sock",
+            "The Colima Docker socket is unavailable. Run 'colima start', then retry the makevn command.",
+        ),
+        (
+            "Cannot connect to the Docker daemon at unix:///var/run/docker.sock",
+            "Docker engine is unavailable. Start your configured container runtime and retry; check DOCKER_HOST and the active Docker context.",
+        ),
+    ] {
+        fs::write(&path, format!("{error}\nHint: {expected}\n")).unwrap();
+        let hint = read_failure_hint(path.to_str()).unwrap();
+        assert_eq!(hint, expected);
+        assert_eq!(
+            format_failure_summary(1, None, Some(&hint)),
+            format!(" exit 1 | {expected}")
+        );
+    }
+    fs::write(&path, "Cannot connect to the Docker daemon\nHint: \n").unwrap();
+    assert!(read_failure_hint(path.to_str())
+        .unwrap()
+        .contains("docker info"));
+    fs::remove_file(path).unwrap();
+}
+
+#[test]
 fn non_loader_summary_keeps_backend_log_path_for_recovery_hints() {
     let metadata = super::BackendMetadata {
         command: String::from("docker-up"),
