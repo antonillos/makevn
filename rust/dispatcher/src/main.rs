@@ -2136,10 +2136,27 @@ fn completed_summary_line(summary: &CommandSummary) -> String {
     format!("[{}]{}", mark, dim_text(&rest))
 }
 
+fn focused_phase_title(title: &str) -> &str {
+    title.strip_prefix("verify ").unwrap_or(title)
+}
+
+fn focused_phase_mark(exit_code: i32) -> String {
+    if exit_code == 0 { dim_text("✓") } else { warn_text("x") }
+}
+
+fn focused_phase_summary_line(phase: &CommandSummary) -> String {
+    let title = focused_phase_title(&phase.title);
+    let rest = match phase.relative_log_path.as_deref() {
+        Some(log) => format!(" {title} | {} | {log}", phase.duration),
+        None => format!(" {title} | {}", phase.duration),
+    };
+    format!("[{}]{}", focused_phase_mark(phase.exit_code), dim_text(&rest))
+}
+
 fn focused_summary(mut parent: CommandSummary, phases: Vec<CommandSummary>) -> CommandSummary {
     let mut details = Vec::new();
     for phase in phases {
-        details.push(format!("│  {}", completed_summary_line(&phase)));
+        details.push(format!("│  {}", focused_phase_summary_line(&phase)));
         details.extend(phase.detail_lines.iter().map(|line| format!("│    {line}")));
     }
     details.extend(parent.detail_lines);
@@ -2166,11 +2183,18 @@ fn live_summary_lines(summaries: &[CommandSummary], metadata: &BackendMetadata) 
 }
 
 fn live_phase_line(metadata: &BackendMetadata, tail: bool) -> String {
-    let line = if tail { backend_header_line(metadata) } else { running_command_line(metadata) };
     if metadata.command == "verify-changes" {
-        format!("│  {line}")
+        let title = active_action_text(focused_phase_title(&metadata.title));
+        let log = if tail || metadata.relative_log_path.is_empty() {
+            String::new()
+        } else {
+            dim_text(&format!(" | {}", metadata.relative_log_path))
+        };
+        format!("{} {} {title}{log}", dim_text("│ "), dim_text("[•]"))
+    } else if tail {
+        backend_header_line(metadata)
     } else {
-        line
+        running_command_line(metadata)
     }
 }
 
