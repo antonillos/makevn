@@ -167,6 +167,9 @@ Git ignore-rule files outside `src` and `.mvn` do not select tests or block
 focused planning, including a repository-root `.gitignore` outside the Maven
 `code` directory. This exception does not apply to `.gitattributes`, build
 configuration or source resources, and does not alter Git's changed-file discovery.
+Known documentation files (`.md`, `.rst`, `.adoc`, `.asciidoc`) under root `docs/`
+are also excluded when Antora places them in `docs/src/modules/...`. This does not
+exclude Java/build inputs under `docs/src`, or documentation-shaped Maven resources.
 
 Verification recalculates its plan rather than trusting a preview after local
 content edits. `coverage-changes` rejects an aggregate report older than the last

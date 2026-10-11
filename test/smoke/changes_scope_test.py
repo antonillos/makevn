@@ -67,6 +67,30 @@ class ScopeTests(unittest.TestCase):
             repo = pathlib.Path(directory)
             self.assertEqual(scope.selection(repo, repo, "HEAD", ["src/main/java/Owner.java"]), ".")
 
+    def test_antora_docs_do_not_block_production_and_selected_it(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repo = pathlib.Path(directory)
+            base = repo / 'code'
+            for owner in ('domain', 'persistence', 'messaging/in/pipe-consumer', 'boot'):
+                base.joinpath(owner).mkdir(parents=True)
+                base.joinpath(owner, 'pom.xml').write_text('<project/>')
+            test = base / 'boot/src/test/java/example/ConsumeSizeIT.java'
+            test.parent.mkdir(parents=True)
+            test.write_text('class ConsumeSizeIT {}')
+            paths = ['docs/src/modules/data-model/pages/03-projection-collections.adoc',
+                     'code/domain/src/main/java/SizeRepository.java',
+                     'code/persistence/src/main/java/SizeMongoRepository.java',
+                     'code/messaging/in/pipe-consumer/src/main/java/Consumer.java',
+                     'code/boot/src/test/java/example/ConsumeSizeIT.java']
+            self.assertEqual(scope.focused_plan(repo, base, 'HEAD', paths),
+                'boot\texample.ConsumeSizeIT\ndomain\t*\nmessaging/in/pipe-consumer\t*\npersistence\t*')
+            for suffix in ('.adoc', '.asciidoc', '.md', '.rst'):
+                self.assertEqual(scope.focused_plan(repo, base, 'HEAD', ['docs/src/modules/pages/guide' + suffix]), '')
+            self.assertEqual(scope.selection(repo, base, 'HEAD', ['code/boot/src/test/resources/guide.adoc']), 'boot')
+            for path in ('docs/src/build.sh', 'docs/src/main/java/Owner.java', '.mvn/guide.adoc'):
+                with self.assertRaises(ValueError):
+                    scope.focused_plan(repo, base, 'HEAD', [path])
+
     def test_managed_bump_finds_direct_consumer(self):
         with tempfile.TemporaryDirectory() as directory:
             base = pathlib.Path(directory)

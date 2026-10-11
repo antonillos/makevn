@@ -106,9 +106,13 @@ def inherited_version_consumers(base, current, changed):
 
 def non_verification_path(path):
     """Documentation and Git ignore rules outside source/build inputs."""
+    documentation_suffixes = {'.md', '.rst', '.adoc', '.asciidoc'}
+    # Antora uses docs/src/modules/...; that src is not a Maven source tree.
+    if path.startswith('docs/') and pathlib.Path(path).suffix.lower() in documentation_suffixes:
+        return True
     if '/src/' in path or path.startswith(('src/', '.mvn/')):
         return False
-    return pathlib.Path(path).suffix.lower() in {'.md', '.rst'} or path.startswith('docs/') or pathlib.Path(path).name in {'LICENSE', 'NOTICE', 'README.txt', '.gitignore'}
+    return pathlib.Path(path).suffix.lower() in documentation_suffixes or path.startswith('docs/') or pathlib.Path(path).name in {'LICENSE', 'NOTICE', 'README.txt', '.gitignore'}
 
 
 def selection(repo, base, reference, paths):
