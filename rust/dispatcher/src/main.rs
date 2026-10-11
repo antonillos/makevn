@@ -1249,6 +1249,7 @@ fn dispatch_backend_invocations(
             command.env("NO_COLOR", "1");
         }
 
+        let mut stderr_details = Vec::new();
         let run_result = if use_frontend_loader {
             if !state_command {
                 command.process_group(0);
@@ -1298,7 +1299,16 @@ fn dispatch_backend_invocations(
                     replay_backend_output(output.path(), renderer.as_mut(), false);
                 }
             }
-            replay_backend_output(stderr_file.path(), renderer.as_mut(), true);
+            if result.is_ok() && !state_command {
+                stderr_details = fs::read_to_string(stderr_file.path())
+                    .map_err(|error| format!("failed to read backend diagnostics: {error}"))?
+                    .lines()
+                    .filter(|line| !line.trim().is_empty())
+                    .map(str::to_owned)
+                    .collect();
+            } else {
+                replay_backend_output(stderr_file.path(), renderer.as_mut(), true);
+            }
             if result.is_err() {
                 if let Some(renderer) = renderer.as_mut() {
                     renderer.clear_line();
@@ -1339,6 +1349,7 @@ fn dispatch_backend_invocations(
             .map(|df| df.read_lines())
             .unwrap_or_default();
         detail_lines.extend(stdout_details.iter().cloned());
+        append_unique_details(&mut detail_lines, &stderr_details);
         if let Some(df) = detail_file.as_ref() {
             df.clear();
         }
@@ -1361,6 +1372,9 @@ fn dispatch_backend_invocations(
         completed_summaries.extend(phases);
         if needs_fallback {
             completed_summaries.push(summary);
+        }
+        if let Some(last_summary) = completed_summaries.last_mut() {
+            append_unique_details(&mut last_summary.detail_lines, &stderr_details);
         }
 
         if last_exit_code != 0 {
@@ -1418,6 +1432,14 @@ fn dispatch_backend_invocations(
         );
     }
     Ok(last_exit_code)
+}
+
+fn append_unique_details(details: &mut Vec<String>, diagnostics: &[String]) {
+    for line in diagnostics {
+        if !details.contains(line) {
+            details.push(line.clone());
+        }
+    }
 }
 
 // Only external output needs to take ownership of the live terminal block.

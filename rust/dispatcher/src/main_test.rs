@@ -2346,6 +2346,15 @@ fn replay_backend_output_handles_missing_empty_and_nonempty_files() {
     fs::remove_file(path).unwrap();
 }
 
+#[test]
+fn backend_diagnostics_preserve_order_without_duplicate_step_details() {
+    let mut details = vec!["existing error".to_owned()];
+    super::append_unique_details(&mut details, &["existing error".to_owned(), "cause".to_owned(), "cause".to_owned()]);
+    assert_eq!(details, vec!["existing error", "cause"]);
+    super::append_unique_details(&mut details, &[]);
+    assert_eq!(details.len(), 2);
+}
+
 struct CountingOutput {
     bytes: u64,
     largest_write: usize,
