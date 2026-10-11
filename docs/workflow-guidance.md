@@ -129,9 +129,10 @@ not just a matching project. Process-inspection limitations are reported.
 
 ```mermaid
 flowchart TD
-  Diff[Java and POM diff] --> Owners[Production and changed test owner modules]
+  Diff[Source, resource and POM diff] --> Owners[Production, resource and changed test owner modules]
+  Diff --> Ignore[Exclude documentation and .gitignore outside source/build inputs]
   Diff --> POM{Root POM change understood?}
-  POM -->|Only directly managed version properties| Consumers[Direct dependency consumers]
+  POM -->|Managed versions or inherited direct dependency versions| Consumers[Direct dependency consumers]
   POM -->|Other, unresolved, deleted or profile-dependent| Stop[Stop focused and recommend exhaustive]
   Stop -->|User explicitly chooses exhaustive| Full[Full verify fallback]
   Owners --> Mode{Explicit exhaustive requested?}
@@ -139,7 +140,10 @@ flowchart TD
   Mode -->|No - focused default| Prepare[Install dependencies without UT/IT]
   Prepare --> Focus[Production owner suites and changed tests without -am]
   Focus --> Snapshot[Fresh UT/IT and bytecode snapshot]
-  Snapshot --> ScopedReport[coverage-changes: changed-class report, no tests]
+  Snapshot --> Applicability{Changed production classes?}
+  Applicability -->|Yes, fresh JaCoCo data| ScopedReport[coverage-changes: changed-class report, no tests]
+  Applicability -->|None, valid successful evidence| NA[Coverage and CRAP changes: not applicable, exit 0; global gates not evaluated]
+  Applicability -->|Classes but no fresh JaCoCo data| Missing[Error: enable coverage and rerun matching verification]
   ScopedReport --> ScopedCRAP[crap-changes: same XML and method coverage]
   Consumers --> Mode
   Verify --> Separate[Aggregate is not automatically selected]
@@ -151,7 +155,21 @@ executes dependency suites: selecting `boot` can legitimately remain expensive.
 It includes changed IT owners even when production changes are in another module.
 POM-only changes are never silently skipped. Static narrowing only recognizes a
 root property-text bump directly referenced in dependencyManagement with direct
-local consumers; unknown models fall back to full verification.
+local consumers, or parent version properties referenced only by direct dependency
+versions in immediate local children. The latter requires every changed property
+to have a known consumer; overrides, plugins, profiles, interpolation and indirect
+parents reject narrowing. Module resources (including test Avro schemas and compose
+fixtures) select the complete owner suite, not individual tests. Unknown models
+stop focused planning and identify the blocking paths; they never silently broaden
+verification.
+
+Git ignore-rule files outside `src` and `.mvn` do not select tests or block
+focused planning, including a repository-root `.gitignore` outside the Maven
+`code` directory. This exception does not apply to `.gitattributes`, build
+configuration or source resources, and does not alter Git's changed-file discovery.
+Known documentation files (`.md`, `.rst`, `.adoc`, `.asciidoc`) under root `docs/`
+are also excluded when Antora places them in `docs/src/modules/...`. This does not
+exclude Java/build inputs under `docs/src`, or documentation-shaped Maven resources.
 
 Verification recalculates its plan rather than trusting a preview after local
 content edits. `coverage-changes` rejects an aggregate report older than the last
@@ -159,6 +177,21 @@ scoped run when using the legacy aggregate path. Focused runs now publish isolat
 fresh UT/IT and bytecode evidence; coverage-changes generates a changed-class
 report and crap-changes reuses it. Source/config/base changes or failed runs
 reject that evidence. Focused verification does not claim a global coverage result.
+Valid focused evidence with no changed production classes returns a successful
+`not applicable` outcome for both incremental gates, with or without JaCoCo data.
+It does not require Java, Maven or the CRAP analyzer and does not evaluate global
+coverage/CRAP. Missing data for changed classes, missing bytecode and stale/failed
+evidence remain errors. An explicit overall coverage threshold still requires the
+full coverage flow. MCP returns success/exitCode 0 with the outcome in output and
+guidance that prevents treating this no-op as a global gate pass.
+Changed Java sources absent from the CRAP analyzer are still errors unless
+verified focused snapshot bytecode proves they have no executable methods.
+The selected JDK's `javap -c -p` checks the class and its nested classes: pure
+abstract declarations are reported as not measurable, while default/static
+methods, constructors and nested implementation code retain the missing-source
+error. Missing tools, stale evidence or missing bytecode never justify exclusion.
+First-parent coverage uses portable awk environment input for multiline commit
+lists; attribution failures block the gate rather than reporting empty success.
 
 ### Explicit focused execution
 

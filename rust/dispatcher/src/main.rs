@@ -1249,6 +1249,7 @@ fn dispatch_backend_invocations(
             command.env("NO_COLOR", "1");
         }
 
+        let mut stderr_details = Vec::new();
         let run_result = if use_frontend_loader {
             if !state_command {
                 command.process_group(0);
@@ -1298,7 +1299,12 @@ fn dispatch_backend_invocations(
                     replay_backend_output(output.path(), renderer.as_mut(), false);
                 }
             }
-            replay_backend_output(stderr_file.path(), renderer.as_mut(), true);
+            if result.is_ok() && !state_command {
+                stderr_details = read_backend_diagnostics(stderr_file.path())
+                    .map_err(|error| format!("failed to read backend diagnostics: {error}"))?;
+            } else {
+                replay_backend_output(stderr_file.path(), renderer.as_mut(), true);
+            }
             if result.is_err() {
                 if let Some(renderer) = renderer.as_mut() {
                     renderer.clear_line();
@@ -1358,10 +1364,19 @@ fn dispatch_backend_invocations(
             .last()
             .map(|phase| phase.exit_code != last_exit_code)
             .unwrap_or(true);
+        let has_phases = !phases.is_empty();
+        let diagnostics = CommandSummary {
+            title: format!("{fallback_title} diagnostics (command-level)"),
+            log_path: None,
+            relative_log_path: None,
+            detail_lines: stderr_details,
+            ..summary.clone()
+        };
         completed_summaries.extend(phases);
         if needs_fallback {
             completed_summaries.push(summary);
         }
+        append_command_diagnostics(&mut completed_summaries, diagnostics, has_phases);
 
         if last_exit_code != 0 {
             if let Some(r) = renderer.as_mut() {
@@ -1418,6 +1433,49 @@ fn dispatch_backend_invocations(
         );
     }
     Ok(last_exit_code)
+}
+
+fn append_command_diagnostics(
+    summaries: &mut Vec<CommandSummary>, diagnostics: CommandSummary, has_phases: bool,
+) {
+    if diagnostics.detail_lines.is_empty() {
+        return;
+    }
+    if has_phases {
+        summaries.push(diagnostics);
+    } else if let Some(summary) = summaries.last_mut() {
+        append_unique_details(&mut summary.detail_lines, &diagnostics.detail_lines);
+    }
+}
+
+fn read_backend_diagnostics(path: &Path) -> io::Result<Vec<String>> {
+    const MAX_BYTES: usize = 64 * 1024;
+    const MAX_LINES: usize = 200;
+    let mut bytes = Vec::new();
+    File::open(path)?.take((MAX_BYTES + 1) as u64).read_to_end(&mut bytes)?;
+    let byte_limit = bytes.len() > MAX_BYTES;
+    bytes.truncate(MAX_BYTES);
+    let mut lines: Vec<String> = String::from_utf8_lossy(&bytes)
+        .lines()
+        .filter(|line| !line.trim().is_empty())
+        .take(MAX_LINES + 1)
+        .map(str::to_owned)
+        .collect();
+    let line_limit = lines.len() > MAX_LINES;
+    lines.truncate(MAX_LINES);
+    if byte_limit || line_limit {
+        lines.push("Diagnostics truncated (limit: 64 KiB / 200 nonempty lines); additional stderr omitted from dashboard.".to_owned());
+    }
+    Ok(lines)
+}
+
+fn append_unique_details(details: &mut Vec<String>, diagnostics: &[String]) {
+    let mut seen: HashSet<String> = details.iter().cloned().collect();
+    for line in diagnostics {
+        if seen.insert(line.clone()) {
+            details.push(line.clone());
+        }
+    }
 }
 
 // Only external output needs to take ownership of the live terminal block.
@@ -2644,29 +2702,16 @@ impl LogTailWindow {
         let render_width = terminal_width().max(8);
         let output_lines = self.rendered_output_lines(render_width, visible_capacity);
         let previous_rows = physical_rows_for_width(&self.rendered_line_widths, render_width);
-        let clear_rows = previous_rows.max(output_lines.len()) + usize::from(previous_rows > 0);
-
         if previous_rows > 0 {
-            write!(io::stdout(), "\u{1b}[{}A", previous_rows)?;
+            clear_tail_rows(&mut io::stdout(), previous_rows)?;
         }
-
-        for index in 0..clear_rows {
-            write!(io::stdout(), "\r\u{1b}[2K")?;
-            if index + 1 < clear_rows {
+        // Keep the cursor on the footer, like the dashboard: a final newline
+        // would create a blank terminal row below the telemetry.
+        for (index, line) in output_lines.iter().enumerate() {
+            if index > 0 {
                 write!(io::stdout(), "\n")?;
             }
-        }
-
-        if clear_rows > 1 {
-            write!(io::stdout(), "\u{1b}[{}A", clear_rows - 1)?;
-        }
-
-        if clear_rows > 0 {
-            write!(io::stdout(), "\r")?;
-        }
-
-        for line in &output_lines {
-            writeln!(io::stdout(), "{line}")?;
+            write!(io::stdout(), "\r\u{1b}[2K{line}")?;
         }
 
         io::stdout().flush()?;
@@ -2715,14 +2760,12 @@ impl LogTailWindow {
 }
 
 fn clear_tail_rows(writer: &mut impl Write, rows: usize) -> io::Result<()> {
-    write!(writer, "\u{1b}[{}A", rows)?;
-    for index in 0..=rows {
-        write!(writer, "\r\u{1b}[2K")?;
-        if index < rows {
-            write!(writer, "\n")?;
+    for index in 0..rows {
+        if index > 0 {
+            write!(writer, "\u{1b}[1A")?;
         }
+        write!(writer, "\r\u{1b}[2K")?;
     }
-    write!(writer, "\u{1b}[{}A\r", rows)?;
     writer.flush()
 }
 

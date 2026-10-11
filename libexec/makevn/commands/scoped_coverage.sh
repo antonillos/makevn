@@ -14,6 +14,11 @@ makevn_scoped_coverage_finish() {
 
 makevn_scoped_coverage_report() {
   local repo_root="$1" base="$2" maven java_home output_file result rc=0
+  result="$(python3 "${MAKEVN_LIBEXEC_DIR}/common/scoped_coverage.py" applicability "${repo_root}" "$(makevn_scoped_coverage_state "${repo_root}")" "${3:-}")" || return $?
+  if [[ "${result}" == not-applicable ]]; then
+    printf '%s\n' "${result}"
+    return 0
+  fi
   maven="$(makevn_maven_executable "${repo_root}" "${base}")" || return $?
   java_home="$(makevn_effective_java_home "${repo_root}" code "${base}")" || return $?
   [[ -n "${java_home}" && -x "${java_home}/bin/java" ]] || { printf "Error: configured code JDK is required for focused coverage; run makevn doctor.\n" >&2; return 1; }

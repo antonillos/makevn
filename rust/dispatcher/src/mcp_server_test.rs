@@ -803,7 +803,7 @@ fn workflows_preserve_server_authored_step_guidance() {
             assert!(step["nextSuggestion"]
                 .as_str()
                 .unwrap()
-                .starts_with(expected));
+                .starts_with(expected), "workflow={workflow_tool} tool={tool} expected={expected}; step={step}");
             assert!(!step["nextSuggestion"]
                 .as_str()
                 .unwrap()
@@ -893,6 +893,24 @@ fn focused_agent_guidance_is_visible_without_loading_the_skill() {
     let verification = super::tool_next_suggestion("verify_changes", &result);
     for text in ["actual mode", "focused checks passed", "not full verification", "CRAP gates"] {
         assert!(verification.contains(text));
+    }
+}
+
+#[test]
+fn incremental_gate_not_applicable_output_is_success_without_global_claim() {
+    for tool in ["coverage_changes", "crap_changes"] {
+        let result = super::ToolCallResult {
+            output: "Not applicable: no changed production classes; global gate was not evaluated.".to_owned(),
+            exit_code: 0, duration_ms: 1, next_suggestion: None,
+        };
+        let response = super::standard_tool_result(&result, &json!({"name": tool}));
+        assert_eq!(response["isError"], false);
+        assert_eq!(response["structuredContent"]["status"], "success");
+        assert_eq!(response["structuredContent"]["untrustedData"]["output"], result.output);
+        let guidance = response["structuredContent"]["nextSuggestion"].as_str().unwrap();
+        assert!(guidance.contains("not applicable"));
+        assert!(guidance.contains("not that global"));
+        assert!(guidance.contains("Do not repeat tests"));
     }
 }
 

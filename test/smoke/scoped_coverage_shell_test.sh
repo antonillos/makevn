@@ -81,3 +81,16 @@ printf 'Coverage/CRAP command coordination passed\n'
 makevn_effective_java_home() { printf ''; }
 if makevn_scoped_coverage_report "${tmp}" "${tmp}" > "${tmp}/jdk-failure" 2>&1; then exit 1; fi
 grep -q 'configured code JDK is required' "${tmp}/jdk-failure"
+
+# Test/POM/resource-only runs are successful no-ops even without Java or data.
+MAKEVN_VERIFY_CHANGES_SRC_FILES=''
+makevn_scoped_coverage_prepare "${tmp}"
+makevn_scoped_coverage_finish "${tmp}"
+[[ "$(makevn_scoped_coverage_report "${tmp}" "${tmp}")" == not-applicable ]]
+output="$(cmd_coverage_changes "${tmp}")"
+[[ "${output}" == *'not applicable'* && "${output}" == *'global coverage was not evaluated'* ]]
+output="$(makevn_crap_run "${tmp}" crap-changes)"
+[[ "${output}" == *'not applicable'* && "${output}" == *'global CRAP was not evaluated'* ]]
+if (cmd_coverage_changes "${tmp}" --overall-threshold 90) > "${tmp}/overall-na" 2>&1; then exit 1; fi
+grep -q 'requires a full coverage report' "${tmp}/overall-na"
+printf 'Not-applicable coverage/CRAP coordination passed\n'

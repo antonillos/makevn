@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-set -euo pipefail
+set -Eeuo pipefail
+trap 'printf "FAIL: smoke command at line %s: %s\n" "$LINENO" "$BASH_COMMAND" >&2' ERR
 
 ROOT_DIR="$(CDPATH= cd -- "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 CLI="${ROOT_DIR}/bin/makevn"
@@ -4912,4 +4913,6 @@ python3 "${ROOT_DIR}/test/smoke/changes_scope_test.py"
 python3 "${ROOT_DIR}/test/smoke/scoped_coverage_test.py"
 bash "${ROOT_DIR}/test/smoke/scoped_coverage_shell_test.sh"
 bash "${ROOT_DIR}/test/smoke/crap_cwd_test.sh"
+python3 "${ROOT_DIR}/test/smoke/crap_non_executable_test.py"
+bash "${ROOT_DIR}/test/smoke/coverage_awk_test.sh"
 main "$@"

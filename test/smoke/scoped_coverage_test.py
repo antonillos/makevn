@@ -64,17 +64,38 @@ class ScopedTests(unittest.TestCase):
     def test_no_data_and_missing_classes_fail_not_fall_back(self):
         scoped.prepare(self.repo, self.state, self.repo, ['client', 'boot'], [self.source])
         scoped.finish(self.repo, self.state)
-        with self.assertRaisesRegex(ValueError, 'No fresh JaCoCo'):
+        with self.assertRaisesRegex(ValueError, 'require fresh JaCoCo execution data'):
             scoped.load(self.repo, self.state)
         self.compiled.unlink()
         self.ready_without_load()
         with self.assertRaisesRegex(ValueError, 'Missing changed-class'):
             scoped.load(self.repo, self.state)
 
+    def test_no_changed_classes_is_not_applicable_with_or_without_data(self):
+        for data in (False, True):
+            scoped.prepare(self.repo, self.state, self.repo, ['client', 'boot'], [])
+            if data:
+                self.ut.write_bytes(b'new UT')
+            scoped.finish(self.repo, self.state)
+            self.assertEqual(scoped.load(self.repo, self.state)['expected'], [])
+            with patch.object(scoped.subprocess, 'run', wraps=subprocess.run) as run, patch('builtins.print') as output:
+                scoped.report(self.repo, self.state, 'missing-maven', 'missing-java')
+                output.assert_called_once_with('not-applicable')
+                self.assertTrue(all(call.args[0][0] == 'git' for call in run.call_args_list))
+
     def ready_without_load(self):
         scoped.prepare(self.repo, self.state, self.repo, ['client', 'boot'], [self.source])
         self.ut.write_bytes(b'new')
         scoped.finish(self.repo, self.state)
+
+    def test_not_applicable_still_requires_successful_current_evidence(self):
+        scoped.prepare(self.repo, self.state, self.repo, ['client'], [])
+        with self.assertRaisesRegex(ValueError, 'incomplete'):
+            scoped.load(self.repo, self.state)
+        scoped.finish(self.repo, self.state)
+        (self.repo / self.source).write_text('class Changed {}')
+        with self.assertRaisesRegex(ValueError, 'sources/config changed'):
+            scoped.load(self.repo, self.state)
 
     def test_linked_target_is_rejected_before_data_is_rotated(self):
         target = self.repo / 'client/target'

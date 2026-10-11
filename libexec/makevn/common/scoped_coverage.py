@@ -110,8 +110,8 @@ def load(repo, state):
         raise ValueError('Focused coverage is incomplete or sources/config changed; rerun verify-changes')
     if manifest.get('missing'):
         raise ValueError('Missing changed-class bytecode; rerun verify-changes: ' + ', '.join(manifest['missing']))
-    if not manifest['data'] or not manifest['expected']:
-        raise ValueError('No fresh JaCoCo data or changed production classes. Enable coverage agents and rerun verify-changes; use full coverage for test/POM-only changes')
+    if manifest['expected'] and not manifest['data']:
+        raise ValueError('Changed production classes require fresh JaCoCo execution data, but none was captured. Enable coverage agents and rerun verify-changes; existing global reports are not reused')
     for name, digest in manifest['hashes'].items():
         if hashlib.sha256(Path(name).read_bytes()).hexdigest() != digest:
             raise ValueError('Focused evidence changed; rerun verify-changes')
@@ -124,6 +124,9 @@ def report(repo, state, maven, java, reference=""):
         if requested != load(repo, state)["comparison_head"]:
             raise ValueError("Requested base differs from focused verification; rerun matching verification")
     manifest = load(repo, state)
+    if not manifest['expected']:
+        print('not-applicable')
+        return
     output = Path(manifest['report'])
     output.mkdir(exist_ok=True)
     if manifest.get('report_hashes') and all(Path(p).is_file() and hashlib.sha256(Path(p).read_bytes()).hexdigest() == digest for p, digest in manifest['report_hashes'].items()):
@@ -176,6 +179,13 @@ def main():
         finish(repo, state)
     elif action == 'report':
         report(repo, state, *args)
+    elif action == 'applicability':
+        manifest = load(repo, state)
+        if args and args[0]:
+            requested = subprocess.check_output(['git', '-C', str(repo), 'rev-parse', args[0].removesuffix('...HEAD')]).decode().strip()
+            if requested != manifest['comparison_head']:
+                raise ValueError('Requested base differs from focused verification; rerun matching verification')
+        print('applicable' if manifest['expected'] else 'not-applicable')
     else:
         raise ValueError('Unknown focused coverage action: ' + action)
 

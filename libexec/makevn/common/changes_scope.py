@@ -37,6 +37,8 @@ def bump_consumers(base, previous, current):
     changed = property_bumps(previous, current)
     if not changed or any(not key.endswith("version") for key in changed):
         return None
+    if not any("${" + key + "}" in (node.text or "") for key in changed for node in current.iter()):
+        return inherited_version_consumers(base, current, changed)
     managed = {}
     for dependency in current.findall("./dependencyManagement/dependencies/dependency"):
         version = dependency.findtext("version", "")
@@ -72,17 +74,80 @@ def bump_consumers(base, previous, current):
     return consumers or None
 
 
-def documentation_path(path):
+def declared_modules(base, current):
+    """Resolve only literal unconditional modules in the local reactor graph."""
+    base = base.resolve()
+    pending, seen = [(base, current)], {base.resolve()}
+    modules = set()
+    while pending:
+        directory, root = pending.pop()
+        if root.findall('./profiles/profile/modules/module'):
+            return None
+        for node in root.findall('./modules/module'):
+            name = (node.text or '').strip()
+            owner = (directory / name).resolve()
+            if not name or '${' in name or not owner.is_relative_to(base) or owner in seen:
+                return None
+            seen.add(owner)
+            pom = owner / 'pom.xml'
+            if not pom.is_file():
+                return None
+            modules.add(owner.relative_to(base).as_posix())
+            pending.append((owner, parse(pom.read_text())))
+    return modules
+
+
+def inherited_version_consumers(base, current, changed):
+    """Accept parent properties used only as direct child dependency versions."""
+    tokens = {"${" + key + "}" for key in changed}
+    reactor = declared_modules(base, current)
+    if reactor is None:
+        return None
+    if any(token in value for node in current.iter() for value in node.attrib.values() for token in tokens):
+        return None
+    consumers, used = set(), set()
+    for pom in base.rglob("pom.xml"):
+        if "target" in pom.relative_to(base).parts or pom == base / "pom.xml":
+            continue
+        root = parse(pom.read_text())
+        if any(root.find("./properties/" + key) is not None for key in changed):
+            return None
+        versions = root.findall("./dependencies/dependency/version")
+        references = [node for node in root.iter()
+                      if any(token in (node.text or "") or
+                             any(token in value for value in node.attrib.values())
+                             for token in tokens)]
+        if not references:
+            continue
+        if pom.parent.relative_to(base).as_posix() not in reactor:
+            return None  # Matching examples/standalone POMs are not -pl projects.
+        parent = root.find("parent")
+        if (parent is None or parent.findtext("artifactId") != current.findtext("artifactId") or
+                (pom.parent / parent.findtext("relativePath", "../pom.xml")).resolve() != (base / "pom.xml").resolve()):
+            return None
+        if any(node not in versions or node.text not in tokens or node.attrib for node in references):
+            return None  # Profiles, plugins and interpolation are not understood.
+        used.update(node.text for node in references)
+        consumers.add(pom.parent.relative_to(base).as_posix())
+    return consumers if used == tokens and consumers else None
+
+
+def non_verification_path(path):
+    """Documentation and Git ignore rules outside source/build inputs."""
+    documentation_suffixes = {'.md', '.rst', '.adoc', '.asciidoc'}
+    # Antora uses docs/src/modules/...; that src is not a Maven source tree.
+    if path.startswith('docs/') and pathlib.Path(path).suffix.lower() in documentation_suffixes:
+        return True
     if '/src/' in path or path.startswith(('src/', '.mvn/')):
         return False
-    return pathlib.Path(path).suffix.lower() in {'.md', '.rst'} or path.startswith('docs/') or pathlib.Path(path).name in {'LICENSE', 'NOTICE', 'README.txt'}
+    return pathlib.Path(path).suffix.lower() in documentation_suffixes or path.startswith('docs/') or pathlib.Path(path).name in {'LICENSE', 'NOTICE', 'README.txt', '.gitignore'}
 
 
 def selection(repo, base, reference, paths):
     modules = set()
     for path in paths:
         absolute = repo / path
-        if not path or documentation_path(path):
+        if not path or non_verification_path(path):
             continue
         if not absolute.is_relative_to(base):
             return "."
@@ -110,7 +175,8 @@ def focused_plan(repo, base, reference, paths):
     production = [path for path in paths if "/src/test/java/" not in path]
     full = selection(repo, base, reference, production)
     if full == ".":
-        raise ValueError("Unknown or root-level impact; use --exhaustive")
+        blockers = [path for path in production if selection(repo, base, reference, [path]) == "."]
+        raise ValueError("Unknown or root-level impact in " + ", ".join(blockers) + "; use --exhaustive")
     suites = set(filter(None, full.split(",")))
     tests = {}
     for path in paths:

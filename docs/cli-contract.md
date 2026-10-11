@@ -750,3 +750,14 @@ dashboard; showing it again follows the current phase's log and preserves the
 chosen tail height within that command. `+/-` adjusts the visible log rows.
 The telemetry and control hints are the last row of the live block, below the
 tail (including its reserved empty rows), not fixed to the terminal's bottom.
+Live redraws leave the cursor on that footer, without a trailing newline or an
+extra blank row underneath. Hiding tail or changing phases clears only the painted
+rows before restoring the dashboard.
+Captured managed-command diagnostics are retained as detail lines beneath the
+corresponding step in the final dashboard, not replayed above it as detached
+stderr. Interactive state prompts and noninteractive CLI/MCP output are unchanged.
+When an invocation publishes multiple phase records, unscoped stderr is shown
+under an explicit command-level diagnostics summary, never attributed to its
+final phase. Diagnostics already published with phase metadata remain phase-local.
+Captured stderr shown in the dashboard is capped at 64 KiB and 200 nonempty
+lines. Omitted output is indicated explicitly; deduplication uses a hash set.

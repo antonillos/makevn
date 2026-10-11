@@ -187,7 +187,16 @@ fn known_command_help_can_be_printed() {
 fn clear_tail_rows_erases_each_physical_row() {
     let mut output = Vec::new();
     clear_tail_rows(&mut output, 2).unwrap();
-    assert_eq!(output, b"\x1b[2A\r\x1b[2K\n\r\x1b[2K\n\r\x1b[2K\x1b[2A\r");
+    assert_eq!(output, b"\r\x1b[2K\x1b[1A\r\x1b[2K");
+}
+
+#[test]
+fn clear_tail_rows_does_not_move_below_footer_or_above_single_row() {
+    for (rows, expected) in [(0, b"".as_slice()), (1, b"\r\x1b[2K".as_slice())] {
+        let mut output = Vec::new();
+        clear_tail_rows(&mut output, rows).unwrap();
+        assert_eq!(output, expected);
+    }
 }
 
 #[test]
@@ -2366,6 +2375,76 @@ fn replay_backend_output_handles_missing_empty_and_nonempty_files() {
     fs::write(&path, "replayed backend output\n").unwrap();
     super::replay_backend_output(&path, None, false);
     super::replay_backend_output(&path, None, true);
+    fs::remove_file(path).unwrap();
+}
+
+#[test]
+fn backend_diagnostics_preserve_order_without_duplicate_step_details() {
+    let mut details = vec!["existing error".to_owned()];
+    super::append_unique_details(&mut details, &["existing error".to_owned(), "cause".to_owned(), "cause".to_owned()]);
+    assert_eq!(details, vec!["existing error", "cause"]);
+    super::append_unique_details(&mut details, &[]);
+    assert_eq!(details.len(), 2);
+}
+
+#[test]
+fn multi_phase_stderr_is_command_level_not_final_phase() {
+    let make = |title: &str, exit_code| CommandSummary {
+        title: title.to_owned(), duration: "1s".to_owned(), log_path: None,
+        relative_log_path: None, exit_code, detail_lines: Vec::new(),
+    };
+    for exit_code in [0, 1] {
+        let mut summaries = vec![make("run-app-bg", 0), make("karate-test", exit_code)];
+        let mut diagnostic = make("karate-all diagnostics (command-level)", exit_code);
+        diagnostic.detail_lines.push("startup warning".to_owned());
+        super::append_command_diagnostics(&mut summaries, diagnostic.clone(), true);
+        assert!(summaries[1].detail_lines.is_empty());
+        assert_eq!(summaries[2].detail_lines, vec!["startup warning"]);
+        let mut single = vec![make("verify-changes", exit_code)];
+        super::append_command_diagnostics(&mut single, diagnostic, false);
+        assert_eq!(single.len(), 1);
+        assert_eq!(single[0].detail_lines, vec!["startup warning"]);
+        super::append_command_diagnostics(&mut single, make("empty", exit_code), true);
+        assert_eq!(single.len(), 1);
+    }
+    let mut empty = Vec::new();
+    let mut diagnostic = make("no summary", 0);
+    diagnostic.detail_lines.push("warning".to_owned());
+    super::append_command_diagnostics(&mut empty, diagnostic, false);
+    assert!(empty.is_empty());
+}
+
+#[test]
+fn backend_diagnostics_decode_non_utf8_lossily() {
+    let path = env::temp_dir().join(format!("makevn-diagnostics-{}.stderr", process::id()));
+    fs::write(&path, b"first\n\nNative diagnostic: \xff\n").unwrap();
+    assert_eq!(super::read_backend_diagnostics(&path).unwrap(), vec!["first", "Native diagnostic: \u{fffd}"]);
+    fs::remove_file(&path).unwrap();
+    assert!(super::read_backend_diagnostics(&path).is_err());
+}
+
+#[test]
+fn backend_diagnostics_are_bounded_and_report_truncation() {
+    let path = env::temp_dir().join(format!("makevn-diagnostics-limits-{}.stderr", process::id()));
+    for (bytes, expected_lines) in [
+        (vec![b'x'; 64 * 1024], 1),
+        (vec![b'x'; 8 * 1024 * 1024], 2),
+        ((0..10000).map(|i| format!("unique diagnostic {i}\n")).collect::<String>().into_bytes(), 201),
+    ] {
+        fs::write(&path, &bytes).unwrap();
+        let lines = super::read_backend_diagnostics(&path).unwrap();
+        assert_eq!(lines.len(), expected_lines);
+        if expected_lines > 1 {
+            assert!(lines.last().unwrap().starts_with("Diagnostics truncated"));
+        } else {
+            assert_eq!(lines[0].len(), 64 * 1024);
+        }
+        assert_eq!(fs::metadata(&path).unwrap().len(), bytes.len() as u64);
+        let mut details = Vec::new();
+        super::append_unique_details(&mut details, &lines);
+        super::append_unique_details(&mut details, &lines);
+        assert_eq!(details, lines);
+    }
     fs::remove_file(path).unwrap();
 }
 
