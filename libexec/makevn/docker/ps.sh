@@ -34,9 +34,15 @@ fi
 
 has_errors=false
 declare -a rows=()
+declare -a diagnostics=()
+diagnostic_file="$(mktemp)"
+trap 'rm -f "${diagnostic_file}"' EXIT
 
 for service in ${services}; do
-  cid="$(${docker_compose} ${compose_args} ps -q "${service}" 2>/dev/null || true)"
+  if ! cid="$(${docker_compose} ${compose_args} ps -q "${service}" 2> "${diagnostic_file}")"; then
+    diagnostics+=("$(cat "${diagnostic_file}")")
+    cid=""
+  fi
 
   if [[ -z "${cid}" ]]; then
     has_errors=true
@@ -60,5 +66,8 @@ if [[ "${has_errors}" == "true" ]]; then
   for row in "${rows[@]}"; do
     IFS='|' read -r name state health cid <<< "${row}"
     printf '%-28s %-12s %-12s %-12s\n' "${name}" "${state}" "${health}" "${cid}"
+  done
+  for diagnostic in ${diagnostics[@]+"${diagnostics[@]}"}; do
+    [[ -z "${diagnostic}" ]] || printf '%s\n' "${diagnostic}"
   done
 fi

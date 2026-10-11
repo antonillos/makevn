@@ -786,7 +786,7 @@ fn validate_command(
         | "docker-ps-required" | "karate-docker-up" | "karate-docker-down" | "run-app"
         | "run-app-bg" | "stop-app" | "run" => Ok(CommandValidation::Valid),
         "doctor" => {
-            if let Some(extra_arg) = trailing_args.iter().find(|arg| *arg != "--compact") {
+            if let Some(extra_arg) = trailing_args.iter().find(|arg| *arg != "--compact" && *arg != "--reset-config") {
                 Err(format!("Unknown doctor option: {}", Lossy(extra_arg)))
             } else {
                 Ok(CommandValidation::Valid)
@@ -1216,7 +1216,7 @@ fn dispatch_backend_invocations(
             None
         };
 
-        let phase_files = if fallback_title == "karate-all"
+        let phase_files = if matches!(fallback_title.as_str(), "karate-all" | "test" | "verify-changes")
             || (use_frontend_loader && fallback_title == "doctor")
         {
             Some(BackendPhaseFiles::new()?)
@@ -1249,6 +1249,7 @@ fn dispatch_backend_invocations(
             command.env("NO_COLOR", "1");
         }
 
+        let mut stderr_details = Vec::new();
         let run_result = if use_frontend_loader {
             if !state_command {
                 command.process_group(0);
@@ -1298,7 +1299,12 @@ fn dispatch_backend_invocations(
                     replay_backend_output(output.path(), renderer.as_mut(), false);
                 }
             }
-            replay_backend_output(stderr_file.path(), renderer.as_mut(), true);
+            if result.is_ok() && !state_command {
+                stderr_details = read_backend_diagnostics(stderr_file.path())
+                    .map_err(|error| format!("failed to read backend diagnostics: {error}"))?;
+            } else {
+                replay_backend_output(stderr_file.path(), renderer.as_mut(), true);
+            }
             if result.is_err() {
                 if let Some(renderer) = renderer.as_mut() {
                     renderer.clear_line();
@@ -1358,18 +1364,31 @@ fn dispatch_backend_invocations(
             .last()
             .map(|phase| phase.exit_code != last_exit_code)
             .unwrap_or(true);
-        completed_summaries.extend(phases);
-        if needs_fallback {
-            completed_summaries.push(summary);
+        let has_phases = !phases.is_empty();
+        let diagnostics = CommandSummary {
+            title: format!("{fallback_title} diagnostics (command-level)"),
+            log_path: None,
+            relative_log_path: None,
+            detail_lines: stderr_details,
+            ..summary.clone()
+        };
+        if fallback_title == "verify-changes" && has_phases {
+            completed_summaries.push(focused_summary(summary, phases));
+        } else {
+            completed_summaries.extend(phases);
+            if needs_fallback {
+                completed_summaries.push(summary);
+            }
         }
+        append_command_diagnostics(
+            &mut completed_summaries, diagnostics,
+            has_phases && fallback_title != "verify-changes",
+        );
 
         if last_exit_code != 0 {
             if let Some(r) = renderer.as_mut() {
                 r.clear_line();
                 r.show_cursor();
-            }
-            if backend_invocation.tail && last_exit_code == 130 {
-                return Ok(last_exit_code);
             }
             if use_dashboard {
                 print_final_dashboard(started_at.elapsed(), &completed_summaries, false)
@@ -1377,7 +1396,7 @@ fn dispatch_backend_invocations(
                 let _ = writeln!(
                     io::stdout(),
                     "[{}]{}",
-                    warn_text("fail"),
+                    terminal_failure_label(last_exit_code),
                     dim_text(&format_failure_summary(
                         last_exit_code,
                         None,
@@ -1389,7 +1408,7 @@ fn dispatch_backend_invocations(
                 let _ = writeln!(
                     io::stdout(),
                     "[{}]{}",
-                    warn_text("fail"),
+                    terminal_failure_label(last_exit_code),
                     dim_text(&format_failure_summary(
                         last_exit_code,
                         Some(duration.as_str()),
@@ -1420,6 +1439,49 @@ fn dispatch_backend_invocations(
     Ok(last_exit_code)
 }
 
+fn append_command_diagnostics(
+    summaries: &mut Vec<CommandSummary>, diagnostics: CommandSummary, has_phases: bool,
+) {
+    if diagnostics.detail_lines.is_empty() {
+        return;
+    }
+    if has_phases {
+        summaries.push(diagnostics);
+    } else if let Some(summary) = summaries.last_mut() {
+        append_unique_details(&mut summary.detail_lines, &diagnostics.detail_lines);
+    }
+}
+
+fn read_backend_diagnostics(path: &Path) -> io::Result<Vec<String>> {
+    const MAX_BYTES: usize = 64 * 1024;
+    const MAX_LINES: usize = 200;
+    let mut bytes = Vec::new();
+    File::open(path)?.take((MAX_BYTES + 1) as u64).read_to_end(&mut bytes)?;
+    let byte_limit = bytes.len() > MAX_BYTES;
+    bytes.truncate(MAX_BYTES);
+    let mut lines: Vec<String> = String::from_utf8_lossy(&bytes)
+        .lines()
+        .filter(|line| !line.trim().is_empty())
+        .take(MAX_LINES + 1)
+        .map(str::to_owned)
+        .collect();
+    let line_limit = lines.len() > MAX_LINES;
+    lines.truncate(MAX_LINES);
+    if byte_limit || line_limit {
+        lines.push("Diagnostics truncated (limit: 64 KiB / 200 nonempty lines); additional stderr omitted from dashboard.".to_owned());
+    }
+    Ok(lines)
+}
+
+fn append_unique_details(details: &mut Vec<String>, diagnostics: &[String]) {
+    let mut seen: HashSet<String> = details.iter().cloned().collect();
+    for line in diagnostics {
+        if seen.insert(line.clone()) {
+            details.push(line.clone());
+        }
+    }
+}
+
 // Only external output needs to take ownership of the live terminal block.
 fn replay_backend_output(path: &Path, renderer: Option<&mut SpinnerRenderer>, stderr: bool) {
     if stderr {
@@ -1444,6 +1506,10 @@ fn stream_backend_output(
     io::copy(&mut file, output)
 }
 
+fn terminal_failure_label(exit_code: i32) -> String {
+    if exit_code == 130 { dim_text("cancelled") } else { warn_text("fail") }
+}
+
 fn format_failure_summary(
     exit_code: i32,
     duration: Option<&str>,
@@ -1452,6 +1518,9 @@ fn format_failure_summary(
     let mut summary = format!(" exit {exit_code}");
     if let Some(duration) = duration {
         summary.push_str(&format!(" | {duration}"));
+    }
+    if exit_code == 130 {
+        return summary;
     }
     if let Some(hint) = failure_hint.filter(|hint| !hint.is_empty()) {
         summary.push_str(" | ");
@@ -1486,6 +1555,7 @@ fn summary_from_backend_metadata(
 
 fn docker_connection_failed(lower: &str) -> bool {
     lower.contains("cannot connect to the docker daemon")
+        || lower.contains("failed to connect to the docker api")
         || lower.contains("is the docker daemon running")
         || lower.contains("error during connect") && lower.contains("docker")
 }
@@ -1494,6 +1564,13 @@ fn read_failure_hint(log_path: Option<&str>) -> Option<String> {
     let content = fs::read_to_string(log_path?).ok()?;
     let lower = content.to_ascii_lowercase();
     if docker_connection_failed(&lower) {
+        if let Some(hint) = content.lines().rev().find_map(|line| {
+            line.trim()
+                .strip_prefix("Hint: ")
+                .filter(|hint| !hint.is_empty())
+        }) {
+            return Some(hint.to_owned());
+        }
         return Some("Docker is unavailable. Start Docker Desktop or your Docker runtime (e.g. `colima start`), check `docker info`, then retry".to_owned());
     }
     for line in content.lines() {
@@ -1625,7 +1702,14 @@ fn run_backend_with_loader(
         }
         let mut live_summaries = completed_summaries.to_vec();
         if let Some(phases) = phase_files {
-            live_summaries.extend(phases.read());
+            if fallback_title == "verify-changes" {
+                let parent = summary_from_backend_metadata(
+                    0, format_duration(started_at.elapsed()), fallback_title, None,
+                );
+                live_summaries.push(focused_summary(parent, phases.read()));
+            } else {
+                live_summaries.extend(phases.read());
+            }
         }
         let completed_summaries = live_summaries.as_slice();
         if let Some(metadata_file) = metadata_file {
@@ -1694,7 +1778,7 @@ fn run_backend_with_loader(
                     }
                 }
             }
-            if let Some(tail_window) = tail_window.as_mut() {
+            if let Some(tail_window) = tail_window.as_mut().filter(|_| tail_active) {
                 if let Some(metadata) = metadata.as_ref() {
                     tail_window.set_prefix_lines(tail_status_lines(
                         global_started_at.elapsed(),
@@ -1789,17 +1873,24 @@ fn run_backend_with_loader(
                     cancel_requested = true;
                     cancel_requested_at = Some(Instant::now());
                 }
-                InputEvent::StartTail => {
-                    if !tail_active {
-                        if let Some(metadata) = metadata
-                            .as_ref()
-                            .filter(|metadata| !metadata.log_path.is_empty())
-                        {
-                            renderer.clear_frame_line();
-                            tail_window =
-                                Some(LogTailWindow::new(PathBuf::from(&metadata.log_path)));
-                            tail_active = true;
+                InputEvent::ToggleTail => {
+                    if tail_active {
+                        if let Some(window) = tail_window.as_mut() {
+                            window
+                                .clear()
+                                .map_err(|error| format!("failed to clear tailed log: {error}"))?;
                         }
+                        tail_active = false;
+                    } else if let Some(metadata) = metadata
+                        .as_ref()
+                        .filter(|metadata| !metadata.log_path.is_empty())
+                    {
+                        renderer.clear_frame_line();
+                        LogTailWindow::follow_log(
+                            &mut tail_window,
+                            PathBuf::from(&metadata.log_path),
+                        );
+                        tail_active = true;
                     }
                 }
                 InputEvent::IncreaseLines => line_delta = 1,
@@ -1808,7 +1899,7 @@ fn run_backend_with_loader(
             }
         }
 
-        if let Some(tail_window) = tail_window.as_mut() {
+        if let Some(tail_window) = tail_window.as_mut().filter(|_| tail_active) {
             if let Some(metadata) = metadata.as_ref() {
                 tail_window.set_prefix_lines(tail_status_lines(
                     global_started_at.elapsed(),
@@ -1879,7 +1970,7 @@ fn run_backend_with_loader(
         }
     }
 
-    if let Some(tail_window) = tail_window.as_mut() {
+    if let Some(tail_window) = tail_window.as_mut().filter(|_| tail_active) {
         if let Some(metadata) = metadata.as_ref() {
             tail_window.set_prefix_lines(tail_status_lines(
                 global_started_at.elapsed(),
@@ -1975,8 +2066,8 @@ fn parse_backend_metadata(content: &str) -> Option<BackendMetadata> {
 fn backend_header_line(metadata: &BackendMetadata) -> String {
     format!(
         "{} {}",
-        warn_text("[•]"),
-        accent_text(&format!("makevn {}", metadata.title))
+        active_action_text("[•]"),
+        active_action_text(&format!("makevn {}", metadata.title))
     )
 }
 
@@ -2038,6 +2129,8 @@ fn detail_line(text: &str) -> String {
 fn completed_summary_line(summary: &CommandSummary) -> String {
     let mark = if summary.exit_code == 0 {
         accent_text("✓")
+    } else if summary.exit_code == 130 {
+        dim_text("-")
     } else {
         warn_text("x")
     };
@@ -2047,6 +2140,72 @@ fn completed_summary_line(summary: &CommandSummary) -> String {
     };
 
     format!("[{}]{}", mark, dim_text(&rest))
+}
+
+fn focused_phase_title(title: &str) -> &str {
+    title.strip_prefix("verify ").unwrap_or(title)
+}
+
+fn focused_phase_mark(exit_code: i32) -> String {
+    match exit_code {
+        0 => dim_text("✓"),
+        130 => dim_text("-"),
+        _ => warn_text("x"),
+    }
+}
+
+fn focused_phase_summary_line(phase: &CommandSummary) -> String {
+    let title = focused_phase_title(&phase.title);
+    let rest = match phase.relative_log_path.as_deref() {
+        Some(log) => format!(" {title} | {} | {log}", phase.duration),
+        None => format!(" {title} | {}", phase.duration),
+    };
+    format!("{}{}", focused_phase_mark(phase.exit_code), dim_text(&rest))
+}
+
+fn focused_summary(mut parent: CommandSummary, phases: Vec<CommandSummary>) -> CommandSummary {
+    let mut details = Vec::new();
+    for phase in phases {
+        details.push(format!("│  {}", focused_phase_summary_line(&phase)));
+        details.extend(phase.detail_lines.iter().map(|line| format!("│    {line}")));
+    }
+    details.extend(parent.detail_lines);
+    parent.title = "verify-changes".to_owned();
+    parent.relative_log_path = None;
+    parent.detail_lines = details;
+    parent
+}
+
+fn live_summary_lines(summaries: &[CommandSummary], metadata: &BackendMetadata) -> Vec<String> {
+    let mut lines = Vec::new();
+    for (index, summary) in summaries.iter().enumerate() {
+        if metadata.command == "verify-changes"
+            && index + 1 == summaries.len()
+            && summary.title == "verify-changes"
+        {
+            lines.push(format!("{} {}", active_action_text("[•]"), active_action_text("makevn verify-changes")));
+            lines.extend(summary.detail_lines.iter().map(|line| detail_line(line)));
+        } else {
+            lines.extend(completed_summary_lines(std::slice::from_ref(summary)));
+        }
+    }
+    lines
+}
+
+fn live_phase_line(metadata: &BackendMetadata, tail: bool) -> String {
+    if metadata.command == "verify-changes" {
+        let title = active_action_text(focused_phase_title(&metadata.title));
+        let log = if tail || metadata.relative_log_path.is_empty() {
+            String::new()
+        } else {
+            dim_text(&format!(" | {}", metadata.relative_log_path))
+        };
+        format!("{} {} {title}{log}", dim_text("│ "), dim_text("•"))
+    } else if tail {
+        backend_header_line(metadata)
+    } else {
+        running_command_line(metadata)
+    }
 }
 
 fn completed_summary_lines(completed_summaries: &[CommandSummary]) -> Vec<String> {
@@ -2070,8 +2229,8 @@ fn tail_status_lines(
         "Working for {} >",
         format_duration(global_elapsed)
     )));
-    lines.extend(completed_summary_lines(completed_summaries));
-    lines.push(backend_header_line(metadata));
+    lines.extend(live_summary_lines(completed_summaries, metadata));
+    lines.push(live_phase_line(metadata, true));
     lines.push(backend_tail_notice_line(metadata));
     lines
 }
@@ -2097,14 +2256,14 @@ fn running_command_line(metadata: &BackendMetadata) -> String {
     if metadata.relative_log_path.is_empty() {
         format!(
             "{} {}",
-            warn_text("[•]"),
-            accent_text(&format!("makevn {}", metadata.title))
+            active_action_text("[•]"),
+            active_action_text(&format!("makevn {}", metadata.title))
         )
     } else {
         format!(
             "{} {} {} {}",
-            warn_text("[•]"),
-            accent_text(&format!("makevn {}", metadata.title)),
+            active_action_text("[•]"),
+            active_action_text(&format!("makevn {}", metadata.title)),
             dim_text("|"),
             dim_text(&metadata.relative_log_path)
         )
@@ -2272,6 +2431,28 @@ fn warn_text(text: &str) -> String {
     style("33", text)
 }
 
+fn active_action_color_code(colorterm: Option<&str>, term: Option<&str>) -> &'static str {
+    if colorterm.is_some_and(|value| {
+        value.eq_ignore_ascii_case("truecolor") || value.eq_ignore_ascii_case("24bit")
+    }) || term.is_some_and(|value| value.ends_with("-direct"))
+    {
+        // Dominant reference text color, converted to sRGB: #e3c168.
+        "38;2;227;193;104"
+    } else {
+        "33"
+    }
+}
+
+fn active_action_text(text: &str) -> String {
+    style(
+        active_action_color_code(
+            env::var("COLORTERM").ok().as_deref(),
+            env::var("TERM").ok().as_deref(),
+        ),
+        text,
+    )
+}
+
 fn adaptive_metric_text(text: &str, load: f32) -> String {
     if !use_color() {
         return text.to_owned();
@@ -2320,13 +2501,15 @@ fn dashboard_hint(interrupt_hint: &str) -> String {
 fn tail_hint(interrupt_hint: &str) -> String {
     if use_color() {
         format!(
-            "{} {} {}",
+            "{} {} {} {} {}",
+            style("97", "t"),
+            dim_text("hide tail |"),
             style("97", "+/-"),
             dim_text("lines |"),
             interrupt_hint
         )
     } else {
-        format!("+/- lines | {interrupt_hint}")
+        format!("t hide tail | +/- lines | {interrupt_hint}")
     }
 }
 
@@ -2605,29 +2788,16 @@ impl LogTailWindow {
         let render_width = terminal_width().max(8);
         let output_lines = self.rendered_output_lines(render_width, visible_capacity);
         let previous_rows = physical_rows_for_width(&self.rendered_line_widths, render_width);
-        let clear_rows = previous_rows.max(output_lines.len()) + usize::from(previous_rows > 0);
-
         if previous_rows > 0 {
-            write!(io::stdout(), "\u{1b}[{}A", previous_rows)?;
+            clear_tail_rows(&mut io::stdout(), previous_rows)?;
         }
-
-        for index in 0..clear_rows {
-            write!(io::stdout(), "\r\u{1b}[2K")?;
-            if index + 1 < clear_rows {
+        // Keep the cursor on the footer, like the dashboard: a final newline
+        // would create a blank terminal row below the telemetry.
+        for (index, line) in output_lines.iter().enumerate() {
+            if index > 0 {
                 write!(io::stdout(), "\n")?;
             }
-        }
-
-        if clear_rows > 1 {
-            write!(io::stdout(), "\u{1b}[{}A", clear_rows - 1)?;
-        }
-
-        if clear_rows > 0 {
-            write!(io::stdout(), "\r")?;
-        }
-
-        for line in &output_lines {
-            writeln!(io::stdout(), "{line}")?;
+            write!(io::stdout(), "\r\u{1b}[2K{line}")?;
         }
 
         io::stdout().flush()?;
@@ -2644,17 +2814,8 @@ impl LogTailWindow {
         let mut output_lines = Vec::with_capacity(
             self.prefix_lines.len() + visible_capacity + usize::from(self.loader_line.is_some()),
         );
-        let tail_notice_index = self.prefix_lines.len().saturating_sub(1);
         output_lines.extend(
-            self.prefix_lines[..tail_notice_index]
-                .iter()
-                .map(|line| status_line_text_for_width(line, width)),
-        );
-        if let Some(loader_line) = self.loader_line.as_ref() {
-            output_lines.push(status_line_text_for_width(loader_line, width));
-        }
-        output_lines.extend(
-            self.prefix_lines[tail_notice_index..]
+            self.prefix_lines
                 .iter()
                 .map(|line| status_line_text_for_width(line, width)),
         );
@@ -2664,6 +2825,9 @@ impl LogTailWindow {
                 .map(|line| tail_line_text_for_width(line, width)),
         );
         output_lines.extend((self.lines.len()..visible_capacity).map(|_| String::new()));
+        if let Some(loader_line) = self.loader_line.as_ref() {
+            output_lines.push(status_line_text_for_width(loader_line, width));
+        }
         output_lines
     }
 
@@ -2682,14 +2846,12 @@ impl LogTailWindow {
 }
 
 fn clear_tail_rows(writer: &mut impl Write, rows: usize) -> io::Result<()> {
-    write!(writer, "\u{1b}[{}A", rows)?;
-    for index in 0..=rows {
-        write!(writer, "\r\u{1b}[2K")?;
-        if index < rows {
-            write!(writer, "\n")?;
+    for index in 0..rows {
+        if index > 0 {
+            write!(writer, "\u{1b}[1A")?;
         }
+        write!(writer, "\r\u{1b}[2K")?;
     }
-    write!(writer, "\u{1b}[{}A\r", rows)?;
     writer.flush()
 }
 
@@ -2886,7 +3048,7 @@ struct SpinnerRenderer {
 enum InputEvent {
     None,
     Interrupt,
-    StartTail,
+    ToggleTail,
     IncreaseLines,
     DecreaseLines,
 }
@@ -3217,7 +3379,7 @@ fn decode_spinner_input(byte: u8, escape_deadline: &mut Option<Instant>) -> Inpu
                 InputEvent::None
             }
         }
-        b't' | b'T' => InputEvent::StartTail,
+        b't' | b'T' => InputEvent::ToggleTail,
         b'+' => InputEvent::IncreaseLines,
         b'-' => InputEvent::DecreaseLines,
         _ => InputEvent::None,
@@ -3255,13 +3417,8 @@ fn dashboard_output_lines(
             format_duration(global_elapsed)
         ))
     ));
-    for summary in completed_summaries {
-        lines.push(completed_summary_line(summary));
-        for dl in &summary.detail_lines {
-            lines.push(detail_line(dl));
-        }
-    }
-    lines.push(running_command_line(metadata));
+    lines.extend(live_summary_lines(completed_summaries, metadata));
+    lines.push(live_phase_line(metadata, false));
     for dl in current_detail_lines {
         lines.push(detail_line(dl));
     }
@@ -3841,7 +3998,7 @@ fn command_help(command: &str) -> Option<(&'static str, &'static str, &'static [
     match command {
         "help" => Some(("makevn help", "Print the full makevn help.", &[])),
         "agent" => Some(("makevn agent install opencode", "Install the makevn MCP server in the global OpenCode configuration.", &[])),
-        "doctor" => Some(("makevn [--repo PATH] doctor [--compact]", "Inspect repository setup and makevn configuration.", &["--compact  Print brief, noninteractive setup advice"])),
+        "doctor" => Some(("makevn [--repo PATH] doctor [--compact] [--reset-config]", "Inspect repository setup and makevn configuration.", &["--compact  Print brief, noninteractive setup advice", "--reset-config  Back up settings and ask setup questions again (interactive CLI only)"])),
         "init" => Some(("makevn [--repo PATH] init [--dry-run] [--force]", "Initialize .makevn configuration for the repository.", &["--dry-run  Show what would change without writing files", "--force    Refresh existing generated files"])),
         "uninstall" => Some(("makevn [--repo PATH] uninstall [--dry-run]", "Remove makevn local repository state.", &["--dry-run  Show what would be removed"])),
         "refresh" => Some(("makevn [--repo PATH] refresh [--dry-run]", "Refresh initialization while preserving user configuration.", &["--dry-run  Show what would change without writing files"])),
@@ -3859,8 +4016,8 @@ fn command_help(command: &str) -> Option<(&'static str, &'static str, &'static [
         "verify-it" => maven_command_help("verify-it", "Run integration-test-only verification.", true),
         "verify-it-coverage" => maven_command_help("verify-it-coverage", "Run integration-test-only verification with coverage.", true),
         "verify" => maven_command_help("verify", "Run full combined verification.", true),
-        "verify-changes-preview" => Some(("makevn [--repo PATH] verify-changes-preview", "Preview changed production modules or modified tests without running Maven.", &[])),
-        "verify-changes" => maven_command_help("verify-changes", "Verify changed production modules or modified tests.", true),
+        "verify-changes-preview" => Some(("makevn [--repo PATH] verify-changes-preview [--focused|--exhaustive]", "Preview changed-code scope without Maven; focused by default. For user-requested faster local feedback, explain --focused limitations and use the same mode in preview and execution. A large preparation reactor does not mean its test suites run.", &[])),
+        "verify-changes" => maven_command_help("verify-changes", "Verify changed-code scope; focused by default, --exhaustive is explicit. --focused prepares dependencies without UT/IT then verifies production owner suites and selected changed tests without -am; not a full integration/coverage gate. Use the same mode as preview and report its scope.", true),
         "coverage" => Some(("makevn [--repo PATH] coverage [--threshold PCT]", "Check the latest aggregate coverage report.", &["--threshold  Required coverage percentage"])),
         "coverage-changes" => Some(("makevn [--repo PATH] coverage-changes [--threshold PCT] [--overall-threshold PCT] [--verbose]", "Check incremental and per-module coverage.", &["--threshold          Per-module coverage percentage", "--overall-threshold  Overall coverage percentage", "--verbose            Print detailed coverage output"])),
         "crap" => Some(("makevn [--repo PATH] crap [install-analyzer] [--jacoco-xml PATH] [--threshold SCORE] [--max-warnings COUNT]", "Calculate Java CRAP metrics from existing JaCoCo XML coverage.", &["install-analyzer  Download and verify the pinned crap4java release", "--jacoco-xml      Use a specific existing JaCoCo XML report", "--threshold       CRAP score warning threshold (default: 8)", "--max-warnings    Fail when the warning count exceeds this ratchet"])),
@@ -3905,7 +4062,7 @@ fn maven_command_help(
         ("verify-it", "makevn [--repo PATH] [--compact] verify-it [--tail] [--clean-generated-contract-targets] [-- EXTRA_MAVEN_ARGS...]"),
         ("verify-it-coverage", "makevn [--repo PATH] [--compact] verify-it-coverage [--tail] [--clean-generated-contract-targets] [-- EXTRA_MAVEN_ARGS...]"),
         ("verify", "makevn [--repo PATH] [--compact] verify [--tail] [--clean-generated-contract-targets] [-- EXTRA_MAVEN_ARGS...]"),
-        ("verify-changes", "makevn [--repo PATH] [--compact] verify-changes [--tail] [--clean-generated-contract-targets] [-- EXTRA_MAVEN_ARGS...]"),
+        ("verify-changes", "makevn [--repo PATH] [--compact] verify-changes [--tail] [--focused|--exhaustive] [--clean-generated-contract-targets] [-- EXTRA_MAVEN_ARGS...]"),
         ("pr-verify", "makevn [--repo PATH] [--compact] pr-verify [--tail] [-- EXTRA_MAVEN_ARGS...]"),
     ];
     let usage = usages.iter().find(|(name, _)| *name == command)?.1;
@@ -3986,8 +4143,8 @@ fn print_help(with_header: bool) {
         "  makevn [--repo PATH] [--compact] verify-it-coverage [--tail] [--clean-generated-contract-targets] [-- EXTRA_MAVEN_ARGS...]"
     );
     println!("  makevn [--repo PATH] [--compact] verify [--tail] [--clean-generated-contract-targets] [-- EXTRA_MAVEN_ARGS...]");
-    println!("  makevn [--repo PATH] verify-changes-preview");
-    println!("  makevn [--repo PATH] [--compact] verify-changes [--tail] [--clean-generated-contract-targets] [-- EXTRA_MAVEN_ARGS...]");
+    println!("  makevn [--repo PATH] verify-changes-preview [--focused|--exhaustive]");
+    println!("  makevn [--repo PATH] [--compact] verify-changes [--tail] [--focused|--exhaustive] [--clean-generated-contract-targets] [-- EXTRA_MAVEN_ARGS...]");
     println!("  makevn [--repo PATH] coverage [--threshold PCT]");
     println!("  makevn [--repo PATH] coverage-changes [--threshold PCT] [--overall-threshold PCT] [--verbose]");
     println!("  makevn [--repo PATH] crap [--jacoco-xml PATH] [--threshold SCORE] [--max-warnings COUNT]");
@@ -4034,7 +4191,7 @@ fn print_help(with_header: bool) {
     println!("  makevn verify-ut");
     println!("  makevn verify-ut-coverage");
     println!("  makevn verify-it");
-    println!("  makevn verify-changes-preview");
+    println!("  makevn verify-changes-preview [--focused|--exhaustive]");
     println!("  makevn verify-changes");
     println!("  makevn coverage");
     println!("  makevn coverage-changes");

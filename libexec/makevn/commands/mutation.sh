@@ -77,7 +77,7 @@ cmd_mutation() {
   fi
 
   mutation_goal="$(makevn_mutation_goal_for_project "${repo_root}" "${maven_base_path}")"
-  maven_executable="$(makevn_maven_executable "${repo_root}" "${maven_base_path}")"
+  maven_executable="$(makevn_maven_executable "${repo_root}" "${maven_base_path}")" || return $?
   maven_cli_flags_value="$(makevn_maven_cli_flags_for_command "${repo_root}" mutation)"
   if [[ -n "${maven_cli_flags_value}" ]]; then
     read -r -a maven_cli_flags <<< "${maven_cli_flags_value}"

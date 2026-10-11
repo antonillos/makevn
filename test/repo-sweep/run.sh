@@ -162,7 +162,7 @@ if [[ -n "${MAKEVN_REPO_SWEEP_INSTALL_PREFIX:-}" && -x "${INSTALL_BIN_DIR}/makev
   MAKEVN_BIN="${INSTALL_BIN_DIR}/makevn"
   MCP_BIN="${INSTALL_BIN_DIR}/makevn-mcp"
 elif [[ -x "${ROOT_DIR}/target/release/makevn" && -x "${ROOT_DIR}/target/release/makevn-mcp" ]]; then
-  PREFIX="${INSTALL_PREFIX}" "${ROOT_DIR}/install.sh" >/dev/null
+  PREFIX="${INSTALL_PREFIX}" "${ROOT_DIR}/install.sh" --no-build >/dev/null
   MAKEVN_BIN="${INSTALL_BIN_DIR}/makevn"
   MCP_BIN="${INSTALL_BIN_DIR}/makevn-mcp"
 else
@@ -243,7 +243,7 @@ classify_result() {
       printf 'expected_unavailable\n'
       return 0
       ;;
-    *"Docker compose file not found"*|*"Karate docker compose file not found"*|*"No Karate Maven project detected"*)
+    *"Docker compose selection failed"*|*"Docker compose file not found"*|*"Karate docker compose file not found"*|*"No Karate Maven project detected"*)
       printf 'expected_unavailable\n'
       return 0
       ;;
@@ -450,6 +450,11 @@ if "error" in response:
 content = response.get("result", {}).get("content", [])
 text_parts = [part.get("text", "") for part in content if part.get("type") == "text"]
 text = "\n".join(part for part in text_parts if part)
+structured = response.get("result", {}).get("structuredContent")
+if structured is not None:
+    data = structured["untrustedData"]
+    text = data["output"] or json.dumps(data["workflow"])
+    text += "\n" + json.dumps({key: structured[key] for key in ("exitCode", "durationMs", "tool", "logPaths")})
 if stderr.strip():
     if text:
         text += "\n"

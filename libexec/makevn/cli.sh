@@ -16,7 +16,7 @@ from the terminal without IDE-specific setup. Agents in OpenCode should prefer
 'makevn' commands over editor-specific instructions.
 
 Usage:
-  makevn [--repo PATH] doctor [--compact]
+  makevn [--repo PATH] doctor [--compact] [--reset-config]
   makevn [--repo PATH] [--compact] init [--dry-run] [--force]
   makevn [--repo PATH] refresh [--dry-run]
   makevn [--repo PATH] [--compact] uninstall [--dry-run]
@@ -34,8 +34,8 @@ Usage:
   makevn [--repo PATH] verify-it [--clean-generated-contract-targets] [-- EXTRA_MAVEN_ARGS...]
   makevn [--repo PATH] verify-it-coverage [--clean-generated-contract-targets] [-- EXTRA_MAVEN_ARGS...]
   makevn [--repo PATH] verify [--clean-generated-contract-targets] [-- EXTRA_MAVEN_ARGS...]
-  makevn [--repo PATH] verify-changes-preview
-  makevn [--repo PATH] verify-changes [--clean-generated-contract-targets] [-- EXTRA_MAVEN_ARGS...]
+  makevn [--repo PATH] verify-changes-preview [--focused|--exhaustive]
+  makevn [--repo PATH] verify-changes [--focused|--exhaustive] [--clean-generated-contract-targets] [-- EXTRA_MAVEN_ARGS...]
   makevn [--repo PATH] coverage [--threshold PCT]
   makevn [--repo PATH] coverage-changes [--threshold PCT] [--overall-threshold PCT] [--verbose]
   makevn [--repo PATH] crap [--jacoco-xml PATH] [--threshold SCORE] [--max-warnings COUNT]
@@ -111,6 +111,8 @@ print_command_intro() {
   local repo_root="$1"
   local title="$2"
 
+  # The Rust dashboard already labels the command; avoid a duplicate detail row.
+  [[ -z "${MAKEVN_FRONTEND_STATE_METADATA_OUT:-}" ]] || return 0
   makevn_print_header "makevn ${title}"
 }
 

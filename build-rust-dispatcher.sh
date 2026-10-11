@@ -24,7 +24,6 @@ build_stamp="$(date +"%Y.%m.%d.%H.%M")"
 build_version="${base_version} (${build_stamp})"
 
 mkdir -p "${RUST_TARGET_DIR}"
-printf 'MAKEVN_VERSION=%q\n' "${build_version}" > "${VERSION_ENV}"
 
 cargo_args=(build --quiet --release --manifest-path "${RUST_MANIFEST}")
 if [[ -n "${RUST_TARGET_TRIPLE}" ]]; then
@@ -32,6 +31,8 @@ if [[ -n "${RUST_TARGET_TRIPLE}" ]]; then
 fi
 
 MAKEVN_BUILD_VERSION="${build_version}" CARGO_TARGET_DIR="${RUST_TARGET_DIR}" cargo "${cargo_args[@]}"
+
+printf 'MAKEVN_VERSION=%q\n' "${build_version}" > "${VERSION_ENV}"
 
 printf 'Built Rust dispatcher at %s\n' "${RUST_BIN}"
 printf 'Built Rust MCP server at %s\n' "${RUST_MCP_BIN}"

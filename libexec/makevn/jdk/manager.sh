@@ -5,6 +5,9 @@ ACTION="${1:-}"
 JDK_VERSION="${2:-}"
 JDK_HOME_ARG="${3:-}"
 CONFIG_FILE="${CONFIG_FILE:-makevn.config}"
+# shellcheck source=/dev/null
+source "$(dirname "${BASH_SOURCE[0]}")/enforcer.sh"
+enforcer_ranges="$(makevn_java_enforcer_ranges "${MAKEVN_JDK_MAVEN_BASE_PATH:-}")"
 
 extract_tool_versions_jdk_major() {
   local tool_versions_file="$1"
@@ -83,6 +86,14 @@ major_for_home() {
   printf '%s\n' "${version_line}" | sed -nE 's/.*version "([0-9]+).*/\1/p'
 }
 
+is_stable_home() {
+  local version=""
+  version="$(java_version_line "$1" | sed -nE 's/.*version "([^"]+)".*/\1/p')"
+  # Numeric GA versions (including legacy Java 8) only. EA, internal and
+  # project builds such as 25-loom are not interchangeable with a GA JDK.
+  [[ "${version}" =~ ^[0-9]+([._][0-9]+)*(\+[0-9]+(-LTS)?)?$ ]]
+}
+
 matches_version() {
   local home="$1"
   local actual_major=""
@@ -99,6 +110,10 @@ add_home_to_list() {
   local home
   local label="$2"
   home="$(normalize_home "$1")"
+  if [[ -n "${compatible_required_major:-}" ]]; then
+    try_list_compatible_home "${home}" "${compatible_required_major}"
+    return 0
+  fi
   if ! has_java "${home}"; then
     return 0
   fi
@@ -163,15 +178,19 @@ list_jdks() {
 }
 
 list_compatible_homes() {
-  local required_major="$1"
+  # Dynamic scope lets the inventory callback filter without duplicating
+  # Homebrew, macOS and directory discovery for compatible selection.
+  local compatible_required_major="$1"
   SEEN_FILE="$(mktemp)"
   export SEEN_FILE
   trap 'rm -f "${SEEN_FILE}"' EXIT
 
   if [[ -n "${JAVA_HOME:-}" ]]; then
-    try_list_compatible_home "${JAVA_HOME}" "${required_major}"
+    add_home_to_list "${JAVA_HOME}" "JAVA_HOME"
   fi
-  list_compatible_from_common_dirs "${required_major}"
+  list_from_java_home
+  list_from_brew
+  list_from_common_dirs
 }
 
 resolve_compatible_version_home() {
@@ -204,6 +223,8 @@ try_list_compatible_home() {
   if ! has_java "${home}"; then
     return 0
   fi
+  is_stable_home "${home}" || return 0
+  jdk_satisfies_enforcer "${home}" || return 0
   if grep -Fxq "${home}" "${SEEN_FILE}"; then
     return 0
   fi
@@ -216,23 +237,16 @@ try_list_compatible_home() {
   printf '%s\n' "${home}"
 }
 
-list_compatible_from_common_dirs() {
-  local required_major="$1"
-  local base
-  local candidate
-  for base in "${candidate_bases[@]}"; do
-    [[ -d "${base}" ]] || continue
-    for candidate in "${base}"/* "${base}"/*/Contents/Home; do
-      [[ -e "${candidate}" ]] || continue
-      try_list_compatible_home "${candidate}" "${required_major}"
-    done
-  done
-}
-
 try_resolve_home() {
   local home
   home="$(normalize_home "$1")"
   if has_java "${home}" && matches_version "${home}"; then
+    # A repository-pinned installation is intentional, unlike major-only
+    # discovery through JAVA_HOME, java_home, Homebrew or common directories.
+    if [[ "${2:-false}" != true ]]; then
+      is_stable_home "${home}" || return 1
+      jdk_satisfies_enforcer "${home}" || return 1
+    fi
     printf '%s\n' "${home}"
     return 0
   fi
@@ -303,7 +317,7 @@ resolve_declared_asdf_home() {
     case "${tool}" in
       java|ivm-java)
         [[ "${version}" != */* && "${version}" != "." && "${version}" != ".." ]] || continue
-        try_resolve_home "${ASDF_DATA_DIR:-$HOME/.asdf}/installs/${tool}/${version}" && return 0
+        try_resolve_home "${ASDF_DATA_DIR:-$HOME/.asdf}/installs/${tool}/${version}" true && return 0
         ;;
     esac
   done < "${tool_versions_file}"

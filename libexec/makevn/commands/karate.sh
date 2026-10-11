@@ -122,7 +122,7 @@ cmd_karate_test() {
     cmd_docker_ps_required "${repo_root}" --compose karate
   fi
 
-  maven_executable="$(makevn_maven_executable "${repo_root}" "${karate_base_path}")"
+  maven_executable="$(makevn_maven_executable "${repo_root}" "${karate_base_path}" karate)" || return $?
   cli_flags_value="$(makevn_maven_cli_flags_for_command "${repo_root}" test)"
   cli_flags_value="$(makevn_append_word "${cli_flags_value}" "-nsu")"
 

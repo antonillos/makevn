@@ -13,6 +13,7 @@ makevn_die() {
       "Error: $*"
   fi
   if makevn_frontend_owns_loader 2>/dev/null; then
+    makevn_print_detail_line "Error: $*"
     exit 1
   fi
   printf '%s\n' "$(makevn_warn "Error: $*")" >&2
@@ -89,6 +90,8 @@ makevn_logs_dir() {
 makevn_load_config() {
   local repo_root="$1"
   local config_path
+  # Explicit caller selection (including MCP trace=false) wins over repo config.
+  local caller_trace_output="${MAKEVN_TRACE_OUTPUT-}"
   config_path="$(makevn_config_path "${repo_root}")"
 
   unset MAKEVN_JAVA_HOME MAKEVN_CODE_JAVA_HOME MAKEVN_KARATE_JAVA_HOME
@@ -102,6 +105,9 @@ makevn_load_config() {
   if [[ -f "${config_path}" ]]; then
     # shellcheck source=/dev/null
     source "${config_path}"
+  fi
+  if [[ -n "${caller_trace_output}" ]]; then
+    export MAKEVN_TRACE_OUTPUT="${caller_trace_output}"
   fi
 }
 

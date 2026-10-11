@@ -317,6 +317,11 @@ The frontend may additionally set internal markers such as:
 
 - `MAKEVN_FRONTEND=rust`
 - `MAKEVN_FRONTEND_VERSION=<version>`
+- `MAKEVN_TRACE_OUTPUT=0|1`: controls `makevn_trace_command` command echoes only.
+  The shell defaults to `1` when absent for CLI compatibility. MCP explicitly
+  sets `0` by default and `1` only for `trace: true`, including workflow step
+  inheritance/overrides. It does not suppress logs, backend metadata, failure
+  excerpts, final output, or MCP execution metadata.
 
 Rules:
 
@@ -383,3 +388,13 @@ means unavailable telemetry. This is internal, read-only telemetry plumbing,
 not a public CLI option. Noninteractive commands do not request this channel.
 The frontend owns removal of the scope file, samples only IDs selected by the
 scope, and ignores telemetry failures without changing command results.
+
+### Trace precedence across repository configuration
+
+An explicit `MAKEVN_TRACE_OUTPUT` inherited from the caller takes precedence
+over `.makevn/config`, including repeated config loads. MCP always sets it
+from the call's `trace` option (or a workflow step override), so repository
+configuration cannot turn omitted/false tracing on or explicit true tracing off.
+For direct CLI calls without that environment variable, repository configuration
+can still select the backend echo behavior; the default remains enabled when
+neither the caller nor repository config selects a value.

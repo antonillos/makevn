@@ -130,14 +130,13 @@ makevn_prompt_doctor_app_health_url_paused() {
   local repo_root="$1"
   local health_input=""
   local default_health_url="${detected_app_health_url}"
-  printf '\n' >&2
   if [[ -n "${default_health_url}" ]]; then
-    printf '%s\n' "$(makevn_warn "Detected app health URL: ${default_health_url}")" >&2
+    makevn_print_question "Detected app health URL: ${default_health_url}"
   else
     default_health_url="$(makevn_doctor_suggest_app_health_url "${maven_base_path}")"
-    printf '%s\n' "No application health URL detected. Suggested URL (not verified): ${default_health_url}" >&2
+    makevn_print_question "No application health URL detected. Suggested URL (not verified): ${default_health_url}"
   fi
-  printf '%s\n' 'Edit the URL or press Enter to confirm it; type skip to leave configuration unchanged.' >&2
+  printf '%s\n' "$(makevn_dim 'Edit the URL or press Enter to confirm it; type skip to leave configuration unchanged.')" >&2
   while true; do
     health_input="$(makevn_read_editable_default "Health URL [${default_health_url}]: " "${default_health_url}")" || return 0
     [[ "${health_input}" != "skip" ]] || return 0
@@ -276,8 +275,7 @@ makevn_collect_doctor_snapshot() {
       # Multiple: ask interactively if we have a TTY
       if [[ -t 0 && -t 2 && "${MAKEVN_COMPACT_OUTPUT:-}" != "1" ]]; then
         makevn_pause_frontend_for_prompt
-        printf '\n' >&2
-        printf '%s\n' "$(makevn_warn "Multiple docker-compose.yml files found. Select one:")" >&2
+        makevn_print_question "Multiple docker-compose.yml files found. Select one:"
         local _i=1
         for _f in "${_found[@]}"; do
           printf '  [%d] %s\n' "${_i}" "${_f}" >&2
@@ -327,8 +325,7 @@ makevn_collect_doctor_snapshot() {
     else
       if [[ -t 0 && -t 2 && "${MAKEVN_COMPACT_OUTPUT:-}" != "1" ]]; then
         makevn_pause_frontend_for_prompt
-        printf '\n' >&2
-        printf '%s\n' "$(makevn_warn "Multiple e2e docker-compose.yml files found. Select one:")" >&2
+        makevn_print_question "Multiple e2e docker-compose.yml files found. Select one:"
         local _i=1
         for _ef in "${_e2e_found[@]}"; do
           printf '  [%d] %s\n' "${_i}" "${_ef}" >&2
@@ -382,6 +379,8 @@ makevn_collect_doctor_snapshot() {
   if [[ "${app_runnable}" != "yes" ]] && makevn_detect_app_runnable "${repo_root}" "${maven_base_path}"; then
     app_runnable="yes"
   fi
+  local MAKEVN_JDK_MAVEN_BASE_PATH="${maven_base_path}"
+  export MAKEVN_JDK_MAVEN_BASE_PATH
   makevn_doctor_progress "Resolving Java homes"
   code_java_home="$(MAKEVN_RESOLVE_COMPATIBLE_JAVA_FIRST=1 makevn_effective_java_home "${repo_root}" code "${maven_base_path}" || true)"
   if [[ -n "${code_tool_versions_java_version}" ]]; then
@@ -398,6 +397,12 @@ makevn_collect_doctor_snapshot() {
     fi
   elif [[ -z "${code_java_home}" && -n "${code_java_version}" ]]; then
     compatible_code_java_homes="$(makevn_compatible_java_homes_csv "${code_java_version}" || true)"
+    code_java_home_recommendation="No stable JDK ${code_java_version}+ detected. Automatic selection excludes EA/internal/project builds. Install a stable JDK or explicitly set MAKEVN_CODE_JAVA_HOME in .makevn/config."
+  fi
+  local java_enforcer_ranges=""
+  java_enforcer_ranges="$(makevn_java_enforcer_ranges "${maven_base_path}")"
+  if [[ -z "${code_java_home}" && -n "${java_enforcer_ranges}" ]]; then
+    code_java_home_recommendation="No stable JDK satisfies Maven Enforcer requireJavaVersion: ${java_enforcer_ranges}. Install an accepted stable JDK; do not bypass Enforcer."
   fi
   karate_java_home="$(makevn_effective_java_home "${repo_root}" karate "${maven_base_path}" || true)"
   repo_support_status="$(makevn_repository_support_status "${repo_root}")"
@@ -433,8 +438,7 @@ makevn_collect_doctor_snapshot() {
   makevn_load_config "${repo_root}"
   if [[ -f "$(makevn_config_path "${repo_root}")" && -n "${verify_it_local_containers_default}" && -z "${LOCAL_CONTAINERS+x}" && "${local_containers_configured}" != "yes" && "${prompted_interactively}" != "yes" && -t 0 && -t 2 && "${MAKEVN_COMPACT_OUTPUT:-}" != "1" ]]; then
     makevn_pause_frontend_for_prompt
-    printf '\n' >&2
-    printf '%s\n' "$(makevn_warn "Use LOCAL_CONTAINERS=TRUE by default for makevn test/verify commands?")" >&2
+    makevn_print_question "Use LOCAL_CONTAINERS=TRUE by default for makevn test/verify commands?"
     printf '  [1] yes, use local containers\n' >&2
     printf '  [2] no, leave LOCAL_CONTAINERS unset unless I export it\n' >&2
     local _local_choice=""
@@ -526,6 +530,13 @@ makevn_collect_doctor_snapshot() {
   MAKEVN_DOCTOR_MUTATION_GOAL="${mutation_goal:-pitest:mutationCoverage}"
   MAKEVN_DOCTOR_TEST_PROFILE="${test_profile}"
   MAKEVN_DOCTOR_VERIFY_PROFILE="${verify_profile}"
+  MAKEVN_DOCTOR_CODE_MAVEN="$(makevn_maven_executable "${repo_root}" "${maven_base_path}" 2>/dev/null || printf unresolved)"
+  local karate_base_path=""
+  karate_base_path="$(makevn_detect_karate_base_path "${repo_root}" || true)"
+  MAKEVN_DOCTOR_KARATE_MAVEN="not detected"
+  if [[ -n "${karate_base_path}" ]]; then
+    MAKEVN_DOCTOR_KARATE_MAVEN="$(makevn_maven_executable "${repo_root}" "${karate_base_path}" karate 2>/dev/null || printf unresolved)"
+  fi
   MAKEVN_DOCTOR_CODE_JAVA_HOME="${code_java_home:-unresolved}"
   MAKEVN_DOCTOR_COMPATIBLE_CODE_JAVA_HOMES="${compatible_code_java_homes:-none}"
   MAKEVN_DOCTOR_CODE_JAVA_HOME_RECOMMENDATION="${code_java_home_recommendation}"
@@ -550,7 +561,6 @@ makevn_collect_doctor_snapshot() {
         ;;
       unsupported)
         MAKEVN_DOCTOR_SUGGESTED_NOTE="no automatic recommendation: Maven repository signals were not detected"
-        MAKEVN_DOCTOR_SUGGESTED_OPTIONAL="makevn init"
         ;;
     esac
   elif [[ "${current_status}" != "initialized" ]]; then
@@ -561,19 +571,73 @@ makevn_collect_doctor_snapshot() {
     unsupported)
       MAKEVN_DOCTOR_SUGGESTED_NEXT=""
       MAKEVN_DOCTOR_SUGGESTED_NOTE="no automatic recommendation: Maven repository signals were not detected"
-      [[ -n "${MAKEVN_DOCTOR_SUGGESTED_OPTIONAL}" ]] || MAKEVN_DOCTOR_SUGGESTED_OPTIONAL="makevn init"
+      MAKEVN_DOCTOR_SUGGESTED_OPTIONAL=""
       ;;
   esac
   if [[ "${app_runnable}" == "yes" && -z "${detected_app_health_url}" ]]; then
     MAKEVN_DOCTOR_SUGGESTED_NOTE="Application HTTP readiness is not configured. Set MAKEVN_APP_HEALTH_URL in .makevn/config or run makevn doctor in an interactive terminal after initialization. karate-all requires this URL."
   fi
+  MAKEVN_DOCTOR_BIND_MOUNTS='{"status":"unavailable","checks":[]}'
+  if command -v python3 >/dev/null 2>&1; then
+    MAKEVN_DOCTOR_BIND_MOUNTS="$(python3 "${MAKEVN_LIBEXEC_DIR}/docker/bind_mounts.py" doctor "${repo_root}" "${compose_file}" "$(makevn_boot_compose_override_file_path "${repo_root}" || true)" || printf '{"status":"unavailable","checks":[]}')"
+  fi
+  MAKEVN_DOCTOR_TEST_PROCESSES='{"status":"unavailable","processes":[]}'
+  if command -v python3 >/dev/null 2>&1; then
+    MAKEVN_DOCTOR_TEST_PROCESSES="$(python3 "${MAKEVN_LIBEXEC_DIR}/common/test_processes.py" doctor "${repo_root}")"
+  fi
+  makevn_doctor_refresh_setup_answers "${repo_root}"
+  makevn_doctor_interactive_setup_status
+  makevn_doctor_interaction_status
   makevn_doctor_record_build "${repo_root}"
+}
+
+# Prompt persistence must be reflected in this invocation's final setup verdict.
+makevn_doctor_refresh_setup_answers() {
+  local repo_root="$1"
+  makevn_load_config "${repo_root}"
+  local_containers_configured=no
+  if [[ -f "$(makevn_config_path "${repo_root}")" ]] && grep -q '^MAKEVN_LOCAL_CONTAINERS=' "$(makevn_config_path "${repo_root}")"; then
+    local_containers_configured=yes
+  fi
+}
+
+# Report questions that noninteractive clients cannot answer.
+makevn_doctor_interactive_setup_status() {
+  MAKEVN_DOCTOR_INTERACTIVE_REQUIRED=false
+  if [[ "${MAKEVN_DOCTOR_KARATE_APP_PROFILES:-}" == 'unresolved (explicit selection required)' && -z "${SPRING_PROFILES_ACTIVE+x}" && -z "${MAKEVN_KARATE_APP_PROFILES:-}" ]]; then
+    MAKEVN_DOCTOR_INTERACTIVE_REQUIRED=true
+  fi
+  case "${MAKEVN_DOCTOR_COMPOSE_FILE} ${MAKEVN_DOCTOR_E2E_COMPOSE_FILE}" in
+    *ambiguous*) MAKEVN_DOCTOR_INTERACTIVE_REQUIRED=true ;;
+  esac
+  if [[ "${MAKEVN_DOCTOR_APP_RUNNABLE}" == yes && -z "${MAKEVN_APP_HEALTH_URL:-}" ]]; then
+    MAKEVN_DOCTOR_INTERACTIVE_REQUIRED=true
+  fi
+  if [[ -n "${verify_it_local_containers_default:-}" && "${local_containers_configured:-no}" != yes && -z "${LOCAL_CONTAINERS+x}" ]]; then
+    MAKEVN_DOCTOR_INTERACTIVE_REQUIRED=true
+  fi
+}
+
+# Analysis success does not imply that interactive configuration is complete.
+makevn_doctor_interaction_status() {
+  MAKEVN_DOCTOR_SETUP_STATUS=ready
+  MAKEVN_DOCTOR_INTERACTION_BLOCKERS=''
+  [[ "${MAKEVN_DOCTOR_INTERACTIVE_REQUIRED:-false}" == true ]] || return 0
+  MAKEVN_DOCTOR_SETUP_STATUS=pending
+  [[ -t 0 ]] || MAKEVN_DOCTOR_INTERACTION_BLOCKERS+='stdin_not_tty '
+  [[ -t 2 ]] || MAKEVN_DOCTOR_INTERACTION_BLOCKERS+='stderr_not_tty '
+  [[ "${MAKEVN_COMPACT_OUTPUT:-}" != 1 ]] || MAKEVN_DOCTOR_INTERACTION_BLOCKERS+='compact_mode '
+  [[ -n "${MAKEVN_DOCTOR_INTERACTION_BLOCKERS}" ]] || MAKEVN_DOCTOR_INTERACTION_BLOCKERS='answers_unresolved'
 }
 
 makevn_print_doctor_json() {
   printf '{\n'
   printf '  "version": 1,\n'
+  printf '  "docker_bind_mounts": %s,\n' "${MAKEVN_DOCTOR_BIND_MOUNTS}"
   printf '  "command": "doctor",\n'
+  printf '  "test_processes": %s,\n' "${MAKEVN_DOCTOR_TEST_PROCESSES}"
+  printf '  "analysis_status": "completed",\n'
+  printf '  "interactive_setup": {"required": %s, "status": "%s", "blockers": "%s", "command": "makevn doctor", "requires_tty": true},\n' "${MAKEVN_DOCTOR_INTERACTIVE_REQUIRED:-false}" "${MAKEVN_DOCTOR_SETUP_STATUS:-ready}" "$(makevn_json_escape "${MAKEVN_DOCTOR_INTERACTION_BLOCKERS:-}")"
   printf '  "doctor_build": {\n'
   printf '    "current_version": "%s",\n' "$(makevn_json_escape "${MAKEVN_VERSION}")"
   printf '    "previous_version": "%s",\n' "$(makevn_json_escape "${MAKEVN_DOCTOR_PREVIOUS_VERSION}")"
@@ -608,6 +672,8 @@ makevn_print_doctor_json() {
   printf '    "build_profile": "%s",\n' "$(makevn_json_escape "${MAKEVN_DOCTOR_BUILD_PROFILE}")"
   printf '    "test_profile": "%s",\n' "$(makevn_json_escape "${MAKEVN_DOCTOR_TEST_PROFILE}")"
   printf '    "verify_profile": "%s",\n' "$(makevn_json_escape "${MAKEVN_DOCTOR_VERIFY_PROFILE}")"
+  printf '    "resolved_code_maven": "%s",\n' "$(makevn_json_escape "${MAKEVN_DOCTOR_CODE_MAVEN}")"
+  printf '    "resolved_karate_maven": "%s",\n' "$(makevn_json_escape "${MAKEVN_DOCTOR_KARATE_MAVEN}")"
   printf '    "resolved_code_java_home": "%s",\n' "$(makevn_json_escape "${MAKEVN_DOCTOR_CODE_JAVA_HOME}")"
   printf '    "compatible_code_java_homes": "%s",\n' "$(makevn_json_escape "${MAKEVN_DOCTOR_COMPATIBLE_CODE_JAVA_HOMES}")"
   printf '    "code_java_home_recommendation": "%s",\n' "$(makevn_json_escape "${MAKEVN_DOCTOR_CODE_JAVA_HOME_RECOMMENDATION}")"

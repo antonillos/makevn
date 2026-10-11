@@ -209,9 +209,9 @@ first_parent_added_line_numbers() {
   extract_added_line_numbers "$file" "$BASE_REF" > "${changed_lines_file}"
   # Do not use --first-parent here: Git would attribute clean secondary-parent
   # imports to the merge commit. Normal blame retains their original SHA.
-  git blame --line-porcelain HEAD -- "$file" 2>/dev/null | awk -v commits="$first_parent_commits" '
+  git blame --line-porcelain HEAD -- "$file" 2>/dev/null | MAKEVN_COVERAGE_COMMITS="$first_parent_commits" awk '
     BEGIN {
-      count = split(commits, entries, "\n")
+      count = split(ENVIRON["MAKEVN_COVERAGE_COMMITS"], entries, "\n")
       for (i = 1; i <= count; i++) allowed[entries[i]] = 1
     }
     NR == FNR { wanted[$1] = 1; next }
@@ -220,7 +220,11 @@ first_parent_added_line_numbers() {
       if (wanted[line] && allowed[sha]) print line
       line++
     }
-  ' "${changed_lines_file}" -
+  ' "${changed_lines_file}" - || {
+    rm -f "${changed_lines_file}"
+    trap - RETURN
+    return 1
+  }
   rm -f "${changed_lines_file}"
   trap - RETURN
 }
@@ -433,7 +437,10 @@ while IFS= read -r FILE; do
     CHANGED_LINES=$(extract_added_line_numbers "$FILE" HEAD || true)
   elif [ "$BASE_REF" != "HEAD" ]; then
     if [ "$FIRST_PARENT_ONLY" = true ] || [ "$FIRST_PARENT_ONLY" = 1 ]; then
-      CHANGED_LINES=$(first_parent_added_line_numbers "$FILE" || true)
+      CHANGED_LINES=$(first_parent_added_line_numbers "$FILE") || {
+        printf 'Error: Cannot determine first-parent changed lines for %s; coverage was not evaluated.\n' "$FILE" >&2
+        exit 1
+      }
       DIFF_OUTPUT=$(printf '%s\n' "$CHANGED_LINES" | sed '/^$/d' | wc -l | xargs)
     else
       DIFF_OUTPUT=$(git diff "$BASE_REF" -- "$FILE" | grep "^+" | grep -v "^+++" | wc -l | xargs)
@@ -712,6 +719,10 @@ PY
 fi
 
 echo "│"
+if [[ "${MAKEVN_COVERAGE_SCOPED:-false}" == true ]]; then
+  echo "├  Focused coverage only; overall project gate requires full coverage"
+  exit "$EXIT_CODE"
+fi
 echo "├  Overall project"
 echo "│"
 if [ -f "$JACOCO_BASE/jacoco.csv" ]; then

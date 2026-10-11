@@ -18,7 +18,7 @@ Source install assumes:
 - a POSIX shell environment
 - `bash`
 - standard Unix user-install paths such as `~/.local`
-- Rust
+- Rust toolchain, including `cargo` (required for the default source build)
 
 ## Homebrew
 
@@ -71,18 +71,37 @@ curl -fsSL https://raw.githubusercontent.com/antonillos/makevn/main/packaging/in
 From the repository root:
 
 ```bash
-./build-rust-dispatcher.sh
-./install.sh --rust
+./install.sh
 ```
 
-`install.sh` does not compile Rust. It installs the Rust `makevn` dispatcher and
-`makevn-mcp` only when prebuilt binaries already exist under `target/release/`.
+`install.sh` compiles the current Rust `makevn` dispatcher and MCP server before
+installing the complete runtime. A failed build leaves the existing installation
+unchanged. Build timestamps describe compilation, not installation time.
 
-Supported install modes today:
+Supported install modes:
 
-- `./install.sh` requires prebuilt Rust binaries and fails if they are missing
-- `./install.sh --rust` is accepted for compatibility and has the same behavior
-- `./install.sh --help` prints the installer usage
+- `./install.sh` builds current sources and installs them (requires Cargo)
+- `./install.sh --rust` is a compatibility alias with the same default build
+- `./install.sh --no-build` explicitly installs prebuilt artifacts without
+  checking source freshness; intended for controlled packaging/test workflows
+- `./install.sh --help` prints usage without building or installing
+
+For an explicitly separated build/install workflow, avoid compiling twice:
+
+```bash
+./build-rust-dispatcher.sh
+./install.sh --no-build
+```
+
+Update a source checkout with:
+
+```bash
+git pull && ./install.sh
+```
+
+Restart/reload MCP clients after installation; running sessions may retain the
+previous server and tool descriptions. Release-channel installs do not require
+local compilation; these Cargo requirements apply to source installation only.
 
 By default this installs into `~/.local`:
 
@@ -109,8 +128,7 @@ PREFIX="$HOME/.local" ./install.sh --rust
 For day-to-day Rust frontend development from a source checkout, the expected loop is:
 
 ```bash
-./build-rust-dispatcher.sh
-./install.sh --rust
+./install.sh
 ~/.local/bin/makevn --repo "/path/to/java-repo" doctor
 ~/.local/bin/makevn --repo "/path/to/java-repo" compile
 ```

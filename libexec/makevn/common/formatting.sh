@@ -15,7 +15,16 @@ makevn_log_has_project_formatter_failure() {
   local repo_root="$1" log_file="$2" base="" goal=""
   base="$(makevn_detect_maven_base_path "${repo_root}" || true)"
   [[ -n "${base}" ]] || return 1
-  goal="$(makevn_format_goal_for_project "${repo_root}" "${base}" false 2>/dev/null || true)"
+  # Optional diagnostics must not call the fatal resolver: makevn_die writes
+  # backend logs/metadata even when its stderr is suppressed in a subshell.
+  goal="$(
+    makevn_load_config "${repo_root}"
+    if [[ -n "${MAKEVN_FORMAT_CHECK_GOAL:-}" ]]; then
+      printf '%s\n' "${MAKEVN_FORMAT_CHECK_GOAL}"
+    else
+      makevn_detect_format_plugin_goal "${base}" false || true
+    fi
+  )"
   [[ -n "${goal}" ]] || return 1
   MAKEVN_RECOVERY_GOALS="${goal}" perl -ne '
     BEGIN { @goals = split /\s+/, $ENV{MAKEVN_RECOVERY_GOALS}; }

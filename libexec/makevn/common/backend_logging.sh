@@ -1,6 +1,69 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+makevn_require_regular_log_path() {
+  if [[ -L "$1" || ( -e "$1" && ! -f "$1" ) ]]; then
+    printf 'Log path is not a regular file: %s\n' "$1" >&2
+    return 1
+  fi
+}
+
+makevn_rotate_logfile() (
+  local logfile="$1" fresh
+  mkdir -p "$(dirname "${logfile}")" || return 1
+  makevn_require_regular_log_path "${logfile}" || return 1
+  makevn_require_regular_log_path "${logfile}.previous" || return 1
+  fresh="$(mktemp "${logfile}.new.XXXXXX")" || return 1
+  trap 'rm -f "${fresh}"' EXIT
+  if [[ -e "${logfile}" ]]; then
+    mv -f "${logfile}" "${logfile}.previous" || return 1
+  fi
+  mv -f "${fresh}" "${logfile}" || return 1
+)
+
+makevn_prepare_logfile() {
+  local diagnostic
+  if diagnostic="$(makevn_rotate_logfile "$1" 2>&1)"; then return 0; fi
+  diagnostic="Cannot prepare log $1: ${diagnostic}. Command was not started; check log-directory permissions and file type."
+  printf '%s\n' "${diagnostic}" >&2
+  if [[ -n "${MAKEVN_BACKEND_DETAIL_OUT:-}" ]]; then
+    printf '%s\n' "${diagnostic}" > "${MAKEVN_BACKEND_DETAIL_OUT}"
+  fi
+  return 1
+}
+
+# Suggest recovery only for an actual daemon connection failure, never merely
+# because Colima happens to be installed. Do not start or switch runtimes.
+makevn_report_docker_runtime_failure() {
+  local command_key="$1" logfile="$2" diagnostic hint profile
+  case "${command_key}" in
+    docker-*|karate-docker-*) ;;
+    *) return 0 ;;
+  esac
+  diagnostic="$(tail -n 40 "${logfile}" 2>/dev/null || true)"
+  if ! printf '%s\n' "${diagnostic}" | grep -Eiq 'cannot connect to the docker daemon|failed to connect to the docker API|error during connect|is the docker daemon running'; then
+    return 0
+  fi
+  hint="Hint: Docker engine is unavailable. Start your configured container runtime and retry; check DOCKER_HOST and the active Docker context."
+  if [[ "${diagnostic}" =~ \.colima/([^/[:space:]]+)/docker\.sock ]]; then
+    profile="${BASH_REMATCH[1]}"
+    if [[ "${profile}" == default ]]; then
+      hint="Hint: The Colima Docker socket is unavailable. Run 'colima start', then retry the makevn command."
+    else
+      printf -v profile '%q' "${profile}"
+      hint="Hint: The Colima Docker socket is unavailable. Run 'colima start --profile ${profile}', then retry the makevn command."
+    fi
+  fi
+  printf '%s\n' "${hint}" >> "${logfile}" || true
+  if [[ -n "${MAKEVN_BACKEND_DETAIL_OUT:-}" ]]; then
+    printf '%s\n' "${hint}" >> "${MAKEVN_BACKEND_DETAIL_OUT}" || true
+  fi
+  if ! makevn_frontend_owns_loader; then
+    printf '%s\n' "${hint}" >&2
+  fi
+  return 0
+}
+
 makevn_metadata_escape_value() {
   local value="$1"
   value="${value//$'\n'/ }"
@@ -56,8 +119,8 @@ makevn_write_quick_backend_log() {
   local metadata_out="${MAKEVN_BACKEND_METADATA_OUT:-}"
 
   logs_dir="$(makevn_logs_dir "${repo_root}")"
-  mkdir -p "${logs_dir}"
   logfile="${logs_dir}/${log_name}.log"
+  makevn_prepare_logfile "${logfile}" || return $?
   relative_log_path=".makevn/logs/${log_name}.log"
 
   {
@@ -124,6 +187,7 @@ makevn_quote_command() {
 }
 
 makevn_trace_command() {
+  [[ "${MAKEVN_TRACE_OUTPUT:-1}" == "1" ]] || return 0
   local label="$1"
   shift
   printf '%s %s %s\n' "$(makevn_dim '→')" "$(makevn_dim "${label}")" "$(makevn_dim "$(makevn_quote_command "$@")")"
@@ -190,6 +254,7 @@ makevn_command_working_directory() {
 makevn_run_logged_in_context() {
   local repo_root="$1"
   local context="$2"
+  local watch_test_jvms=false
   local maven_base_path="$3"
   local log_name="$4"
   local command_key="$5"
@@ -210,7 +275,11 @@ makevn_run_logged_in_context() {
   local interrupted_by_shell=false
   local command_cwd=""
 
+  makevn_test_process_preflight "${repo_root}" "${command_key}" || return $?
   shift 6
+  if [[ "${watch_test_jvms}" == true ]]; then
+    set -- python3 "${MAKEVN_LIBEXEC_DIR}/common/test_processes.py" watch "${repo_root}" -- "$@"
+  fi
 
   command_cwd="$(makevn_command_working_directory "${repo_root}" "${maven_base_path}" "$@")"
 
@@ -220,8 +289,8 @@ makevn_run_logged_in_context() {
   fi
 
   logs_dir="$(makevn_logs_dir "${repo_root}")"
-  mkdir -p "${logs_dir}"
   logfile="${logs_dir}/${log_name}.log"
+  makevn_prepare_logfile "${logfile}" || return $?
   relative_log_path=".makevn/logs/${log_name}.log"
 
   start_epoch="$(date +%s)"
@@ -379,8 +448,8 @@ makevn_run_logged() {
   shift 4
 
   logs_dir="$(makevn_logs_dir "${repo_root}")"
-  mkdir -p "${logs_dir}"
   logfile="${logs_dir}/${log_name}.log"
+  makevn_prepare_logfile "${logfile}" || return $?
   relative_log_path=".makevn/logs/${log_name}.log"
 
   start_epoch="$(date +%s)"
@@ -420,6 +489,7 @@ makevn_run_logged() {
     if [[ ${exit_code} -eq 0 ]]; then
       printf '%s %s\n' "$(makevn_accent '[ok]')" "$(makevn_accent "${duration_display}")"
     else
+      makevn_report_docker_runtime_failure "${command_key}" "${logfile}"
       if makevn_compact_output_enabled; then
         makevn_print_failure_excerpt "${logfile}"
       fi
@@ -480,6 +550,9 @@ makevn_run_logged() {
       return 130
     fi
 
+    if [[ ${exit_code} -ne 0 ]]; then
+      makevn_report_docker_runtime_failure "${command_key}" "${logfile}"
+    fi
     return ${exit_code}
   fi
 
@@ -511,6 +584,21 @@ makevn_run_logged() {
     return 0
   fi
 
+  makevn_report_docker_runtime_failure "${command_key}" "${logfile}"
   printf '\r\033[2K%s %s\n' "$(makevn_warn 'fail')" "$(makevn_warn "exit ${exit_code} after ${duration_display}; check the log for details")"
   return ${exit_code}
+}
+
+# Only Docker-dependent test execution is guarded; ordinary builds are unaffected.
+makevn_test_process_preflight() {
+  local repo_root="$1" command_key="$2"
+  case "${command_key}" in
+    test|verify|verify-it|verify-it-coverage|verify-changes) ;;
+    *) return 0 ;;
+  esac
+  [[ "${test_mode:-integration}" != unit ]] || return 0
+  makevn_verify_requires_boot_docker "${repo_root}" || return 0
+  command -v python3 >/dev/null 2>&1 || return 0
+  watch_test_jvms=true
+  python3 "${MAKEVN_LIBEXEC_DIR}/common/test_processes.py" required "${repo_root}"
 }

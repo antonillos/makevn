@@ -1709,3 +1709,22 @@ makevn_refresh_profile() {
   mkdir -p "$(makevn_state_dir "${repo_root}")"
   makevn_write_profile "${repo_root}"
 }
+
+# Derived inspection state, never a source of verification ownership decisions.
+makevn_refresh_impact() {
+  [[ "${3:-false}" != true ]] || return 0
+  local repo_root="$1" base="${2:-}" git_root summary
+  [[ -n "${base}" ]] || base="$(makevn_detect_maven_base_path "${repo_root}" || true)"
+  [[ -n "${base}" ]] || return 0
+  if [[ "${3:-false}" == doctor && ! -d "$(makevn_state_dir "${repo_root}")" ]]; then
+    makevn_print_item "Impact analysis" "state generation deferred until init; focused planning derives scope from the current reactor"
+    return 0
+  fi
+  if ! command -v python3 >/dev/null 2>&1; then
+    makevn_print_item "Impact analysis" "deferred: Python 3 is required for automatic focused planning; init/doctor remain available without it"
+    return 0
+  fi
+  git_root="$(git -C "${repo_root}" rev-parse --show-toplevel 2>/dev/null || printf '%s' "${repo_root}")"
+  summary="$(python3 "${MAKEVN_LIBEXEC_DIR}/common/changes_scope.py" "${git_root}" "${base}" HEAD --impact-state "${git_root}/.makevn/impact.json")" || return $?
+  makevn_print_item "Impact analysis" "${summary}"
+}

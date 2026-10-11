@@ -103,6 +103,8 @@ EOF
 
   assert_contains "${output_file}" "Saved to .makevn/config (MAKEVN_LOCAL_CONTAINERS)."
   assert_contains "${output_file}" "LOCAL_CONTAINERS default: TRUE"
+  assert_not_contains "${output_file}" "Setup status: pending"
+  assert_not_contains "${output_file}" "interactive setup required:"
   assert_contains "${output_file}" "Health URL ["
   assert_contains "${output_file}" "Saved to .makevn/config (MAKEVN_APP_HEALTH_URL)."
   assert_contains "${repo}/.makevn/config" "http://localhost:18080/actuator/health"

@@ -690,3 +690,74 @@ repository's plugin. There is no single-file option.
 Preserve the original failure exit code, inspect the formatter diff, and rerun
 the original test without `--fast`. Never add skip flags or edit Maven/makevn
 configuration to bypass validation.
+
+### Command echo versus MCP trace
+
+`trace` is an MCP tool argument, not a public CLI `--trace` option. MCP hides
+`→ exec ...` by default (`trace` omitted or false); `trace: true` enables it.
+The final result and auxiliary execution JSON remain visible in both modes.
+Composite/parallel steps inherit trace, with `arguments.trace` overriding it.
+
+Direct CLI echo behavior is unchanged by default. For the shell backend echo,
+use `MAKEVN_TRACE_OUTPUT=0 makevn --compact format --apply` to disable it or
+`MAKEVN_TRACE_OUTPUT=1 makevn --compact format --apply` to enable it. This does
+not affect interactive dashboards, managed logs, or result JSON.
+See [MCP trace control](../mcp/README.md#command-trace-control) for examples.
+
+### Redundant MCP success timings
+
+Without `trace` (or with `trace: false`), MCP also omits standalone success
+timing lines such as `[ok] 1m 06s`: the always-visible `durationMs` / `exitCode`
+JSON already provides that information. `trace: true` retains these lines for
+explicit diagnostics. This applies to ordinary tools and individual
+composite/parallel steps, following the same trace inheritance and overrides.
+Meaningful results (including JSON), failure diagnostics and workflow summaries
+remain visible. Log paths are provided in JSON `logPaths` instead of standalone
+`[..] makevn ... | log: ...` headers. CLI output and managed logs are unchanged.
+Do not enable trace merely to obtain status or duration; use the JSON metadata.
+
+### MCP log paths in JSON
+
+MCP moves standalone `[..] makevn ... | log: ...` headers into the always-visible
+JSON metadata field `logPaths` (an array of unique paths in encounter order).
+For composite/parallel workflows, each step has its own `logPaths`. An empty
+array means no log header was reported, not that no logs exist. This applies
+with either trace setting; `trace: true` still shows command echoes and success
+timings. Normal results and failure diagnostics are untouched; CLI headers and
+managed log files are unchanged. Paths keep their original form, typically
+relative to the target repository, not the MCP server's working directory.
+
+```json
+{"durationMs": 6739, "exitCode": 0, "tool": "test", "logPaths": [".makevn/logs/test-SampleTest.log"]}
+```
+
+### Docker runtime recovery hints
+
+Failed managed Docker commands retain their original exit status and diagnostics.
+When the log identifies a Docker daemon connection failure, makevn adds a
+recovery hint to the log and terminal summary. Colima socket paths receive a
+`colima start` suggestion (with the matching profile for non-default sockets).
+Other runtimes receive generic guidance to start the configured engine and check
+`DOCKER_HOST` / the active Docker context. An installed runtime alone is not
+evidence that it is selected. makevn never starts or switches runtimes
+automatically.
+
+### Interactive tail visibility
+
+During a managed-log command, `t` or `T` toggles the live tail without
+interrupting the command or stopping log capture. Hiding it restores the normal
+dashboard; showing it again follows the current phase's log and preserves the
+chosen tail height within that command. `+/-` adjusts the visible log rows.
+The telemetry and control hints are the last row of the live block, below the
+tail (including its reserved empty rows), not fixed to the terminal's bottom.
+Live redraws leave the cursor on that footer, without a trailing newline or an
+extra blank row underneath. Hiding tail or changing phases clears only the painted
+rows before restoring the dashboard.
+Captured managed-command diagnostics are retained as detail lines beneath the
+corresponding step in the final dashboard, not replayed above it as detached
+stderr. Interactive state prompts and noninteractive CLI/MCP output are unchanged.
+When an invocation publishes multiple phase records, unscoped stderr is shown
+under an explicit command-level diagnostics summary, never attributed to its
+final phase. Diagnostics already published with phase metadata remain phase-local.
+Captured stderr shown in the dashboard is capped at 64 KiB and 200 nonempty
+lines. Omitted output is indicated explicitly; deduplication uses a hash set.

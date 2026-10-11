@@ -8,8 +8,11 @@ The canonical version is the `version` field in
 
 ## Standard release
 
-1. Ensure the intended changes have reached `develop` and promote `develop` to
-   `main` through the protected PR process.
+1. Ensure the intended changes have reached `develop`, run **Prepare Promotion**,
+   and merge the generated `develop` → `main` PR through the protected PR process
+   using a merge commit. The workflow reuses an existing promotion PR and does
+   nothing when there are no commits to promote; it never merges, changes the
+   version, or publishes a release.
 2. Run **Prepare Release** and select the semantic-version increment, or provide
    an exact version when required.
 3. Review and merge the generated release PR after all required checks pass.

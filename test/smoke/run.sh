@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-set -euo pipefail
+set -Eeuo pipefail
+trap 'printf "FAIL: smoke command at line %s: %s\n" "$LINENO" "$BASH_COMMAND" >&2' ERR
 
 ROOT_DIR="$(CDPATH= cd -- "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 CLI="${ROOT_DIR}/bin/makevn"
@@ -371,6 +372,8 @@ assert data['repository_analysis']['repo_root'] == repo, data
 assert data['repository_analysis']['repository_support_status'] == 'unsupported', data
 assert data['repository_analysis']['current_makevn_status'] == 'not initialized', data
 assert 'make_integration_status' not in data['repository_analysis'], data
+assert data['suggested_next_step']['next'] == '', data
+assert data['suggested_next_step']['optional'] == '', data
 assert data['suggested_next_step']['note'] == 'no automatic recommendation: Maven repository signals were not detected', data
 PY
 }
@@ -866,7 +869,7 @@ test_checkstyle_requires_configured_plugin() {
 
 test_installer() {
   local prefix="${TMP_ROOT}/install-prefix"
-  PREFIX="${prefix}" "${ROOT_DIR}/install.sh" >/dev/null
+  PREFIX="${prefix}" "${ROOT_DIR}/install.sh" --no-build >/dev/null
   assert_file_exists "${prefix}/bin/makevn"
   assert_file_exists "${prefix}/bin/makevn-mcp"
   assert_file_exists "${prefix}/libexec/makevn/jdk/manager.sh"
@@ -908,7 +911,7 @@ test_mcp_tool_listing() {
   [[ -x "${ROOT_DIR}/target/release/makevn" ]] || return 0
   [[ -x "${ROOT_DIR}/target/release/makevn-mcp" ]] || return 0
 
-  PREFIX="${prefix}" "${ROOT_DIR}/install.sh" >/dev/null
+  PREFIX="${prefix}" "${ROOT_DIR}/install.sh" --no-build >/dev/null
 
   printf '%s\n%s\n' \
     '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"smoke","version":"0"}}}' \
@@ -923,6 +926,9 @@ test_mcp_tool_listing() {
   assert_contains "${output_file}" '"name":"verify_changes_preview"'
   assert_contains "${output_file}" '"name":"jdk_list"'
   python3 "${ROOT_DIR}/test/smoke/doctor_mcp_test.py" "${prefix}/bin/makevn-mcp"
+  python3 "${ROOT_DIR}/test/smoke/doctor_reset_test.py" "${prefix}/bin/makevn"
+  python3 -m unittest discover -s "${ROOT_DIR}/test/smoke" -p demo_mcp_test.py
+  python3 "${ROOT_DIR}/test/smoke/structured_mcp_test.py" "${prefix}/bin/makevn-mcp"
 }
 
 test_init_does_not_touch_existing_makefile() {
@@ -1090,7 +1096,7 @@ test_tail_degrades_without_tty() {
   printf '<project/>\n' > "${repo}/pom.xml"
   java_home="$(detect_java_home)"
 
-  PREFIX="${install_prefix}" "${ROOT_DIR}/install.sh" --rust >/dev/null
+  PREFIX="${install_prefix}" "${ROOT_DIR}/install.sh" --no-build --rust >/dev/null
   "${tail_cli}" --repo "${repo}" init >/dev/null
   cat > "${repo}/mvnw" <<'EOF'
 #!/usr/bin/env bash
@@ -1214,7 +1220,7 @@ test_compact_tty_omits_color_and_loader() {
   printf '<project/>\n' > "${repo}/pom.xml"
   java_home="$(detect_java_home)"
 
-  PREFIX="${install_prefix}" "${ROOT_DIR}/install.sh" --rust >/dev/null
+  PREFIX="${install_prefix}" "${ROOT_DIR}/install.sh" --no-build --rust >/dev/null
   "${compact_cli}" --repo "${repo}" init >/dev/null
   cat > "${repo}/mvnw" <<'EOF'
 #!/usr/bin/env bash
@@ -1254,7 +1260,7 @@ test_loader_defers_backend_stderr_until_progress_is_cleared() {
   mkdir -p "${repo}"
   printf '<project/>\n' > "${repo}/pom.xml"
   java_home="$(detect_java_home)"
-  PREFIX="${install_prefix}" "${ROOT_DIR}/install.sh" --rust >/dev/null
+  PREFIX="${install_prefix}" "${ROOT_DIR}/install.sh" --no-build --rust >/dev/null
   "${warning_cli}" --repo "${repo}" init >/dev/null
   cat > "${repo}/mvnw" <<'EOF'
 #!/usr/bin/env bash
@@ -1482,18 +1488,6 @@ test_nested_single_maven_project_routing() {
 
   mkdir -p "${repo}/cataloger-cli/src/test/java/com/example"
   java_home="$(detect_java_home)"
-  ${CLI} --repo "${repo}" init >/dev/null
-  cat > "${repo}/.makevn/config" <<EOF
-MAKEVN_JAVA_HOME="${java_home}"
-MAKEVN_CODE_JAVA_HOME=""
-MAKEVN_KARATE_JAVA_HOME=""
-MAKEVN_CODE_TOOL_VERSIONS=""
-MAKEVN_KARATE_TOOL_VERSIONS=""
-MAKEVN_RUN_CMD=""
-MAKEVN_FORMAT_CHECK_GOAL=""
-MAKEVN_FORMAT_APPLY_GOAL=""
-MAKEVN_CHECKSTYLE_GOAL=""
-EOF
   cat > "${repo}/cataloger-cli/pom.xml" <<'EOF'
 <project>
   <build>
@@ -1505,6 +1499,18 @@ EOF
     </plugins>
   </build>
 </project>
+EOF
+  ${CLI} --repo "${repo}" init >/dev/null
+  cat > "${repo}/.makevn/config" <<EOF
+MAKEVN_JAVA_HOME="${java_home}"
+MAKEVN_CODE_JAVA_HOME=""
+MAKEVN_KARATE_JAVA_HOME=""
+MAKEVN_CODE_TOOL_VERSIONS=""
+MAKEVN_KARATE_TOOL_VERSIONS=""
+MAKEVN_RUN_CMD=""
+MAKEVN_FORMAT_CHECK_GOAL=""
+MAKEVN_FORMAT_APPLY_GOAL=""
+MAKEVN_CHECKSTYLE_GOAL=""
 EOF
   cat > "${repo}/cataloger-cli/src/test/java/com/example/NestedTest.java" <<'EOF'
 package com.example;
@@ -1664,7 +1670,7 @@ test_docker_up_missing_compose_writes_log() {
   local output_file="${repo}/docker-up.out"
 
   [[ -x "${ROOT_DIR}/target/release/makevn" ]] || return 0
-  PREFIX="${install_prefix}" "${ROOT_DIR}/install.sh" --rust >/dev/null
+  PREFIX="${install_prefix}" "${ROOT_DIR}/install.sh" --no-build --rust >/dev/null
 
   mkdir -p "${repo}"
 
@@ -1676,7 +1682,7 @@ test_docker_up_missing_compose_writes_log() {
   [[ ${status} -ne 0 ]] || fail "expected docker-up without compose to fail"
   assert_contains "${output_file}" "docker-up"
   assert_contains "${output_file}" ".makevn/logs/docker-up.log"
-  assert_contains "${repo}/.makevn/logs/docker-up.log" "Error: Docker compose file not found."
+  assert_contains "${repo}/.makevn/logs/docker-up.log" "Error: Docker compose selection failed."
   assert_contains "${repo}/.makevn/logs/docker-up.log" "command: makevn docker-up"
 }
 
@@ -2008,7 +2014,7 @@ test_run_app_tail_shows_application_log() {
   local rc=0
 
   [[ -x "${ROOT_DIR}/target/release/makevn" ]] || return 0
-  PREFIX="${install_prefix}" "${ROOT_DIR}/install.sh" --rust >/dev/null
+  PREFIX="${install_prefix}" "${ROOT_DIR}/install.sh" --no-build --rust >/dev/null
 
   mkdir -p "${repo}/code/boot/src/main/java/com/example"
   mkdir -p "${repo}/code/boot/target"
@@ -2303,7 +2309,7 @@ test_karate_all_rust_frontend_reports_run_app_bg_failure() {
   local clean_output_file="${TMP_ROOT}/karate-all-run-app-bg-failure.clean.out"
 
   [[ -x "${ROOT_DIR}/target/release/makevn" ]] || return 0
-  PREFIX="${install_prefix}" "${ROOT_DIR}/install.sh" --rust >/dev/null
+  PREFIX="${install_prefix}" "${ROOT_DIR}/install.sh" --no-build --rust >/dev/null
 
   mkdir -p "${repo}/code/boot/src/main/resources"
   mkdir -p "${repo}/code/boot/src/main/java/com/example"
@@ -2960,10 +2966,10 @@ MAKEVN_RUN_CMD=""
 MAKEVN_LOCAL_CONTAINERS="TRUE"
 EOF
 
-  output="$(${CLI} --repo "${repo}" verify-changes)"
+  output="$(${CLI} --repo "${repo}" verify-changes --exhaustive)"
 
   [[ "${output}" == *"[ok] "* ]] || fail "expected verify-changes output to include success summary"
-  assert_matches "${repo}/.mvnw.log" '^ARGS=-nsu -f .*/pom\.xml verify -Djacoco\.skip=false -DskipUTs=false -Dtest=com\.example\.ChangedTest -Dit\.test=com\.example\.ChangedTest -Dfailsafe\.failIfNoSpecifiedTests=false -Dsurefire\.failIfNoSpecifiedTests=false -Dawaitility\.defaultPollInterval=200ms -Dawaitility\.defaultTimeout=2m -Dmaven\.build\.cache\.enabled=false$'
+  assert_matches "${repo}/.mvnw.log" '^ARGS=-nsu -f .*/pom\.xml -pl module-a -am verify -Djacoco\.skip=false -DskipTests=false -Dmaven\.test\.failure\.ignore=false -Dmaven\.build\.cache\.enabled=false$'
   assert_contains "${repo}/.mvnw.log" "JAVA_HOME=${java_home}"
   assert_contains "${repo}/.mvnw.log" "LOCAL_CONTAINERS=TRUE"
 
@@ -3007,17 +3013,17 @@ MAKEVN_KARATE_TOOL_VERSIONS=""
 MAKEVN_RUN_CMD=""
 EOF
 
-  output="$(${CLI} --repo "${repo}" verify-changes-preview)"
+  output="$(${CLI} --repo "${repo}" verify-changes-preview --exhaustive)"
 
-  [[ "${output}" == *"strategy: run selected tests only"* ]] || fail "expected preview output to describe selected-test strategy"
+  [[ "${output}" == *"strategy: run verify for affected modules"* ]] || fail "expected preview output to describe selected-test strategy"
   [[ "${output}" == *"tests: com.example.ChangedTest"* ]] || fail "expected preview output to include selected tests"
   [[ -f "${repo}/.makevn/verify-changes-plan.env" ]] || fail "expected preview to persist a verify-changes plan"
   [[ ! -f "${repo}/.mvnw.log" ]] || fail "preview must not invoke Maven"
 
-  ${CLI} --repo "${repo}" verify-changes >/dev/null
+  ${CLI} --repo "${repo}" verify-changes --exhaustive >/dev/null
 
   [[ ! -f "${repo}/.makevn/verify-changes-plan.env" ]] || fail "expected verify-changes to clear the cached preview plan"
-  assert_matches "${repo}/.mvnw.log" '^ARGS=-nsu -f .*/pom\.xml verify -Djacoco\.skip=false -DskipUTs=false -Dtest=com\.example\.ChangedTest -Dit\.test=com\.example\.ChangedTest -Dfailsafe\.failIfNoSpecifiedTests=false -Dsurefire\.failIfNoSpecifiedTests=false -Dawaitility\.defaultPollInterval=200ms -Dawaitility\.defaultTimeout=2m -Dmaven\.build\.cache\.enabled=false$'
+  assert_matches "${repo}/.mvnw.log" '^ARGS=-nsu -f .*/pom\.xml -pl module-a -am verify -Djacoco\.skip=false -DskipTests=false -Dmaven\.test\.failure\.ignore=false -Dmaven\.build\.cache\.enabled=false$'
 
   ${CLI} --repo "${repo}" uninstall >/dev/null
 }
@@ -3039,7 +3045,7 @@ test_verify_changes_excludes_checked_out_release_candidate() {
   git -C "${repo}" -c user.name='Smoke Test' -c user.email='smoke@example.com' commit -m 'release work' >/dev/null
 
   ${CLI} --repo "${repo}" init >/dev/null
-  output="$(${CLI} --repo "${repo}" verify-changes-preview)"
+  output="$(${CLI} --repo "${repo}" verify-changes-preview --exhaustive)"
 
   [[ "${output}" == *"compare against: main...HEAD"* ]] \
     || fail "expected checked-out release branch to use main as its parent, got: ${output}"
@@ -3073,7 +3079,7 @@ test_verify_changes_uses_hotfix_parent_branch() {
   git -C "${repo}" -c user.name='Smoke Test' -c user.email='smoke@example.com' commit -m 'hotfix work' >/dev/null
 
   ${CLI} --repo "${repo}" init >/dev/null
-  output="$(${CLI} --repo "${repo}" verify-changes-preview)"
+  output="$(${CLI} --repo "${repo}" verify-changes-preview --exhaustive)"
 
   [[ "${output}" == *"compare against: main...HEAD"* ]] \
     || fail "expected a hotfix to compare against main, got: ${output}"
@@ -3116,7 +3122,7 @@ test_verify_changes_uses_develop_after_it_advances() {
   git -C "${repo}" checkout feature/issue-456 >/dev/null
 
   ${CLI} --repo "${repo}" init >/dev/null
-  output="$(${CLI} --repo "${repo}" verify-changes-preview)"
+  output="$(${CLI} --repo "${repo}" verify-changes-preview --exhaustive)"
 
   [[ "${output}" == *"compare against: develop...HEAD"* ]] \
     || fail "expected a feature to retain develop as its parent, got: ${output}"
@@ -3157,7 +3163,7 @@ test_verify_changes_preserves_first_parent_after_sync_merge() {
   git -C "${repo}" -c user.name='Smoke Test' -c user.email='smoke@example.com' merge --no-ff main -m 'Merge main into feature' >/dev/null
 
   ${CLI} --repo "${repo}" init >/dev/null
-  output="$(${CLI} --repo "${repo}" verify-changes-preview)"
+  output="$(${CLI} --repo "${repo}" verify-changes-preview --exhaustive)"
 
   grep -Fq 'compare against: develop...HEAD' <<< "${output}" \
     || fail "expected the first-parent develop base after sync merge, got: ${output}"
@@ -3189,7 +3195,7 @@ test_verify_changes_ignores_reverted_first_parent_paths() {
   git -C "${repo}" -c user.name='Smoke Test' -c user.email='smoke@example.com' revert --no-edit HEAD >/dev/null
 
   ${CLI} --repo "${repo}" init >/dev/null
-  output="$(${CLI} --repo "${repo}" verify-changes-preview)"
+  output="$(${CLI} --repo "${repo}" verify-changes-preview --exhaustive)"
 
   [[ "${output}" == *"compare against: develop...HEAD"* ]] \
     || fail "expected develop as the parent, got: ${output}"
@@ -3228,7 +3234,7 @@ test_verify_changes_keeps_post_merge_first_parent_edits() {
   git -C "${repo}" -c user.name='Smoke Test' -c user.email='smoke@example.com' commit -m 'feature edits import' >/dev/null
 
   ${CLI} --repo "${repo}" init >/dev/null
-  output="$(${CLI} --repo "${repo}" verify-changes-preview)"
+  output="$(${CLI} --repo "${repo}" verify-changes-preview --exhaustive)"
 
   [[ "${output}" == *"production files: 1"* && "${output}" == *"Imported"* ]] \
     || fail "expected post-merge first-parent edit to be selected, got: ${output}"
@@ -3266,7 +3272,7 @@ test_verify_changes_keeps_merge_resolution_paths() {
   git -C "${repo}" -c user.name='Smoke Test' -c user.email='smoke@example.com' commit -m 'Resolve merge' >/dev/null
 
   ${CLI} --repo "${repo}" init >/dev/null
-  output="$(${CLI} --repo "${repo}" verify-changes-preview)"
+  output="$(${CLI} --repo "${repo}" verify-changes-preview --exhaustive)"
 
   [[ "${output}" == *"production files: 1"* && "${output}" == *"Shared"* ]] \
     || fail "expected merge resolution path to be selected, got: ${output}"
@@ -3325,19 +3331,87 @@ EOF
         printf 'MAKEVN_PROFILE_VERIFY_IT_LOCAL_CONTAINERS=""\n' > "${repo}/.makevn/profile.env"
         expected=__UNSET__ ;;
       cached_override)
-        ${CLI} --repo "${repo}" verify-changes-preview >/dev/null
+        ${CLI} --repo "${repo}" verify-changes-preview --exhaustive >/dev/null
         export LOCAL_CONTAINERS=FALSE
         expected=FALSE ;;
       cached_config)
-        ${CLI} --repo "${repo}" verify-changes-preview >/dev/null
+        ${CLI} --repo "${repo}" verify-changes-preview --exhaustive >/dev/null
         printf 'MAKEVN_LOCAL_CONTAINERS=FALSE\n' >> "${repo}/.makevn/config"
         expected=FALSE ;;
     esac
-    ${CLI} --repo "${repo}" verify-changes >/dev/null
+    ${CLI} --repo "${repo}" verify-changes --exhaustive >/dev/null
     assert_contains "${repo}/.mvnw.log" "LOCAL_CONTAINERS=${expected}"
     assert_contains "${repo}/.mvnw.log" "-pl module-a -am verify"
   done
 )
+
+test_verify_changes_focused_command() {
+  local repo="${TMP_ROOT}/verify-changes-focused" java_home output
+  mkdir -p "${repo}/client/src/main/java/example" "${repo}/boot/src/test/java/example"
+  printf '<project><modules><module>client</module><module>boot</module></modules></project>\n' > "${repo}/pom.xml"
+  printf '<project/>\n' > "${repo}/client/pom.xml"
+  printf '<project/>\n' > "${repo}/boot/pom.xml"
+  printf 'class Owner {}\n' > "${repo}/client/src/main/java/example/Owner.java"
+  printf 'class OwnersIT {}\n' > "${repo}/boot/src/test/java/example/OwnersIT.java"
+  git init --initial-branch=main "${repo}" >/dev/null
+  git -C "${repo}" add .
+  git -C "${repo}" -c user.name=Test -c user.email=test@example.com commit -qm base
+  printf '// changed\n' >> "${repo}/client/src/main/java/example/Owner.java"
+  printf '// changed\n' >> "${repo}/boot/src/test/java/example/OwnersIT.java"
+  ${CLI} --repo "${repo}" init >/dev/null
+  java_home="$(detect_java_home)"
+  printf 'MAKEVN_JAVA_HOME="%s"\n' "${java_home}" > "${repo}/.makevn/config"
+  cat > "${repo}/mvnw" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\n' "$*" >> .mvnw.log
+if [[ "$*" == *' install '* ]]; then touch .fresh-artifacts; fi
+if [[ "$*" == *' verify '* ]]; then [[ -f .fresh-artifacts ]] || exit 44; fi
+if [[ "$*" == *'-pl boot verify '* && ! -f .missing-reports ]]; then
+  mkdir -p boot/target/failsafe-reports
+  printf '<testsuite><testcase classname="example.OwnersIT" name="works"/></testsuite>' > boot/target/failsafe-reports/TEST-example.OwnersIT.xml
+fi
+EOF
+  chmod +x "${repo}/mvnw"
+  output="$(${CLI} --repo "${repo}" verify-changes-preview)"
+  [[ "${output}" == *'mode: focused'* ]] || fail 'missing focused preview label'
+  [[ "${output}" == *'verify boot: example.OwnersIT'* ]] || fail 'missing boot IT selection'
+  [[ "${output}" == *'verify client: entire module suite'* ]] || fail 'missing production suite'
+  [[ ! -f "${repo}/.mvnw.log" ]] || fail 'focused preview executed Maven'
+  mkdir -p "${repo}/.makevn/logs"
+  printf 'previous prepare diagnostic\n' > "${repo}/.makevn/logs/verify-changes-1.log"
+  chmod 444 "${repo}/.makevn/logs/verify-changes-1.log"
+  ${CLI} --repo "${repo}" verify-changes >/dev/null
+  assert_contains "${repo}/.mvnw.log" '-pl boot,client -am install -DskipTests=true -DskipUTs=true -DskipITs=true'
+  assert_contains "${repo}/.mvnw.log" '-pl boot verify -DskipTests=false -DskipUTs=false -DskipITs=false -Dtest=!%regex[.*] -Dit.test=example.OwnersIT'
+  assert_matches "${repo}/.mvnw.log" '.*-pl client verify -DskipTests=false -DskipUTs=false -DskipITs=false$'
+  assert_contains "${repo}/.makevn/logs/verify-changes-1.log.previous" 'previous prepare diagnostic'
+  local before_log_failure
+  before_log_failure="$(wc -l < "${repo}/.mvnw.log")"
+  rm "${repo}/.makevn/logs/verify-changes-1.log"
+  mkdir "${repo}/.makevn/logs/verify-changes-1.log"
+  if output="$(${CLI} --repo "${repo}" verify-changes 2>&1)"; then
+    fail 'nonregular log accepted'
+  fi
+  [[ "${output}" == *'Cannot prepare log'* ]] || fail 'missing prepare log diagnostic'
+  [[ "${output}" != *'test prepare dependencies'* ]] || fail 'wrong fallback phase title'
+  [[ "$(wc -l < "${repo}/.mvnw.log")" == "${before_log_failure}" ]] || fail 'Maven launched after log failure'
+  rmdir "${repo}/.makevn/logs/verify-changes-1.log"
+  touch "${repo}/.missing-reports"
+  if output="$(${CLI} --repo "${repo}" verify-changes 2>&1)"; then
+    fail 'stale test evidence accepted'
+  fi
+  [[ "${output}" == *'No fresh executed-test evidence'* ]] || fail 'missing report diagnostic'
+  local before
+  before="$(wc -l < "${repo}/.mvnw.log")"
+  printf '<project><properties><unknown.version>2</unknown.version></properties><modules><module>client</module><module>boot</module></modules></project>\n' > "${repo}/pom.xml"
+  if output="$(${CLI} --repo "${repo}" verify-changes 2>&1)"; then
+    fail 'unknown focused impact silently broadened'
+  fi
+  [[ "${output}" == *'use --exhaustive'* ]] || fail 'missing explicit exhaustive recommendation'
+  [[ "$(wc -l < "${repo}/.mvnw.log")" == "${before}" ]] || fail 'unknown impact executed Maven'
+  ${CLI} --repo "${repo}" verify-changes --exhaustive >/dev/null
+}
 
 test_verify_changes_nested_maven_base_strips_git_prefix() {
   local repo="${TMP_ROOT}/verify-changes-nested-maven-base"
@@ -3382,11 +3456,11 @@ MAKEVN_RUN_CMD=""
 MAKEVN_LOCAL_CONTAINERS="TRUE"
 EOF
 
-  ${CLI} --repo "${code_repo}" verify-changes >/dev/null
+  ${CLI} --repo "${code_repo}" verify-changes --exhaustive >/dev/null
 
   assert_matches "${code_repo}/.mvnw.log" '^CWD=.*/verify-changes-nested-maven-base/code$'
   assert_contains "${code_repo}/.mvnw.log" 'LOCAL_CONTAINERS=TRUE'
-  assert_matches "${code_repo}/.mvnw.log" '^ARGS=-nsu -f .*/code/pom\.xml -pl boot,jacoco-report-aggregate -am verify -Djacoco\.skip=false -DskipTests=false -Dmaven\.test\.failure\.ignore=false -Dmaven\.build\.cache\.enabled=false$'
+  assert_matches "${code_repo}/.mvnw.log" '^ARGS=-nsu -f .*/code/pom\.xml -pl boot -am verify -Djacoco\.skip=false -DskipTests=false -Dmaven\.test\.failure\.ignore=false -Dmaven\.build\.cache\.enabled=false$'
 
   ${CLI} --repo "${repo}" uninstall >/dev/null
 }
@@ -3442,13 +3516,60 @@ EOF
   fi
 
   ${CLI} --repo "${repo}" init >/dev/null
-  verify_output="$(${CLI} --repo "${repo}" verify-changes-preview)"
+  verify_output="$(${CLI} --repo "${repo}" verify-changes-preview --exhaustive)"
   output="$(cd "${repo}" && BASE_PATH=. MAKEVN_COVERAGE_FIRST_PARENT_ONLY=1 bash "${coverage_script}" jacoco-report-aggregate/target/site/jacoco-aggregate develop...HEAD 90 2>&1)"
 
   [[ "${verify_output}" == *"strategy: skip"* ]] \
     || fail "expected reverted first-parent path to be excluded from verify-changes, got: ${verify_output}"
   [[ "${output}" == *"No modified production Java files"* ]] \
     || fail "expected reverted first-parent path to be excluded from coverage, got: ${output}"
+}
+
+test_unclassified_build_change_requires_explicit_exhaustive() {
+  local repo="${TMP_ROOT}/unknown-build-change" java_home output
+  mkdir -p "${repo}/.mvn"
+  printf '<project/>\n' > "${repo}/pom.xml"
+  printf 'initial\n' > "${repo}/.mvn/maven.config"
+  git init -q "${repo}"
+  git -C "${repo}" add .
+  git -C "${repo}" -c user.name=Test -c user.email=test@example.com commit -qm base
+  printf 'changed\n' >> "${repo}/.mvn/maven.config"
+  ${CLI} --repo "${repo}" init >/dev/null
+  java_home="$(detect_java_home)"
+  printf 'MAKEVN_JAVA_HOME="%s"\n' "${java_home}" > "${repo}/.makevn/config"
+  cat > "${repo}/mvnw" <<'EOF'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> .mvnw.log
+EOF
+  chmod +x "${repo}/mvnw"
+  if output="$(${CLI} --repo "${repo}" verify-changes 2>&1)"; then fail 'unclassified build change skipped'; fi
+  [[ "${output}" == *'use --exhaustive'* ]] || fail 'missing broad-run recommendation'
+  [[ ! -f "${repo}/.mvnw.log" ]] || fail 'unknown focus executed Maven'
+  ${CLI} --repo "${repo}" verify-changes --exhaustive >/dev/null
+  assert_contains "${repo}/.mvnw.log" 'verify'
+}
+
+test_coverage_rejects_old_global_after_scoped_verification() {
+  local repo="${TMP_ROOT}/coverage-stale-global" report output
+  report="${repo}/jacoco-report-aggregate/target/site/jacoco-aggregate"
+  mkdir -p "${report}" "${repo}/.makevn"
+  printf '<project/>\n' > "${repo}/pom.xml"
+  printf '<html/>\n' > "${report}/index.html"
+  cat > "${report}/jacoco.csv" <<'EOF'
+GROUP,PACKAGE,CLASS,INSTRUCTION_MISSED,INSTRUCTION_COVERED,BRANCH_MISSED,BRANCH_COVERED,LINE_MISSED,LINE_COVERED,COMPLEXITY_MISSED,COMPLEXITY_COVERED,METHOD_MISSED,METHOD_COVERED
+makevn,example,Owner,0,10,0,0,0,1,0,1,0,1
+EOF
+  touch "${repo}/.makevn/verify-changes-started"
+  python3 - "${report}/jacoco.csv" <<'PY'
+import os, sys
+os.utime(sys.argv[1], (1, 1))
+PY
+  if output="$(${CLI} --repo "${repo}" coverage 2>&1)"; then fail 'stale global report passed'; fi
+  [[ "${output}" == *'Global coverage is older'* ]] || fail 'missing freshness diagnostic'
+  [[ "${output}" != *'Quality gate conditions met'* ]] || fail 'stale global gate evaluated'
+  touch "${report}/jacoco.csv"
+  output="$(${CLI} --repo "${repo}" coverage)"
+  [[ "${output}" == *'Quality gate conditions met'* ]] || fail 'fresh global report rejected'
 }
 
 test_coverage_changes_command() {
@@ -3984,7 +4105,7 @@ test_sequential_commands() {
   local java_home
 
   [[ -x "${ROOT_DIR}/target/release/makevn" ]] || return 0
-  PREFIX="${install_prefix}" "${ROOT_DIR}/install.sh" --rust >/dev/null
+  PREFIX="${install_prefix}" "${ROOT_DIR}/install.sh" --no-build --rust >/dev/null
 
   mkdir -p "${repo}"
   mkdir -p "${repo}/code/boot/src/test/resources/compose"
@@ -4154,7 +4275,7 @@ test_command_typo_rejected_before_backend() {
   local output=""
 
   [[ -x "${ROOT_DIR}/target/release/makevn" ]] || return 0
-  PREFIX="${install_prefix}" "${ROOT_DIR}/install.sh" --rust >/dev/null
+  PREFIX="${install_prefix}" "${ROOT_DIR}/install.sh" --no-build --rust >/dev/null
 
   mkdir -p "${repo}"
   printf '<project/>\n' > "${repo}/pom.xml"
@@ -4175,7 +4296,7 @@ test_command_failure_summary_omits_duplicate_elapsed() {
   local output=""
 
   [[ -x "${ROOT_DIR}/target/release/makevn" ]] || return 0
-  PREFIX="${install_prefix}" "${ROOT_DIR}/install.sh" --rust >/dev/null
+  PREFIX="${install_prefix}" "${ROOT_DIR}/install.sh" --no-build --rust >/dev/null
 
   mkdir -p "${repo}"
   printf '<project/>\n' > "${repo}/pom.xml"
@@ -4624,6 +4745,9 @@ test_crap_install_analyzer_requires_cache_home() {
 }
 
 main() {
+  test_unclassified_build_change_requires_explicit_exhaustive
+  test_coverage_rejects_old_global_after_scoped_verification
+  test_verify_changes_focused_command
   test_doctor_unsupported
   test_backend_doctor_json
   test_doctor_counts_custom_jacoco_xml_path
@@ -4733,12 +4857,18 @@ main() {
   python3 "${ROOT_DIR}/test/smoke/tail_metadata_pty_test.py" "${ROOT_DIR}/target/release/makevn"
   python3 "${ROOT_DIR}/test/smoke/docker_resources_pty_test.py" "${ROOT_DIR}/target/release/makevn"
   bash "${ROOT_DIR}/test/smoke/docker_resource_scope_test.sh"
+  bash "${ROOT_DIR}/test/smoke/docker_runtime_hint_test.sh"
   bash "${ROOT_DIR}/test/smoke/karate_readiness_test.sh"
   bash "${ROOT_DIR}/test/smoke/karate_phase_records_test.sh"
   python3 "${ROOT_DIR}/test/smoke/karate_profiles_test.py"
   bash "${ROOT_DIR}/test/smoke/karate_profiles_test.sh"
   bash "${ROOT_DIR}/test/smoke/karate_profiles_doctor_test.sh"
+  bash "${ROOT_DIR}/test/smoke/maven_resolution_test.sh"
+  bash "${ROOT_DIR}/test/smoke/maven_system_test.sh"
   bash "${ROOT_DIR}/test/smoke/jdk_discovery_test.sh"
+  bash "${ROOT_DIR}/test/smoke/jdk_brew_test.sh"
+  python3 "${ROOT_DIR}/test/smoke/enforcer_test.py"
+  bash "${ROOT_DIR}/test/smoke/jdk_enforcer_test.sh"
   bash "${ROOT_DIR}/test/smoke/formatting_test.sh"
   bash "${ROOT_DIR}/test/smoke/formatting_recovery_test.sh"
   bash "${ROOT_DIR}/test/smoke/bash_crap_test.sh"
@@ -4748,6 +4878,7 @@ main() {
   fi
   bash "${ROOT_DIR}/test/smoke/standalone_contract_test.sh"
   bash "${ROOT_DIR}/test/smoke/doctor_compact_test.sh"
+  bash "${ROOT_DIR}/test/smoke/unsupported_init_test.sh"
   bash "${ROOT_DIR}/test/smoke/state_progress_test.sh"
   python3 "${ROOT_DIR}/test/smoke/interactive_doctor_test.py" "${ROOT_DIR}/target/release/makevn"
   printf 'Smoke tests passed\n'
@@ -4767,4 +4898,23 @@ test_removed_exec_rejected() {
 
 source "${ROOT_DIR}/test/smoke/doctor_health_test.sh"
 
+bash "${ROOT_DIR}/test/smoke/multi_test_history_test.sh"
+python3 "${ROOT_DIR}/test/smoke/test_processes_test.py"
+python3 "${ROOT_DIR}/test/smoke/bind_mounts_test.py"
+bash "${ROOT_DIR}/test/smoke/doctor_pending_profiles_test.sh"
+bash "${ROOT_DIR}/test/smoke/init_presentation_test.sh"
+python3 "${ROOT_DIR}/test/smoke/question_style_test.py"
+python3 "${ROOT_DIR}/test/smoke/install_build_test.py"
+bash "${ROOT_DIR}/test/smoke/reset_config_test.sh"
+bash "${ROOT_DIR}/test/smoke/log_reuse_test.sh"
+bash "${ROOT_DIR}/test/smoke/focused_changes_test.sh"
+python3 "${ROOT_DIR}/test/smoke/selected_test_reports_test.py"
+python3 "${ROOT_DIR}/test/smoke/changes_scope_test.py"
+python3 "${ROOT_DIR}/test/smoke/reactor_impact_test.py"
+bash "${ROOT_DIR}/test/smoke/impact_state_shell_test.sh"
+python3 "${ROOT_DIR}/test/smoke/scoped_coverage_test.py"
+bash "${ROOT_DIR}/test/smoke/scoped_coverage_shell_test.sh"
+bash "${ROOT_DIR}/test/smoke/crap_cwd_test.sh"
+python3 "${ROOT_DIR}/test/smoke/crap_non_executable_test.py"
+bash "${ROOT_DIR}/test/smoke/coverage_awk_test.sh"
 main "$@"

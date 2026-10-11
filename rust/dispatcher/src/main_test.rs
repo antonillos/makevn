@@ -104,11 +104,11 @@ fn spinner_renderer_handles_tty_input_and_dashboard_lifecycle() {
     master.write_all(b"tT+-x\x1b\x1b").unwrap();
     assert!(matches!(
         renderer.poll_input().unwrap(),
-        InputEvent::StartTail
+        InputEvent::ToggleTail
     ));
     assert!(matches!(
         renderer.poll_input().unwrap(),
-        InputEvent::StartTail
+        InputEvent::ToggleTail
     ));
     assert!(matches!(
         renderer.poll_input().unwrap(),
@@ -187,7 +187,16 @@ fn known_command_help_can_be_printed() {
 fn clear_tail_rows_erases_each_physical_row() {
     let mut output = Vec::new();
     clear_tail_rows(&mut output, 2).unwrap();
-    assert_eq!(output, b"\x1b[2A\r\x1b[2K\n\r\x1b[2K\n\r\x1b[2K\x1b[2A\r");
+    assert_eq!(output, b"\r\x1b[2K\x1b[1A\r\x1b[2K");
+}
+
+#[test]
+fn clear_tail_rows_does_not_move_below_footer_or_above_single_row() {
+    for (rows, expected) in [(0, b"".as_slice()), (1, b"\r\x1b[2K".as_slice())] {
+        let mut output = Vec::new();
+        clear_tail_rows(&mut output, rows).unwrap();
+        assert_eq!(output, expected);
+    }
 }
 
 #[test]
@@ -382,6 +391,38 @@ fn failure_hint_suggests_docker_runtime_recovery() {
     let hint = read_failure_hint(path.to_str()).unwrap();
     assert!(hint.contains("colima start"));
     assert!(hint.contains("docker info"));
+    fs::remove_file(path).unwrap();
+}
+
+#[test]
+fn failure_hint_preserves_detected_docker_runtime_recovery() {
+    let path = env::temp_dir().join(format!("makevn-detected-docker-hint-{}", process::id()));
+    for (error, expected) in [
+        (
+            "Cannot connect to the Docker daemon at unix:///Users/test/.colima/work/docker.sock",
+            "The Colima Docker socket is unavailable. Run 'colima start --profile work', then retry the makevn command.",
+        ),
+        (
+            "failed to connect to the docker API at unix:///Users/test/.colima/default/docker.sock",
+            "The Colima Docker socket is unavailable. Run 'colima start', then retry the makevn command.",
+        ),
+        (
+            "Cannot connect to the Docker daemon at unix:///var/run/docker.sock",
+            "Docker engine is unavailable. Start your configured container runtime and retry; check DOCKER_HOST and the active Docker context.",
+        ),
+    ] {
+        fs::write(&path, format!("{error}\nHint: {expected}\n")).unwrap();
+        let hint = read_failure_hint(path.to_str()).unwrap();
+        assert_eq!(hint, expected);
+        assert_eq!(
+            format_failure_summary(1, None, Some(&hint)),
+            format!(" exit 1 | {expected}")
+        );
+    }
+    fs::write(&path, "Cannot connect to the Docker daemon\nHint: \n").unwrap();
+    assert!(read_failure_hint(path.to_str())
+        .unwrap()
+        .contains("docker info"));
     fs::remove_file(path).unwrap();
 }
 
@@ -706,7 +747,7 @@ fn final_dashboard_shows_failure_summary() {
         duration: String::from("9m 34s"),
         log_path: Some(String::from("/repo/.makevn/logs/mutation.log")),
         relative_log_path: Some(String::from(".makevn/logs/mutation.log")),
-        exit_code: 130,
+        exit_code: 1,
         detail_lines: vec![
             String::from("WARNING: Mutation testing (PIT) is VERY slow. This can take 30+ minutes depending on project size."),
             String::from("PIT runs the full test suite multiple times against generated mutants."),
@@ -748,6 +789,7 @@ fn backend_tail_notice_line_contains_log_path() {
 fn tail_hint_contains_plus_minus() {
     let hint = super::tail_hint("esc interrupt");
     assert!(hint.contains("+/-"));
+    assert!(hint.contains("t hide tail"));
     assert!(hint.contains("esc interrupt"));
 }
 
@@ -1600,7 +1642,7 @@ fn tail_status_lines_put_completed_commands_above_running_tail() {
 }
 
 #[test]
-fn tail_window_places_loader_above_tailed_log() {
+fn tail_window_places_loader_after_tailed_log() {
     let log_path = env::temp_dir().join("makevn-tail-loader-order.log");
     let mut tail_window = super::LogTailWindow::new(log_path);
     tail_window.set_prefix_lines(vec![
@@ -1615,12 +1657,26 @@ fn tail_window_places_loader_above_tailed_log() {
 
     assert_eq!(lines[0], "Working for 1s >");
     assert_eq!(lines[1], "[•] makevn compile");
-    assert_eq!(lines[2], "........  esc interrupt");
-    assert_eq!(lines[3], "-> tailing log: .makevn/logs/compile.log");
+    assert_eq!(lines[2], "-> tailing log: .makevn/logs/compile.log");
+    assert_eq!(lines[4], "........  esc interrupt");
     assert_eq!(
-        super::visible_char_count(&lines[4]),
+        super::visible_char_count(&lines[3]),
         "[INFO] compiling".len()
     );
+}
+
+#[test]
+fn tail_window_footer_follows_reserved_rows_and_is_truncated() {
+    let mut window = super::LogTailWindow::new(env::temp_dir().join("tail-footer.log"));
+    window.set_loader_line(Some(String::from("telemetry and controls")));
+    let lines = window.rendered_output_lines(8, 4);
+    assert_eq!(
+        &lines[..4],
+        &[String::new(), String::new(), String::new(), String::new()]
+    );
+    assert_eq!(lines[4], "teleme~");
+    window.set_loader_line(None);
+    assert_eq!(window.rendered_output_lines(8, 4).len(), 4);
 }
 
 #[test]
@@ -1735,6 +1791,27 @@ fn running_command_line_uses_fixed_marker_for_logged_commands() {
         super::running_command_line(&metadata),
         "[•] makevn verify | .makevn/logs/verify.log"
     );
+}
+
+#[test]
+fn active_action_color_uses_reference_gold_only_with_truecolor_support() {
+    for colorterm in ["truecolor", "24bit", "TRUECOLOR"] {
+        assert_eq!(
+            super::active_action_color_code(Some(colorterm), Some("xterm-256color")),
+            "38;2;227;193;104"
+        );
+    }
+    assert_eq!(
+        super::active_action_color_code(None, Some("xterm-direct")),
+        "38;2;227;193;104"
+    );
+    for colorterm in [None, Some(""), Some("256color")] {
+        assert_eq!(
+            super::active_action_color_code(colorterm, Some("xterm-256color")),
+            "33"
+        );
+    }
+    assert_eq!(super::active_action_color_code(None, None), "33");
 }
 
 #[test]
@@ -2301,6 +2378,76 @@ fn replay_backend_output_handles_missing_empty_and_nonempty_files() {
     fs::remove_file(path).unwrap();
 }
 
+#[test]
+fn backend_diagnostics_preserve_order_without_duplicate_step_details() {
+    let mut details = vec!["existing error".to_owned()];
+    super::append_unique_details(&mut details, &["existing error".to_owned(), "cause".to_owned(), "cause".to_owned()]);
+    assert_eq!(details, vec!["existing error", "cause"]);
+    super::append_unique_details(&mut details, &[]);
+    assert_eq!(details.len(), 2);
+}
+
+#[test]
+fn multi_phase_stderr_is_command_level_not_final_phase() {
+    let make = |title: &str, exit_code| CommandSummary {
+        title: title.to_owned(), duration: "1s".to_owned(), log_path: None,
+        relative_log_path: None, exit_code, detail_lines: Vec::new(),
+    };
+    for exit_code in [0, 1] {
+        let mut summaries = vec![make("run-app-bg", 0), make("karate-test", exit_code)];
+        let mut diagnostic = make("karate-all diagnostics (command-level)", exit_code);
+        diagnostic.detail_lines.push("startup warning".to_owned());
+        super::append_command_diagnostics(&mut summaries, diagnostic.clone(), true);
+        assert!(summaries[1].detail_lines.is_empty());
+        assert_eq!(summaries[2].detail_lines, vec!["startup warning"]);
+        let mut single = vec![make("verify-changes", exit_code)];
+        super::append_command_diagnostics(&mut single, diagnostic, false);
+        assert_eq!(single.len(), 1);
+        assert_eq!(single[0].detail_lines, vec!["startup warning"]);
+        super::append_command_diagnostics(&mut single, make("empty", exit_code), true);
+        assert_eq!(single.len(), 1);
+    }
+    let mut empty = Vec::new();
+    let mut diagnostic = make("no summary", 0);
+    diagnostic.detail_lines.push("warning".to_owned());
+    super::append_command_diagnostics(&mut empty, diagnostic, false);
+    assert!(empty.is_empty());
+}
+
+#[test]
+fn backend_diagnostics_decode_non_utf8_lossily() {
+    let path = env::temp_dir().join(format!("makevn-diagnostics-{}.stderr", process::id()));
+    fs::write(&path, b"first\n\nNative diagnostic: \xff\n").unwrap();
+    assert_eq!(super::read_backend_diagnostics(&path).unwrap(), vec!["first", "Native diagnostic: \u{fffd}"]);
+    fs::remove_file(&path).unwrap();
+    assert!(super::read_backend_diagnostics(&path).is_err());
+}
+
+#[test]
+fn backend_diagnostics_are_bounded_and_report_truncation() {
+    let path = env::temp_dir().join(format!("makevn-diagnostics-limits-{}.stderr", process::id()));
+    for (bytes, expected_lines) in [
+        (vec![b'x'; 64 * 1024], 1),
+        (vec![b'x'; 8 * 1024 * 1024], 2),
+        ((0..10000).map(|i| format!("unique diagnostic {i}\n")).collect::<String>().into_bytes(), 201),
+    ] {
+        fs::write(&path, &bytes).unwrap();
+        let lines = super::read_backend_diagnostics(&path).unwrap();
+        assert_eq!(lines.len(), expected_lines);
+        if expected_lines > 1 {
+            assert!(lines.last().unwrap().starts_with("Diagnostics truncated"));
+        } else {
+            assert_eq!(lines[0].len(), 64 * 1024);
+        }
+        assert_eq!(fs::metadata(&path).unwrap().len(), bytes.len() as u64);
+        let mut details = Vec::new();
+        super::append_unique_details(&mut details, &lines);
+        super::append_unique_details(&mut details, &lines);
+        assert_eq!(details, lines);
+    }
+    fs::remove_file(path).unwrap();
+}
+
 struct CountingOutput {
     bytes: u64,
     largest_write: usize,
@@ -2532,11 +2679,102 @@ fn docker_scope_label_uses_cpu_color_and_dims_when_unavailable() {
     );
 }
 
-
 #[test]
 fn format_help_does_not_advertise_removed_file_option() {
     let (usage, _, options) = command_help("format").unwrap();
     assert!(!usage.contains("--file"));
     assert!(options.iter().all(|option| !option.contains("--file")));
     assert!(options.iter().any(|option| option.contains("--apply")));
+}
+
+#[test]
+fn doctor_reset_option_is_accepted_by_rust_dispatcher() {
+    for args in [vec!["--reset-config"], vec!["--compact", "--reset-config"]] {
+        let args: Vec<std::ffi::OsString> = args.into_iter().map(Into::into).collect();
+        assert!(super::validate_command(&"doctor".into(), &args).is_ok());
+    }
+    assert!(super::validate_command(&"doctor".into(), &["--unknown".into()]).is_err());
+}
+
+#[test]
+fn focused_phases_render_under_one_parent_without_losing_logs_or_failures() {
+    let parent = CommandSummary {
+        title: "verify boot (*)".into(), duration: "30s".into(),
+        log_path: Some("/repo/last.log".into()), relative_log_path: Some("last.log".into()),
+        exit_code: 1, detail_lines: vec!["command failure".into()],
+    };
+    let phase = CommandSummary {
+        title: "prepare dependencies (no tests)".into(), duration: "5s".into(),
+        log_path: Some("/repo/prepare.log".into()), relative_log_path: Some("prepare.log".into()),
+        exit_code: 0, detail_lines: vec!["phase detail".into()],
+    };
+    let group = super::focused_summary(parent, vec![phase]);
+    let lines = super::final_dashboard_lines(Duration::from_secs(30), &[group], false);
+    assert_eq!(lines[1], "[x] verify-changes | 30s");
+    assert_eq!(lines[2], "│  ✓ prepare dependencies (no tests) | 5s | prepare.log");
+    assert!(lines.iter().any(|line| line.contains("phase detail")));
+    assert!(lines.iter().any(|line| line.contains("command failure")));
+    assert!(!lines.iter().any(|line| line.starts_with("[✓] prepare")));
+}
+
+#[test]
+fn focused_live_and_tail_show_active_parent_and_incremental_subtasks() {
+    let mut metadata = super::pending_backend_metadata("verify-changes");
+    metadata.title = "verify boot (*)".into();
+    metadata.relative_log_path = "boot.log".into();
+    let phase = super::summary_from_backend_metadata(0, "4s".into(), "prepare dependencies (no tests)", None);
+    let group = super::focused_summary(
+        super::summary_from_backend_metadata(0, "5s".into(), "verify-changes", None),
+        vec![phase],
+    );
+    let dashboard = super::dashboard_output_lines(
+        Duration::from_secs(5), &[group.clone()], &[], &metadata, 0, 0.0, "interrupt",
+    );
+    assert_eq!(dashboard[1], "[•] makevn verify-changes");
+    assert!(!dashboard.iter().any(|line| line.starts_with("[✓] verify-changes")));
+    assert!(dashboard.iter().any(|line| line == "│  ✓ prepare dependencies (no tests) | 4s"));
+    assert!(dashboard.iter().any(|line| line == "│  • boot (*) | boot.log"));
+    let tail = tail_status_lines(Duration::from_secs(5), &[group], &metadata);
+    assert_eq!(tail[1], "[•] makevn verify-changes");
+    assert!(tail.iter().any(|line| line.starts_with("│  •")));
+}
+
+
+#[test]
+fn focused_success_remains_one_check_before_coverage() {
+    let parent = super::summary_from_backend_metadata(0, "12s".into(), "verify-changes", None);
+    let phases = (0..30).map(|index|
+        super::summary_from_backend_metadata(0, "1s".into(), &format!("verify module-{index} (*)"), None)
+    ).collect();
+    let group = super::focused_summary(parent, phases);
+    let coverage = super::summary_from_backend_metadata(0, "2s".into(), "coverage-changes", None);
+    let lines = super::final_dashboard_lines(Duration::from_secs(14), &[group, coverage], true);
+    assert_eq!(lines.iter().filter(|line| line.starts_with("[✓]")).count(), 2);
+    assert_eq!(lines.iter().filter(|line| line.starts_with("│  ✓")).count(), 30);
+    assert_eq!(lines[1], "[✓] verify-changes | 12s");
+    assert_eq!(lines[32], "[✓] coverage-changes | 2s");
+    assert_eq!(lines[2], "│  ✓ module-0 (*) | 1s");
+}
+
+
+#[test]
+fn focused_subtask_labels_strip_only_the_action_prefix() {
+    assert_eq!(super::focused_phase_title("verify boot (*)"), "boot (*)");
+    assert_eq!(super::focused_phase_title("prepare dependencies (no tests)"), "prepare dependencies (no tests)");
+    assert_eq!(super::focused_phase_title("verify-client (*)"), "verify-client (*)");
+    let failure = super::summary_from_backend_metadata(42, "3s".into(), "verify boot (*)", None);
+    assert_eq!(super::focused_phase_summary_line(&failure), "x boot (*) | 3s");
+    assert_eq!(super::focused_phase_mark(0), super::dim_text("✓"));
+    assert_eq!(super::focused_phase_mark(42), super::warn_text("x"));
+}
+
+#[test]
+fn interrupted_runs_render_cancelled_without_failure_advice() {
+    assert_eq!(super::terminal_failure_label(130), super::dim_text("cancelled"));
+    assert_eq!(super::terminal_failure_label(1), super::warn_text("fail"));
+    assert_eq!(format_failure_summary(130, None, Some("Maven failed")), " exit 130");
+    assert_eq!(format_failure_summary(130, Some("3s"), None), " exit 130 | 3s");
+    let summary = super::summary_from_backend_metadata(130, "3s".into(), "verify-changes", None);
+    assert_eq!(super::completed_summary_line(&summary), "[-] verify-changes | 3s");
+    assert_eq!(super::focused_phase_mark(130), super::dim_text("-"));
 }

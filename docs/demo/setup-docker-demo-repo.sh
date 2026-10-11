@@ -12,6 +12,9 @@ services:
     command: ["sh", "-c", "while true; do sleep 60; done"]
 EOF
 
+mkdir -p "${repo}/.makevn"
+printf 'MAKEVN_LOCAL_CONTAINERS=TRUE\n' > "${repo}/.makevn/config"
+
 git -C "${repo}" add docker-compose.yml
 git -C "${repo}" \
   -c user.name="makevn demo" \

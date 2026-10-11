@@ -26,13 +26,18 @@ so developers and AI agents can run the right workflow from the terminal.
 
 ## See it in action
 
+Operational demos are recorded from a matched CLI/MCP source build; installation
+shows the published distribution. See [recording status and regeneration](docs/demo/README.md)
+for pending recordings; an older GIF is not evidence of the current output.
+
 ### Developer
 
 ![Developer workflow: inspect a Java/Maven repository, run a targeted test, and verify it](docs/assets/makevn-developer.gif)
 
 ```bash
 makevn doctor
-makevn test --name UserRepositoryTest
+makevn init # only when doctor recommends it
+makevn test --name CalculatorTest
 makevn verify
 ```
 
@@ -54,33 +59,53 @@ makevn compile --tail
 
 ### Docker verification
 
-![makevn Docker verification with required service check](docs/assets/makevn-verify-docker.gif)
+Refresh pending: a running Docker daemon is required. [Previous recording](docs/assets/makevn-verify-docker.gif).
 
 ```bash
-makevn docker-up docker-ps-required verify
+makevn docker-up docker-ps-required --wait-seconds 30 verify
+makevn docker-down
 ```
 
 ### Codex agent
 
-![Codex agent running clean, compile, and package in a Maven project](docs/assets/makevn-agent.gif)
+Refresh pending: Codex’s configured model is unavailable to its CLI account. [Previous recording](docs/assets/makevn-agent.gif).
 
 ```bash
-codex exec --model gpt-5.4 'clean compile and package the project'
+codex exec 'Use makevn MCP: doctor, init if recommended, then composite_run with clean, compile, package.'
 ```
 
 ### OpenCode agent
 
-![OpenCode agent running clean, compile, and package in the same Maven project](docs/assets/makevn-opencode.gif)
+Refresh pending: OpenCode authentication needs renewal. [Previous recording](docs/assets/makevn-opencode.gif).
 
 ```bash
-opencode run -m openai/gpt-5.4 'clean compile and package the project'
+opencode run 'Use makevn MCP: doctor, init if recommended, then composite_run with clean, compile, package.'
 ```
+
+### Changed-code verification and coverage
+
+![Preview affected code, verify it, and check coverage](docs/assets/makevn-changes.gif)
+
+```bash
+makevn doctor --compact
+makevn init # only when recommended
+makevn verify-changes-preview
+makevn verify-changes
+makevn coverage-changes
+```
+
+### Direct MCP
+
+![Real MCP calls and structured workflow results](docs/assets/makevn-mcp.gif)
+
+The direct demo calls `doctor`, `init` and `composite_run` on `makevn-mcp`,
+showing real structured results without enabling trace or requiring an agent account.
 
 ## Installation
 
 ### Homebrew
 
-![Install makevn with Homebrew](docs/assets/makevn-install-brew.gif)
+Refresh pending: a disposable Homebrew environment is required. [Previous recording](docs/assets/makevn-install-brew.gif).
 
 ```bash
 brew install antonillos/tap/makevn
@@ -162,6 +187,12 @@ directly when they support MCP.
 
 See [AI agent use](docs/agents.md) and the [MCP guide](mcp/README.md) for the
 full agent workflow and client configuration.
+MCP command echoes (`→ exec ...`) are hidden by default: omit `trace` or use
+`trace: false`; use `trace: true` only if the human explicitly asks to see
+the exact executed command, never for routine runs or failure diagnosis. Final results,
+errors, and the auxiliary `durationMs` / `exitCode` / `tool` JSON stay visible.
+See [trace control](mcp/README.md#command-trace-control) for workflow overrides
+and direct CLI behavior.
 
 When tests fail formatting validation, agents should run `makevn format --apply`
 and rerun the original test, never disable the formatter. MCP recovery uses
@@ -188,3 +219,30 @@ There is no automatic migration or cleanup of old Make integrations.
 ## License
 
 MIT. See [LICENSE](LICENSE).
+
+### Redundant MCP success timings
+
+Without `trace` (or with `trace: false`), MCP also omits standalone success
+timing lines such as `[ok] 1m 06s`: the always-visible `durationMs` / `exitCode`
+JSON already provides that information. `trace: true` retains these lines for
+explicit diagnostics. This applies to ordinary tools and individual
+composite/parallel steps, following the same trace inheritance and overrides.
+Meaningful results (including JSON), failure diagnostics and workflow summaries
+remain visible. Log paths are provided in JSON `logPaths` instead of standalone
+`[..] makevn ... | log: ...` headers. CLI output and managed logs are unchanged.
+Do not enable trace merely to obtain status or duration; use the JSON metadata.
+
+### MCP log paths in JSON
+
+MCP moves standalone `[..] makevn ... | log: ...` headers into the always-visible
+JSON metadata field `logPaths` (an array of unique paths in encounter order).
+For composite/parallel workflows, each step has its own `logPaths`. An empty
+array means no log header was reported, not that no logs exist. This applies
+with either trace setting; `trace: true` still shows command echoes and success
+timings. Normal results and failure diagnostics are untouched; CLI headers and
+managed log files are unchanged. Paths keep their original form, typically
+relative to the target repository, not the MCP server's working directory.
+
+```json
+{"durationMs": 6739, "exitCode": 0, "tool": "test", "logPaths": [".makevn/logs/test-SampleTest.log"]}
+```

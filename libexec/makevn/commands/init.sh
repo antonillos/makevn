@@ -35,8 +35,13 @@ cmd_init() {
   shift
   cmd_init_parse_options "$@"
 
+  if [[ -z "$(makevn_detect_maven_base_path "${repo_root}" || true)" ]]; then
+    makevn_die "Cannot initialize makevn: no Maven project detected. No local configuration was created or updated."
+  fi
+
   existing_manifest="$(makevn_manifest_path "${repo_root}")"
   if [[ -f "${existing_manifest}" && "${force}" != true ]]; then
+    makevn_refresh_impact "${repo_root}" "" "${dry_run}"
     printf '%s\n' "$(makevn_warn "makevn is already initialized.")"
     return 0
   fi
@@ -55,14 +60,16 @@ cmd_init() {
     return 0
   fi
 
+  makevn_start_state_phase "Initializing repository configuration"
   mkdir -p "${logs_dir}"
   [[ -f "${config_path}" ]] || makevn_write_config "${repo_root}"
   makevn_refresh_profile "${repo_root}"
   makevn_update_config_generated_contract_clean_dirs "${repo_root}"
   makevn_write_state_json "${repo_root}"
   makevn_write_manifest "${repo_root}"
+  makevn_refresh_impact "${repo_root}"
 
-  printf '%s\n' "$(makevn_accent "Initialized makevn.")"
+  printf '%s\n' "$(makevn_dim "Initialized makevn.")"
   makevn_print_item "created" ".makevn/config"
   makevn_print_item "created" ".makevn/profile.env"
   makevn_print_item "created" ".makevn/logs/"

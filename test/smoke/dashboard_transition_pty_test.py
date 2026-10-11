@@ -29,10 +29,17 @@ def backend(args):
                         f'command_display=makevn {title}\ntitle={title}\n')
     (repo / 'log').write_text(f'{title} log output\n')
     Path(os.environ['MAKEVN_BACKEND_DETAIL_OUT']).write_text('PRESERVED_DETAIL\n')
+    if title == 'docker-ps-required' and os.environ.get('MAKEVN_TEST_DIAGNOSTIC'):
+        print('Cannot safely focus verification: Unknown impact in example/build.sh', file=sys.stderr)
+        sys.stderr.flush()
+        sys.stderr.buffer.write(b'Native diagnostic: \xff\n')
+        sys.stderr.buffer.flush()
+        time.sleep(0.4)
+        sys.exit(7)
     time.sleep(0.4)
 
 
-def verify(binary, tail_enabled=False):
+def verify(binary, tail_enabled=False, color_enabled=False, truecolor=False, diagnostic=False):
     with tempfile.TemporaryDirectory() as folder:
         repo = Path(folder)
         script = repo / 'libexec/makevn/backend.sh'
@@ -46,8 +53,17 @@ def verify(binary, tail_enabled=False):
             for name in ('BASH_ENV', 'BASH_XTRACEFD', 'SHELLOPTS', 'PS4'):
                 os.environ.pop(name, None)
             os.environ.update(MAKEVN_INSTALL_ROOT=str(repo), NO_COLOR='1', TERM='xterm')
+            os.environ.pop('COLORTERM', None)
+            if truecolor:
+                os.environ['COLORTERM'] = 'truecolor'
+            if color_enabled:
+                os.environ.pop('NO_COLOR', None)
             os.environ.pop('MAKEVN_AGENT_OUTPUT', None)
             os.environ.pop('MAKEVN_COMPACT_OUTPUT', None)
+            if diagnostic:
+                os.environ['MAKEVN_TEST_DIAGNOSTIC'] = '1'
+            else:
+                os.environ.pop('MAKEVN_TEST_DIAGNOSTIC', None)
             args = [binary, '--repo', str(repo), 'docker-up', 'docker-ps-required']
             if tail_enabled:
                 args.append('--tail')
@@ -57,6 +73,7 @@ def verify(binary, tail_enabled=False):
         decoder = codecs.getincrementaldecoder('utf-8')(errors='replace')
         deadline = time.monotonic() + 15
         checked = False
+        output = ''
         try:
             while time.monotonic() < deadline:
                 if select.select([fd], [], [], 0.05)[0]:
@@ -66,12 +83,16 @@ def verify(binary, tail_enabled=False):
                         break
                     if not chunk:
                         break
-                    screen.feed(decoder.decode(chunk))
+                    decoded = decoder.decode(chunk)
+                    output += decoded
+                    screen.feed(decoded)
                 if (repo / 'waiting').exists() and not checked:
                     # Let the pending-command loader render repeatedly without metadata.
                     time.sleep(0.3)
                     while select.select([fd], [], [], 0)[0]:
-                        screen.feed(decoder.decode(os.read(fd, 65536)))
+                        decoded = decoder.decode(os.read(fd, 65536))
+                        output += decoded
+                        screen.feed(decoded)
                     lines = '\n'.join(screen.lines())
                     assert 'Working for' in lines, lines
                     assert 'PRESERVED_DETAIL' in lines, lines
@@ -83,8 +104,26 @@ def verify(binary, tail_enabled=False):
                     (repo / 'continue').touch()
             assert checked
             _, status = os.waitpid(pid, 0)
-            assert os.waitstatus_to_exitcode(status) == 0
+            assert os.waitstatus_to_exitcode(status) == (7 if diagnostic else 0)
             assert 'Worked  for' in '\n'.join(screen.lines())
+            if diagnostic:
+                lines = screen.lines()
+                step = next(i for i, line in enumerate(lines) if '[x] docker-ps-required |' in line)
+                detail = next(i for i, line in enumerate(lines) if 'Cannot safely focus verification:' in line)
+                assert detail > step and lines[detail].startswith('│ '), '\n'.join(lines)
+                assert output.count('Cannot safely focus verification:') == 1, output
+                assert any(line == '│ Native diagnostic: \ufffd' for line in lines), '\n'.join(lines)
+            if color_enabled:
+                color_code = '38;2;227;193;104' if truecolor else '33'
+                assert f'\x1b[{color_code}m[•]\x1b[0m' in output, output
+                for title in ('docker-up', 'docker-ps-required (starting)', 'docker-ps-required'):
+                    assert f'\x1b[{color_code}mmakevn {title}\x1b[0m' in output, output
+                    assert f'\x1b[36mmakevn {title}\x1b[0m' not in output, output
+                assert '[\x1b[36m✓\x1b[0m]\x1b[90m docker-up |' in output, output
+                assert '[\x1b[32mok\x1b[0m]' in output, output
+            else:
+                assert '\x1b[33m' not in output, output
+                assert '\x1b[38;2;' not in output, output
         finally:
             os.close(fd)
 
@@ -95,4 +134,11 @@ if __name__ == '__main__':
     else:
         verify(str(Path(sys.argv[1]).resolve()))
         verify(str(Path(sys.argv[1]).resolve()), True)
+        verify(str(Path(sys.argv[1]).resolve()), color_enabled=True)
+        verify(str(Path(sys.argv[1]).resolve()), True, color_enabled=True)
+        verify(str(Path(sys.argv[1]).resolve()), color_enabled=True, truecolor=True)
+        verify(str(Path(sys.argv[1]).resolve()), True, color_enabled=True, truecolor=True)
+        verify(str(Path(sys.argv[1]).resolve()), truecolor=True)
+        verify(str(Path(sys.argv[1]).resolve()), diagnostic=True)
+        verify(str(Path(sys.argv[1]).resolve()), True, diagnostic=True)
         print('dashboard transition PTY: ok')
