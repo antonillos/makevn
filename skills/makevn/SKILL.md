@@ -937,3 +937,8 @@ Focused is now the default for both changed-code commands. Explicit `--focused`
 remains a compatible alias; broader selected suites require `--exhaustive` (MCP
 `focused: false`). Unknown impact requires a scope decision, never an automatic
 full verification fallback.
+
+Shared root fixtures require explicit repository-owned `makevn-impact.json` scope.
+Nested leaf contract version bumps use local reactor/POM consumer relationships,
+not company-specific names. Read `docs/focused-impact.md` before proposing a scope;
+never invent an empty externalChecks list to bypass Karate/E2E consumers.

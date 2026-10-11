@@ -875,3 +875,12 @@ This is **focused changed-class coverage**, not overall-project coverage. The
 overall-project gate is explicitly not evaluated on this scoped report; required
 full coverage/CI gates remain separate. For MCP use `arguments`, not `args`, and
 `fail-fast: true` for the coordinated verification/coverage/CRAP sequence.
+
+### Generic contract and shared-resource impact
+
+Nested leaf dependency-version bumps can select their local transitive consumer
+suites. Shared Maven-root test resources require reviewed `makevn-impact.json`
+declarations of all Maven owners and external checks. Never infer owners from
+company/module/schema names, ignore fixtures, or declare externalChecks empty
+without evidence. Non-Maven checks block focused planning and must be verified
+separately even after exhaustive Maven verification. See [Focused impact](focused-impact.md).

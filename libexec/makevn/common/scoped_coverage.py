@@ -16,11 +16,35 @@ VERSION = '0.8.14'
 
 def fingerprint(repo):
     head = subprocess.check_output(['git', '-C', str(repo), 'rev-parse', 'HEAD'])
-    paths = subprocess.check_output(['git', '-C', str(repo), 'ls-files', '-z', '--cached', '--others', '--exclude-standard']).split(b'\0')
+    git_root = Path(subprocess.check_output(['git', '-C', str(repo), 'rev-parse', '--show-toplevel']).decode().strip()).resolve()
+    paths = set(subprocess.check_output(['git', '-C', str(git_root), 'ls-files', '-z', '--cached', '--others', '--exclude-standard']).split(b'\0'))
     digest = hashlib.sha256(head)
+    impact = git_root / 'makevn-impact.json'
+    if impact.is_symlink():
+        raise ValueError('Refusing linked impact configuration')
+    digest.update(impact.read_bytes() if impact.is_file() else b'<no-impact-config>')
+    try:
+        resource_paths = [Path(rule['path']) for rule in json.loads(impact.read_text())['sharedResources']] if impact.is_file() else []
+    except (ValueError, KeyError, TypeError):
+        # The planner validates rules; even malformed edits change the byte hash.
+        resource_paths = []
+    for prefix in resource_paths:
+        if prefix.is_absolute() or '..' in prefix.parts or not any(prefix.parts[i:i+3] == ('src', 'test', 'resources') for i in range(len(prefix.parts) - 2)):
+            raise ValueError('Invalid shared-resource path in impact configuration')
+        resource = git_root / prefix
+        if resource.resolve() != resource:
+            raise ValueError('Refusing linked shared-resource prefix: ' + str(resource))
+        # Declared inputs can include Git-ignored runtime fixtures too.
+        for path in [resource, *resource.rglob('*')]:
+            if path.is_symlink():
+                raise ValueError('Refusing linked shared-resource input: ' + str(path))
+            if path.is_file():
+                paths.add(os.fsencode(path.relative_to(git_root)))
     for name in sorted(filter(None, paths)):
-        path = repo / os.fsdecode(name)
-        if any(part in {'.makevn', 'target'} for part in path.relative_to(repo).parts) or path.suffix not in {'.java', '.xml', '.yml', '.yaml', '.properties'}:
+        path = git_root / os.fsdecode(name)
+        if any(part in {'.makevn', 'target'} for part in path.relative_to(git_root).parts):
+            continue
+        if path.suffix not in {'.java', '.xml', '.yml', '.yaml', '.properties', '.avsc'} and not any(path.relative_to(git_root).is_relative_to(prefix) for prefix in resource_paths):
             continue
         digest.update(name)
         digest.update(path.read_bytes() if path.is_file() else b'<deleted>')

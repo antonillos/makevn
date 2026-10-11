@@ -61,6 +61,27 @@ class ScopedTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'evidence changed'):
             scoped.load(self.repo, self.state)
 
+    def test_impact_config_and_shared_inputs_invalidate_evidence(self):
+        config = self.repo / 'makevn-impact.json'
+        config.write_text(json.dumps({'version': 1, 'sharedResources': [{'path': 'src/test/resources/shared', 'modules': ['client'], 'externalChecks': []}]}))
+        fixture = self.repo / 'src/test/resources/shared/schema.avsc'
+        fixture.parent.mkdir(parents=True)
+        fixture.write_text('schema before')
+        binary = fixture.with_name('fixture.bin')
+        binary.write_bytes(b'before')
+        (self.repo / '.gitignore').write_text('*.bin\n')
+        self.ready()
+        self.assertEqual(scoped.fingerprint(self.repo), scoped.fingerprint(self.repo / 'client'))
+        for path, value in [(fixture, b'schema after'), (binary, b'after'), (config, b'{}')]:
+            before = path.read_bytes()
+            path.write_bytes(value)
+            with self.assertRaisesRegex(ValueError, 'sources/config changed'):
+                scoped.load(self.repo, self.state)
+            path.write_bytes(before)
+        config.unlink()
+        with self.assertRaisesRegex(ValueError, 'sources/config changed'):
+            scoped.load(self.repo, self.state)
+
     def test_no_data_and_missing_classes_fail_not_fall_back(self):
         scoped.prepare(self.repo, self.state, self.repo, ['client', 'boot'], [self.source])
         scoped.finish(self.repo, self.state)

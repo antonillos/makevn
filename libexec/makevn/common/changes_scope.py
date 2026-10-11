@@ -4,6 +4,8 @@ import subprocess
 import sys
 import xml.etree.ElementTree as ET
 
+from reactor_impact import leaf_bump_owners, resource_owners, resource_rules
+
 
 def parse(text):
     root = ET.fromstring(text)
@@ -144,6 +146,7 @@ def non_verification_path(path):
 
 
 def selection(repo, base, reference, paths):
+    repo, base = repo.resolve(), base.resolve()
     modules = set()
     for path in paths:
         absolute = repo / path
@@ -155,13 +158,28 @@ def selection(repo, base, reference, paths):
         if "/src/" in relative:
             modules.add(relative.split("/src/", 1)[0])
         elif relative.startswith("src/"):
-            return "."
-        elif relative.endswith("pom.xml"):
-            if absolute != base / "pom.xml":
+            if not relative.startswith("src/test/resources/"):
                 return "."
+            reactor = declared_modules(base, parse((base / "pom.xml").read_text()))
+            if reactor is None:
+                return "."
+            owners = resource_owners(absolute, resource_rules(repo, base, reactor, parse))
+            if not owners:
+                raise ValueError("No declared shared-resource scope for " + path + "; declare its Maven consumers and externalChecks in makevn-impact.json, or use --exhaustive")
+            modules.update(owners)
+        elif relative.endswith("pom.xml"):
             old = subprocess.run(["git", "-C", str(repo), "show", reference + ":" + path],
                                  capture_output=True, text=True, check=True).stdout
-            consumers = bump_consumers(base, parse(old), parse(absolute.read_text()))
+            current = parse(absolute.read_text())
+            if absolute == base / "pom.xml":
+                consumers = bump_consumers(base, parse(old), current)
+            else:
+                reactor = declared_modules(base, parse((base / "pom.xml").read_text()))
+                if reactor is None:
+                    return "."
+                changed = property_bumps(parse(old), parse(absolute.read_text()))
+                consumers = leaf_bump_owners(repo, base, absolute.parent.relative_to(base).as_posix(),
+                    current, changed, reactor, resource_rules(repo, base, reactor, parse), parse)
             if consumers is None:
                 return "."
             modules.update(consumers)
