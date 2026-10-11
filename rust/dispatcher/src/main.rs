@@ -1390,16 +1390,13 @@ fn dispatch_backend_invocations(
                 r.clear_line();
                 r.show_cursor();
             }
-            if backend_invocation.tail && last_exit_code == 130 {
-                return Ok(last_exit_code);
-            }
             if use_dashboard {
                 print_final_dashboard(started_at.elapsed(), &completed_summaries, false)
                     .map_err(|error| format!("failed to print run summary: {error}"))?;
                 let _ = writeln!(
                     io::stdout(),
                     "[{}]{}",
-                    warn_text("fail"),
+                    terminal_failure_label(last_exit_code),
                     dim_text(&format_failure_summary(
                         last_exit_code,
                         None,
@@ -1411,7 +1408,7 @@ fn dispatch_backend_invocations(
                 let _ = writeln!(
                     io::stdout(),
                     "[{}]{}",
-                    warn_text("fail"),
+                    terminal_failure_label(last_exit_code),
                     dim_text(&format_failure_summary(
                         last_exit_code,
                         Some(duration.as_str()),
@@ -1509,6 +1506,10 @@ fn stream_backend_output(
     io::copy(&mut file, output)
 }
 
+fn terminal_failure_label(exit_code: i32) -> String {
+    if exit_code == 130 { dim_text("cancelled") } else { warn_text("fail") }
+}
+
 fn format_failure_summary(
     exit_code: i32,
     duration: Option<&str>,
@@ -1517,6 +1518,9 @@ fn format_failure_summary(
     let mut summary = format!(" exit {exit_code}");
     if let Some(duration) = duration {
         summary.push_str(&format!(" | {duration}"));
+    }
+    if exit_code == 130 {
+        return summary;
     }
     if let Some(hint) = failure_hint.filter(|hint| !hint.is_empty()) {
         summary.push_str(" | ");
@@ -2125,6 +2129,8 @@ fn detail_line(text: &str) -> String {
 fn completed_summary_line(summary: &CommandSummary) -> String {
     let mark = if summary.exit_code == 0 {
         accent_text("✓")
+    } else if summary.exit_code == 130 {
+        dim_text("-")
     } else {
         warn_text("x")
     };
@@ -2141,7 +2147,11 @@ fn focused_phase_title(title: &str) -> &str {
 }
 
 fn focused_phase_mark(exit_code: i32) -> String {
-    if exit_code == 0 { dim_text("✓") } else { warn_text("x") }
+    match exit_code {
+        0 => dim_text("✓"),
+        130 => dim_text("-"),
+        _ => warn_text("x"),
+    }
 }
 
 fn focused_phase_summary_line(phase: &CommandSummary) -> String {

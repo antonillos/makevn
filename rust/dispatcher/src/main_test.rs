@@ -747,7 +747,7 @@ fn final_dashboard_shows_failure_summary() {
         duration: String::from("9m 34s"),
         log_path: Some(String::from("/repo/.makevn/logs/mutation.log")),
         relative_log_path: Some(String::from(".makevn/logs/mutation.log")),
-        exit_code: 130,
+        exit_code: 1,
         detail_lines: vec![
             String::from("WARNING: Mutation testing (PIT) is VERY slow. This can take 30+ minutes depending on project size."),
             String::from("PIT runs the full test suite multiple times against generated mutants."),
@@ -2766,4 +2766,15 @@ fn focused_subtask_labels_strip_only_the_action_prefix() {
     assert_eq!(super::focused_phase_summary_line(&failure), "x boot (*) | 3s");
     assert_eq!(super::focused_phase_mark(0), super::dim_text("✓"));
     assert_eq!(super::focused_phase_mark(42), super::warn_text("x"));
+}
+
+#[test]
+fn interrupted_runs_render_cancelled_without_failure_advice() {
+    assert_eq!(super::terminal_failure_label(130), super::dim_text("cancelled"));
+    assert_eq!(super::terminal_failure_label(1), super::warn_text("fail"));
+    assert_eq!(format_failure_summary(130, None, Some("Maven failed")), " exit 130");
+    assert_eq!(format_failure_summary(130, Some("3s"), None), " exit 130 | 3s");
+    let summary = super::summary_from_backend_metadata(130, "3s".into(), "verify-changes", None);
+    assert_eq!(super::completed_summary_line(&summary), "[-] verify-changes | 3s");
+    assert_eq!(super::focused_phase_mark(130), super::dim_text("-"));
 }
