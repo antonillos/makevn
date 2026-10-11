@@ -2711,7 +2711,7 @@ fn focused_phases_render_under_one_parent_without_losing_logs_or_failures() {
     let group = super::focused_summary(parent, vec![phase]);
     let lines = super::final_dashboard_lines(Duration::from_secs(30), &[group], false);
     assert_eq!(lines[1], "[x] verify-changes | 30s");
-    assert_eq!(lines[2], "│  [✓] prepare dependencies (no tests) | 5s | prepare.log");
+    assert_eq!(lines[2], "│  ✓ prepare dependencies (no tests) | 5s | prepare.log");
     assert!(lines.iter().any(|line| line.contains("phase detail")));
     assert!(lines.iter().any(|line| line.contains("command failure")));
     assert!(!lines.iter().any(|line| line.starts_with("[✓] prepare")));
@@ -2732,11 +2732,11 @@ fn focused_live_and_tail_show_active_parent_and_incremental_subtasks() {
     );
     assert_eq!(dashboard[1], "[•] makevn verify-changes");
     assert!(!dashboard.iter().any(|line| line.starts_with("[✓] verify-changes")));
-    assert!(dashboard.iter().any(|line| line == "│  [✓] prepare dependencies (no tests) | 4s"));
-    assert!(dashboard.iter().any(|line| line == "│  [•] boot (*) | boot.log"));
+    assert!(dashboard.iter().any(|line| line == "│  ✓ prepare dependencies (no tests) | 4s"));
+    assert!(dashboard.iter().any(|line| line == "│  • boot (*) | boot.log"));
     let tail = tail_status_lines(Duration::from_secs(5), &[group], &metadata);
     assert_eq!(tail[1], "[•] makevn verify-changes");
-    assert!(tail.iter().any(|line| line.starts_with("│  [•]")));
+    assert!(tail.iter().any(|line| line.starts_with("│  •")));
 }
 
 
@@ -2750,10 +2750,10 @@ fn focused_success_remains_one_check_before_coverage() {
     let coverage = super::summary_from_backend_metadata(0, "2s".into(), "coverage-changes", None);
     let lines = super::final_dashboard_lines(Duration::from_secs(14), &[group, coverage], true);
     assert_eq!(lines.iter().filter(|line| line.starts_with("[✓]")).count(), 2);
-    assert_eq!(lines.iter().filter(|line| line.starts_with("│  [✓]")).count(), 30);
+    assert_eq!(lines.iter().filter(|line| line.starts_with("│  ✓")).count(), 30);
     assert_eq!(lines[1], "[✓] verify-changes | 12s");
     assert_eq!(lines[32], "[✓] coverage-changes | 2s");
-    assert_eq!(lines[2], "│  [✓] module-0 (*) | 1s");
+    assert_eq!(lines[2], "│  ✓ module-0 (*) | 1s");
 }
 
 
@@ -2763,7 +2763,7 @@ fn focused_subtask_labels_strip_only_the_action_prefix() {
     assert_eq!(super::focused_phase_title("prepare dependencies (no tests)"), "prepare dependencies (no tests)");
     assert_eq!(super::focused_phase_title("verify-client (*)"), "verify-client (*)");
     let failure = super::summary_from_backend_metadata(42, "3s".into(), "verify boot (*)", None);
-    assert_eq!(super::focused_phase_summary_line(&failure), "[x] boot (*) | 3s");
+    assert_eq!(super::focused_phase_summary_line(&failure), "x boot (*) | 3s");
     assert_eq!(super::focused_phase_mark(0), super::dim_text("✓"));
     assert_eq!(super::focused_phase_mark(42), super::warn_text("x"));
 }

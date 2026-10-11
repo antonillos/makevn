@@ -2150,7 +2150,7 @@ fn focused_phase_summary_line(phase: &CommandSummary) -> String {
         Some(log) => format!(" {title} | {} | {log}", phase.duration),
         None => format!(" {title} | {}", phase.duration),
     };
-    format!("[{}]{}", focused_phase_mark(phase.exit_code), dim_text(&rest))
+    format!("{}{}", focused_phase_mark(phase.exit_code), dim_text(&rest))
 }
 
 fn focused_summary(mut parent: CommandSummary, phases: Vec<CommandSummary>) -> CommandSummary {
@@ -2190,7 +2190,7 @@ fn live_phase_line(metadata: &BackendMetadata, tail: bool) -> String {
         } else {
             dim_text(&format!(" | {}", metadata.relative_log_path))
         };
-        format!("{} {} {title}{log}", dim_text("│ "), dim_text("[•]"))
+        format!("{} {} {title}{log}", dim_text("│ "), dim_text("•"))
     } else if tail {
         backend_header_line(metadata)
     } else {
