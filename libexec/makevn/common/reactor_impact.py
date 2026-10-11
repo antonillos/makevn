@@ -161,8 +161,11 @@ def reactor_consumers(base, modules, owner, parse):
             managed = {node for manager in root.iter('dependencyManagement') for node in manager.iter('dependency')}
             dependencies = [node for node in root.iter('dependency') if node not in managed]
             dependencies += root.findall('.//artifactItem')
+            # Invoked local build plugins are consumers; pluginManagement alone is not.
+            dependencies += root.findall('.//build/plugins/plugin')
             for dependency in dependencies:
-                coordinate = tuple(current['resolve'](dependency.findtext(key, '')) for key in ('groupId', 'artifactId'))
+                group = dependency.findtext('groupId', 'org.apache.maven.plugins' if dependency.tag == 'plugin' else '')
+                coordinate = (current['resolve'](group), current['resolve'](dependency.findtext('artifactId', '')))
                 if not all(coordinate):
                     raise ValueError('Incomplete dependency coordinates in ' + name)
                 target = coordinates.get(coordinate)

@@ -63,6 +63,20 @@ class ImpactTests(unittest.TestCase):
         self.bump()
         self.assertEqual(self.plan('workspace/contracts/event/pom.xml'), 'adapter\t*\ncontracts/event\t*\nrunner\t*')
 
+    def test_local_maven_plugin_consumers_are_in_reverse_closure(self):
+        packaging = '<packaging>maven-plugin</packaging>'
+        self.write('contracts/event/pom.xml', self.contract + packaging)
+        self.commit()
+        plugin = '<plugin><groupId>example</groupId><artifactId>event</artifactId><version>1</version></plugin>'
+        for wrapper in ['<build><plugins>{}</plugins></build>',
+                        '<profiles><profile><build><plugins>{}</plugins></build></profile></profiles>']:
+            with self.subTest(wrapper=wrapper):
+                self.write('unrelated/pom.xml', self.parent('root', '../pom.xml') + '<artifactId>unrelated</artifactId>' + wrapper.format(plugin))
+                self.bump(packaging)
+                self.assertIn('unrelated\t*', self.plan('workspace/contracts/event/pom.xml'))
+        self.write('unrelated/pom.xml', self.parent('root', '../pom.xml') + '<artifactId>unrelated</artifactId><build><pluginManagement><plugins>' + plugin + '</plugins></pluginManagement></build>')
+        self.assertNotIn('unrelated', self.plan('workspace/contracts/event/pom.xml'))
+
     def test_shared_resources_default_to_complete_reactor_suites(self):
         path = 'workspace/src/test/resources/shared/v2/schema.avsc'
         self.assertEqual(self.plan(path), self.all_suites())
