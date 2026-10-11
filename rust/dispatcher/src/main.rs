@@ -1300,12 +1300,8 @@ fn dispatch_backend_invocations(
                 }
             }
             if result.is_ok() && !state_command {
-                stderr_details = fs::read_to_string(stderr_file.path())
-                    .map_err(|error| format!("failed to read backend diagnostics: {error}"))?
-                    .lines()
-                    .filter(|line| !line.trim().is_empty())
-                    .map(str::to_owned)
-                    .collect();
+                stderr_details = read_backend_diagnostics(stderr_file.path())
+                    .map_err(|error| format!("failed to read backend diagnostics: {error}"))?;
             } else {
                 replay_backend_output(stderr_file.path(), renderer.as_mut(), true);
             }
@@ -1432,6 +1428,15 @@ fn dispatch_backend_invocations(
         );
     }
     Ok(last_exit_code)
+}
+
+fn read_backend_diagnostics(path: &Path) -> io::Result<Vec<String>> {
+    let bytes = fs::read(path)?;
+    Ok(String::from_utf8_lossy(&bytes)
+        .lines()
+        .filter(|line| !line.trim().is_empty())
+        .map(str::to_owned)
+        .collect())
 }
 
 fn append_unique_details(details: &mut Vec<String>, diagnostics: &[String]) {

@@ -2355,6 +2355,15 @@ fn backend_diagnostics_preserve_order_without_duplicate_step_details() {
     assert_eq!(details.len(), 2);
 }
 
+#[test]
+fn backend_diagnostics_decode_non_utf8_lossily() {
+    let path = env::temp_dir().join(format!("makevn-diagnostics-{}.stderr", process::id()));
+    fs::write(&path, b"first\n\nNative diagnostic: \xff\n").unwrap();
+    assert_eq!(super::read_backend_diagnostics(&path).unwrap(), vec!["first", "Native diagnostic: \u{fffd}"]);
+    fs::remove_file(&path).unwrap();
+    assert!(super::read_backend_diagnostics(&path).is_err());
+}
+
 struct CountingOutput {
     bytes: u64,
     largest_write: usize,

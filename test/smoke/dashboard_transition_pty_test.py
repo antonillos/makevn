@@ -31,6 +31,9 @@ def backend(args):
     Path(os.environ['MAKEVN_BACKEND_DETAIL_OUT']).write_text('PRESERVED_DETAIL\n')
     if title == 'docker-ps-required' and os.environ.get('MAKEVN_TEST_DIAGNOSTIC'):
         print('Cannot safely focus verification: Unknown impact in example/build.sh', file=sys.stderr)
+        sys.stderr.flush()
+        sys.stderr.buffer.write(b'Native diagnostic: \xff\n')
+        sys.stderr.buffer.flush()
         time.sleep(0.4)
         sys.exit(7)
     time.sleep(0.4)
@@ -109,6 +112,7 @@ def verify(binary, tail_enabled=False, color_enabled=False, truecolor=False, dia
                 detail = next(i for i, line in enumerate(lines) if 'Cannot safely focus verification:' in line)
                 assert detail > step and lines[detail].startswith('│ '), '\n'.join(lines)
                 assert output.count('Cannot safely focus verification:') == 1, output
+                assert any(line == '│ Native diagnostic: \ufffd' for line in lines), '\n'.join(lines)
             if color_enabled:
                 color_code = '38;2;227;193;104' if truecolor else '33'
                 assert f'\x1b[{color_code}m[•]\x1b[0m' in output, output
