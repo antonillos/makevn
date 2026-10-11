@@ -12,6 +12,7 @@ mkdir -p "${OUT_DIR}"
 cargo llvm-cov \
   --manifest-path "${ROOT_DIR}/rust/dispatcher/Cargo.toml" \
   --all-targets --lcov --output-path "${OUT_DIR}/rust-coverage.lcov" \
+  -- --test-threads=1 \
   >"${OUT_DIR}/rust-coverage.log" 2>&1 || {
     tail -n 80 "${OUT_DIR}/rust-coverage.log" >&2
     exit 2

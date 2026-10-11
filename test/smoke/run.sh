@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-set -euo pipefail
+set -Eeuo pipefail
+trap 'printf "FAIL: smoke command at line %s: %s\n" "$LINENO" "$BASH_COMMAND" >&2' ERR
 
 ROOT_DIR="$(CDPATH= cd -- "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 CLI="${ROOT_DIR}/bin/makevn"
