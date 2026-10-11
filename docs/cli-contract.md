@@ -759,3 +759,5 @@ stderr. Interactive state prompts and noninteractive CLI/MCP output are unchange
 When an invocation publishes multiple phase records, unscoped stderr is shown
 under an explicit command-level diagnostics summary, never attributed to its
 final phase. Diagnostics already published with phase metadata remain phase-local.
+Captured stderr shown in the dashboard is capped at 64 KiB and 200 nonempty
+lines. Omitted output is indicated explicitly; deduplication uses a hash set.

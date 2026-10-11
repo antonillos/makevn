@@ -1449,17 +1449,30 @@ fn append_command_diagnostics(
 }
 
 fn read_backend_diagnostics(path: &Path) -> io::Result<Vec<String>> {
-    let bytes = fs::read(path)?;
-    Ok(String::from_utf8_lossy(&bytes)
+    const MAX_BYTES: usize = 64 * 1024;
+    const MAX_LINES: usize = 200;
+    let mut bytes = Vec::new();
+    File::open(path)?.take((MAX_BYTES + 1) as u64).read_to_end(&mut bytes)?;
+    let byte_limit = bytes.len() > MAX_BYTES;
+    bytes.truncate(MAX_BYTES);
+    let mut lines: Vec<String> = String::from_utf8_lossy(&bytes)
         .lines()
         .filter(|line| !line.trim().is_empty())
+        .take(MAX_LINES + 1)
         .map(str::to_owned)
-        .collect())
+        .collect();
+    let line_limit = lines.len() > MAX_LINES;
+    lines.truncate(MAX_LINES);
+    if byte_limit || line_limit {
+        lines.push("Diagnostics truncated (limit: 64 KiB / 200 nonempty lines); additional stderr omitted from dashboard.".to_owned());
+    }
+    Ok(lines)
 }
 
 fn append_unique_details(details: &mut Vec<String>, diagnostics: &[String]) {
+    let mut seen: HashSet<String> = details.iter().cloned().collect();
     for line in diagnostics {
-        if !details.contains(line) {
+        if seen.insert(line.clone()) {
             details.push(line.clone());
         }
     }

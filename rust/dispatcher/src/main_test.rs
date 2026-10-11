@@ -2423,6 +2423,31 @@ fn backend_diagnostics_decode_non_utf8_lossily() {
     assert!(super::read_backend_diagnostics(&path).is_err());
 }
 
+#[test]
+fn backend_diagnostics_are_bounded_and_report_truncation() {
+    let path = env::temp_dir().join(format!("makevn-diagnostics-limits-{}.stderr", process::id()));
+    for (bytes, expected_lines) in [
+        (vec![b'x'; 64 * 1024], 1),
+        (vec![b'x'; 8 * 1024 * 1024], 2),
+        ((0..10000).map(|i| format!("unique diagnostic {i}\n")).collect::<String>().into_bytes(), 201),
+    ] {
+        fs::write(&path, &bytes).unwrap();
+        let lines = super::read_backend_diagnostics(&path).unwrap();
+        assert_eq!(lines.len(), expected_lines);
+        if expected_lines > 1 {
+            assert!(lines.last().unwrap().starts_with("Diagnostics truncated"));
+        } else {
+            assert_eq!(lines[0].len(), 64 * 1024);
+        }
+        assert_eq!(fs::metadata(&path).unwrap().len(), bytes.len() as u64);
+        let mut details = Vec::new();
+        super::append_unique_details(&mut details, &lines);
+        super::append_unique_details(&mut details, &lines);
+        assert_eq!(details, lines);
+    }
+    fs::remove_file(path).unwrap();
+}
+
 struct CountingOutput {
     bytes: u64,
     largest_write: usize,
