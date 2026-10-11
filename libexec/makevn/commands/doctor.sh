@@ -79,6 +79,7 @@ print_doctor() {
   fi
   print_command_intro "${repo_root}" doctor
   makevn_collect_doctor_snapshot "${repo_root}"
+  makevn_refresh_impact "${repo_root}" "${MAKEVN_DOCTOR_MAVEN_BASE_PATH:-}"
   if [[ -n "${MAKEVN_MCP_DOCTOR_METADATA_OUT:-}" ]]; then
     makevn_print_doctor_json > "${MAKEVN_MCP_DOCTOR_METADATA_OUT}"
   fi

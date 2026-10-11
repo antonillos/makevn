@@ -1,4 +1,4 @@
-"""Static leaf-contract consumers and explicitly declared shared test resources."""
+"""Static contract consumers and automatic conservative shared-resource scope."""
 import json
 import pathlib
 import re
@@ -65,6 +65,31 @@ def resource_owners(path, rules):
                 raise ValueError('Shared resources require checks outside the Maven reactor: ' + ', '.join(checks) + '. Focused verification cannot run them; use --exhaustive for Maven and run those checks separately')
             owners.update(modules)
     return owners
+
+
+def automatic_resource_rules(repo, base, modules, parse):
+    """Unproven narrower ownership means every declared Maven suite, not guesses."""
+    root = parse((base / 'pom.xml').read_text())
+    if not modules or root.findtext('packaging', 'jar') != 'pom':
+        return []
+    for kind, allowed in [('main', {'config', 'resources'}), ('test', {'resources'})]:
+        directory = base / 'src' / kind
+        if directory.is_dir() and any(path.name not in allowed for path in directory.iterdir()):
+            return []  # There may be a root-level executable/test owner.
+    prefix = base / 'src/test/resources'
+    if prefix.resolve() != prefix:
+        raise ValueError('Refusing linked shared-resource prefix: ' + str(prefix))
+    for owner in modules:
+        literal_path(owner)
+    return [(prefix, set(modules), [])]
+
+
+def shared_resource_owners(repo, base, modules, path, rules, parse):
+    explicit = resource_owners(path, rules)
+    if explicit:
+        return explicit
+    automatic = automatic_resource_rules(repo, base, modules, parse)
+    return resource_owners(path, automatic)
 
 
 def reactor_consumers(base, modules, owner, parse):
@@ -182,7 +207,7 @@ def leaf_bump_owners(repo, base, owner, current, changed, modules, rules, parse)
                 return None
             path = (base / owner / value).resolve()
             if not path.is_relative_to(base / owner):
-                mapped = resource_owners(path, rules)
+                mapped = shared_resource_owners(repo, base, modules, path, rules, parse)
                 if not mapped:
                     return None
                 extra_owners.update(mapped)

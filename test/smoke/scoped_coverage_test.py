@@ -82,6 +82,18 @@ class ScopedTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'sources/config changed'):
             scoped.load(self.repo, self.state)
 
+    def test_automatic_shared_input_hashing_without_authored_configuration(self):
+        fixture = self.repo / 'src/test/resources/shared/input.bin'
+        fixture.parent.mkdir(parents=True)
+        fixture.write_bytes(b'before')
+        (self.repo / '.gitignore').write_text('*.bin\n')
+        self.ready()
+        (self.repo / '.makevn/impact.json').write_text('{"tampered":true}')
+        scoped.load(self.repo, self.state)  # Generated state is not an authority.
+        fixture.write_bytes(b'after')
+        with self.assertRaisesRegex(ValueError, 'sources/config changed'):
+            scoped.load(self.repo, self.state)
+
     def test_no_data_and_missing_classes_fail_not_fall_back(self):
         scoped.prepare(self.repo, self.state, self.repo, ['client', 'boot'], [self.source])
         scoped.finish(self.repo, self.state)

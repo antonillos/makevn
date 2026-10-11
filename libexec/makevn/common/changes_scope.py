@@ -2,9 +2,12 @@
 import pathlib
 import subprocess
 import sys
+import json
+import os
+import tempfile
 import xml.etree.ElementTree as ET
 
-from reactor_impact import leaf_bump_owners, resource_owners, resource_rules
+from reactor_impact import automatic_resource_rules, leaf_bump_owners, shared_resource_owners, resource_rules
 
 
 def parse(text):
@@ -161,9 +164,9 @@ def selection(repo, base, reference, paths):
             reactor = declared_modules(base, parse((base / "pom.xml").read_text()))
             if reactor is None:
                 return "."
-            owners = resource_owners(absolute, resource_rules(repo, base, reactor, parse))
+            owners = shared_resource_owners(repo, base, reactor, absolute, resource_rules(repo, base, reactor, parse), parse)
             if not owners:
-                raise ValueError("No declared shared-resource scope for " + path + "; declare its Maven consumers and externalChecks in makevn-impact.json, or use --exhaustive")
+                raise ValueError("Cannot derive a safe shared-resource scope for " + path + "; root/reactor impact is ambiguous; use --exhaustive")
             modules.update(owners)
         elif "/src/" in relative:
             modules.add(relative.split("/src/", 1)[0])
@@ -216,14 +219,48 @@ def focused_plan(repo, base, reference, paths):
     return "\n".join(records)
 
 
+def write_generated_impact(repo, base, destination):
+    """Inspectable state only: planning never trusts or reads this snapshot."""
+    data = {'version': 1, 'origin': 'generated', 'scope': 'Maven module suites only; external/E2E and global gates not evaluated',
+            'mavenBase': str(base), 'strategy': 'unavailable', 'modules': []}
+    rules = []
+    try:
+        reactor = declared_modules(base, parse((base / 'pom.xml').read_text()))
+        rules = automatic_resource_rules(repo, base, reactor, parse) if reactor is not None else []
+        if rules:
+            data.update(strategy='all-reactor-suites', modules=sorted(reactor), sharedResourcePath=str(rules[0][0]))
+    except (OSError, ValueError, ET.ParseError) as error:
+        data['reason'] = str(error)
+    if destination.name != 'impact.json' or destination.parent.resolve() != (repo / '.makevn').resolve() or (repo / '.makevn').is_symlink() or destination.is_symlink():
+        raise ValueError('Refusing linked or nonlocal impact state')
+    destination = repo / '.makevn/impact.json'
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    fd, name = tempfile.mkstemp(prefix='impact.', dir=destination.parent)
+    try:
+        with os.fdopen(fd, 'w') as output:
+            json.dump(data, output, indent=2)
+            output.write('\n')
+        os.replace(name, destination)
+    finally:
+        if os.path.exists(name):
+            os.unlink(name)
+    print('generated .makevn/impact.json; shared-root test resources use ' +
+          ('all declared reactor suites when no narrower scope is proven' if rules else 'exhaustive when root/reactor scope is ambiguous') +
+          '; Maven only, external/E2E and global gates not evaluated')
+
+
 if __name__ == "__main__":
     focused = "--focused-plan" in sys.argv
     try:
+        if "--impact-state" in sys.argv:
+            write_generated_impact(pathlib.Path(sys.argv[1]).resolve(), pathlib.Path(sys.argv[2]).resolve(),
+                                   pathlib.Path(sys.argv[sys.argv.index("--impact-state") + 1]))
+            sys.exit(0)
         planner = focused_plan if focused else selection
         print(planner(pathlib.Path(sys.argv[1]).resolve(), pathlib.Path(sys.argv[2]).resolve(),
                       sys.argv[3], sys.stdin.read().splitlines()))
     except (OSError, ValueError, ET.ParseError, subprocess.CalledProcessError) as error:
-        if focused:
+        if focused or "--impact-state" in sys.argv:
             print("Cannot safely focus verification: " + str(error), file=sys.stderr)
             sys.exit(2)
         # Unknown model/deletion must not silently omit verification.

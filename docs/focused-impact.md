@@ -1,8 +1,30 @@
-# Declared impact for contracts and shared resources
+# Automatic impact for contracts and shared resources
 
 Focused planning must not guess ownership from company, artifact, schema or module
-names. It uses local, unconditional reactor declarations and POM relationships.
-There is no implicit `boot` owner and no automatic exclusion of Avro/YAML fixtures.
+names. It uses the current local, unconditional reactor and POM relationships.
+**No hand-maintained impact JSON is required.**
+
+## Generated state, not maintained policy
+
+`init`, `doctor`, `verify-changes-preview` and `verify-changes` refresh
+`.makevn/impact.json` automatically. It describes the detected Maven base and
+shared-resource strategy. It is disposable inspection state: never edit/version
+it, and never rely on its contents to select tests. Every preview/run recomputes
+ownership from current POMs; added/removed modules cannot leave a stale owner list.
+
+For a plain root aggregator (`packaging=pom`, unconditional modules, no root-level
+executable/test sources), shared root `src/test/resources` can affect any declared
+module. Without a proven narrower scope, makevn conservatively selects **every
+reactor module's complete suite**, including aggregators with verification goals.
+The plan displays those owners and explains this potentially expensive scope.
+Preparation still skips UT/IT; owner verification still runs without `-am`.
+This is a classified shared-test-resource scope, not a silent switch to exhaustive.
+
+This default is **Maven module verification only**. It does not execute or prove
+external Karate/E2E checks, root build lifecycle checks, global coverage or global
+CRAP gates. Keep those workflows separately. Generated state never asserts that
+no external consumers exist. Missing/conditional modules, root source owners,
+linked inputs or otherwise ambiguous models still require `--exhaustive`.
 
 ## Nested contract POMs
 
@@ -20,15 +42,16 @@ structure and unclassified property uses require exhaustive verification. This i
 not an effective-POM evaluator: it does not download parents, activate settings or
 execute repository code. Existing full CI gates remain mandatory.
 
-A matching `maven-dependency-plugin` artifactItem version is also supported. Its
-explicit output directories must stay in the contract module or have a declared
-shared-resource scope. Other plugin/property uses remain unsupported.
+A matching `maven-dependency-plugin` artifactItem version is also supported. Explicit
+output directories must stay in the contract module or have a safe shared-resource
+scope. Root test-resource outputs use the same automatic conservative strategy,
+without requiring a configuration file. Other plugin/property uses remain unsupported.
 
-## Shared test resource declarations
+## Optional advanced narrowing
 
-Place `makevn-impact.json` at the **Git repository root**. This is an optional,
-repository-owned declaration, not generated configuration or a shell script.
-Example with neutral names (replace every path/module with your own reactor):
+Repositories that explicitly want a smaller shared-resource plan can optionally
+provide `makevn-impact.json` at the **Git root**. This is an authored override,
+**not the generated `.makevn/impact.json` and not required for normal use**.
 
 ```json
 {
@@ -43,33 +66,24 @@ Example with neutral names (replace every path/module with your own reactor):
 }
 ```
 
-- `path` is a literal, repository-relative directory/file prefix under the
-  **Maven-root** `src/test/resources`; no globs, absolute paths, parent traversal
-  or linked inputs. Matching uses path boundaries, not string-prefix guessing.
-- `modules` is a nonempty list of **all Maven test consumers**, relative to the
-  Maven root. Each must be a declared, non-aggregator leaf module. Their **full
-  suites** run, not only tests inferred from source imports. The declaration is
-  an explicit responsibility of the repository maintainer, not proof discovered
-  by makevn. Listing a generator alone is insufficient.
-- `externalChecks` is a required array of descriptions of required checks outside
-  this Maven reactor. Empty means the maintainer declares no additional external
-  checks for this scope. If nonempty, focused planning **stops and names them**:
-  exhaustive verifies Maven only; those external checks must run separately.
-  Descriptions are never executed as commands. Do not leave this empty merely to
-  bypass shared Karate/E2E infrastructure impact.
-- Overlapping mappings union their consumers; no mapping can subtract tests or
-  override an external-check requirement.
-- Deleted fixtures are matched too. Unmapped root resources and unrelated build
-  changes still fail closed. The file cannot hide production Java or POM changes.
-- A versioned change to `makevn-impact.json` itself is a verification-policy
-  change requiring exhaustive verification; it is not silently ignored.
+- `path`: literal repository-relative prefix under Maven-root `src/test/resources`;
+  no globs, traversal, absolute paths or links. Matches use path boundaries.
+- `modules`: nonempty list of all Maven test consumers, relative to the Maven root;
+  declared non-aggregator leaf modules. The maintainer, not makevn, takes
+  responsibility for narrowing. A generator alone does not prove consumers.
+- `externalChecks`: required array of descriptions of required non-Maven checks.
+  A nonempty list blocks focused planning and names them. Exhaustive verifies
+  Maven only; run the external checks separately. Descriptions are never executed.
+  An empty array is an explicit maintainer declaration, not an automatic guess.
+- Overlapping explicit mappings union owners, never override an external blocker.
+  Unmapped root test resources retain the automatic full-reactor suite scope.
+- Invalid declarations fail closed and are never silently replaced. A versioned
+  policy-file change itself still requires exhaustive verification.
 
-Review declarations alongside build/test configuration. Both CLI and MCP use the
-same planner and report missing/invalid scope or external-check blockers. No MCP
-server changes or company-specific rules are needed.
-
-Focused coverage evidence fingerprints this declaration and declared shared
-inputs (including non-Java/binary fixtures). Editing them invalidates the previous
-run; rerun verification. Contract/fixture-only changes without changed production
-Java classes can yield **not applicable** coverage/CRAP after successful focused
-verification, not a global gate pass.
+Both CLI and MCP use the same backend planner and expose scope limitations.
+Focused evidence fingerprints POMs, optional declarations and shared inputs,
+including Git-ignored binary fixtures. Editing inputs invalidates the previous
+coverage/CRAP evidence; editing generated state cannot narrow or invalidate it.
+Contract/fixture-only changes without changed production Java classes can yield
+**not applicable** incremental coverage/CRAP after successful verification, never
+an overall gate pass.

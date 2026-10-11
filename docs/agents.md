@@ -878,9 +878,13 @@ full coverage/CI gates remain separate. For MCP use `arguments`, not `args`, and
 
 ### Generic contract and shared-resource impact
 
-Nested leaf dependency-version bumps can select their local transitive consumer
-suites. Shared Maven-root test resources require reviewed `makevn-impact.json`
-declarations of all Maven owners and external checks. Never infer owners from
-company/module/schema names, ignore fixtures, or declare externalChecks empty
-without evidence. Non-Maven checks block focused planning and must be verified
-separately even after exhaustive Maven verification. See [Focused impact](focused-impact.md).
+Nested leaf dependency-version bumps select local transitive consumer suites.
+No manually maintained impact JSON is required. Init/doctor and every preview/run
+refresh disposable `.makevn/impact.json`; selection never trusts that snapshot.
+Shared root test resources in a plain unconditional aggregator default to all
+reactor module suites, visibly listed in the plan. This classified Maven-only
+scope does not prove external/E2E or global gates. Ambiguous models still stop;
+never infer owners from company/module/schema names or ignore fixtures.
+Optional authored `makevn-impact.json` narrows only by explicit maintainer policy;
+never invent declarations to bypass required external checks.
+See [Focused impact](focused-impact.md).

@@ -45,6 +45,9 @@ class ImpactTests(unittest.TestCase):
         subprocess.run(['git', '-C', str(self.repo), 'add', '.'], check=True)
         subprocess.run(['git', '-C', str(self.repo), '-c', 'user.name=Test', '-c', 'user.email=test@example.org', 'commit', '-qm', 'fixture'], check=True)
 
+    def all_suites(self):
+        return 'adapter\t*\ncontracts\t*\ncontracts/event\t*\nrunner\t*\nunrelated\t*'
+
     def mapping(self, **overrides):
         rule = dict(path='workspace/src/test/resources/shared', modules=['adapter', 'runner'], externalChecks=[])
         rule.update(overrides)
@@ -60,14 +63,12 @@ class ImpactTests(unittest.TestCase):
         self.bump()
         self.assertEqual(self.plan('workspace/contracts/event/pom.xml'), 'adapter\t*\ncontracts/event\t*\nrunner\t*')
 
-    def test_shared_resources_require_explicit_scope_and_keep_full_suites(self):
+    def test_shared_resources_default_to_complete_reactor_suites(self):
         path = 'workspace/src/test/resources/shared/v2/schema.avsc'
-        with self.assertRaises(ValueError):
-            self.plan(path)
+        self.assertEqual(self.plan(path), self.all_suites())
         self.mapping()
         self.assertEqual(self.plan(path, 'workspace/src/test/resources/shared/examples.yml', 'workspace/src/test/resources/shared/src/nested.avsc'), 'adapter\t*\nrunner\t*')
-        with self.assertRaises(ValueError):
-            self.plan('workspace/src/test/resources/shared-other/schema.avsc')
+        self.assertEqual(self.plan('workspace/src/test/resources/shared-other/schema.avsc'), self.all_suites())
 
     def test_resource_mapping_rejects_external_checks(self):
         self.mapping(externalChecks=['external integration suite'])
@@ -94,13 +95,12 @@ class ImpactTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 self.plan('workspace/contracts/event/pom.xml')
 
-    def test_plugin_unpack_outside_owner_requires_shared_mapping(self):
+    def test_plugin_unpack_shared_output_uses_automatic_scope_without_mapping(self):
         plugin = '<build><plugins><plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-dependency-plugin</artifactId><configuration><outputDirectory>../../src/test/resources/shared</outputDirectory><artifactItems><artifactItem><groupId>external</groupId><artifactId>wire</artifactId><version>${wire.version}</version></artifactItem></artifactItems></configuration></plugin></plugins></build>'
         self.write('contracts/event/pom.xml', self.contract + plugin)
         self.commit()
         self.bump(plugin)
-        with self.assertRaises(ValueError):
-            self.plan('workspace/contracts/event/pom.xml')
+        self.assertEqual(self.plan('workspace/contracts/event/pom.xml'), self.all_suites())
         self.mapping()
         self.assertEqual(self.plan('workspace/contracts/event/pom.xml'), 'adapter\t*\ncontracts/event\t*\nrunner\t*')
 
@@ -159,9 +159,8 @@ class ImpactTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stdout.strip(), 'adapter\t*\ncontracts/event\t*\nrunner\t*')
         result = subprocess.run(command, input='workspace/src/test/resources/shared/schema.avsc\n', text=True, capture_output=True)
-        self.assertEqual(result.returncode, 2)
-        self.assertIn('No declared shared-resource scope', result.stderr)
-        self.assertIn('makevn-impact.json', result.stderr)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout.strip(), self.all_suites())
         self.mapping(externalChecks=['browser E2E'])
         result = subprocess.run(command, input='workspace/src/test/resources/shared/schema.avsc\n', text=True, capture_output=True)
         self.assertEqual(result.returncode, 2)
@@ -175,6 +174,37 @@ class ImpactTests(unittest.TestCase):
         other.write_text(other.read_text().replace('<wire.version>1', '<wire.version>2'))
         with self.assertRaises(ValueError):
             self.plan('workspace/contracts/event/alternate-pom.xml')
+
+    def test_generated_state_refreshes_reactor_and_is_never_trusted(self):
+        command = [sys.executable, str(ROOT / 'libexec/makevn/common/changes_scope.py'), str(self.repo), str(self.base), 'HEAD', '--impact-state', str(self.repo / '.makevn/impact.json')]
+        result = subprocess.run(command, text=True, capture_output=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        state = self.repo / '.makevn/impact.json'
+        data = json.loads(state.read_text())
+        self.assertEqual(data['origin'], 'generated')
+        self.assertEqual(data['strategy'], 'all-reactor-suites')
+        state.write_text('{"modules": ["adapter"]}')
+        self.assertEqual(self.plan('workspace/src/test/resources/shared/schema.avsc'), self.all_suites())
+        root = self.base / 'pom.xml'
+        root.write_text(root.read_text().replace('<module>unrelated</module>', '<module>additional</module>'))
+        self.write('additional/pom.xml', self.parent('root', '../pom.xml') + '<artifactId>additional</artifactId>')
+        subprocess.run(command, text=True, capture_output=True, check=True)
+        self.assertIn('additional', json.loads(state.read_text())['modules'])
+        self.assertNotIn('unrelated', json.loads(state.read_text())['modules'])
+        self.assertIn('additional\t*', self.plan('workspace/src/test/resources/shared/schema.avsc'))
+
+    def test_unclassifiable_root_still_rejects_automatic_resource_scope(self):
+        for body in [ '<artifactId>root</artifactId><packaging>jar</packaging>', '<artifactId>root</artifactId><packaging>pom</packaging><profiles><profile><modules><module>adapter</module></modules></profile></profiles>' ]:
+            self.write('pom.xml', body)
+            with self.assertRaises(ValueError):
+                self.plan('workspace/src/test/resources/shared/schema.avsc')
+
+    def test_root_test_code_cannot_be_skipped_by_automatic_scope(self):
+        path = self.base / 'src/test/custom/RootTests.txt'
+        path.parent.mkdir(parents=True)
+        path.touch()
+        with self.assertRaises(ValueError):
+            self.plan('workspace/src/test/resources/shared/schema.avsc')
 
     def test_mapping_cannot_hide_java_or_build_changes(self):
         self.mapping()

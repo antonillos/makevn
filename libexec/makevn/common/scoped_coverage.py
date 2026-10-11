@@ -14,7 +14,7 @@ import xml.etree.ElementTree as ET
 VERSION = '0.8.14'
 
 
-def fingerprint(repo):
+def fingerprint(repo, base=None):
     head = subprocess.check_output(['git', '-C', str(repo), 'rev-parse', 'HEAD'])
     git_root = Path(subprocess.check_output(['git', '-C', str(repo), 'rev-parse', '--show-toplevel']).decode().strip()).resolve()
     paths = set(subprocess.check_output(['git', '-C', str(git_root), 'ls-files', '-z', '--cached', '--others', '--exclude-standard']).split(b'\0'))
@@ -28,6 +28,8 @@ def fingerprint(repo):
     except (ValueError, KeyError, TypeError):
         # The planner validates rules; even malformed edits change the byte hash.
         resource_paths = []
+    if base is not None:
+        resource_paths.append((base.resolve() / 'src/test/resources').relative_to(git_root))
     for prefix in resource_paths:
         if prefix.is_absolute() or '..' in prefix.parts or not any(prefix.parts[i:i+3] == ('src', 'test', 'resources') for i in range(len(prefix.parts) - 2)):
             raise ValueError('Invalid shared-resource path in impact configuration')
@@ -69,7 +71,7 @@ def prepare(repo, state, base, owners, sources, reference="HEAD"):
     comparison_head = subprocess.check_output(["git", "-C", str(repo), "rev-parse", comparison]).decode().strip()
     # Pending replaces successful evidence before any Maven execution.
     state.mkdir(parents=True, exist_ok=True)
-    manifest = {'status': 'pending', 'fingerprint': fingerprint(repo), 'base': str(base),
+    manifest = {'status': 'pending', 'fingerprint': fingerprint(repo, base), 'base': str(base),
                 'owners': owners, 'sources': sources, 'comparison': comparison, 'comparison_head': comparison_head}
     (state / 'run.json').write_text(json.dumps(manifest))
     for evidence in state.glob('evidence-*'):
@@ -86,7 +88,7 @@ def prepare(repo, state, base, owners, sources, reference="HEAD"):
 
 def finish(repo, state):
     manifest = json.loads((state / 'run.json').read_text())
-    if manifest['fingerprint'] != fingerprint(repo):
+    if manifest['fingerprint'] != fingerprint(repo, Path(manifest['base'])):
         raise ValueError('Sources/config changed during focused verification; rerun verify-changes')
     base = Path(manifest['base'])
     snapshot = Path(tempfile.mkdtemp(prefix='evidence-', dir=state))
@@ -130,7 +132,7 @@ def load(repo, state):
     comparison_head = subprocess.check_output(['git', '-C', str(repo), 'rev-parse', manifest['comparison']]).decode().strip()
     if comparison_head != manifest['comparison_head']:
         raise ValueError('Comparison base changed; rerun verify-changes')
-    if manifest['status'] != 'success' or manifest['fingerprint'] != fingerprint(repo):
+    if manifest['status'] != 'success' or manifest['fingerprint'] != fingerprint(repo, Path(manifest['base'])):
         raise ValueError('Focused coverage is incomplete or sources/config changed; rerun verify-changes')
     if manifest.get('missing'):
         raise ValueError('Missing changed-class bytecode; rerun verify-changes: ' + ', '.join(manifest['missing']))

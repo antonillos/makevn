@@ -938,7 +938,10 @@ remains a compatible alias; broader selected suites require `--exhaustive` (MCP
 `focused: false`). Unknown impact requires a scope decision, never an automatic
 full verification fallback.
 
-Shared root fixtures require explicit repository-owned `makevn-impact.json` scope.
-Nested leaf contract version bumps use local reactor/POM consumer relationships,
-not company-specific names. Read `docs/focused-impact.md` before proposing a scope;
-never invent an empty externalChecks list to bypass Karate/E2E consumers.
+Shared root fixtures do not require manually maintained configuration. Init/doctor
+and previews/runs regenerate `.makevn/impact.json` from the current reactor;
+selection never trusts generated state. Plain aggregator shared test resources
+conservatively select all reactor module suites. Explain the visible scope and
+that external/E2E/global gates are not evaluated; unknown models still reject.
+Optional authored `makevn-impact.json` is advanced explicit narrowing, not required.
+Read `docs/focused-impact.md`; never invent external-check declarations.
