@@ -1694,7 +1694,7 @@ fn run_backend_with_loader(
                     }
                 }
             }
-            if let Some(tail_window) = tail_window.as_mut() {
+            if let Some(tail_window) = tail_window.as_mut().filter(|_| tail_active) {
                 if let Some(metadata) = metadata.as_ref() {
                     tail_window.set_prefix_lines(tail_status_lines(
                         global_started_at.elapsed(),
@@ -1789,17 +1789,24 @@ fn run_backend_with_loader(
                     cancel_requested = true;
                     cancel_requested_at = Some(Instant::now());
                 }
-                InputEvent::StartTail => {
-                    if !tail_active {
-                        if let Some(metadata) = metadata
-                            .as_ref()
-                            .filter(|metadata| !metadata.log_path.is_empty())
-                        {
-                            renderer.clear_frame_line();
-                            tail_window =
-                                Some(LogTailWindow::new(PathBuf::from(&metadata.log_path)));
-                            tail_active = true;
+                InputEvent::ToggleTail => {
+                    if tail_active {
+                        if let Some(window) = tail_window.as_mut() {
+                            window
+                                .clear()
+                                .map_err(|error| format!("failed to clear tailed log: {error}"))?;
                         }
+                        tail_active = false;
+                    } else if let Some(metadata) = metadata
+                        .as_ref()
+                        .filter(|metadata| !metadata.log_path.is_empty())
+                    {
+                        renderer.clear_frame_line();
+                        LogTailWindow::follow_log(
+                            &mut tail_window,
+                            PathBuf::from(&metadata.log_path),
+                        );
+                        tail_active = true;
                     }
                 }
                 InputEvent::IncreaseLines => line_delta = 1,
@@ -1808,7 +1815,7 @@ fn run_backend_with_loader(
             }
         }
 
-        if let Some(tail_window) = tail_window.as_mut() {
+        if let Some(tail_window) = tail_window.as_mut().filter(|_| tail_active) {
             if let Some(metadata) = metadata.as_ref() {
                 tail_window.set_prefix_lines(tail_status_lines(
                     global_started_at.elapsed(),
@@ -1879,7 +1886,7 @@ fn run_backend_with_loader(
         }
     }
 
-    if let Some(tail_window) = tail_window.as_mut() {
+    if let Some(tail_window) = tail_window.as_mut().filter(|_| tail_active) {
         if let Some(metadata) = metadata.as_ref() {
             tail_window.set_prefix_lines(tail_status_lines(
                 global_started_at.elapsed(),
@@ -2342,13 +2349,15 @@ fn dashboard_hint(interrupt_hint: &str) -> String {
 fn tail_hint(interrupt_hint: &str) -> String {
     if use_color() {
         format!(
-            "{} {} {}",
+            "{} {} {} {} {}",
+            style("97", "t"),
+            dim_text("hide tail |"),
             style("97", "+/-"),
             dim_text("lines |"),
             interrupt_hint
         )
     } else {
-        format!("+/- lines | {interrupt_hint}")
+        format!("t hide tail | +/- lines | {interrupt_hint}")
     }
 }
 
@@ -2666,17 +2675,8 @@ impl LogTailWindow {
         let mut output_lines = Vec::with_capacity(
             self.prefix_lines.len() + visible_capacity + usize::from(self.loader_line.is_some()),
         );
-        let tail_notice_index = self.prefix_lines.len().saturating_sub(1);
         output_lines.extend(
-            self.prefix_lines[..tail_notice_index]
-                .iter()
-                .map(|line| status_line_text_for_width(line, width)),
-        );
-        if let Some(loader_line) = self.loader_line.as_ref() {
-            output_lines.push(status_line_text_for_width(loader_line, width));
-        }
-        output_lines.extend(
-            self.prefix_lines[tail_notice_index..]
+            self.prefix_lines
                 .iter()
                 .map(|line| status_line_text_for_width(line, width)),
         );
@@ -2686,6 +2686,9 @@ impl LogTailWindow {
                 .map(|line| tail_line_text_for_width(line, width)),
         );
         output_lines.extend((self.lines.len()..visible_capacity).map(|_| String::new()));
+        if let Some(loader_line) = self.loader_line.as_ref() {
+            output_lines.push(status_line_text_for_width(loader_line, width));
+        }
         output_lines
     }
 
@@ -2908,7 +2911,7 @@ struct SpinnerRenderer {
 enum InputEvent {
     None,
     Interrupt,
-    StartTail,
+    ToggleTail,
     IncreaseLines,
     DecreaseLines,
 }
@@ -3239,7 +3242,7 @@ fn decode_spinner_input(byte: u8, escape_deadline: &mut Option<Instant>) -> Inpu
                 InputEvent::None
             }
         }
-        b't' | b'T' => InputEvent::StartTail,
+        b't' | b'T' => InputEvent::ToggleTail,
         b'+' => InputEvent::IncreaseLines,
         b'-' => InputEvent::DecreaseLines,
         _ => InputEvent::None,

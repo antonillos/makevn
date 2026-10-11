@@ -104,7 +104,7 @@ class Screen:
         return [''.join(self.rows.get(row, [])) for row in range(max(self.rows, default=0) + 1)]
 
 
-def verify(binary, exit_code=0, tail_enabled=True):
+def verify(binary, exit_code=0, tail_enabled=True, hide_at_end=False):
     with tempfile.TemporaryDirectory(prefix='makevn-tail-metadata-') as folder:
         repo = Path(folder)
         backend_path = repo / 'libexec/makevn/backend.sh'
@@ -156,6 +156,14 @@ def verify(binary, exit_code=0, tail_enabled=True):
             phases = ['karate-docker-up', 'package', 'run-app-bg', 'run-app-bg',
                       'docker-ps-required', 'karate-test']
             for index, phase in enumerate(phases):
+                if tail_enabled and index == 3:
+                    # Metadata changes while the tail is hidden.
+                    until(lambda: (repo / 'stage').read_text() == str(index)
+                          and any(f'makevn {phase}' in line for line in screen.lines()))
+                    settle()
+                    assert not any('tailing log:' in line or 'LOG_STAGE_' in line
+                                   for line in screen.lines()), '\n'.join(screen.lines())
+                    os.write(fd, b'T')
                 def complete_phase():
                     lines = screen.lines()
                     if not tail_enabled:
@@ -166,7 +174,7 @@ def verify(binary, exit_code=0, tail_enabled=True):
                     return (any(f'LOG_STAGE_{index}' in line for line in lines)
                             and any(f'makevn {phase}' in line for line in lines)
                             and len(notices) == 1
-                            and screen.row - notices[0] - 1 == 6
+                            and screen.row - notices[0] - 1 == 7
                             and screen.column == 0)
                 until(complete_phase)
                 lines = screen.lines()
@@ -175,13 +183,32 @@ def verify(binary, exit_code=0, tail_enabled=True):
                 if tail_enabled:
                     assert sum('tailing log:' in line for line in lines) == 1, '\n'.join(lines)
                     notice_row = next(row for row, line in enumerate(lines) if 'tailing log:' in line)
-                    assert screen.row - notice_row - 1 == 6, f'row={screen.row} notice={notice_row}\n' + '\n'.join(lines)
+                    assert screen.row - notice_row - 1 == 7, f'row={screen.row} notice={notice_row}\n' + '\n'.join(lines)
+                    footers = [row for row, line in enumerate(lines) if 't hide tail' in line]
+                    assert footers == [screen.row - 1], '\n'.join(lines)
                     if index > 0:
                         assert any('karate-docker-up |' in line and '1s' in line for line in lines), '\n'.join(lines)
                     if index == 3:
                         assert sum('LOG_STAGE_2' in line for line in lines) == 1, '\n'.join(lines)
                     if index and index != 3:
                         assert not any(f'LOG_STAGE_{index - 1}' in line for line in lines), '\n'.join(lines)
+                if tail_enabled and index in (1, 2, 5):
+                    os.write(fd, b't')
+                    until(lambda: any('t tail' in line for line in screen.lines())
+                          and not any('tailing log:' in line or 'LOG_STAGE_' in line
+                                      for line in screen.lines()))
+                    settle()
+                    assert sum('Working for ' in line for line in screen.lines()) == 1
+                    if index == 1 or (index == 5 and not hide_at_end):
+                        os.write(fd, b't')
+                        until(complete_phase)
+                        # Resizing the tail still leaves the footer last.
+                        os.write(fd, b'-')
+                        until(lambda: screen.row - next(
+                            (row for row, line in enumerate(screen.lines())
+                             if 'tailing log:' in line), screen.row) - 1 == 6)
+                        os.write(fd, b'+')
+                        until(complete_phase)
                 (repo / f'ack-{index}').touch()
             deadline = time.monotonic() + 15
             while time.monotonic() < deadline:
@@ -196,7 +223,9 @@ def verify(binary, exit_code=0, tail_enabled=True):
             final = screen.lines()
             for phase in dict.fromkeys(phases):
                 assert any(f'{phase} |' in line and f'{phase}.log' in line for line in final), '\n'.join(final)
-            assert not any('Working for ' in line for line in screen.lines())
+            assert not any('Working for ' in line or 'tailing log:' in line
+                           or 't hide tail' in line or 'LOG_STAGE_' in line
+                           for line in screen.lines()), '\n'.join(screen.lines())
         finally:
             os.close(fd)
             try:
@@ -214,6 +243,7 @@ if __name__ == '__main__':
         verify(str(Path(sys.argv[1]).resolve()))
         verify(str(Path(sys.argv[1]).resolve()), 42)
         verify(str(Path(sys.argv[1]).resolve()), 42, False)
+        verify(str(Path(sys.argv[1]).resolve()), hide_at_end=True)
         subprocess.run([sys.executable, str(Path(__file__).with_name('dashboard_transition_pty_test.py')),
                         str(Path(sys.argv[1]).resolve())], check=True)
         print('Tail metadata PTY regression tests passed')

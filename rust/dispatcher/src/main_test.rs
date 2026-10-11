@@ -104,11 +104,11 @@ fn spinner_renderer_handles_tty_input_and_dashboard_lifecycle() {
     master.write_all(b"tT+-x\x1b\x1b").unwrap();
     assert!(matches!(
         renderer.poll_input().unwrap(),
-        InputEvent::StartTail
+        InputEvent::ToggleTail
     ));
     assert!(matches!(
         renderer.poll_input().unwrap(),
-        InputEvent::StartTail
+        InputEvent::ToggleTail
     ));
     assert!(matches!(
         renderer.poll_input().unwrap(),
@@ -748,6 +748,7 @@ fn backend_tail_notice_line_contains_log_path() {
 fn tail_hint_contains_plus_minus() {
     let hint = super::tail_hint("esc interrupt");
     assert!(hint.contains("+/-"));
+    assert!(hint.contains("t hide tail"));
     assert!(hint.contains("esc interrupt"));
 }
 
@@ -1600,7 +1601,7 @@ fn tail_status_lines_put_completed_commands_above_running_tail() {
 }
 
 #[test]
-fn tail_window_places_loader_above_tailed_log() {
+fn tail_window_places_loader_after_tailed_log() {
     let log_path = env::temp_dir().join("makevn-tail-loader-order.log");
     let mut tail_window = super::LogTailWindow::new(log_path);
     tail_window.set_prefix_lines(vec![
@@ -1615,12 +1616,26 @@ fn tail_window_places_loader_above_tailed_log() {
 
     assert_eq!(lines[0], "Working for 1s >");
     assert_eq!(lines[1], "[•] makevn compile");
-    assert_eq!(lines[2], "........  esc interrupt");
-    assert_eq!(lines[3], "-> tailing log: .makevn/logs/compile.log");
+    assert_eq!(lines[2], "-> tailing log: .makevn/logs/compile.log");
+    assert_eq!(lines[4], "........  esc interrupt");
     assert_eq!(
-        super::visible_char_count(&lines[4]),
+        super::visible_char_count(&lines[3]),
         "[INFO] compiling".len()
     );
+}
+
+#[test]
+fn tail_window_footer_follows_reserved_rows_and_is_truncated() {
+    let mut window = super::LogTailWindow::new(env::temp_dir().join("tail-footer.log"));
+    window.set_loader_line(Some(String::from("telemetry and controls")));
+    let lines = window.rendered_output_lines(8, 4);
+    assert_eq!(
+        &lines[..4],
+        &[String::new(), String::new(), String::new(), String::new()]
+    );
+    assert_eq!(lines[4], "teleme~");
+    window.set_loader_line(None);
+    assert_eq!(window.rendered_output_lines(8, 4).len(), 4);
 }
 
 #[test]
@@ -2552,7 +2567,6 @@ fn docker_scope_label_uses_cpu_color_and_dims_when_unavailable() {
         format!("{} {}", dim_text("ctr"), unavailable)
     );
 }
-
 
 #[test]
 fn format_help_does_not_advertise_removed_file_option() {

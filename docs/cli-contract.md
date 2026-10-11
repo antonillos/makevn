@@ -741,3 +741,12 @@ Other runtimes receive generic guidance to start the configured engine and check
 `DOCKER_HOST` / the active Docker context. An installed runtime alone is not
 evidence that it is selected. makevn never starts or switches runtimes
 automatically.
+
+### Interactive tail visibility
+
+During a managed-log command, `t` or `T` toggles the live tail without
+interrupting the command or stopping log capture. Hiding it restores the normal
+dashboard; showing it again follows the current phase's log and preserves the
+chosen tail height within that command. `+/-` adjusts the visible log rows.
+The telemetry and control hints are the last row of the live block, below the
+tail (including its reserved empty rows), not fixed to the terminal's bottom.
