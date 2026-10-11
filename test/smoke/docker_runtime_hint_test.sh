@@ -50,3 +50,30 @@ set -e
 grep -Fq "colima start" "${TMP}/output"
 grep -Fq "colima start" "${TMP}/.makevn/logs/docker-up.log"
 grep -Fq "colima start" "${MAKEVN_BACKEND_DETAIL_OUT}"
+
+# Required-service checks preserve Compose daemon errors for the reporter.
+cat > "${TMP}/compose" <<'COMPOSE'
+#!/usr/bin/env bash
+if [[ "${FAKE_COMPOSE_MODE:-}" == stopped ]]; then
+  printf 'failed to connect to the docker API at unix:///Users/test/.colima/work/docker.sock\n' >&2
+  exit 1
+fi
+# An available daemon with no container must not get a runtime hint.
+printf 'benign compose warning\n' >&2
+COMPOSE
+chmod +x "${TMP}/compose"
+for mode in stopped missing; do
+  FAKE_COMPOSE_MODE="${mode}" COMPOSE_ARGS='-f ignored' SERVICES='db cache' DOCKER_COMPOSE="${TMP}/compose" \
+    bash "${ROOT_DIR}/libexec/makevn/docker/ps.sh" > "${TMP}/required.log"
+  grep -q 'missing' "${TMP}/required.log"
+  : > "${MAKEVN_BACKEND_DETAIL_OUT}"
+  makevn_report_docker_runtime_failure docker-ps-required "${TMP}/required.log" 2>/dev/null
+  if [[ "${mode}" == stopped ]]; then
+    grep -Fq '.colima/work/docker.sock' "${TMP}/required.log"
+    grep -Fq 'colima start --profile work' "${MAKEVN_BACKEND_DETAIL_OUT}"
+  else
+    [[ ! -s "${MAKEVN_BACKEND_DETAIL_OUT}" ]]
+    ! grep -Fq 'Hint:' "${TMP}/required.log"
+    ! grep -Fq 'benign compose warning' "${TMP}/required.log"
+  fi
+done
