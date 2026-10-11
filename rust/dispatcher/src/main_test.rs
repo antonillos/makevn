@@ -2695,3 +2695,62 @@ fn doctor_reset_option_is_accepted_by_rust_dispatcher() {
     }
     assert!(super::validate_command(&"doctor".into(), &["--unknown".into()]).is_err());
 }
+
+#[test]
+fn focused_phases_render_under_one_parent_without_losing_logs_or_failures() {
+    let parent = CommandSummary {
+        title: "verify boot (*)".into(), duration: "30s".into(),
+        log_path: Some("/repo/last.log".into()), relative_log_path: Some("last.log".into()),
+        exit_code: 1, detail_lines: vec!["command failure".into()],
+    };
+    let phase = CommandSummary {
+        title: "prepare dependencies (no tests)".into(), duration: "5s".into(),
+        log_path: Some("/repo/prepare.log".into()), relative_log_path: Some("prepare.log".into()),
+        exit_code: 0, detail_lines: vec!["phase detail".into()],
+    };
+    let group = super::focused_summary(parent, vec![phase]);
+    let lines = super::final_dashboard_lines(Duration::from_secs(30), &[group], false);
+    assert_eq!(lines[1], "[x] verify-changes | 30s");
+    assert_eq!(lines[2], "│  [✓] prepare dependencies (no tests) | 5s | prepare.log");
+    assert!(lines.iter().any(|line| line.contains("phase detail")));
+    assert!(lines.iter().any(|line| line.contains("command failure")));
+    assert!(!lines.iter().any(|line| line.starts_with("[✓] prepare")));
+}
+
+#[test]
+fn focused_live_and_tail_show_active_parent_and_incremental_subtasks() {
+    let mut metadata = super::pending_backend_metadata("verify-changes");
+    metadata.title = "verify boot (*)".into();
+    metadata.relative_log_path = "boot.log".into();
+    let phase = super::summary_from_backend_metadata(0, "4s".into(), "prepare dependencies (no tests)", None);
+    let group = super::focused_summary(
+        super::summary_from_backend_metadata(0, "5s".into(), "verify-changes", None),
+        vec![phase],
+    );
+    let dashboard = super::dashboard_output_lines(
+        Duration::from_secs(5), &[group.clone()], &[], &metadata, 0, 0.0, "interrupt",
+    );
+    assert_eq!(dashboard[1], "[•] makevn verify-changes");
+    assert!(!dashboard.iter().any(|line| line.starts_with("[✓] verify-changes")));
+    assert!(dashboard.iter().any(|line| line == "│  [✓] prepare dependencies (no tests) | 4s"));
+    assert!(dashboard.iter().any(|line| line == "│  [•] makevn verify boot (*) | boot.log"));
+    let tail = tail_status_lines(Duration::from_secs(5), &[group], &metadata);
+    assert_eq!(tail[1], "[•] makevn verify-changes");
+    assert!(tail.iter().any(|line| line.starts_with("│  [•]")));
+}
+
+
+#[test]
+fn focused_success_remains_one_check_before_coverage() {
+    let parent = super::summary_from_backend_metadata(0, "12s".into(), "verify-changes", None);
+    let phases = (0..30).map(|index|
+        super::summary_from_backend_metadata(0, "1s".into(), &format!("verify module-{index} (*)"), None)
+    ).collect();
+    let group = super::focused_summary(parent, phases);
+    let coverage = super::summary_from_backend_metadata(0, "2s".into(), "coverage-changes", None);
+    let lines = super::final_dashboard_lines(Duration::from_secs(14), &[group, coverage], true);
+    assert_eq!(lines.iter().filter(|line| line.starts_with("[✓]")).count(), 2);
+    assert_eq!(lines.iter().filter(|line| line.starts_with("│  [✓]")).count(), 30);
+    assert_eq!(lines[1], "[✓] verify-changes | 12s");
+    assert_eq!(lines[32], "[✓] coverage-changes | 2s");
+}

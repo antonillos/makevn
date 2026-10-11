@@ -1372,11 +1372,18 @@ fn dispatch_backend_invocations(
             detail_lines: stderr_details,
             ..summary.clone()
         };
-        completed_summaries.extend(phases);
-        if needs_fallback {
-            completed_summaries.push(summary);
+        if fallback_title == "verify-changes" && has_phases {
+            completed_summaries.push(focused_summary(summary, phases));
+        } else {
+            completed_summaries.extend(phases);
+            if needs_fallback {
+                completed_summaries.push(summary);
+            }
         }
-        append_command_diagnostics(&mut completed_summaries, diagnostics, has_phases);
+        append_command_diagnostics(
+            &mut completed_summaries, diagnostics,
+            has_phases && fallback_title != "verify-changes",
+        );
 
         if last_exit_code != 0 {
             if let Some(r) = renderer.as_mut() {
@@ -1691,7 +1698,14 @@ fn run_backend_with_loader(
         }
         let mut live_summaries = completed_summaries.to_vec();
         if let Some(phases) = phase_files {
-            live_summaries.extend(phases.read());
+            if fallback_title == "verify-changes" {
+                let parent = summary_from_backend_metadata(
+                    0, format_duration(started_at.elapsed()), fallback_title, None,
+                );
+                live_summaries.push(focused_summary(parent, phases.read()));
+            } else {
+                live_summaries.extend(phases.read());
+            }
         }
         let completed_summaries = live_summaries.as_slice();
         if let Some(metadata_file) = metadata_file {
@@ -2122,6 +2136,44 @@ fn completed_summary_line(summary: &CommandSummary) -> String {
     format!("[{}]{}", mark, dim_text(&rest))
 }
 
+fn focused_summary(mut parent: CommandSummary, phases: Vec<CommandSummary>) -> CommandSummary {
+    let mut details = Vec::new();
+    for phase in phases {
+        details.push(format!("│  {}", completed_summary_line(&phase)));
+        details.extend(phase.detail_lines.iter().map(|line| format!("│    {line}")));
+    }
+    details.extend(parent.detail_lines);
+    parent.title = "verify-changes".to_owned();
+    parent.relative_log_path = None;
+    parent.detail_lines = details;
+    parent
+}
+
+fn live_summary_lines(summaries: &[CommandSummary], metadata: &BackendMetadata) -> Vec<String> {
+    let mut lines = Vec::new();
+    for (index, summary) in summaries.iter().enumerate() {
+        if metadata.command == "verify-changes"
+            && index + 1 == summaries.len()
+            && summary.title == "verify-changes"
+        {
+            lines.push(format!("{} {}", active_action_text("[•]"), active_action_text("makevn verify-changes")));
+            lines.extend(summary.detail_lines.iter().map(|line| detail_line(line)));
+        } else {
+            lines.extend(completed_summary_lines(std::slice::from_ref(summary)));
+        }
+    }
+    lines
+}
+
+fn live_phase_line(metadata: &BackendMetadata, tail: bool) -> String {
+    let line = if tail { backend_header_line(metadata) } else { running_command_line(metadata) };
+    if metadata.command == "verify-changes" {
+        format!("│  {line}")
+    } else {
+        line
+    }
+}
+
 fn completed_summary_lines(completed_summaries: &[CommandSummary]) -> Vec<String> {
     let mut lines = Vec::new();
     for summary in completed_summaries {
@@ -2143,8 +2195,8 @@ fn tail_status_lines(
         "Working for {} >",
         format_duration(global_elapsed)
     )));
-    lines.extend(completed_summary_lines(completed_summaries));
-    lines.push(backend_header_line(metadata));
+    lines.extend(live_summary_lines(completed_summaries, metadata));
+    lines.push(live_phase_line(metadata, true));
     lines.push(backend_tail_notice_line(metadata));
     lines
 }
@@ -3331,13 +3383,8 @@ fn dashboard_output_lines(
             format_duration(global_elapsed)
         ))
     ));
-    for summary in completed_summaries {
-        lines.push(completed_summary_line(summary));
-        for dl in &summary.detail_lines {
-            lines.push(detail_line(dl));
-        }
-    }
-    lines.push(running_command_line(metadata));
+    lines.extend(live_summary_lines(completed_summaries, metadata));
+    lines.push(live_phase_line(metadata, false));
     for dl in current_detail_lines {
         lines.push(detail_line(dl));
     }
