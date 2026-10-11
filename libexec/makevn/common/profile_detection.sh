@@ -1716,6 +1716,10 @@ makevn_refresh_impact() {
   local repo_root="$1" base="${2:-}" git_root summary
   [[ -n "${base}" ]] || base="$(makevn_detect_maven_base_path "${repo_root}" || true)"
   [[ -n "${base}" ]] || return 0
+  if ! command -v python3 >/dev/null 2>&1; then
+    makevn_print_item "Impact analysis" "deferred: Python 3 is required for automatic focused planning; init/doctor remain available without it"
+    return 0
+  fi
   git_root="$(git -C "${repo_root}" rev-parse --show-toplevel 2>/dev/null || printf '%s' "${repo_root}")"
   summary="$(python3 "${MAKEVN_LIBEXEC_DIR}/common/changes_scope.py" "${git_root}" "${base}" HEAD --impact-state "${git_root}/.makevn/impact.json")" || return $?
   makevn_print_item "Impact analysis" "${summary}"

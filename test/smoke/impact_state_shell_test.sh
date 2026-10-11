@@ -48,6 +48,11 @@ print_doctor "${tmp}" --compact > "${tmp}/doctor"
 grep -q 'first' "${tmp}/.makevn/impact.json"
 ! grep -q 'second' "${tmp}/.makevn/impact.json"
 grep -q 'external/E2E and global gates not evaluated' "${tmp}/doctor"
+# Adoption stays independent of Python, with visible deferred analysis.
+mkdir -p "${tmp}/no-python" "${tmp}/empty-path"
+(PATH="${tmp}/empty-path"; makevn_refresh_impact "${tmp}/no-python") > "${tmp}/deferred"
+grep -q 'deferred: Python 3' "${tmp}/deferred"
+[[ ! -e "${tmp}/no-python/.makevn" ]]
 # Unsupported repositories do not create state.
 makevn_detect_maven_base_path() { :; }
 mkdir "${tmp}/unsupported"
