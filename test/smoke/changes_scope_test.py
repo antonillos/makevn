@@ -113,7 +113,7 @@ class ScopeTests(unittest.TestCase):
             repo = pathlib.Path(directory)
             base = repo / 'code'
             base.joinpath('boot').mkdir(parents=True)
-            xml = '<project><artifactId>root</artifactId><properties><event.version>{}</event.version></properties></project>'
+            xml = '<project><artifactId>root</artifactId><modules><module>boot</module></modules><properties><event.version>{}</event.version></properties></project>'
             base.joinpath('pom.xml').write_text(xml.format('3.0'))
             base.joinpath('boot/pom.xml').write_text('''<project><parent><artifactId>root</artifactId></parent>
                 <dependencies><dependency><groupId>api</groupId><artifactId>event</artifactId>
@@ -148,7 +148,7 @@ class ScopeTests(unittest.TestCase):
                         scope.focused_plan(repo, base, 'HEAD', ['.gitignore', path])
 
     def test_inherited_versions_reject_ambiguous_usage(self):
-        xml = '<project><artifactId>root</artifactId><properties><event.version>{}</event.version></properties></project>'
+        xml = '<project><artifactId>root</artifactId><modules><module>boot</module></modules><properties><event.version>{}</event.version></properties></project>'
         dependency = '<dependencies><dependency><version>${event.version}</version></dependency></dependencies>'
         cases = [
             '<profiles><profile>' + dependency + '</profile></profiles>',
@@ -177,10 +177,28 @@ class ScopeTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, r'in build.sh; use --exhaustive'):
                 scope.focused_plan(repo, repo, 'HEAD', ['boot/src/test/resources/type.avsc', 'build.sh'])
 
-    def test_inherited_version_selects_all_consumers_and_rejects_unused_bump(self):
-        xml = '<project><artifactId>root</artifactId><properties><event.version>{}</event.version></properties></project>'
+    def test_inherited_consumer_must_belong_to_declared_reactor(self):
         with tempfile.TemporaryDirectory() as directory:
             base = pathlib.Path(directory)
+            xml = '<project><artifactId>root</artifactId><modules><module>boot</module></modules><properties><event.version>{}</event.version></properties></project>'
+            child = '<project><parent><artifactId>root</artifactId></parent><dependencies><dependency><version>${event.version}</version></dependency></dependencies></project>'
+            base.joinpath('boot').mkdir()
+            base.joinpath('boot/pom.xml').write_text(child)
+            self.assertEqual(scope.bump_consumers(base, scope.parse(xml.format('1')), scope.parse(xml.format('2'))), {'boot'})
+            base.joinpath('example').mkdir()
+            base.joinpath('example/pom.xml').write_text(child)
+            self.assertIsNone(scope.bump_consumers(base, scope.parse(xml.format('1')), scope.parse(xml.format('2'))))
+            base.joinpath('example/pom.xml').write_text('<project/>')
+            for modules in ('<module>${owner}</module>', '<module>missing</module>', '<module>../outside</module>'):
+                candidate = xml.replace('<module>boot</module>', modules)
+                self.assertIsNone(scope.bump_consumers(base, scope.parse(candidate.format('1') if '${' not in candidate else candidate.replace('{}</event', '1</event')),
+                    scope.parse(candidate.format('2') if '${' not in candidate else candidate.replace('{}</event', '2</event'))))
+
+    def test_inherited_version_selects_all_consumers_and_rejects_unused_bump(self):
+        xml = '<project><artifactId>root</artifactId><modules><module>boot</module></modules><properties><event.version>{}</event.version></properties></project>'
+        with tempfile.TemporaryDirectory() as directory:
+            base = pathlib.Path(directory)
+            xml = xml.replace('<module>boot</module>', '<module>boot</module><module>client</module>')
             for owner in ('boot', 'client'):
                 base.joinpath(owner).mkdir()
                 base.joinpath(owner, 'pom.xml').write_text('''<project><parent><artifactId>root</artifactId></parent>

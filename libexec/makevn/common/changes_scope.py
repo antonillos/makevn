@@ -74,9 +74,35 @@ def bump_consumers(base, previous, current):
     return consumers or None
 
 
+def declared_modules(base, current):
+    """Resolve only literal unconditional modules in the local reactor graph."""
+    base = base.resolve()
+    pending, seen = [(base, current)], {base.resolve()}
+    modules = set()
+    while pending:
+        directory, root = pending.pop()
+        if root.findall('./profiles/profile/modules/module'):
+            return None
+        for node in root.findall('./modules/module'):
+            name = (node.text or '').strip()
+            owner = (directory / name).resolve()
+            if not name or '${' in name or not owner.is_relative_to(base) or owner in seen:
+                return None
+            seen.add(owner)
+            pom = owner / 'pom.xml'
+            if not pom.is_file():
+                return None
+            modules.add(owner.relative_to(base).as_posix())
+            pending.append((owner, parse(pom.read_text())))
+    return modules
+
+
 def inherited_version_consumers(base, current, changed):
     """Accept parent properties used only as direct child dependency versions."""
     tokens = {"${" + key + "}" for key in changed}
+    reactor = declared_modules(base, current)
+    if reactor is None:
+        return None
     if any(token in value for node in current.iter() for value in node.attrib.values() for token in tokens):
         return None
     consumers, used = set(), set()
@@ -93,6 +119,8 @@ def inherited_version_consumers(base, current, changed):
                              for token in tokens)]
         if not references:
             continue
+        if pom.parent.relative_to(base).as_posix() not in reactor:
+            return None  # Matching examples/standalone POMs are not -pl projects.
         parent = root.find("parent")
         if (parent is None or parent.findtext("artifactId") != current.findtext("artifactId") or
                 (pom.parent / parent.findtext("relativePath", "../pom.xml")).resolve() != (base / "pom.xml").resolve()):
