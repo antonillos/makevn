@@ -721,6 +721,10 @@ cmd_coverage_changes() {
   if [[ -f "${focused_state}/run.json" ]]; then
     [[ "${explicit_overall}" == false ]] || makevn_die "--overall-threshold requires a full coverage report; run verify-ut-coverage or verify-it-coverage first."
     report_dir="$(makevn_scoped_coverage_report "${repo_root}" "${maven_base_path}")" || return $?
+    if [[ "${report_dir}" == not-applicable ]]; then
+      makevn_print_detail_line "Coverage changes: not applicable — no changed production classes to measure. JaCoCo data may exist; global coverage was not evaluated."
+      return 0
+    fi
     makevn_print_detail_line "Focused coverage: current changed classes, merged UT/IT evidence; not a global coverage gate."
   else
   report_dir="$(makevn_jacoco_report_dir "${maven_base_path}" || true)"

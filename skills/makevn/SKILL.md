@@ -916,6 +916,12 @@ local children can select consumer suites without dependencyManagement. Module
 resources, including Avro test schemas, select their complete owner suite.
 Unknown impact still stops focused planning and names the blocking paths.
 
+For valid successful focused evidence with no changed production classes,
+coverage-changes and crap-changes return `not applicable` with exit 0. JaCoCo
+data may still exist; no global coverage/CRAP gate was evaluated. Do not repeat
+tests or install analyzers for that outcome. Missing fresh data for changed
+classes and stale/incomplete evidence still fail; global CI gates remain required.
+
 ### Safe composite workflows
 
 Use step `arguments`, not `args`. Every step is validated before execution;

@@ -140,7 +140,10 @@ flowchart TD
   Mode -->|No - focused default| Prepare[Install dependencies without UT/IT]
   Prepare --> Focus[Production owner suites and changed tests without -am]
   Focus --> Snapshot[Fresh UT/IT and bytecode snapshot]
-  Snapshot --> ScopedReport[coverage-changes: changed-class report, no tests]
+  Snapshot --> Applicability{Changed production classes?}
+  Applicability -->|Yes, fresh JaCoCo data| ScopedReport[coverage-changes: changed-class report, no tests]
+  Applicability -->|None, valid successful evidence| NA[Coverage and CRAP changes: not applicable, exit 0; global gates not evaluated]
+  Applicability -->|Classes but no fresh JaCoCo data| Missing[Error: enable coverage and rerun matching verification]
   ScopedReport --> ScopedCRAP[crap-changes: same XML and method coverage]
   Consumers --> Mode
   Verify --> Separate[Aggregate is not automatically selected]
@@ -171,6 +174,13 @@ scoped run when using the legacy aggregate path. Focused runs now publish isolat
 fresh UT/IT and bytecode evidence; coverage-changes generates a changed-class
 report and crap-changes reuses it. Source/config/base changes or failed runs
 reject that evidence. Focused verification does not claim a global coverage result.
+Valid focused evidence with no changed production classes returns a successful
+`not applicable` outcome for both incremental gates, with or without JaCoCo data.
+It does not require Java, Maven or the CRAP analyzer and does not evaluate global
+coverage/CRAP. Missing data for changed classes, missing bytecode and stale/failed
+evidence remain errors. An explicit overall coverage threshold still requires the
+full coverage flow. MCP returns success/exitCode 0 with the outcome in output and
+guidance that prevents treating this no-op as a global gate pass.
 
 ### Explicit focused execution
 

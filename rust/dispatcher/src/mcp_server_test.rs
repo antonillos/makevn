@@ -897,6 +897,24 @@ fn focused_agent_guidance_is_visible_without_loading_the_skill() {
 }
 
 #[test]
+fn incremental_gate_not_applicable_output_is_success_without_global_claim() {
+    for tool in ["coverage_changes", "crap_changes"] {
+        let result = super::ToolCallResult {
+            output: "Not applicable: no changed production classes; global gate was not evaluated.".to_owned(),
+            exit_code: 0, duration_ms: 1, next_suggestion: None,
+        };
+        let response = super::standard_tool_result(&result, &json!({"name": tool}));
+        assert_eq!(response["isError"], false);
+        assert_eq!(response["structuredContent"]["status"], "success");
+        assert_eq!(response["structuredContent"]["untrustedData"]["output"], result.output);
+        let guidance = response["structuredContent"]["nextSuggestion"].as_str().unwrap();
+        assert!(guidance.contains("not applicable"));
+        assert!(guidance.contains("not that global"));
+        assert!(guidance.contains("Do not repeat tests"));
+    }
+}
+
+#[test]
 fn workflow_step_validation_rejects_silent_argument_loss() {
     for step in [
         json!({"tool":"clean","args":{}}),

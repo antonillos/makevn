@@ -862,8 +862,11 @@ subsequent `crap-changes` uses the same cached XML and method coverage. Source,
 configuration, comparison-ref and evidence hashes guard against stale reuse.
 No data, missing bytecode or mismatched data blocks the gate instead of falling
 back to an old global aggregate. Nonstandard data paths outside module `target`,
-test/POM-only changes without changed production classes, and unsupported
-bytecode require the explicit full coverage flow; no automatic broad rerun.
+and unsupported bytecode require the explicit full coverage flow; no automatic
+broad rerun. Valid successful focused evidence without changed production classes
+returns `not applicable` (exit 0) for coverage-changes and crap-changes, even when
+JaCoCo data exists. No global gate is evaluated. Missing fresh data for changed
+classes, failed/stale evidence and missing bytecode remain errors.
 An explicit `--overall-threshold` is rejected on focused evidence, not ignored. Successful
 verify-ut-coverage/verify-it-coverage retires focused evidence so subsequent
 coverage-changes uses that full report.

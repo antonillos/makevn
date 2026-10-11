@@ -185,6 +185,10 @@ makevn_crap_run() {
   if [[ "${command_name}" == crap-changes && -f "$(makevn_scoped_coverage_state "${repo_root}")/run.json" ]]; then
     local scoped_report
     scoped_report="$(makevn_scoped_coverage_report "${repo_root}" "${maven_base_path}" "${base_ref}")" || return $?
+    if [[ "${scoped_report}" == not-applicable ]]; then
+      printf 'CRAP changes: not applicable — no changed production classes to measure. JaCoCo data may exist; global CRAP was not evaluated.\n'
+      return 0
+    fi
     explicit_xml="${scoped_report}/jacoco.xml"
     printf 'CRAP changes: using focused UT/IT coverage (not global coverage).\n'
   fi
