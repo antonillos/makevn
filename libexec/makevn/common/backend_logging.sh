@@ -32,6 +32,38 @@ makevn_prepare_logfile() {
   return 1
 }
 
+# Suggest recovery only for an actual daemon connection failure, never merely
+# because Colima happens to be installed. Do not start or switch runtimes.
+makevn_report_docker_runtime_failure() {
+  local command_key="$1" logfile="$2" diagnostic hint profile
+  case "${command_key}" in
+    docker-*|karate-docker-*) ;;
+    *) return 0 ;;
+  esac
+  diagnostic="$(tail -n 40 "${logfile}" 2>/dev/null || true)"
+  if ! printf '%s\n' "${diagnostic}" | grep -Eiq 'cannot connect to the docker daemon|failed to connect to the docker API|error during connect|is the docker daemon running'; then
+    return 0
+  fi
+  hint="Hint: Docker engine is unavailable. Start your configured container runtime and retry; check DOCKER_HOST and the active Docker context."
+  if [[ "${diagnostic}" =~ \.colima/([^/[:space:]]+)/docker\.sock ]]; then
+    profile="${BASH_REMATCH[1]}"
+    if [[ "${profile}" == default ]]; then
+      hint="Hint: The Colima Docker socket is unavailable. Run 'colima start', then retry the makevn command."
+    else
+      printf -v profile '%q' "${profile}"
+      hint="Hint: The Colima Docker socket is unavailable. Run 'colima start --profile ${profile}', then retry the makevn command."
+    fi
+  fi
+  printf '%s\n' "${hint}" >> "${logfile}" || true
+  if [[ -n "${MAKEVN_BACKEND_DETAIL_OUT:-}" ]]; then
+    printf '%s\n' "${hint}" >> "${MAKEVN_BACKEND_DETAIL_OUT}" || true
+  fi
+  if ! makevn_frontend_owns_loader; then
+    printf '%s\n' "${hint}" >&2
+  fi
+  return 0
+}
+
 makevn_metadata_escape_value() {
   local value="$1"
   value="${value//$'\n'/ }"
@@ -457,6 +489,7 @@ makevn_run_logged() {
     if [[ ${exit_code} -eq 0 ]]; then
       printf '%s %s\n' "$(makevn_accent '[ok]')" "$(makevn_accent "${duration_display}")"
     else
+      makevn_report_docker_runtime_failure "${command_key}" "${logfile}"
       if makevn_compact_output_enabled; then
         makevn_print_failure_excerpt "${logfile}"
       fi
@@ -517,6 +550,9 @@ makevn_run_logged() {
       return 130
     fi
 
+    if [[ ${exit_code} -ne 0 ]]; then
+      makevn_report_docker_runtime_failure "${command_key}" "${logfile}"
+    fi
     return ${exit_code}
   fi
 
@@ -548,6 +584,7 @@ makevn_run_logged() {
     return 0
   fi
 
+  makevn_report_docker_runtime_failure "${command_key}" "${logfile}"
   printf '\r\033[2K%s %s\n' "$(makevn_warn 'fail')" "$(makevn_warn "exit ${exit_code} after ${duration_display}; check the log for details")"
   return ${exit_code}
 }

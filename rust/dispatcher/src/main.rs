@@ -1513,6 +1513,7 @@ fn summary_from_backend_metadata(
 
 fn docker_connection_failed(lower: &str) -> bool {
     lower.contains("cannot connect to the docker daemon")
+        || lower.contains("failed to connect to the docker api")
         || lower.contains("is the docker daemon running")
         || lower.contains("error during connect") && lower.contains("docker")
 }
@@ -1521,6 +1522,13 @@ fn read_failure_hint(log_path: Option<&str>) -> Option<String> {
     let content = fs::read_to_string(log_path?).ok()?;
     let lower = content.to_ascii_lowercase();
     if docker_connection_failed(&lower) {
+        if let Some(hint) = content.lines().rev().find_map(|line| {
+            line.trim()
+                .strip_prefix("Hint: ")
+                .filter(|hint| !hint.is_empty())
+        }) {
+            return Some(hint.to_owned());
+        }
         return Some("Docker is unavailable. Start Docker Desktop or your Docker runtime (e.g. `colima start`), check `docker info`, then retry".to_owned());
     }
     for line in content.lines() {
