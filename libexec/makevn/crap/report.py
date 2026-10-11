@@ -3,6 +3,7 @@ import argparse
 import json
 import math
 import sys
+import subprocess
 from pathlib import Path
 from xml.etree import ElementTree
 
@@ -17,6 +18,8 @@ def arguments():
     parser.add_argument("--changes-file")
     parser.add_argument("--repo-root")
     parser.add_argument("--source-root", action="append")
+    parser.add_argument("--focused-state")
+    parser.add_argument("--javap")
     return parser.parse_args()
 
 
@@ -62,6 +65,33 @@ def changed_path(entry, source_root, repo_root, paths):
     return matches[0] if matches else None
 
 
+def non_executable_sources(paths, repo_root, state, javap):
+    """Only verified snapshot bytecode can prove a source has no method code."""
+    if not state:
+        return set()
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'common'))
+    from scoped_coverage import load
+    manifest = load(repo_root, Path(state))
+    ignored = set()
+    if paths and not javap:
+        raise ValueError('javap is required to classify changed sources absent from the analyzer')
+    for path in paths:
+        if path not in manifest['sources']:
+            continue
+        stem = path.split('/src/main/java/', 1)[1][:-5]
+        compiled = Path(manifest['classes']) / (stem + '.class')
+        if not compiled.is_file():
+            continue
+        # javap -c prints Code: for constructors, default/static methods and
+        # initializers too. An abstract declaration alone is not measurable.
+        bytecode = [compiled, *compiled.parent.glob(compiled.stem + '$*.class')]
+        outputs = [subprocess.run([javap, '-c', '-p', str(item)], check=True,
+                                  capture_output=True, text=True).stdout for item in bytecode]
+        if all('{' in output and '}' in output and 'Code:' not in output for output in outputs):
+            ignored.add(path)
+    return ignored
+
+
 def main():
     args = arguments()
     if not math.isfinite(args.threshold) or args.threshold < 0 or args.max_warnings is not None and args.max_warnings < 0:
@@ -74,6 +104,7 @@ def main():
         return 2
     entries = []
     coverage_gaps = []
+    ignored_sources = set()
     try:
         changes = json.loads(Path(args.changes_file).read_text()) if args.changes_file else None
         changed_files = changes["files"] if changes else {}
@@ -117,9 +148,11 @@ def main():
             entries.extend(normalize(entry, args.threshold) for entry in selected)
         if changes:
             unmatched_files = set(changed_files) - matched_files
+            ignored_sources = non_executable_sources(unmatched_files, repo_root, args.focused_state, args.javap)
+            unmatched_files -= ignored_sources
             if unmatched_files:
                 raise ValueError("changed Java source absent from analyzer output (stale coverage or uncompiled source): " + ", ".join(sorted(unmatched_files)))
-    except (OSError, ElementTree.ParseError, json.JSONDecodeError, ValueError) as exc:
+    except (OSError, ElementTree.ParseError, json.JSONDecodeError, ValueError, subprocess.CalledProcessError) as exc:
         print(f"Error: invalid crap4java report: {exc}", file=sys.stderr)
         return 2
     if not entries and not args.changes_file:
@@ -173,7 +206,8 @@ def main():
         "formula": "CC^2 * (1 - coverage)^3 + CC",
         "threshold": args.threshold,
         "entries": entries,
-        "diagnostics": {"java_methods": len(entries), "missing_coverage": missing_coverage},
+        "diagnostics": {"java_methods": len(entries), "missing_coverage": missing_coverage,
+                        "non_executable_sources": sorted(ignored_sources)},
         "gate": gate,
     }
     if changes:
@@ -196,6 +230,8 @@ def main():
     summary = ["CRAP changes report completed" if changes else "CRAP report completed", f"Gate: {gate['status'].upper()}" + (f" ({len(warnings)}/{args.max_warnings} warnings)" if args.max_warnings is not None else " (no warning-count limit configured)"), f"Methods: {len(entries)}", f"Warnings: {len(warnings)}", f"Missing coverage: {report['diagnostics']['missing_coverage']}"]
     if changes:
         summary.insert(1, f"Base: {changes['base']}")
+    if ignored_sources:
+        summary.append('Not measurable (verified bytecode has no executable methods): ' + ', '.join(sorted(ignored_sources)))
     (out / "summary.txt").write_text("\n".join(summary) + "\n")
     return 1 if gate["status"] == "failed" else 0
 

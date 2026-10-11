@@ -184,6 +184,14 @@ coverage/CRAP. Missing data for changed classes, missing bytecode and stale/fail
 evidence remain errors. An explicit overall coverage threshold still requires the
 full coverage flow. MCP returns success/exitCode 0 with the outcome in output and
 guidance that prevents treating this no-op as a global gate pass.
+Changed Java sources absent from the CRAP analyzer are still errors unless
+verified focused snapshot bytecode proves they have no executable methods.
+The selected JDK's `javap -c -p` checks the class and its nested classes: pure
+abstract declarations are reported as not measurable, while default/static
+methods, constructors and nested implementation code retain the missing-source
+error. Missing tools, stale evidence or missing bytecode never justify exclusion.
+First-parent coverage uses portable awk environment input for multiline commit
+lists; attribution failures block the gate rather than reporting empty success.
 
 ### Explicit focused execution
 

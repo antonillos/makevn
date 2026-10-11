@@ -269,6 +269,9 @@ makevn_crap_run() {
   report_args=(--output-dir "${report_dir}" --threshold "${threshold}")
   if [[ "${command_name}" == "crap-changes" ]]; then
     report_args+=(--changes-file "${report_dir}/changes.json" --repo-root "${repo_root}")
+    if [[ -n "${scoped_report:-}" ]]; then
+      report_args+=(--focused-state "$(makevn_scoped_coverage_state "${repo_root}")" --javap "${java_bin%/java}/javap")
+    fi
   fi
   [[ -z "${max_warnings}" ]] || report_args+=(--max-warnings "${max_warnings}")
 
