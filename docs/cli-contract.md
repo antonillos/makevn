@@ -756,3 +756,6 @@ rows before restoring the dashboard.
 Captured managed-command diagnostics are retained as detail lines beneath the
 corresponding step in the final dashboard, not replayed above it as detached
 stderr. Interactive state prompts and noninteractive CLI/MCP output are unchanged.
+When an invocation publishes multiple phase records, unscoped stderr is shown
+under an explicit command-level diagnostics summary, never attributed to its
+final phase. Diagnostics already published with phase metadata remain phase-local.

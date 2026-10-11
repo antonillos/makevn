@@ -1345,7 +1345,6 @@ fn dispatch_backend_invocations(
             .map(|df| df.read_lines())
             .unwrap_or_default();
         detail_lines.extend(stdout_details.iter().cloned());
-        append_unique_details(&mut detail_lines, &stderr_details);
         if let Some(df) = detail_file.as_ref() {
             df.clear();
         }
@@ -1365,13 +1364,19 @@ fn dispatch_backend_invocations(
             .last()
             .map(|phase| phase.exit_code != last_exit_code)
             .unwrap_or(true);
+        let has_phases = !phases.is_empty();
+        let diagnostics = CommandSummary {
+            title: format!("{fallback_title} diagnostics (command-level)"),
+            log_path: None,
+            relative_log_path: None,
+            detail_lines: stderr_details,
+            ..summary.clone()
+        };
         completed_summaries.extend(phases);
         if needs_fallback {
             completed_summaries.push(summary);
         }
-        if let Some(last_summary) = completed_summaries.last_mut() {
-            append_unique_details(&mut last_summary.detail_lines, &stderr_details);
-        }
+        append_command_diagnostics(&mut completed_summaries, diagnostics, has_phases);
 
         if last_exit_code != 0 {
             if let Some(r) = renderer.as_mut() {
@@ -1428,6 +1433,19 @@ fn dispatch_backend_invocations(
         );
     }
     Ok(last_exit_code)
+}
+
+fn append_command_diagnostics(
+    summaries: &mut Vec<CommandSummary>, diagnostics: CommandSummary, has_phases: bool,
+) {
+    if diagnostics.detail_lines.is_empty() {
+        return;
+    }
+    if has_phases {
+        summaries.push(diagnostics);
+    } else if let Some(summary) = summaries.last_mut() {
+        append_unique_details(&mut summary.detail_lines, &diagnostics.detail_lines);
+    }
 }
 
 fn read_backend_diagnostics(path: &Path) -> io::Result<Vec<String>> {

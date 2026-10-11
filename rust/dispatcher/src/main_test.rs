@@ -2388,6 +2388,33 @@ fn backend_diagnostics_preserve_order_without_duplicate_step_details() {
 }
 
 #[test]
+fn multi_phase_stderr_is_command_level_not_final_phase() {
+    let make = |title: &str, exit_code| CommandSummary {
+        title: title.to_owned(), duration: "1s".to_owned(), log_path: None,
+        relative_log_path: None, exit_code, detail_lines: Vec::new(),
+    };
+    for exit_code in [0, 1] {
+        let mut summaries = vec![make("run-app-bg", 0), make("karate-test", exit_code)];
+        let mut diagnostic = make("karate-all diagnostics (command-level)", exit_code);
+        diagnostic.detail_lines.push("startup warning".to_owned());
+        super::append_command_diagnostics(&mut summaries, diagnostic.clone(), true);
+        assert!(summaries[1].detail_lines.is_empty());
+        assert_eq!(summaries[2].detail_lines, vec!["startup warning"]);
+        let mut single = vec![make("verify-changes", exit_code)];
+        super::append_command_diagnostics(&mut single, diagnostic, false);
+        assert_eq!(single.len(), 1);
+        assert_eq!(single[0].detail_lines, vec!["startup warning"]);
+        super::append_command_diagnostics(&mut single, make("empty", exit_code), true);
+        assert_eq!(single.len(), 1);
+    }
+    let mut empty = Vec::new();
+    let mut diagnostic = make("no summary", 0);
+    diagnostic.detail_lines.push("warning".to_owned());
+    super::append_command_diagnostics(&mut empty, diagnostic, false);
+    assert!(empty.is_empty());
+}
+
+#[test]
 fn backend_diagnostics_decode_non_utf8_lossily() {
     let path = env::temp_dir().join(format!("makevn-diagnostics-{}.stderr", process::id()));
     fs::write(&path, b"first\n\nNative diagnostic: \xff\n").unwrap();

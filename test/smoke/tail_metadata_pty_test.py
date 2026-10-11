@@ -20,6 +20,8 @@ def backend(args):
     phases = ['karate-docker-up', 'package', 'run-app-bg', 'run-app-bg',
               'docker-ps-required', 'karate-test']
     for index, phase in enumerate(phases):
+        if index == 2:
+            print('EARLY_STARTUP_WARNING', file=sys.stderr, flush=True)
         log = repo / (phase + '.log')
         with log.open('a') as stream:
             stream.write(f'LOG_STAGE_{index}\n')
@@ -222,6 +224,10 @@ def verify(binary, exit_code=0, tail_enabled=True, hide_at_end=False):
             _, status = os.waitpid(pid, 0)
             assert os.waitstatus_to_exitcode(status) == exit_code
             final = screen.lines()
+            warning_row = next(i for i, line in enumerate(final) if 'EARLY_STARTUP_WARNING' in line)
+            command_row = next(i for i, line in enumerate(final) if 'karate-all diagnostics (command-level)' in line)
+            assert warning_row == command_row + 1, '\n'.join(final)
+            assert sum('EARLY_STARTUP_WARNING' in line for line in final) == 1, '\n'.join(final)
             for phase in dict.fromkeys(phases):
                 assert any(f'{phase} |' in line and f'{phase}.log' in line for line in final), '\n'.join(final)
             assert not any('Working for ' in line or 'tailing log:' in line
