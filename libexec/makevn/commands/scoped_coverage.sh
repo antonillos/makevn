@@ -8,6 +8,10 @@ makevn_scoped_coverage_prepare() {
   python3 "${MAKEVN_LIBEXEC_DIR}/common/scoped_coverage.py" prepare "$1" "$(makevn_scoped_coverage_state "$1")" "${MAKEVN_VERIFY_CHANGES_MAVEN_BASE_PATH}" "${MAKEVN_VERIFY_CHANGES_MODULE_SELECTION}" "${MAKEVN_VERIFY_CHANGES_SRC_FILES}" "${MAKEVN_VERIFY_CHANGES_PARENT_SPEC}"
 }
 
+makevn_scoped_coverage_checkpoint() {
+  python3 "${MAKEVN_LIBEXEC_DIR}/common/scoped_coverage.py" checkpoint "$1" "$(makevn_scoped_coverage_state "$1")" "${MAKEVN_VERIFY_CHANGES_FOCUSED_PLAN}"
+}
+
 makevn_scoped_coverage_finish() {
   python3 "${MAKEVN_LIBEXEC_DIR}/common/scoped_coverage.py" finish "$1" "$(makevn_scoped_coverage_state "$1")"
 }

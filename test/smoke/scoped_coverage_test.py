@@ -2,11 +2,13 @@ import importlib.util
 import json
 from pathlib import Path
 import subprocess
+import sys
 import tempfile
 import unittest
 from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT / 'libexec/makevn/common'))
 spec = importlib.util.spec_from_file_location('scoped', ROOT / 'libexec/makevn/common/scoped_coverage.py')
 scoped = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(scoped)
@@ -32,6 +34,44 @@ class ScopedTests(unittest.TestCase):
         self.it.parent.mkdir(parents=True)
         self.ut.write_bytes(b'old UT')
         self.it.write_bytes(b'old IT')
+
+    def test_preparation_fixture_changes_are_tested_from_new_baseline(self):
+        (self.repo / 'pom.xml').write_text('<project><packaging>pom</packaging><modules><module>client</module><module>boot</module></modules></project>')
+        for owner in ['client', 'boot']:
+            (self.repo / owner / 'pom.xml').write_text('<project/>')
+        fixture = self.repo / 'src/test/resources/shared/schema.avsc'
+        fixture.parent.mkdir(parents=True)
+        fixture.write_text('before')
+        scoped.prepare(self.repo, self.state, self.repo, ['client', 'boot'], [])
+        fixture.write_text('generated')
+        plan = 'client\t*\nboot\t*'
+        with self.assertRaisesRegex(ValueError, 'schema.avsc'):
+            scoped.checkpoint(self.repo, self.state, 'client\t*\nboot\texample.Test')
+        self.ut.write_bytes(b'preparation data')
+        scoped.checkpoint(self.repo, self.state, plan)
+        self.assertFalse(self.ut.exists())
+        scoped.finish(self.repo, self.state)
+        scoped.load(self.repo, self.state)
+        fixture.write_text('during tests')
+        with self.assertRaisesRegex(ValueError, 'schema.avsc'):
+            scoped.finish(self.repo, self.state)
+
+    def test_checkpoint_blocks_config_edits_and_duplicate_checkpoint(self):
+        scoped.prepare(self.repo, self.state, self.repo, ['client', 'boot'], [])
+        config = self.repo / '.makevn/config'
+        config.write_text('changed')
+        with self.assertRaisesRegex(ValueError, '.makevn/config'):
+            scoped.checkpoint(self.repo, self.state, 'client\t*\nboot\t*')
+        config.unlink()
+        scoped.checkpoint(self.repo, self.state, 'client\t*\nboot\t*')
+        with self.assertRaisesRegex(ValueError, 'Invalid focused'):
+            scoped.checkpoint(self.repo, self.state, 'client\t*\nboot\t*')
+
+    def test_checkpoint_rejects_source_edits_and_partial_suites(self):
+        scoped.prepare(self.repo, self.state, self.repo, ['client', 'boot'], [])
+        (self.repo / self.source).write_text('changed')
+        with self.assertRaisesRegex(ValueError, 'Owner.java'):
+            scoped.checkpoint(self.repo, self.state, 'client\t*\nboot\t*')
 
     def ready(self):
         scoped.prepare(self.repo, self.state, self.repo, ['client', 'boot'], [self.source])

@@ -90,3 +90,16 @@ coverage/CRAP evidence; editing generated state cannot narrow or invalidate it.
 Contract/fixture-only changes without changed production Java classes can yield
 **not applicable** incremental coverage/CRAP after successful verification, never
 an overall gate pass.
+
+## Prepared-input freshness
+
+Focused verification records input hashes before preparation and checks them again
+before any owner suite runs. Maven may rewrite shared root test fixtures during
+dependency preparation. Those fixture-only changes become the test baseline only
+when the statically declared reactor is supported and every consumer module will
+run its complete Maven suite. Preparation execution data is discarded.
+
+Production source, POM, configuration or comparison changes are not accepted by
+this checkpoint. Any hashed input change after the checkpoint still invalidates
+the evidence; diagnostics list changed paths rather than assuming a manual edit.
+This does not prove external/E2E checks or narrow shared-resource ownership.

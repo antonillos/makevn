@@ -26,6 +26,10 @@ makevn_run_logged_in_context() {
   fi
   [[ "${FAIL_PREPARE:-0}" != 1 ]]
 }
+makevn_scoped_coverage_checkpoint() {
+  [[ "$(wc -l < "${tmp}/commands" | tr -d ' ')" == 1 ]]
+  [[ "${FAIL_CHECKPOINT:-0}" != 1 ]]
+}
 makevn_run_focused_changes "${tmp}"
 [[ "$(wc -l < "${tmp}/commands" | tr -d ' ')" == 3 ]]
 sed -n '1p' "${tmp}/commands" | grep -Fq -- '-pl boot,client -am install -DskipTests=true -DskipUTs=true -DskipITs=true'
@@ -37,6 +41,11 @@ grep -q 'title=prepare dependencies (no tests)' "${MAKEVN_BACKEND_PHASE_DIR}/1"
 [[ -f "${MAKEVN_BACKEND_PHASE_DIR}/1" && -f "${MAKEVN_BACKEND_PHASE_DIR}/2" && -f "${MAKEVN_BACKEND_PHASE_DIR}/3" ]]
 : > "${tmp}/commands"
 FAIL_PREPARE=1
+if makevn_run_focused_changes "${tmp}"; then exit 1; fi
+[[ "$(wc -l < "${tmp}/commands" | tr -d ' ')" == 1 ]]
+FAIL_PREPARE=0
+FAIL_CHECKPOINT=1
+: > "${tmp}/commands"
 if makevn_run_focused_changes "${tmp}"; then exit 1; fi
 [[ "$(wc -l < "${tmp}/commands" | tr -d ' ')" == 1 ]]
 if (makevn_validate_focused_flags -am) >/dev/null 2>&1; then exit 1; fi

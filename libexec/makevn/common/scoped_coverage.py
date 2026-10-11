@@ -14,15 +14,20 @@ import xml.etree.ElementTree as ET
 VERSION = '0.8.14'
 
 
-def fingerprint(repo, base=None):
+def fingerprint(repo, base=None, inputs=None):
     head = subprocess.check_output(['git', '-C', str(repo), 'rev-parse', 'HEAD'])
     git_root = Path(subprocess.check_output(['git', '-C', str(repo), 'rev-parse', '--show-toplevel']).decode().strip()).resolve()
     paths = set(subprocess.check_output(['git', '-C', str(git_root), 'ls-files', '-z', '--cached', '--others', '--exclude-standard']).split(b'\0'))
     digest = hashlib.sha256(head)
+    if inputs is not None:
+        inputs["<HEAD>"] = hashlib.sha256(head).hexdigest()
     impact = git_root / 'makevn-impact.json'
     if impact.is_symlink():
         raise ValueError('Refusing linked impact configuration')
-    digest.update(impact.read_bytes() if impact.is_file() else b'<no-impact-config>')
+    impact_bytes = impact.read_bytes() if impact.is_file() else b'<no-impact-config>'
+    digest.update(impact_bytes)
+    if inputs is not None:
+        inputs['makevn-impact.json'] = hashlib.sha256(impact_bytes).hexdigest()
     try:
         resource_paths = [Path(rule['path']) for rule in json.loads(impact.read_text())['sharedResources']] if impact.is_file() else []
     except (ValueError, KeyError, TypeError):
@@ -49,10 +54,16 @@ def fingerprint(repo, base=None):
         if path.suffix not in {'.java', '.xml', '.yml', '.yaml', '.properties', '.avsc'} and not any(path.relative_to(git_root).is_relative_to(prefix) for prefix in resource_paths):
             continue
         digest.update(name)
-        digest.update(path.read_bytes() if path.is_file() else b'<deleted>')
+        value = path.read_bytes() if path.is_file() else b'<deleted>'
+        digest.update(value)
+        if inputs is not None:
+            inputs[os.fsdecode(name)] = hashlib.sha256(value).hexdigest()
     for name in ['config', 'profile.env']:
         path = repo / '.makevn' / name
-        digest.update(path.read_bytes() if path.is_file() else b'')
+        value = path.read_bytes() if path.is_file() else b''
+        digest.update(value)
+        if inputs is not None:
+            inputs[str(path.resolve().relative_to(git_root))] = hashlib.sha256(value).hexdigest()
     return digest.hexdigest()
 
 
@@ -71,7 +82,8 @@ def prepare(repo, state, base, owners, sources, reference="HEAD"):
     comparison_head = subprocess.check_output(["git", "-C", str(repo), "rev-parse", comparison]).decode().strip()
     # Pending replaces successful evidence before any Maven execution.
     state.mkdir(parents=True, exist_ok=True)
-    manifest = {'status': 'pending', 'fingerprint': fingerprint(repo, base), 'base': str(base),
+    inputs = {}
+    manifest = {'status': 'pending', 'fingerprint': fingerprint(repo, base, inputs), 'inputs': inputs, 'base': str(base),
                 'owners': owners, 'sources': sources, 'comparison': comparison, 'comparison_head': comparison_head}
     (state / 'run.json').write_text(json.dumps(manifest))
     for evidence in state.glob('evidence-*'):
@@ -86,10 +98,57 @@ def prepare(repo, state, base, owners, sources, reference="HEAD"):
         path.replace(backup)
 
 
+def changed_inputs(manifest, current):
+    previous = manifest.get('inputs', {})
+    return sorted(name for name in previous.keys() | current.keys()
+                  if previous.get(name) != current.get(name))
+
+
+def drift_error(paths):
+    names = ', '.join(paths[:20])
+    suffix = ' (and more)' if len(paths) > 20 else ''
+    return ValueError('Sources/config changed during focused verification; build generation or external edits may have changed inputs; rerun verify-changes. Changed inputs: ' + names + suffix)
+
+
+def checkpoint(repo, state, plan):
+    """Freeze prepared fixtures before tests, only with complete reactor suites."""
+    manifest = json.loads((state / 'run.json').read_text())
+    if manifest['status'] != 'pending' or manifest.get('checkpoint'):
+        raise ValueError('Invalid focused preparation checkpoint')
+    base = Path(manifest['base']).resolve()
+    inputs = {}
+    digest = fingerprint(repo, base, inputs)
+    changed = changed_inputs(manifest, inputs)
+    if digest != manifest['fingerprint']:
+        git_root = Path(subprocess.check_output(['git', '-C', str(repo), 'rev-parse', '--show-toplevel']).decode().strip()).resolve()
+        prefix = base / 'src/test/resources'
+        if not changed or any(not (git_root / name).is_relative_to(prefix) for name in changed):
+            raise drift_error(changed)
+        # Import only when drift requires proving that all shared-input suites run.
+        from changes_scope import parse, declared_modules
+        from reactor_impact import automatic_resource_rules
+        modules = declared_modules(base, parse((base / 'pom.xml').read_text()))
+        rules = automatic_resource_rules(repo, base, modules, parse)
+        full = {line.split('\t')[0] for line in plan.splitlines()
+                if line.split('\t')[1:] == ['*']}
+        if not rules or not rules[0][1].issubset(full & set(manifest['owners'])):
+            raise drift_error(changed)
+        print('Prepared shared fixtures changed; all consumer Maven suites will verify these inputs: ' + ', '.join(changed[:20]))
+    # Preparation must not contribute execution data to test evidence.
+    for path in data_files(base, manifest['owners']):
+        if path.is_symlink():
+            raise ValueError('Refusing linked execution data: ' + str(path))
+        path.replace(path.with_name(path.name + '.before-focused'))
+    manifest.update(fingerprint=digest, inputs=inputs, checkpoint=True,
+                    preparation_changes=changed)
+    (state / 'run.json').write_text(json.dumps(manifest))
+
+
 def finish(repo, state):
     manifest = json.loads((state / 'run.json').read_text())
-    if manifest['fingerprint'] != fingerprint(repo, Path(manifest['base'])):
-        raise ValueError('Sources/config changed during focused verification; rerun verify-changes')
+    inputs = {}
+    if manifest['fingerprint'] != fingerprint(repo, Path(manifest['base']), inputs):
+        raise drift_error(changed_inputs(manifest, inputs))
     base = Path(manifest['base'])
     snapshot = Path(tempfile.mkdtemp(prefix='evidence-', dir=state))
     files = []
@@ -132,8 +191,12 @@ def load(repo, state):
     comparison_head = subprocess.check_output(['git', '-C', str(repo), 'rev-parse', manifest['comparison']]).decode().strip()
     if comparison_head != manifest['comparison_head']:
         raise ValueError('Comparison base changed; rerun verify-changes')
-    if manifest['status'] != 'success' or manifest['fingerprint'] != fingerprint(repo, Path(manifest['base'])):
-        raise ValueError('Focused coverage is incomplete or sources/config changed; rerun verify-changes')
+    if manifest['status'] != 'success':
+        raise ValueError('Focused coverage is incomplete; rerun verify-changes')
+    inputs = {}
+    if manifest['fingerprint'] != fingerprint(repo, Path(manifest['base']), inputs):
+        paths = ', '.join(changed_inputs(manifest, inputs)[:20])
+        raise ValueError('Focused coverage sources/config changed; rerun verify-changes. Changed inputs: ' + paths)
     if manifest.get('missing'):
         raise ValueError('Missing changed-class bytecode; rerun verify-changes: ' + ', '.join(manifest['missing']))
     if manifest['expected'] and not manifest['data']:
@@ -201,6 +264,8 @@ def main():
     repo, state = Path(repo).resolve(), Path(state).resolve()
     if action == 'prepare':
         prepare(repo, state, Path(args[0]).resolve(), args[1].split(','), list(filter(None, args[2].splitlines())), args[3])
+    elif action == 'checkpoint':
+        checkpoint(repo, state, args[0])
     elif action == 'finish':
         finish(repo, state)
     elif action == 'report':
