@@ -4,6 +4,7 @@ import json
 import math
 import sys
 import subprocess
+import re
 from pathlib import Path
 from xml.etree import ElementTree
 
@@ -65,6 +66,22 @@ def changed_path(entry, source_root, repo_root, paths):
     return matches[0] if matches else None
 
 
+def single_top_level_type(source):
+    """Decline exclusion when filename-based bytecode association is incomplete."""
+    if '\\u' in source:
+        return False  # Java Unicode escapes can hide declaration keywords/braces.
+    stripped = re.sub(r'//[^\n]*|/\*[\s\S]*?\*/|"""[\s\S]*?"""|"(?:\\.|[^"\\])*"|\'(?:\\.|[^\'\\])*\'', '', source)
+    depth, declarations = 0, 0
+    for token in re.findall(r'[A-Za-z_$][\w$]*|[{}]', stripped):
+        if token == '{':
+            depth += 1
+        elif token == '}':
+            depth -= 1
+        elif depth == 0 and token in {'class', 'interface', 'enum', 'record'}:
+            declarations += 1
+    return depth == 0 and declarations == 1
+
+
 def non_executable_sources(paths, repo_root, state, javap):
     """Only verified snapshot bytecode can prove a source has no method code."""
     if not state:
@@ -77,6 +94,8 @@ def non_executable_sources(paths, repo_root, state, javap):
         raise ValueError('javap is required to classify changed sources absent from the analyzer')
     for path in paths:
         if path not in manifest['sources']:
+            continue
+        if not single_top_level_type((repo_root / path).read_text()):
             continue
         stem = path.split('/src/main/java/', 1)[1][:-5]
         compiled = Path(manifest['classes']) / (stem + '.class')

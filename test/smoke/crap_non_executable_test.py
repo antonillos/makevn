@@ -32,6 +32,7 @@ class NonExecutableTests(unittest.TestCase):
                 'Repository': 'public interface Repository { void save(); }',
                 'DefaultRepository': 'public interface DefaultRepository { default int size() { return 1; } }',
                 'NestedRepository': 'public interface NestedRepository { class Impl { int size() { return 1; } } }',
+                'MultipleRepository': 'public interface MultipleRepository {} class Helper { int size() { return 1; } }',
             }
             paths = []
             for name, declaration in declarations.items():
@@ -60,12 +61,22 @@ class NonExecutableTests(unittest.TestCase):
             result = subprocess.run(command, capture_output=True, text=True)
             self.assertEqual(result.returncode, 2)
             self.assertIn(paths[1], result.stderr)
+            changes.write_text(json.dumps({'base': 'HEAD', 'merge_base': 'HEAD', 'files': {paths[3]: [[1, 1]]}}))
+            result = subprocess.run(command, capture_output=True, text=True)
+            self.assertEqual(result.returncode, 2)
+            self.assertIn(paths[3], result.stderr)
             self.assertEqual(report.non_executable_sources(paths, repo, None, None), set())
             with self.assertRaises((OSError, subprocess.CalledProcessError)):
                 report.non_executable_sources(paths, repo, str(state), '/missing/javap')
             (repo / paths[0]).write_text('changed source')
             with self.assertRaisesRegex(ValueError, 'sources/config changed'):
                 report.non_executable_sources(paths, repo, str(state), shutil.which('javap'))
+
+class AssociationTests(unittest.TestCase):
+    def test_conservative_top_level_association(self):
+        self.assertTrue(report.single_top_level_type('/* class Fake {} */ interface Owner { String TEXT = "class Fake {}"; }'))
+        self.assertFalse(report.single_top_level_type('interface Owner {} class Helper {}'))
+        self.assertFalse(report.single_top_level_type(r'interface Owner {} \u0063lass Helper {}'))
 
 if __name__ == '__main__':
     unittest.main()
