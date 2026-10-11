@@ -77,6 +77,23 @@ class ImpactTests(unittest.TestCase):
         self.write('unrelated/pom.xml', self.parent('root', '../pom.xml') + '<artifactId>unrelated</artifactId><build><pluginManagement><plugins>' + plugin + '</plugins></pluginManagement></build>')
         self.assertNotIn('unrelated', self.plan('workspace/contracts/event/pom.xml'))
 
+    def test_local_build_extension_consumers_and_inheritors_are_selected(self):
+        extension = '<build><extensions><extension><groupId>example</groupId><artifactId>event</artifactId><version>1</version></extension></extensions></build>'
+        self.write('adapter/pom.xml', self.parent('root', '../pom.xml') + '<artifactId>adapter</artifactId>')
+        self.write('unrelated/pom.xml', self.parent('root', '../pom.xml') + '<artifactId>unrelated</artifactId>' + extension)
+        self.write('runner/pom.xml', self.parent('unrelated', '../unrelated/pom.xml') + '<artifactId>runner</artifactId>')
+        self.commit()
+        self.bump()
+        self.assertEqual(self.plan('workspace/contracts/event/pom.xml'), 'contracts/event\t*\nrunner\t*\nunrelated\t*')
+
+    def test_root_build_extension_consumer_requires_exhaustive_scope(self):
+        root = self.base / 'pom.xml'
+        root.write_text(root.read_text().replace('</project>', '<build><extensions><extension><groupId>example</groupId><artifactId>event</artifactId><version>1</version></extension></extensions></build></project>'))
+        self.commit()
+        self.bump()
+        with self.assertRaisesRegex(ValueError, 'Maven-root consumer'):
+            self.plan('workspace/contracts/event/pom.xml')
+
     def test_shared_resources_default_to_complete_reactor_suites(self):
         path = 'workspace/src/test/resources/shared/v2/schema.avsc'
         self.assertEqual(self.plan(path), self.all_suites())

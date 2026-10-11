@@ -115,6 +115,7 @@ def reactor_consumers(base, modules, owner, parse):
             dependencies += root.findall('.//artifactItem')
             # Invoked local build plugins are consumers; pluginManagement alone is not.
             dependencies += root.findall('.//build/plugins/plugin')
+            dependencies += root.findall('.//build/extensions/extension')
             for dependency in dependencies:
                 group = dependency.findtext('groupId', 'org.apache.maven.plugins' if dependency.tag == 'plugin' else '')
                 coordinate = (current['resolve'](group), current['resolve'](dependency.findtext('artifactId', '')))

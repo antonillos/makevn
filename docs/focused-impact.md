@@ -35,7 +35,9 @@ A nested leaf POM can be focused when its only semantic changes are literal
 `*version` property values, used as direct dependency versions. Preparation includes
 the contract; verification selects its complete suite and the reverse transitive
 closure of local consumers, including local POM inheritance. DependencyManagement
-alone does not establish consumption. Invoked local build plugins are also consumers; pluginManagement alone is not.
+alone does not establish consumption. Invoked local build plugins and build extensions are also consumers, including
+inherited declarations; pluginManagement alone is not. Root-level consumers
+require exhaustive verification.
 Profile dependency declarations are
 conservatively included rather than guessed inactive.
 
