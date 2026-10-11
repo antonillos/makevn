@@ -7,7 +7,7 @@ import os
 import tempfile
 import xml.etree.ElementTree as ET
 
-from reactor_impact import automatic_resource_rules, leaf_bump_owners, shared_resource_owners, resource_rules
+from reactor_impact import automatic_resource_rules, leaf_bump_owners, shared_resource_owners
 
 
 def parse(text):
@@ -164,7 +164,7 @@ def selection(repo, base, reference, paths):
             reactor = declared_modules(base, parse((base / "pom.xml").read_text()))
             if reactor is None:
                 return "."
-            owners = shared_resource_owners(repo, base, reactor, absolute, resource_rules(repo, base, reactor, parse), parse)
+            owners = shared_resource_owners(repo, base, reactor, absolute, parse)
             if not owners:
                 raise ValueError("Cannot derive a safe shared-resource scope for " + path + "; root/reactor impact is ambiguous; use --exhaustive")
             modules.update(owners)
@@ -182,7 +182,7 @@ def selection(repo, base, reference, paths):
                     return "."
                 changed = property_bumps(parse(old), parse(absolute.read_text()))
                 consumers = leaf_bump_owners(repo, base, absolute.parent.relative_to(base).as_posix(),
-                    current, changed, reactor, resource_rules(repo, base, reactor, parse), parse)
+                    current, changed, reactor, parse)
             if consumers is None:
                 return "."
             modules.update(consumers)

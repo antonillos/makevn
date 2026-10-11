@@ -101,7 +101,7 @@ class ScopedTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'evidence changed'):
             scoped.load(self.repo, self.state)
 
-    def test_impact_config_and_shared_inputs_invalidate_evidence(self):
+    def test_legacy_config_is_not_authoritative_but_shared_inputs_are_hashed(self):
         config = self.repo / 'makevn-impact.json'
         config.write_text(json.dumps({'version': 1, 'sharedResources': [{'path': 'src/test/resources/shared', 'modules': ['client'], 'externalChecks': []}]}))
         fixture = self.repo / 'src/test/resources/shared/schema.avsc'
@@ -111,16 +111,16 @@ class ScopedTests(unittest.TestCase):
         binary.write_bytes(b'before')
         (self.repo / '.gitignore').write_text('*.bin\n')
         self.ready()
-        self.assertEqual(scoped.fingerprint(self.repo), scoped.fingerprint(self.repo / 'client'))
-        for path, value in [(fixture, b'schema after'), (binary, b'after'), (config, b'{}')]:
+        config.write_text('{}')
+        scoped.load(self.repo, self.state)
+        config.unlink()
+        scoped.load(self.repo, self.state)
+        for path, value in [(fixture, b'schema after'), (binary, b'after')]:
             before = path.read_bytes()
             path.write_bytes(value)
             with self.assertRaisesRegex(ValueError, 'sources/config changed'):
                 scoped.load(self.repo, self.state)
             path.write_bytes(before)
-        config.unlink()
-        with self.assertRaisesRegex(ValueError, 'sources/config changed'):
-            scoped.load(self.repo, self.state)
 
     def test_automatic_shared_input_hashing_without_authored_configuration(self):
         fixture = self.repo / 'src/test/resources/shared/input.bin'

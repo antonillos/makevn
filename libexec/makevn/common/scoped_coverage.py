@@ -21,27 +21,16 @@ def fingerprint(repo, base=None, inputs=None):
     digest = hashlib.sha256(head)
     if inputs is not None:
         inputs["<HEAD>"] = hashlib.sha256(head).hexdigest()
-    impact = git_root / 'makevn-impact.json'
-    if impact.is_symlink():
-        raise ValueError('Refusing linked impact configuration')
-    impact_bytes = impact.read_bytes() if impact.is_file() else b'<no-impact-config>'
-    digest.update(impact_bytes)
-    if inputs is not None:
-        inputs['makevn-impact.json'] = hashlib.sha256(impact_bytes).hexdigest()
-    try:
-        resource_paths = [Path(rule['path']) for rule in json.loads(impact.read_text())['sharedResources']] if impact.is_file() else []
-    except (ValueError, KeyError, TypeError):
-        # The planner validates rules; even malformed edits change the byte hash.
-        resource_paths = []
+    resource_paths = []
     if base is not None:
         resource_paths.append((base.resolve() / 'src/test/resources').relative_to(git_root))
     for prefix in resource_paths:
         if prefix.is_absolute() or '..' in prefix.parts or not any(prefix.parts[i:i+3] == ('src', 'test', 'resources') for i in range(len(prefix.parts) - 2)):
-            raise ValueError('Invalid shared-resource path in impact configuration')
+            raise ValueError('Invalid shared-resource path')
         resource = git_root / prefix
         if resource.resolve() != resource:
             raise ValueError('Refusing linked shared-resource prefix: ' + str(resource))
-        # Declared inputs can include Git-ignored runtime fixtures too.
+        # Shared inputs can include Git-ignored runtime fixtures too.
         for path in [resource, *resource.rglob('*')]:
             if path.is_symlink():
                 raise ValueError('Refusing linked shared-resource input: ' + str(path))

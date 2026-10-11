@@ -943,5 +943,5 @@ and previews/runs regenerate `.makevn/impact.json` from the current reactor;
 selection never trusts generated state. Plain aggregator shared test resources
 conservatively select all reactor module suites. Explain the visible scope and
 that external/E2E/global gates are not evaluated; unknown models still reject.
-Optional authored `makevn-impact.json` is advanced explicit narrowing, not required.
-Read `docs/focused-impact.md`; never invent external-check declarations.
+Impact state is internal only; do not create or maintain root impact overrides.
+Read `docs/focused-impact.md`; keep required external checks separate.

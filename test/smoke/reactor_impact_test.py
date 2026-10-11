@@ -48,7 +48,7 @@ class ImpactTests(unittest.TestCase):
     def all_suites(self):
         return 'adapter\t*\ncontracts\t*\ncontracts/event\t*\nrunner\t*\nunrelated\t*'
 
-    def mapping(self, **overrides):
+    def legacy_mapping(self, **overrides):
         rule = dict(path='workspace/src/test/resources/shared', modules=['adapter', 'runner'], externalChecks=[])
         rule.update(overrides)
         (self.repo / 'makevn-impact.json').write_text(json.dumps(dict(version=1, sharedResources=[rule])))
@@ -80,21 +80,19 @@ class ImpactTests(unittest.TestCase):
     def test_shared_resources_default_to_complete_reactor_suites(self):
         path = 'workspace/src/test/resources/shared/v2/schema.avsc'
         self.assertEqual(self.plan(path), self.all_suites())
-        self.mapping()
-        self.assertEqual(self.plan(path, 'workspace/src/test/resources/shared/examples.yml', 'workspace/src/test/resources/shared/src/nested.avsc'), 'adapter\t*\nrunner\t*')
+        self.legacy_mapping()
+        self.assertEqual(self.plan(path, 'workspace/src/test/resources/shared/examples.yml', 'workspace/src/test/resources/shared/src/nested.avsc'), self.all_suites())
         self.assertEqual(self.plan('workspace/src/test/resources/shared-other/schema.avsc'), self.all_suites())
 
-    def test_resource_mapping_rejects_external_checks(self):
-        self.mapping(externalChecks=['external integration suite'])
-        with self.assertRaisesRegex(ValueError, 'external integration suite'):
-            self.plan('workspace/src/test/resources/shared/schema.avsc')
+    def test_legacy_external_declaration_cannot_change_automatic_scope(self):
+        self.legacy_mapping(externalChecks=['external integration suite'])
+        self.assertEqual(self.plan('workspace/src/test/resources/shared/schema.avsc'), self.all_suites())
 
-    def test_invalid_mapping_fails_closed(self):
+    def test_legacy_root_configuration_is_not_read(self):
         for override in [dict(modules=[]), dict(modules=['missing']), dict(modules=['contracts']), dict(modules=['../adapter']), dict(path='../outside'), dict(path='workspace'), dict(path='workspace/src/main/resources'), dict(externalChecks='suite'), dict(unknown=True)]:
             with self.subTest(override=override):
-                self.mapping(**override)
-                with self.assertRaises(ValueError):
-                    self.plan('workspace/src/test/resources/shared/schema.avsc')
+                self.legacy_mapping(**override)
+                self.assertEqual(self.plan('workspace/src/test/resources/shared/schema.avsc'), self.all_suites())
 
     def test_model_changes_and_unknown_properties_remain_unknown(self):
         for body in [self.contract.replace('<artifactId>event', '<artifactId>renamed'), self.contract.replace('<wire.version>1', '<wire.version>2') + '<configuration>${wire.version}</configuration>']:
@@ -115,8 +113,8 @@ class ImpactTests(unittest.TestCase):
         self.commit()
         self.bump(plugin)
         self.assertEqual(self.plan('workspace/contracts/event/pom.xml'), self.all_suites())
-        self.mapping()
-        self.assertEqual(self.plan('workspace/contracts/event/pom.xml'), 'adapter\t*\ncontracts/event\t*\nrunner\t*')
+        self.legacy_mapping()
+        self.assertEqual(self.plan('workspace/contracts/event/pom.xml'), self.all_suites())
 
     def test_profile_dependencies_are_overselected_and_managed_only_are_not(self):
         self.write('unrelated/pom.xml', self.parent('root', '../pom.xml') + '<artifactId>unrelated</artifactId><profiles><profile>' + self.dependency('event') + '</profile></profiles>')
@@ -130,27 +128,26 @@ class ImpactTests(unittest.TestCase):
         self.bump()
         self.assertIn('unrelated\t*', self.plan('workspace/contracts/event/pom.xml'))
 
-    def test_deleted_fixture_and_overlapping_rules_union_owners(self):
-        self.mapping(modules=['adapter'])
+    def test_legacy_overlapping_rules_cannot_narrow_deleted_fixture_scope(self):
+        self.legacy_mapping(modules=['adapter'])
         config = self.repo / 'makevn-impact.json'
         data = json.loads(config.read_text())
         data['sharedResources'].append(dict(path='workspace/src/test/resources/shared/v2', modules=['runner'], externalChecks=[]))
         config.write_text(json.dumps(data))
-        self.assertEqual(self.plan('workspace/src/test/resources/shared/v2/deleted.avsc'), 'adapter\t*\nrunner\t*')
+        self.assertEqual(self.plan('workspace/src/test/resources/shared/v2/deleted.avsc'), self.all_suites())
 
-    def test_symlinked_resource_prefix_and_config_rejected(self):
-        self.mapping()
+    def test_linked_fixture_is_rejected_but_legacy_config_is_not_read(self):
+        self.legacy_mapping()
         shared = self.base / 'src/test/resources/shared'
         shared.parent.mkdir(parents=True)
         shared.symlink_to(self.base / 'adapter', target_is_directory=True)
-        with self.assertRaisesRegex(ValueError, 'Shared resource paths'):
+        with self.assertRaisesRegex(ValueError, 'linked'):
             self.plan('workspace/src/test/resources/shared/schema.avsc')
         shared.unlink()
         config = self.repo / 'makevn-impact.json'
         config.rename(self.repo / 'other.json')
         config.symlink_to(self.repo / 'other.json')
-        with self.assertRaisesRegex(ValueError, 'linked'):
-            self.plan('workspace/src/test/resources/shared/schema.avsc')
+        self.assertEqual(self.plan('workspace/src/test/resources/shared/schema.avsc'), self.all_suites())
 
     def test_unresolved_coordinates_and_missing_declared_modules_rejected(self):
         self.bump()
@@ -161,10 +158,9 @@ class ImpactTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.plan('workspace/contracts/event/pom.xml')
 
-    def test_duplicate_keys_cannot_override_external_checks(self):
+    def test_malformed_legacy_root_json_cannot_override_automatic_scope(self):
         (self.repo / 'makevn-impact.json').write_text('{"version":1,"sharedResources":[],"sharedResources":[]}')
-        with self.assertRaisesRegex(ValueError, 'Duplicate impact'):
-            self.plan('workspace/src/test/resources/shared/schema.avsc')
+        self.assertEqual(self.plan('workspace/src/test/resources/shared/schema.avsc'), self.all_suites())
 
     def test_backend_planner_process_success_and_actionable_rejection(self):
         self.bump()
@@ -175,11 +171,10 @@ class ImpactTests(unittest.TestCase):
         result = subprocess.run(command, input='workspace/src/test/resources/shared/schema.avsc\n', text=True, capture_output=True)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stdout.strip(), self.all_suites())
-        self.mapping(externalChecks=['browser E2E'])
+        self.legacy_mapping(externalChecks=['browser E2E'])
         result = subprocess.run(command, input='workspace/src/test/resources/shared/schema.avsc\n', text=True, capture_output=True)
-        self.assertEqual(result.returncode, 2)
-        self.assertIn('browser E2E', result.stderr)
-        self.assertEqual(result.stdout, '')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout.strip(), self.all_suites())
 
     def test_non_pom_filename_does_not_gain_contract_classification(self):
         other = self.base / 'contracts/event/alternate-pom.xml'
@@ -221,7 +216,7 @@ class ImpactTests(unittest.TestCase):
             self.plan('workspace/src/test/resources/shared/schema.avsc')
 
     def test_mapping_cannot_hide_java_or_build_changes(self):
-        self.mapping()
+        self.legacy_mapping()
         for path in ['workspace/src/main/java/A.java', 'workspace/build.sh', 'makevn-impact.json']:
             with self.assertRaises(ValueError):
                 self.plan(path)

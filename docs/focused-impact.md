@@ -35,7 +35,8 @@ A nested leaf POM can be focused when its only semantic changes are literal
 `*version` property values, used as direct dependency versions. Preparation includes
 the contract; verification selects its complete suite and the reverse transitive
 closure of local consumers, including local POM inheritance. DependencyManagement
-alone does not establish consumption. Profile dependency declarations are
+alone does not establish consumption. Invoked local build plugins are also consumers; pluginManagement alone is not.
+Profile dependency declarations are
 conservatively included rather than guessed inactive.
 
 Static coordinate resolution supports local parent inheritance, local properties
@@ -50,41 +51,15 @@ output directories must stay in the contract module or have a safe shared-resour
 scope. Root test-resource outputs use the same automatic conservative strategy,
 without requiring a configuration file. Other plugin/property uses remain unsupported.
 
-## Optional advanced narrowing
+## Internal state only
 
-Repositories that explicitly want a smaller shared-resource plan can optionally
-provide `makevn-impact.json` at the **Git root**. This is an authored override,
-**not the generated `.makevn/impact.json` and not required for normal use**.
-
-```json
-{
-  "version": 1,
-  "sharedResources": [
-    {
-      "path": "workspace/src/test/resources/shared-events",
-      "modules": ["adapter", "runner"],
-      "externalChecks": []
-    }
-  ]
-}
-```
-
-- `path`: literal repository-relative prefix under Maven-root `src/test/resources`;
-  no globs, traversal, absolute paths or links. Matches use path boundaries.
-- `modules`: nonempty list of all Maven test consumers, relative to the Maven root;
-  declared non-aggregator leaf modules. The maintainer, not makevn, takes
-  responsibility for narrowing. A generator alone does not prove consumers.
-- `externalChecks`: required array of descriptions of required non-Maven checks.
-  A nonempty list blocks focused planning and names them. Exhaustive verifies
-  Maven only; run the external checks separately. Descriptions are never executed.
-  An empty array is an explicit maintainer declaration, not an automatic guess.
-- Overlapping explicit mappings union owners, never override an external blocker.
-  Unmapped root test resources retain the automatic full-reactor suite scope.
-- Invalid declarations fail closed and are never silently replaced. A versioned
-  policy-file change itself still requires exhaustive verification.
+The generated `.makevn/impact.json` is the only impact state. There is no
+user-maintained impact configuration or supported root override. A legacy root
+`makevn-impact.json` is not read and cannot narrow scope; remove it rather than
+maintain it. Unsupported impact still requires an explicit broader verification.
 
 Both CLI and MCP use the same backend planner and expose scope limitations.
-Focused evidence fingerprints POMs, optional declarations and shared inputs,
+Focused evidence fingerprints POMs, configuration and shared inputs,
 including Git-ignored binary fixtures. Editing inputs invalidates the previous
 coverage/CRAP evidence; editing generated state cannot narrow or invalidate it.
 Contract/fixture-only changes without changed production Java classes can yield

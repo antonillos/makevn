@@ -885,6 +885,6 @@ Shared root test resources in a plain unconditional aggregator default to all
 reactor module suites, visibly listed in the plan. This classified Maven-only
 scope does not prove external/E2E or global gates. Ambiguous models still stop;
 never infer owners from company/module/schema names or ignore fixtures.
-Optional authored `makevn-impact.json` narrows only by explicit maintainer policy;
-never invent declarations to bypass required external checks.
+Impact state is internal only: do not create or maintain root impact overrides.
+Keep required external checks separate; automatic Maven scope does not prove them.
 See [Focused impact](focused-impact.md).

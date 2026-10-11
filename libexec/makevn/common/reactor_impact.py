@@ -1,10 +1,6 @@
 """Static contract consumers and automatic conservative shared-resource scope."""
-import json
 import pathlib
 import re
-
-
-CONFIG = 'makevn-impact.json'
 
 
 def literal_path(value):
@@ -16,53 +12,12 @@ def literal_path(value):
     return path
 
 
-def unique_keys(pairs):
-    result = {}
-    for key, value in pairs:
-        if key in result:
-            raise ValueError('Duplicate impact configuration key: ' + key)
-        result[key] = value
-    return result
-
-
-def resource_rules(repo, base, modules, parse):
-    config = repo / CONFIG
-    if not config.exists():
-        return []
-    if config.is_symlink():
-        raise ValueError('Refusing linked ' + CONFIG)
-    data = json.loads(config.read_text(), object_pairs_hook=unique_keys)
-    if not isinstance(data, dict) or set(data) != {'version', 'sharedResources'} or type(data['version']) is not int or data['version'] != 1 or not isinstance(data['sharedResources'], list):
-        raise ValueError('Invalid ' + CONFIG + ': expected version 1 and sharedResources array')
-    rules = []
-    for rule in data['sharedResources']:
-        if not isinstance(rule, dict) or set(rule) != {'path', 'modules', 'externalChecks'}:
-            raise ValueError('Each sharedResources rule requires path, modules and externalChecks')
-        path = repo / literal_path(rule['path'])
-        if path.resolve() != path or not path.is_relative_to(base / 'src/test/resources'):
-            raise ValueError('Shared resource paths must stay under Maven-root src/test/resources')
-        owners = rule['modules']
-        checks = rule['externalChecks']
-        if not isinstance(owners, list) or not owners or any(str(literal_path(owner)) not in modules for owner in owners):
-            raise ValueError('Shared resource modules must be nonempty declared reactor owners')
-        if not isinstance(checks, list) or any(not isinstance(check, str) or not check.strip() or any(ord(char) < 32 for char in check) for check in checks):
-            raise ValueError('externalChecks must be an array of nonempty single-line descriptions')
-        for owner in owners:
-            root = parse((base / owner / 'pom.xml').read_text())
-            if root.findtext('packaging', 'jar') == 'pom' or root.findall('./modules/module'):
-                raise ValueError('Shared resource owners must be testable leaf modules, not aggregators: ' + owner)
-        rules.append((path, set(owners), checks))
-    return rules
-
-
 def resource_owners(path, rules):
     owners = set()
     if path.resolve() != path:
         raise ValueError('Refusing linked shared-resource input: ' + str(path))
-    for prefix, modules, checks in rules:
+    for prefix, modules in rules:
         if path.is_relative_to(prefix):
-            if checks:
-                raise ValueError('Shared resources require checks outside the Maven reactor: ' + ', '.join(checks) + '. Focused verification cannot run them; use --exhaustive for Maven and run those checks separately')
             owners.update(modules)
     return owners
 
@@ -81,13 +36,10 @@ def automatic_resource_rules(repo, base, modules, parse):
         raise ValueError('Refusing linked shared-resource prefix: ' + str(prefix))
     for owner in modules:
         literal_path(owner)
-    return [(prefix, set(modules), [])]
+    return [(prefix, set(modules))]
 
 
-def shared_resource_owners(repo, base, modules, path, rules, parse):
-    explicit = resource_owners(path, rules)
-    if explicit:
-        return explicit
+def shared_resource_owners(repo, base, modules, path, parse):
     automatic = automatic_resource_rules(repo, base, modules, parse)
     return resource_owners(path, automatic)
 
@@ -181,7 +133,7 @@ def reactor_consumers(base, modules, owner, parse):
     return selected
 
 
-def leaf_bump_owners(repo, base, owner, current, changed, modules, rules, parse):
+def leaf_bump_owners(repo, base, owner, current, changed, modules, parse):
     """Only leaf version properties used in dependencies/known unpack artifacts."""
     if owner not in modules or not changed or any(not key.endswith('version') for key in changed) or current.findall('./modules/module') or current.findall('./profiles/profile/modules/module'):
         return None
@@ -210,7 +162,7 @@ def leaf_bump_owners(repo, base, owner, current, changed, modules, rules, parse)
                 return None
             path = (base / owner / value).resolve()
             if not path.is_relative_to(base / owner):
-                mapped = shared_resource_owners(repo, base, modules, path, rules, parse)
+                mapped = shared_resource_owners(repo, base, modules, path, parse)
                 if not mapped:
                     return None
                 extra_owners.update(mapped)
