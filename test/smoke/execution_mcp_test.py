@@ -178,7 +178,7 @@ def responsiveness_and_cancellation(first, second, repo, other):
     start = time.monotonic()
     assert first.call("doctor", repo=str(repo))["isError"] is False
     assert first.call("verify_changes_preview", repo=str(repo))["isError"] is False
-    assert first.status(record["executionId"])["currentPhase"] == "controlled verification phase"
+    eventually(lambda: first.status(record["executionId"])["currentPhase"] == "controlled verification phase", timeout=2)
     assert time.monotonic() - start < 3
     conflict = second.call("verify", repo=str(repo))
     assert conflict["isError"] is True

@@ -1,5 +1,5 @@
 use std::fs::{self, File, OpenOptions};
-use std::io::{self, BufRead, Read, Write};
+use std::io::{self, BufRead, Read, Seek, SeekFrom, Write};
 use std::os::fd::{AsRawFd, FromRawFd};
 use std::os::unix::fs::OpenOptionsExt;
 use std::os::unix::process::CommandExt;
@@ -216,20 +216,23 @@ impl ExecutionWorker {
         Ok((stdout, stderr, phase))
     }
 
-    fn refresh(&self, stdout: &std::path::Path, phase: &std::path::Path) {
-        let output = fs::read_to_string(stdout).unwrap_or_default();
-        let (_, paths) = crate::mcp_server::extract_log_headers(&output);
+    fn refresh(&self, output: &str, phase: &std::path::Path) {
+        let (_, paths) = crate::mcp_server::extract_log_headers(output);
         let phase = fs::read_to_string(phase)
             .ok()
             .and_then(|phase| phase.lines().next().map(str::to_owned));
-        let _ = self.update(|record| {
-            record.current_phase = phase;
-            for path in paths {
-                if !record.log_paths.contains(&path) {
-                    record.log_paths.push(path);
-                }
+        let mut record = self.record.lock().unwrap();
+        let previous_phase = record.current_phase.clone();
+        let previous_paths = record.log_paths.len();
+        record.current_phase = phase;
+        for path in paths {
+            if !record.log_paths.contains(&path) {
+                record.log_paths.push(path);
             }
-        });
+        }
+        if record.current_phase != previous_phase || record.log_paths.len() != previous_paths {
+            let _ = save_record(&self.root, &record);
+        }
     }
 }
 
@@ -249,11 +252,12 @@ pub fn command_output(command: &mut Command, detached: bool) -> Result<Output, S
     let (stdout, stderr, phase) = worker.paths()?;
     let mut child = spawn_captured(command, &stdout, &stderr, &phase)?;
     let group = child.id() as i32;
-    let status = wait_command(worker, &mut child, &stdout, &phase)?;
+    let mut tail = OutputTail::default();
+    let status = wait_command(worker, &mut child, &stdout, &phase, &mut tail)?;
     if !detached {
         clean_group(worker, group);
     }
-    worker.refresh(&stdout, &phase);
+    worker.refresh(&tail.read(&stdout), &phase);
     captured_output(status, &stdout, &stderr)
 }
 
@@ -284,6 +288,34 @@ fn captured_output(
     })
 }
 
+#[derive(Default)]
+struct OutputTail {
+    offset: u64,
+    pending: String,
+}
+
+impl OutputTail {
+    fn read(&mut self, path: &std::path::Path) -> String {
+        let Ok(mut file) = File::open(path) else {
+            return String::new();
+        };
+        if file.seek(SeekFrom::Start(self.offset)).is_err() {
+            return String::new();
+        }
+        let mut added = String::new();
+        if file.read_to_string(&mut added).is_err() {
+            return String::new();
+        }
+        self.offset += added.len() as u64;
+        self.pending.push_str(&added);
+        let Some(end) = self.pending.rfind('\n') else {
+            return String::new();
+        };
+        let remainder = self.pending.split_off(end + 1);
+        std::mem::replace(&mut self.pending, remainder)
+    }
+}
+
 fn capture_file(path: &std::path::Path) -> Result<File, String> {
     OpenOptions::new()
         .write(true)
@@ -300,8 +332,10 @@ fn wait_command(
     child: &mut Child,
     stdout: &std::path::Path,
     phase: &std::path::Path,
+    tail: &mut OutputTail,
 ) -> Result<std::process::ExitStatus, String> {
     let mut termination_sent = false;
+    let mut refreshed = Instant::now() - Duration::from_secs(1);
     loop {
         if cancelled() {
             signal_cancellation(worker, child.id() as i32, &mut termination_sent);
@@ -309,7 +343,10 @@ fn wait_command(
         if let Some(status) = child.try_wait().map_err(|error| error.to_string())? {
             return Ok(status);
         }
-        worker.refresh(stdout, phase);
+        if refreshed.elapsed() >= Duration::from_secs(1) {
+            worker.refresh(&tail.read(stdout), phase);
+            refreshed = Instant::now();
+        }
         thread::sleep(Duration::from_millis(50));
     }
 }
