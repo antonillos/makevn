@@ -826,6 +826,10 @@ until sharing/permissions are resolved. Changes to VM sharing, checkout location
 container recreation or volume deletion require user authorization. No image is
 pulled and no helper container is provisioned. Missing compose JSON, remote paths
 or images without a working `test` probe remain unverified, not confirmed failures.
+A missing/unreadable source warning describes the client filesystem, not proven
+daemon access. If readiness exits 0, report unverified visibility and continue
+already-authorized tests unless another independent prerequisite fails; do not
+request worktree relocation or Docker sharing changes solely for that warning.
 Visibility does not prove database/user initialization: that needs project-specific
 semantic checks. Empty host directories produce informational empty_source diagnostics, not warnings or failures; no missing initialization data is inferred.
 

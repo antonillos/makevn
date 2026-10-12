@@ -542,6 +542,12 @@ When the requested changed-code gate requires boot containers, first call
 `docker_ps_required` separately with `wait-seconds: 30` in the same repository.
 If it passes, reuse the healthy running services and proceed directly to the
 verification composite below. Do not reset a healthy stack with `docker_up`.
+Warnings about missing/unreadable client-side bind sources or unavailable probes
+are unverified visibility, not confirmed daemon failures. When readiness exits 0,
+report that limitation and continue already-authorized tests unless another
+independent prerequisite fails. Do not ask the user to move the worktree or change
+Docker sharing solely because of these warnings. A confirmed
+`bind_mount_visibility_mismatch` fails readiness and must be investigated.
 
 If readiness fails, inspect diagnostics before deciding to start services.
 `docker_up` executes Compose `down -v`, prunes volumes, and starts the stack;
