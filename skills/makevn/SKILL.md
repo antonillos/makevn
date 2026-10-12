@@ -538,19 +538,26 @@ one generic clean + verify_changes + coverage workflow for both intents.
 }
 ```
 
-When the requested changed-code gate requires boot containers, use the complete
-Docker-backed sequence below. Do not call
-`verify_changes` before Docker readiness passes. Run `docker_ps_required` after
-`docker_up`, then execute changed-code verification, coverage, and CRAP
-checks in order in one fail-fast composite workflow:
+When the requested changed-code gate requires boot containers, first call
+`docker_ps_required` separately with `wait-seconds: 30` in the same repository.
+If it passes, reuse the healthy running services and proceed directly to the
+verification composite below. Do not reset a healthy stack with `docker_up`.
+
+If readiness fails, inspect diagnostics before deciding to start services.
+`docker_up` executes Compose `down -v`, prunes volumes, and starts the stack;
+ordinary test authorization does not authorize deleting existing service data.
+Call it only when startup or reset is needed and this destructive lifecycle is
+explicitly authorized. After successful startup, call `docker_ps_required` again
+with `wait-seconds: 30`; continue only if it passes. Do not treat an unhealthy
+service or bind-mount failure as permission for a destructive reset.
+
+After Docker readiness passes, run verification and metrics sequentially:
 
 ```json
 {
   "tool": "composite_run",
   "arguments": {
     "steps": [
-      {"tool": "docker_up"},
-      {"tool": "docker_ps_required", "arguments": {"wait-seconds": 30}},
       {"tool": "verify_changes", "arguments": {"focused": true}},
       {"tool": "coverage_changes", "arguments": {}},
       {"tool": "crap_changes", "arguments": {}}
@@ -560,18 +567,16 @@ checks in order in one fail-fast composite workflow:
 }
 ```
 
-CLI equivalent:
+CLI equivalents for an already healthy stack:
 
 ```bash
-makevn docker-up docker-ps-required --wait-seconds 30 verify-changes coverage-changes crap-changes
+makevn docker-ps-required --wait-seconds 30 verify-changes coverage-changes crap-changes
 ```
 
-Use this sequence when the repository configuration or the user's requested
-workflow requires boot containers. Otherwise, follow the applicable UT or
-focused workflow below; do not start Docker solely because a compose file exists.
-For a new worktree, including a `pr-bump-review` correction, omit the `clean`
-step unless stale build outputs establish a concrete need. Keep Docker startup,
-required-service readiness, verification, coverage, and CRAP in that order.
+Use Docker gates when repository configuration or the approved workflow requires
+boot containers; a root compose file alone is insufficient. For a new worktree,
+including a `pr-bump-review` correction, omit `clean` unless stale build outputs
+establish a concrete need.
 
 **CLI equivalents**, after setup/readiness:
 

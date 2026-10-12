@@ -912,8 +912,11 @@ fn changed_code_preview_requires_docker_readiness_before_execution() {
     for text in [
         "run doctor",
         "doctor/config/profile",
-        "docker_up then docker_ps_required with wait-seconds: 30",
-        "both must pass before verify_changes",
+        "first run docker_ps_required with wait-seconds: 30",
+        "Reuse healthy running services",
+        "do not call docker_up when this gate passes",
+        "down -v and volume prune",
+        "destructive lifecycle is explicitly authorized",
         "successful preview does not establish Docker readiness",
         "without another routine approval question",
         "Omit clean for a new worktree",
@@ -923,7 +926,9 @@ fn changed_code_preview_requires_docker_readiness_before_execution() {
     for name in ["verify_changes_preview", "verify_changes", "composite_run"] {
         let spec = super::TOOL_SPECS.iter().find(|spec| spec.name == name).unwrap();
         assert!(spec.description.contains("doctor/config/profile"));
-        assert!(spec.description.contains("docker_up then docker_ps_required"));
+        assert!(spec.description.contains("first run docker_ps_required"));
+        assert!(spec.description.contains("reuse healthy services"));
+        assert!(spec.description.contains("down -v and volume prune"));
     }
 }
 
