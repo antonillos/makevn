@@ -141,7 +141,7 @@ import sys
 import time
 
 repo = Path(sys.argv[1])
-if (repo / 'ignore').exists():
+if (repo / 'ignore').exists() or (repo / 'children-ignore').exists():
     signal.signal(signal.SIGTERM, signal.SIG_IGN)
 with (repo / 'pids').open('a') as file:
     file.write(str(os.getpid()) + '\n')
@@ -287,6 +287,19 @@ def completion_and_forcing(session, quick, forced):
     assert session.call("execution_list", unknown=True)["isError"] is True
 
 
+def lingering_children(session, repo):
+    (repo / "children-ignore").touch()
+    request = session.begin("verify", repo=str(repo))
+    record = session.running(repo)
+    owned = pids(repo)
+    start = time.monotonic()
+    session.call("execution_cancel", executionId=record["executionId"])
+    assert session.call("verify", repo=str(repo))["isError"] is True
+    stopped(session, record, owned)
+    assert 4.5 <= time.monotonic() - start < 8
+    session.receive(request)
+
+
 def disconnect(executable, state, observer, repo, mode):
     client = Session(executable, state)
     client.begin("verify", repo=str(repo))
@@ -338,7 +351,7 @@ def run(executable):
         backend.chmod(0o700)
         (root / "child.py").write_text(CHILD)
         state = root / "state"
-        repos = [root / f"repo-{index}" for index in range(13)]
+        repos = [root / f"repo-{index}" for index in range(14)]
         for repo in repos:
             repo.mkdir()
         first = Session(mcp, state)
@@ -357,6 +370,7 @@ def run(executable):
             disconnect(mcp, state, first, repos[10], mode="signal")
             disconnect(mcp, state, first, repos[11], mode="invalid")
             transport_failure(mcp, state, first, repos[12])
+            lingering_children(first, repos[13])
         finally:
             first.close()
             second.close()

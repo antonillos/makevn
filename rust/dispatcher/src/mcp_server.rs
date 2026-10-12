@@ -794,22 +794,7 @@ fn handle_parallel_run(makevn_bin: &Path, args: &Map<String, Value>) -> Result<S
         .map(|s| s.to_owned());
 
     let global_trace = trace_output(args) == "1";
-    let bin = makevn_bin.to_path_buf();
-    let mut handles = Vec::new();
-
-    for (i, step) in steps.iter().enumerate() {
-        if crate::mcp_supervisor::cancelled() { break; }
-        let step = step.clone();
-        let bin = bin.clone();
-        let repo = global_repo.clone();
-        handles.push(thread::spawn(move || {
-            let step_tool = step["tool"].as_str().unwrap_or("unknown");
-            match execute_single_step(&bin, &step, repo.as_deref(), global_trace) {
-                Ok(result) => step_tool_result(i, step_tool, &result),
-                Err(err) => step_result(i, step_tool, &err, -1, 0),
-            }
-        }));
-    }
+    let handles = spawn_parallel_steps(makevn_bin, &steps, global_repo, global_trace);
 
     let mut results = Vec::new();
     let mut overall_exit_code = if crate::mcp_supervisor::cancelled() { 130 } else { 0 };
@@ -832,6 +817,32 @@ fn handle_parallel_run(makevn_bin: &Path, args: &Map<String, Value>) -> Result<S
     });
 
     Ok(serde_json::to_string_pretty(&summary).unwrap())
+}
+
+fn spawn_parallel_steps(
+    makevn_bin: &Path,
+    steps: &[Value],
+    global_repo: Option<String>,
+    global_trace: bool,
+) -> Vec<thread::JoinHandle<Value>> {
+    let bin = makevn_bin.to_path_buf();
+    let mut handles = Vec::new();
+
+    for (i, step) in steps.iter().enumerate() {
+        if crate::mcp_supervisor::cancelled() { break; }
+        let step = step.clone();
+        let bin = bin.clone();
+        let repo = global_repo.clone();
+        handles.push(thread::spawn(move || {
+            let step_tool = step["tool"].as_str().unwrap_or("unknown");
+            match execute_single_step(&bin, &step, repo.as_deref(), global_trace) {
+                Ok(result) => step_tool_result(i, step_tool, &result),
+                Err(err) => step_result(i, step_tool, &err, -1, 0),
+            }
+        }));
+    }
+
+    handles
 }
 
 struct ToolOutput {

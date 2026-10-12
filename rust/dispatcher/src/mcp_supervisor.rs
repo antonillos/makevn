@@ -247,19 +247,36 @@ pub fn command_output(command: &mut Command, detached: bool) -> Result<Output, S
         return Err("Execution cancelled before starting the next step".into());
     }
     let (stdout, stderr, phase) = worker.paths()?;
-    command
-        .stdin(Stdio::null())
-        .stdout(capture_file(&stdout)?)
-        .stderr(capture_file(&stderr)?)
-        .env("MAKEVN_MCP_PHASE_OUT", &phase)
-        .process_group(0);
-    let mut child = command.spawn().map_err(|error| error.to_string())?;
+    let mut child = spawn_captured(command, &stdout, &stderr, &phase)?;
     let group = child.id() as i32;
     let status = wait_command(worker, &mut child, &stdout, &phase)?;
     if !detached {
         clean_group(worker, group);
     }
     worker.refresh(&stdout, &phase);
+    captured_output(status, &stdout, &stderr)
+}
+
+fn spawn_captured(
+    command: &mut Command,
+    stdout: &std::path::Path,
+    stderr: &std::path::Path,
+    phase: &std::path::Path,
+) -> Result<Child, String> {
+    command
+        .stdin(Stdio::null())
+        .stdout(capture_file(stdout)?)
+        .stderr(capture_file(stderr)?)
+        .env("MAKEVN_MCP_PHASE_OUT", phase)
+        .process_group(0);
+    command.spawn().map_err(|error| error.to_string())
+}
+
+fn captured_output(
+    status: std::process::ExitStatus,
+    stdout: &std::path::Path,
+    stderr: &std::path::Path,
+) -> Result<Output, String> {
     Ok(Output {
         status,
         stdout: fs::read(stdout).map_err(|error| error.to_string())?,

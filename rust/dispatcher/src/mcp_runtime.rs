@@ -58,22 +58,7 @@ pub fn run(executable: PathBuf, backend: PathBuf) -> Result<i32, String> {
         sender,
         stopping: false,
     };
-    let mut failure = None;
-    loop {
-        if interrupted.load(Ordering::SeqCst) {
-            session.stop();
-        }
-        if session.stopping && session.active.is_empty() {
-            break;
-        }
-        if let Ok(event) = receiver.recv_timeout(Duration::from_millis(50)) {
-            if let Err(error) = session.event(event) {
-                failure.get_or_insert(error);
-                session.stop();
-            }
-        }
-    }
-    failure.map_or(Ok(0), Err)
+    session.serve(receiver, interrupted)
 }
 
 fn read_requests(sender: mpsc::Sender<Event>) {
@@ -102,6 +87,29 @@ fn parse_input(line: io::Result<String>) -> Option<Event> {
 }
 
 impl McpSession {
+    fn serve(
+        &mut self,
+        receiver: mpsc::Receiver<Event>,
+        interrupted: Arc<AtomicBool>,
+    ) -> Result<i32, String> {
+        let mut failure = None;
+        loop {
+            if interrupted.load(Ordering::SeqCst) {
+                self.stop();
+            }
+            if self.stopping && self.active.is_empty() {
+                break;
+            }
+            if let Ok(event) = receiver.recv_timeout(Duration::from_millis(50)) {
+                if let Err(error) = self.event(event) {
+                    failure.get_or_insert(error);
+                    self.stop();
+                }
+            }
+        }
+        failure.map_or(Ok(0), Err)
+    }
+
     fn event(&mut self, event: Event) -> Result<(), String> {
         match event {
             Event::Request(request) if !self.stopping => self.request(request),
@@ -258,19 +266,24 @@ impl McpSession {
             result["structuredContent"]["executions"] =
                 serde_json::to_value(self.store.list(args)?).map_err(|error| error.to_string())?;
         } else {
-            let id = args["executionId"]
-                .as_str()
-                .ok_or("executionId is required")?;
-            let mut record = self.store.get(id)?.snapshot();
-            if params["name"] == "execution_cancel" {
-                self.cancel_execution(&mut record)?;
-            }
+            let record = self.control_record(params)?;
             add_identity(&mut result, &record);
             result["structuredContent"]["execution"] =
                 serde_json::to_value(record).map_err(|error| error.to_string())?;
         }
         mirror_content(&mut result);
         Ok(result)
+    }
+
+    fn control_record(&mut self, params: &Value) -> Result<ExecutionRecord, String> {
+        let id = params["arguments"]["executionId"]
+            .as_str()
+            .ok_or("executionId is required")?;
+        let mut record = self.store.get(id)?.snapshot();
+        if params["name"] == "execution_cancel" {
+            self.cancel_execution(&mut record)?;
+        }
+        Ok(record)
     }
 
     fn cancel_execution(&mut self, record: &mut ExecutionRecord) -> Result<(), String> {
