@@ -538,10 +538,10 @@ one generic clean + verify_changes + coverage workflow for both intents.
 }
 ```
 
-When the requested changed-code gate requires boot containers and explicitly
-requests cleaning build outputs, use the complete Docker-backed sequence below. Do not call
+When the requested changed-code gate requires boot containers, use the complete
+Docker-backed sequence below. Do not call
 `verify_changes` before Docker readiness passes. Run `docker_ps_required` after
-`docker_up`, then execute clean, changed-code verification, coverage, and CRAP
+`docker_up`, then execute changed-code verification, coverage, and CRAP
 checks in order in one fail-fast composite workflow:
 
 ```json
@@ -551,7 +551,6 @@ checks in order in one fail-fast composite workflow:
     "steps": [
       {"tool": "docker_up"},
       {"tool": "docker_ps_required", "arguments": {"wait-seconds": 30}},
-      {"tool": "clean"},
       {"tool": "verify_changes", "arguments": {"focused": true}},
       {"tool": "coverage_changes", "arguments": {}},
       {"tool": "crap_changes", "arguments": {}}
@@ -564,7 +563,7 @@ checks in order in one fail-fast composite workflow:
 CLI equivalent:
 
 ```bash
-makevn docker-up docker-ps-required --wait-seconds 30 clean verify-changes coverage-changes crap-changes
+makevn docker-up docker-ps-required --wait-seconds 30 verify-changes coverage-changes crap-changes
 ```
 
 Use this sequence when the repository configuration or the user's requested
