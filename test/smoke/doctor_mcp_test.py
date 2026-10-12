@@ -1,9 +1,10 @@
 """Exercise explicit init recommendations through the real MCP response."""
 import json
 from pathlib import Path
-import subprocess
 import sys
 import tempfile
+
+from mcp_client import request as mcp_request
 
 mcp = sys.argv[1]
 with tempfile.TemporaryDirectory() as tmp:
@@ -16,9 +17,7 @@ with tempfile.TemporaryDirectory() as tmp:
     def call(tool, _data=False, **arguments):
         request = {"jsonrpc": "2.0", "id": 1, "method": "tools/call",
                    "params": {"name": tool, "arguments": {"repo": tmp, **arguments}}}
-        response = subprocess.run([mcp], input=json.dumps(request) + "\n",
-                                  text=True, capture_output=True, check=True)
-        result = json.loads(response.stdout)["result"]
+        result = mcp_request(mcp, request)["result"]
         data = result["structuredContent"]
         output = data["untrustedData"]["output"]
         if tool == "doctor":

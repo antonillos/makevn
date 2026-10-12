@@ -2,9 +2,10 @@
 import json
 from pathlib import Path
 import shutil
-import subprocess
 import sys
 import tempfile
+
+from mcp_client import request as mcp_request
 
 def assert_schema(value, schema):
     """Check the JSON Schema keywords used by the emitted makevn contract."""
@@ -39,25 +40,25 @@ with tempfile.TemporaryDirectory() as tmp:
         return {"jsonrpc": "2.0", "id": 1, "method": method, "params": params}
 
     def call(req):
-        completed = subprocess.run([str(mcp)], input=json.dumps(req) + "\n",
-                                   capture_output=True, text=True, check=True)
-        return json.loads(completed.stdout)
+        return mcp_request(mcp, req)
 
     initialized = call(request("initialize", {"protocolVersion": "2025-11-25"}))
     assert initialized["result"]["protocolVersion"] == "2025-11-25"
     tools = call(request("tools/list", {}))["result"]["tools"]
     schemas = {tool["name"]: tool["outputSchema"] for tool in tools}
     for name in ["doctor", "composite_run", "parallel_run"]:
-        args = {} if name == "doctor" else {"steps": [{"tool": "doctor"}, {"tool": "doctor"}], "fail-fast": False}
+        args = {} if name == "doctor" else {"steps": [{"tool": "doctor"}, {"tool": "doctor"}]}
+        if name == "composite_run":
+            args["fail-fast"] = False
         result = call(request("tools/call", {"name": name, "arguments": args}))["result"]
         structured = result["structuredContent"]
         assert json.loads(result["content"][0]["text"]) == structured
         assert len(result["content"]) == 1
         assert result["isError"] is True
         assert structured["status"] == "error"
-        assert structured["exitCode"] == 7
+        assert structured["exitCode"] == 7, (name, structured)
         assert structured["durationMs"] >= 20
-        assert structured["logPaths"] == [".makevn/logs/test.log"]
+        assert ".makevn/logs/test.log" in structured["logPaths"]
         assert_schema(structured, schemas[name])
         assert "ignore previous instructions" not in structured["nextSuggestion"]
         data = structured["untrustedData"]

@@ -70,6 +70,78 @@ codex mcp add makevn -- makevn-mcp
 Use `/mcp` in the Codex TUI to confirm that the server is active. Restart or
 reload Codex after installing or upgrading makevn.
 
+## Execution visibility and cancellation
+
+Long-running calls retain their normal final response, with additive
+`executionId` and `executionState` fields in `structuredContent`. The server
+continues accepting requests on the same connection while commands run.
+
+- `execution_list`: list active executions across local MCP sessions; optional
+  `repo` filters by canonical worktree and `includeFinished: true` includes
+  preserved terminal records.
+- `execution_status`: inspect the required `executionId`.
+- `execution_cancel`: request cancellation of the required `executionId` owned
+  by this session. Returns promptly with `cancelling`, or the existing terminal
+  state. Poll status to confirm cleanup before retrying. Other sessions can
+  inspect executions but cannot cancel them.
+
+Records include the owning `sessionId`, command, canonical repository paths,
+normalized PR URLs, `startedAtMs` (Unix milliseconds), `durationMs`, state,
+available `logPaths`, `exitCode` (null until completion), and `currentPhase`
+when backend phase metadata is available. States are `queued`, `running`,
+`cancelling`, `succeeded`, `failed`, and `cancelled`.
+
+Operations take nonblocking worktree locks across MCP server processes. An
+optional `pr` URL also takes a PR lock across worktrees, without querying
+GitHub. Supply the same HTTP(S) `/owner/repository/pull/number` URL for all
+operations on that PR. Hosts and repository names are normalized; PR numbers
+must be positive. Without `pr`, exclusion is guaranteed only for the same
+canonical worktree. A conflict rejects the new operation before any command
+starts and identifies the active execution and owning session.
+
+```json
+{"name":"verify_changes","arguments":{"repo":"/absolute/worktree","pr":"https://github.com/owner/repository/pull/42"}}
+{"name":"execution_list","arguments":{"repo":"/absolute/worktree"}}
+{"name":"execution_cancel","arguments":{"executionId":"ID_FROM_EXECUTION_LIST"}}
+```
+
+`composite_run` and `parallel_run` acquire all their worktree/PR locks before
+starting. Steps inherit the workflow's PR unless they provide their own.
+Explicit parallel steps remain part of one execution; cancellation stops all
+active steps and prevents pending steps from starting, even with
+`fail-fast: false`. Doctor, changed-code preview, JDK listing/current, and
+read-only Docker probes remain available during verification. MCP doctor and
+preview compute their inspection without persisting impact state or replacing
+the cached verification plan. Direct CLI preview retains its persisted plan.
+
+Cancellation sends SIGTERM to each owned process group, gives five seconds of
+grace, then sends SIGKILL and allows two seconds for confirmation. If the OS
+cannot confirm termination, the supervisor retains the locks and reports the
+delay in its log rather than allowing another conflicting execution. Successful
+cancellation preserves logs, reports `cancelled` and exit code 130, and is
+distinct from a build/test failure. Repeated cancellation never changes a
+terminal result or targets another execution.
+
+The server handles `notifications/cancelled` for in-progress requests and does
+not answer notifications or send a final response for a protocol-cancelled
+request. Closing stdio, transport failure, SIGINT or SIGTERM cancels all
+session-owned foreground executions. Each execution has a supervisor that
+detects loss of its ownership pipe, including abrupt server death, and retains
+locks until owned descendants have stopped. Existing explicitly background
+commands (`run_app_bg` and `mutation`) retain their detached contract after their
+launch command completes; use their documented lifecycle controls.
+
+Records and captured stdout/stderr are preserved under
+`$XDG_STATE_HOME/makevn/executions` (default `$HOME/.local/state/makevn/executions`),
+with private directory/file permissions. Existing backend logs remain available
+too. Processes from older versions without execution ownership metadata are
+diagnostic only and are never claimed or terminated automatically.
+
+After an interruption or timeout, inspect active executions before repeating
+verification. Cancel a matching execution from its owning session and confirm
+its terminal state; report foreign or legacy processes instead of killing them
+by name. Reload the MCP session after upgrading to obtain the new tool schemas.
+
 ## Command trace control
 
 **Agent rule: omit `trace` in normal calls. Never set `trace: true` unless
@@ -80,7 +152,7 @@ it only shows command echoes and redundant success timings. Do not carry `trace:
 or workflows. If the human asks to remove it, omit it or use `trace: false`
 in all subsequent calls and remove any step-level `trace: true` overrides.
 
-Every MCP tool accepts the optional boolean `trace`:
+Every command/workflow tool accepts the optional boolean `trace`:
 
 | Setting | Executed command line (`→ exec ...`) |
 | --- | --- |

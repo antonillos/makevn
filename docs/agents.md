@@ -33,6 +33,23 @@ runtime, not by a target repository's legacy `scripts/make/*` folder. Legacy
 Makefile scripts can be useful examples when improving parity, but they must not be
 part of the agent execution contract.
 
+## Interrupted MCP executions
+
+Before repeating an interrupted or timed-out verification, use
+`execution_list` and `execution_status` to inspect matching worktrees/PRs.
+`execution_cancel` can stop only executions owned by the current MCP session;
+confirm a terminal state before retrying. Conflicting operations are rejected
+with the active execution ID and owning session, including conflicts between
+MCP servers. Report foreign or legacy processes instead of terminating them
+by name. Pass the optional `pr` URL consistently when working on the same PR
+across different worktrees; without it, exclusion is by canonical worktree.
+Doctor and preview remain available while verification runs and do not replace
+shared verification state through MCP. Cancelling a composite/parallel workflow
+stops its active steps and prevents pending steps from starting. Session loss
+cancels foreground work through its supervisor; existing explicitly background
+commands keep their documented detached lifecycle. See [the MCP execution
+contract](../mcp/README.md#execution-visibility-and-cancellation).
+
 ## Exact Commands For Agents
 
 Agents must use these command sequences exactly unless the human asks for a

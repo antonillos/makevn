@@ -94,6 +94,7 @@ makevn_clear_verify_changes_plan() {
 }
 
 makevn_write_verify_changes_plan() {
+  [[ "${MAKEVN_MCP_INSPECTION:-}" != 1 ]] || return 0
   local repo_root="$1"
   local plan_path=""
   local tmp_path=""

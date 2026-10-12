@@ -84,6 +84,9 @@ makevn_write_backend_metadata() {
   local metadata_dir=""
   local tmp_metadata_path=""
 
+  if [[ -n "${MAKEVN_MCP_PHASE_OUT:-}" ]]; then
+    printf '%s\n' "${title}" > "${MAKEVN_MCP_PHASE_OUT}" || true
+  fi
   [[ -n "${metadata_path}" ]] || return 0
 
   metadata_dir="$(dirname "${metadata_path}")"

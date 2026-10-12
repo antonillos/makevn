@@ -806,6 +806,17 @@ managed Karate application, not the test JVM or standalone application commands.
 
 ### Structured Tool Output
 
+Before retrying an interrupted or timed-out MCP verification, inspect
+`execution_list` and `execution_status`. Conflicts include the existing
+execution ID and owning session. Cancel only a matching execution owned by
+this session with `execution_cancel`, then confirm its terminal state before
+repeating. Report foreign or legacy processes; never kill them by process name
+or checkout alone. Pass the optional `pr` URL consistently to coordinate the
+same PR across worktrees; otherwise exclusion is by canonical worktree.
+Doctor and preview remain responsive without overwriting verification state.
+Workflow cancellation stops all active steps and prevents pending steps from
+starting. See `mcp/README.md` for ownership, timeout and detached-command policy.
+
 All MCP tools publish an `outputSchema` and return a single consistent object in
 `structuredContent`. `content` contains one text block with the same serialized
 JSON, following MCP's compatibility recommendation. `isError` is true for tool

@@ -84,6 +84,9 @@ makevn_read_choice_into() {
 
 makevn_doctor_progress() {
   local message="$1"
+  if [[ -n "${MAKEVN_MCP_PHASE_OUT:-}" ]]; then
+    printf '%s\n' "${message}" > "${MAKEVN_MCP_PHASE_OUT}" || true
+  fi
   makevn_start_state_phase "${message}"
   [[ "${MAKEVN_COMPACT_OUTPUT:-}" != "1" ]] || return 0
   [[ -t 2 ]] || return 0
