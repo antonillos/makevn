@@ -1,4 +1,6 @@
 """Read-only mount visibility diagnostics distinguish failures from unknown probes."""
+import contextlib
+import io
 import importlib.util
 import json
 from pathlib import Path
@@ -61,6 +63,18 @@ class BindMountTests(unittest.TestCase):
             source.rmdir()
             with patch.object(module, "query", return_value=subprocess.CompletedProcess([], 0, json.dumps(config), "")):
                 self.assertEqual(module.diagnostics("doctor", tmp, str(compose))["checks"][0]["status"], "warning")
+
+    def test_missing_client_source_does_not_block_required_readiness(self):
+        result = {"status": "checked", "checks": [{"service": "kafka",
+                  "source": "/unreadable", "target": "/tmp/data", "status": "warning",
+                  "reason": "Daemon visibility is unverified, not a confirmed mount failure."}]}
+        output = io.StringIO()
+        with patch.object(module, "diagnostics", return_value=result), \
+                patch.object(module.sys, "argv", ["probe", "required", "/repo", "/compose"]), \
+                contextlib.redirect_stdout(output):
+            self.assertEqual(module.main(), 0)
+        self.assertIn("unverified", output.getvalue())
+        self.assertNotIn("Do not repeat tests", output.getvalue())
 
     def test_unavailable_config_is_not_successful_verification(self):
         with tempfile.NamedTemporaryFile() as compose:

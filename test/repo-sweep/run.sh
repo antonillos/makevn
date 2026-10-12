@@ -384,6 +384,8 @@ import json
 import subprocess
 import sys
 
+import threading
+
 mcp_bin, repo_path, tool_name, args_json = sys.argv[1:5]
 timeout_seconds = int(__import__('os').environ.get('MAKEVN_REPO_SWEEP_TIMEOUT_SECONDS', '45'))
 arguments = json.loads(args_json)
@@ -420,10 +422,27 @@ proc = subprocess.Popen(
     stderr=subprocess.PIPE,
     text=True,
 )
+expired = threading.Event()
+def expire():
+    expired.set()
+    if proc.poll() is None:
+        proc.kill()
+
+timer = threading.Timer(timeout_seconds, expire)
+timer.start()
 try:
-    stdout, stderr = proc.communicate("\n".join(request_lines) + "\n", timeout=timeout_seconds)
+    proc.stdin.write("\n".join(request_lines) + "\n")
+    proc.stdin.flush()
+    replies = [proc.stdout.readline(), proc.stdout.readline()]
+    proc.stdin.close()
+    proc.stdin = None
+    remaining, stderr = proc.communicate()
+    stdout = "".join(replies) + remaining
+    if expired.is_set():
+        raise subprocess.TimeoutExpired(mcp_bin, timeout_seconds)
 except subprocess.TimeoutExpired:
-    proc.kill()
+    if proc.poll() is None:
+        proc.kill()
     stdout, stderr = proc.communicate()
     message = f"timed out after {timeout_seconds}s"
     if stderr.strip():
@@ -432,6 +451,8 @@ except subprocess.TimeoutExpired:
         message += f" | {stdout.strip().splitlines()[-1]}"
     sys.stderr.write(message)
     raise SystemExit(124)
+finally:
+    timer.cancel()
 if proc.returncode != 0:
     sys.stderr.write((stderr or stdout).strip())
     raise SystemExit(proc.returncode)

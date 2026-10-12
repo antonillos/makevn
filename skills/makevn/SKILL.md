@@ -542,6 +542,12 @@ When the requested changed-code gate requires boot containers, first call
 `docker_ps_required` separately with `wait-seconds: 30` in the same repository.
 If it passes, reuse the healthy running services and proceed directly to the
 verification composite below. Do not reset a healthy stack with `docker_up`.
+Warnings about missing/unreadable client-side bind sources or unavailable probes
+are unverified visibility, not confirmed daemon failures. When readiness exits 0,
+report that limitation and continue already-authorized tests unless another
+independent prerequisite fails. Do not ask the user to move the worktree or change
+Docker sharing solely because of these warnings. A confirmed
+`bind_mount_visibility_mismatch` fails readiness and must be investigated.
 
 If readiness fails, inspect diagnostics before deciding to start services.
 `docker_up` executes Compose `down -v`, prunes volumes, and starts the stack;
@@ -805,6 +811,17 @@ resolve ambiguous/dynamic candidates explicitly. The setting affects only the
 managed Karate application, not the test JVM or standalone application commands.
 
 ### Structured Tool Output
+
+Before retrying an interrupted or timed-out MCP verification, inspect
+`execution_list` and `execution_status`. Conflicts include the existing
+execution ID and owning session. Cancel only a matching execution owned by
+this session with `execution_cancel`, then confirm its terminal state before
+repeating. Report foreign or legacy processes; never kill them by process name
+or checkout alone. Pass the optional `pr` URL consistently to coordinate the
+same PR across worktrees; otherwise exclusion is by canonical worktree.
+Doctor and preview remain responsive without overwriting verification state.
+Workflow cancellation stops all active steps and prevents pending steps from
+starting. See `mcp/README.md` for ownership, timeout and detached-command policy.
 
 All MCP tools publish an `outputSchema` and return a single consistent object in
 `structuredContent`. `content` contains one text block with the same serialized

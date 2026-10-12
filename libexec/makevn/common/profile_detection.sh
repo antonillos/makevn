@@ -1712,6 +1712,10 @@ makevn_refresh_profile() {
 
 # Derived inspection state, never a source of verification ownership decisions.
 makevn_refresh_impact() {
+  if [[ "${MAKEVN_MCP_INSPECTION:-}" == 1 ]]; then
+    makevn_print_item "Impact analysis" "inspection only; scope is derived from the current reactor without persisting state"
+    return 0
+  fi
   [[ "${3:-false}" != true ]] || return 0
   local repo_root="$1" base="${2:-}" git_root summary
   [[ -n "${base}" ]] || base="$(makevn_detect_maven_base_path "${repo_root}" || true)"

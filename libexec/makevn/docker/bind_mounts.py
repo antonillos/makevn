@@ -66,7 +66,7 @@ def diagnostics(mode, repo, compose, override=""):
             samples = source_samples(source)
             check = {"service": service, "source": source, "target": target, "status": "unverified"}
             if samples is None:
-                check.update(status="warning", reason="Host source is missing or unreadable; remote daemon paths may differ.")
+                check.update(status="warning", reason="Host source is missing or unreadable from this client; daemon visibility is unverified, not a confirmed mount failure. Remote daemon paths may differ.")
             elif not samples:
                 check.update(status="empty_source", reason="Host source directory is empty; no entries are available for visibility comparison. This does not establish missing initialization data or a mount failure.")
             elif mode == "required":

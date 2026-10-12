@@ -929,6 +929,7 @@ test_mcp_tool_listing() {
   python3 "${ROOT_DIR}/test/smoke/doctor_reset_test.py" "${prefix}/bin/makevn"
   python3 -m unittest discover -s "${ROOT_DIR}/test/smoke" -p demo_mcp_test.py
   python3 "${ROOT_DIR}/test/smoke/structured_mcp_test.py" "${prefix}/bin/makevn-mcp"
+  python3 "${ROOT_DIR}/test/smoke/execution_mcp_test.py" "${prefix}/bin/makevn-mcp"
 }
 
 test_init_does_not_touch_existing_makefile() {
@@ -3019,6 +3020,13 @@ EOF
   [[ "${output}" == *"tests: com.example.ChangedTest"* ]] || fail "expected preview output to include selected tests"
   [[ -f "${repo}/.makevn/verify-changes-plan.env" ]] || fail "expected preview to persist a verify-changes plan"
   [[ ! -f "${repo}/.mvnw.log" ]] || fail "preview must not invoke Maven"
+
+  cp "${repo}/.makevn/verify-changes-plan.env" "${TMP_ROOT}/preview-plan-before-inspection"
+  cp "${repo}/.makevn/impact.json" "${TMP_ROOT}/preview-impact-before-inspection"
+  MAKEVN_MCP_INSPECTION=1 ${CLI} --repo "${repo}" verify-changes-preview --exhaustive >/dev/null
+  MAKEVN_MCP_INSPECTION=1 ${CLI} --repo "${repo}" doctor --compact >/dev/null
+  cmp "${TMP_ROOT}/preview-plan-before-inspection" "${repo}/.makevn/verify-changes-plan.env" || fail "inspection replaced the verification plan"
+  cmp "${TMP_ROOT}/preview-impact-before-inspection" "${repo}/.makevn/impact.json" || fail "inspection replaced impact state"
 
   ${CLI} --repo "${repo}" verify-changes --exhaustive >/dev/null
 

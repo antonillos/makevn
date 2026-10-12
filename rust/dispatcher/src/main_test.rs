@@ -660,7 +660,7 @@ fn installs_opencode_agent_idempotently_and_preserves_other_entries() {
         config["mcp"]["makevn"]["command"],
         serde_json::json!(["makevn-mcp"])
     );
-    assert_eq!(config["mcp"]["makevn"]["timeout"], 900000);
+    assert_eq!(config["mcp"]["makevn"]["timeout"], 1800000);
     assert!(work_dir.join("opencode.jsonc.makevn.bak").is_file());
     assert!(backup.contains("// existing config"));
     assert_eq!(

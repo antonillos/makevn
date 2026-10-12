@@ -21,9 +21,18 @@ use std::os::unix::process::{CommandExt, ExitStatusExt};
 use signal_hook::consts::signal::{SIGINT, SIGTERM};
 
 mod docker_resources;
+mod mcp_execution;
+mod mcp_runtime;
 mod mcp_server;
+mod mcp_supervisor;
 
 fn main() {
+    if env::args_os().nth(1).as_deref() == Some(std::ffi::OsStr::new("--makevn-mcp-supervisor")) {
+        match mcp_supervisor::run() {
+            Ok(code) => process::exit(code),
+            Err(error) => exit_with_error(error),
+        }
+    }
     let argv0 = env::args_os()
         .next()
         .unwrap_or_else(|| OsString::from("makevn"));
@@ -549,7 +558,7 @@ fn configure_opencode_mcp(
             "type": "local",
             "command": ["makevn-mcp"],
             "enabled": true,
-            "timeout": 900000
+            "timeout": 1800000
         }),
     );
     Ok(())
