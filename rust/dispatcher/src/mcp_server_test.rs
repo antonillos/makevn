@@ -897,6 +897,42 @@ fn focused_agent_guidance_is_visible_without_loading_the_skill() {
 }
 
 #[test]
+fn changed_code_preview_requires_docker_readiness_before_execution() {
+    let result = super::ToolCallResult {
+        output: "verify boot: entire module suite; without -am".into(),
+        exit_code: 0,
+        duration_ms: 1,
+        next_suggestion: None,
+    };
+    let response = super::standard_tool_result(
+        &result,
+        &json!({"name": "verify_changes_preview"}),
+    );
+    let guidance = response["structuredContent"]["nextSuggestion"].as_str().unwrap();
+    for text in [
+        "run doctor",
+        "doctor/config/profile",
+        "first run docker_ps_required with wait-seconds: 30",
+        "Reuse healthy running services",
+        "do not call docker_up when this gate passes",
+        "down -v and volume prune",
+        "destructive lifecycle is explicitly authorized",
+        "successful preview does not establish Docker readiness",
+        "without another routine approval question",
+        "Omit clean for a new worktree",
+    ] {
+        assert!(guidance.contains(text), "missing prerequisite: {text}");
+    }
+    for name in ["verify_changes_preview", "verify_changes", "composite_run"] {
+        let spec = super::TOOL_SPECS.iter().find(|spec| spec.name == name).unwrap();
+        assert!(spec.description.contains("doctor/config/profile"));
+        assert!(spec.description.contains("first run docker_ps_required"));
+        assert!(spec.description.contains("reuse healthy services"));
+        assert!(spec.description.contains("down -v and volume prune"));
+    }
+}
+
+#[test]
 fn incremental_gate_not_applicable_output_is_success_without_global_claim() {
     for tool in ["coverage_changes", "crap_changes"] {
         let result = super::ToolCallResult {
