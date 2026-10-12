@@ -25,7 +25,7 @@ Add this top-level `"mcp"` entry:
       "type": "local",
       "command": ["makevn-mcp"],
       "enabled": true,
-      "timeout": 900000
+      "timeout": 1800000
     }
   }
 }
@@ -34,7 +34,9 @@ Add this top-level `"mcp"` entry:
 - `enabled: true` keeps the MCP server always active across sessions.
 - `command` must be an array. Do not write `"command": "makevn-mcp"` in
   OpenCode config.
-- `timeout: 900000` (15 min) is sufficient for synchronous tools. The `mutation`
+- `timeout: 1800000` sets a 30-minute limit for each tool call, including the
+  entire `composite_run` or `parallel_run` workflow. Longer workflows need a
+  larger client timeout. The `mutation`
   tool spawns in background and returns immediately.
 
 The `makevn-mcp` binary must be in `PATH`, or use an absolute path:
@@ -58,8 +60,13 @@ Add this table:
 command = "makevn-mcp"
 enabled = true
 startup_timeout_sec = 20
-tool_timeout_sec = 900
+tool_timeout_sec = 1800
 ```
+
+This client timeout applies to the entire tool call, including all workflow
+steps. Existing client configurations must be updated explicitly; installation
+does not change their timeout. Use a larger value for workflows exceeding
+30 minutes.
 
 Or run:
 

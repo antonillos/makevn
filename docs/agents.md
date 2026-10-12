@@ -434,7 +434,7 @@ For global OpenCode setup, add makevn to `~/.config/opencode/opencode.json` or
       "type": "local",
       "command": ["makevn-mcp"],
       "enabled": true,
-      "timeout": 900000
+      "timeout": 1800000
     }
   }
 }
@@ -523,8 +523,13 @@ For global Codex MCP setup, add makevn to `~/.codex/config.toml`:
 command = "makevn-mcp"
 enabled = true
 startup_timeout_sec = 20
-tool_timeout_sec = 900
+tool_timeout_sec = 1800
 ```
+
+This client timeout applies to the entire tool call, including all workflow
+steps. Existing client configurations must be updated explicitly; installation
+does not change their timeout. Use a larger value for workflows exceeding
+30 minutes.
 
 Project-scoped Codex config belongs in `.codex/config.toml` and is loaded only
 for trusted projects. The Codex CLI and IDE extension share this config.
