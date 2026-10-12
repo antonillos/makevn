@@ -558,7 +558,7 @@ fn configure_opencode_mcp(
             "type": "local",
             "command": ["makevn-mcp"],
             "enabled": true,
-            "timeout": 900000
+            "timeout": 1800000
         }),
     );
     Ok(())

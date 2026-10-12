@@ -527,9 +527,9 @@ tool_timeout_sec = 1800
 ```
 
 This client timeout applies to the entire tool call, including all workflow
-steps. Existing client configurations must be updated explicitly; installation
-does not change their timeout. Use a larger value for workflows exceeding
-30 minutes.
+steps. Existing clients must load this value from their active configuration.
+The OpenCode agent setup writes this timeout; Codex configuration must be updated
+explicitly. Use a larger value for workflows exceeding 30 minutes.
 
 Project-scoped Codex config belongs in `.codex/config.toml` and is loaded only
 for trusted projects. The Codex CLI and IDE extension share this config.
