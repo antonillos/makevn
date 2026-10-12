@@ -174,8 +174,8 @@ fn finish(
     record.duration_ms = now_ms().saturating_sub(record.started_at_ms);
     record.current_phase = None;
     result.duration_ms = u128::from(record.duration_ms);
-    drop(locks);
     save_record(&worker.root, &record)?;
+    drop(locks);
     let mut stdout = io::stdout().lock();
     serde_json::to_writer(&mut stdout, &result).map_err(|error| error.to_string())?;
     stdout.flush().map_err(|error| error.to_string())?;

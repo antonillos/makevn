@@ -36,8 +36,7 @@ Add this top-level `"mcp"` entry:
   OpenCode config.
 - `timeout: 1800000` sets a 30-minute limit for each tool call, including the
   entire `composite_run` or `parallel_run` workflow. Longer workflows need a
-  larger client timeout. The `mutation`
-  tool spawns in background and returns immediately.
+  larger client timeout. The `mutation` tool runs synchronously.
 
 The `makevn-mcp` binary must be in `PATH`, or use an absolute path:
 
@@ -134,9 +133,15 @@ not answer notifications or send a final response for a protocol-cancelled
 request. Closing stdio, transport failure, SIGINT or SIGTERM cancels all
 session-owned foreground executions. Each execution has a supervisor that
 detects loss of its ownership pipe, including abrupt server death, and retains
-locks until owned descendants have stopped. Existing explicitly background
-commands (`run_app_bg` and `mutation`) retain their detached contract after their
-launch command completes; use their documented lifecycle controls.
+locks until owned descendants have stopped. The explicitly background
+`run_app_bg` command retains its detached contract after its launch command
+completes; use its documented lifecycle controls.
+
+Nonterminal records with a released per-execution lifetime lock are reconciled
+as `failed` by listing or status queries, with logs retained and an unknown exit
+code. This includes supervisor death and host restart; it does not imply that
+orphaned descendants were cleaned up. Records written by older versions without
+this ownership lock are left unchanged because their liveness cannot be proven.
 
 Records and captured stdout/stderr are preserved under
 `$XDG_STATE_HOME/makevn/executions` (default `$HOME/.local/state/makevn/executions`),

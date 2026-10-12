@@ -83,8 +83,13 @@ impl ExecutionStore {
     pub fn prepare(&self, params: &Value) -> Result<(ExecutionRecord, Vec<File>), String> {
         let mut record = prepare_record(&self.session_id, params)?;
         let _admission = registry_admission(&self.root)?;
-        let locks = acquire_locks(&self.root, &record, params)?;
+        let mut locks = acquire_locks(&self.root, &record, params)?;
         private_directory(&self.root.join(&record.execution_id))?;
+        locks.push(acquire_lock(
+            &self.root.join(&record.execution_id).join("lifetime.lock"),
+            "lifetime",
+            &record,
+        )?);
         record.log_paths.push(
             self.root
                 .join(&record.execution_id)
@@ -98,7 +103,24 @@ impl ExecutionStore {
 
     pub fn get(&self, id: &str) -> Result<ExecutionRecord, String> {
         validate_id(id)?;
-        read_record(&self.root.join(format!("{id}.json")))
+        self.reconcile(&self.root.join(format!("{id}.json")))
+    }
+
+    fn reconcile(&self, path: &Path) -> Result<ExecutionRecord, String> {
+        let record = read_record(path)?;
+        if record.terminal() {
+            return Ok(record);
+        }
+        let _admission = registry_admission(&self.root)?;
+        let mut record = read_record(path)?;
+        if record.terminal() || lifetime_active(&self.root, &record)? {
+            return Ok(record);
+        }
+        record.state = "failed".into();
+        record.duration_ms = now_ms().saturating_sub(record.started_at_ms);
+        record.current_phase = None;
+        save_record(&self.root, &record)?;
+        Ok(record)
     }
 
     pub fn list(&self, params: &Value) -> Result<Vec<ExecutionRecord>, String> {
@@ -111,7 +133,7 @@ impl ExecutionStore {
                 .extension()
                 .is_some_and(|extension| extension == "json")
             {
-                let record = read_record(&path)?.snapshot();
+                let record = self.reconcile(&path)?.snapshot();
                 if visible_record(&record, repo.as_deref(), finished) {
                     records.push(record);
                 }
@@ -119,6 +141,30 @@ impl ExecutionStore {
         }
         records.sort_by_key(|record| record.started_at_ms);
         Ok(records)
+    }
+}
+
+fn lifetime_active(root: &Path, record: &ExecutionRecord) -> Result<bool, String> {
+    let path = root.join(&record.execution_id).join("lifetime.lock");
+    let file = match OpenOptions::new()
+        .read(true)
+        .write(true)
+        .custom_flags(libc::O_NOFOLLOW)
+        .open(path)
+    {
+        Ok(file) => file,
+        // Older registries lack ownership evidence; do not infer liveness from PIDs.
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(true),
+        Err(error) => return Err(error.to_string()),
+    };
+    if unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) } == 0 {
+        return Ok(false);
+    }
+    let error = std::io::Error::last_os_error();
+    if error.kind() == std::io::ErrorKind::WouldBlock {
+        Ok(true)
+    } else {
+        Err(error.to_string())
     }
 }
 

@@ -117,7 +117,7 @@ if command in ['doctor', 'verify-changes-preview']:
 assert 'MAKEVN_MCP_INSPECTION' not in os.environ
 with (repo / 'started').open('a') as file:
     file.write(command + '\n')
-if command in ['clean', 'mutation', 'run-app-bg'] or (repo / 'quick').exists():
+if command in ['clean', 'run-app-bg'] or (repo / 'quick').exists():
     print('completed')
     sys.exit(0)
 if (repo / 'ignore').exists():
@@ -287,9 +287,9 @@ def completion_and_forcing(session, quick, forced):
     assert session.call("execution_list", unknown=True)["isError"] is True
 
 
-def lingering_children(session, repo):
+def lingering_children(session, repo, tool="verify"):
     (repo / "children-ignore").touch()
-    request = session.begin("verify", repo=str(repo))
+    request = session.begin(tool, repo=str(repo))
     record = session.running(repo)
     owned = pids(repo)
     start = time.monotonic()
@@ -351,7 +351,7 @@ def run(executable):
         backend.chmod(0o700)
         (root / "child.py").write_text(CHILD)
         state = root / "state"
-        repos = [root / f"repo-{index}" for index in range(14)]
+        repos = [root / f"repo-{index}" for index in range(15)]
         for repo in repos:
             repo.mkdir()
         first = Session(mcp, state)
@@ -371,6 +371,7 @@ def run(executable):
             disconnect(mcp, state, first, repos[11], mode="invalid")
             transport_failure(mcp, state, first, repos[12])
             lingering_children(first, repos[13])
+            lingering_children(first, repos[14], tool="mutation")
         finally:
             first.close()
             second.close()

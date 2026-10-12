@@ -63,9 +63,10 @@ fn worktree_aliases_and_sessions_share_nonblocking_locks() {
     let conflict = second.prepare(&params).err().unwrap();
     assert!(conflict.contains(&record.execution_id));
     assert!(conflict.contains(&record.session_id));
-    assert!(second.prepare(&fixture.params("doctor")).is_ok());
+    let (_, inspection_locks) = second.prepare(&fixture.params("doctor")).unwrap();
     assert_eq!(second.list(&json!({})).unwrap().len(), 2);
     drop(locks);
+    drop(inspection_locks);
     assert!(second.prepare(&params).is_ok());
 }
 
@@ -144,4 +145,26 @@ fn admission_contention_is_bounded_without_starting_an_execution() {
     assert!(store.list(&json!({})).unwrap().is_empty());
     drop(admission);
     assert!(store.prepare(&fixture.params("verify")).is_ok());
+}
+
+#[test]
+fn abandoned_records_are_failed_without_reclaiming_processes() {
+    let fixture = Fixture::new();
+    let store = fixture.store();
+    for state in ["queued", "running", "cancelling"] {
+        let (mut record, locks) = store.prepare(&fixture.params("doctor")).unwrap();
+        record.state = state.into();
+        save_record(&fixture.0, &record).unwrap();
+        assert_eq!(store.get(&record.execution_id).unwrap().state, state);
+        drop(locks);
+        let failed = store.get(&record.execution_id).unwrap();
+        assert_eq!(failed.state, "failed");
+        assert_eq!(failed.exit_code, None);
+        assert_eq!(failed.log_paths, record.log_paths);
+    }
+    assert!(store.list(&json!({})).unwrap().is_empty());
+    assert_eq!(
+        store.list(&json!({"includeFinished":true})).unwrap().len(),
+        3
+    );
 }

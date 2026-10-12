@@ -446,7 +446,7 @@ fn configure_inspection(command: &mut Command, tool: &str) {
 }
 
 fn detached_tool(tool: &str) -> bool {
-    matches!(tool, "run_app_bg" | "run-app-bg" | "mutation")
+    matches!(tool, "run_app_bg" | "run-app-bg")
 }
 
 pub(crate) fn handle_tool_call(makevn_bin: &Path, params: &Value) -> Result<ToolCallResult, String> {
