@@ -39,8 +39,9 @@ bash "${ROOT}/libexec/makevn/cli.sh" --repo "${tmp}" --compact format --apply >"
 grep -Fq '[ok]' "${tmp}/output"
 
 if [[ -x "${ROOT}/target/release/makevn-mcp" ]]; then
-  python3 - "${ROOT}/target/release/makevn-mcp" "${tmp}" <<'MCP'
-import json, os, subprocess, sys
+  PYTHONPATH="${ROOT}/test/smoke" python3 - "${ROOT}/target/release/makevn-mcp" "${tmp}" <<'MCP'
+import os, sys
+from mcp_client import request
 binary, repo = sys.argv[1:]
 requests = [
     {"jsonrpc": "2.0", "id": 1, "method": "tools/list"},
@@ -49,10 +50,8 @@ requests = [
     {"jsonrpc": "2.0", "id": 3, "method": "tools/call",
      "params": {"name": "test", "arguments": {"repo": repo, "name": "ExampleIT"}}},
 ]
-result = subprocess.run([binary], input="".join(json.dumps(r) + "\n" for r in requests),
-                        text=True, capture_output=True, timeout=30, check=True,
-                        env={**os.environ, "MAKEVN_INSTALL_ROOT": os.path.dirname(os.path.dirname(os.path.dirname(binary)))})
-responses = {r["id"]: r for r in map(json.loads, result.stdout.splitlines()) if "id" in r}
+os.environ["MAKEVN_INSTALL_ROOT"] = os.path.dirname(os.path.dirname(os.path.dirname(binary)))
+responses = {message["id"]: request(binary, message) for message in requests}
 tools = responses[1]["result"]["tools"]
 formatter = next(t for t in tools if t["name"] == "format")
 assert "file" not in formatter["inputSchema"]["properties"]

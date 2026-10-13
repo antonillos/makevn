@@ -53,7 +53,8 @@ flowchart TD
     JVMS -->|Possible conflict| PAUSE[Show PID/start/checkout; user resolves before tests]
     JVMS -->|None detected| TESTS[Run Docker-dependent verification]
     MOUNTS -->|Probe unavailable| UNKNOWN[Visibility remains unverified; report limitation]
-    UNKNOWN --> LIMIT[Health alone does not certify initialization data or database users]
+    UNKNOWN --> LIMIT[Report limitation: health does not certify initialization data]
+    LIMIT --> JVMS
 ```
 
 A missing host source yields a warning; an empty source yields informational

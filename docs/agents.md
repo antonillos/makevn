@@ -33,6 +33,23 @@ runtime, not by a target repository's legacy `scripts/make/*` folder. Legacy
 Makefile scripts can be useful examples when improving parity, but they must not be
 part of the agent execution contract.
 
+## Interrupted MCP executions
+
+Before repeating an interrupted or timed-out verification, use
+`execution_list` and `execution_status` to inspect matching worktrees/PRs.
+`execution_cancel` can stop only executions owned by the current MCP session;
+confirm a terminal state before retrying. Conflicting operations are rejected
+with the active execution ID and owning session, including conflicts between
+MCP servers. Report foreign or legacy processes instead of terminating them
+by name. Pass the optional `pr` URL consistently when working on the same PR
+across different worktrees; without it, exclusion is by canonical worktree.
+Doctor and preview remain available while verification runs and do not replace
+shared verification state through MCP. Cancelling a composite/parallel workflow
+stops its active steps and prevents pending steps from starting. Session loss
+cancels foreground work through its supervisor; existing explicitly background
+commands keep their documented detached lifecycle. See [the MCP execution
+contract](../mcp/README.md#execution-visibility-and-cancellation).
+
 ## Exact Commands For Agents
 
 Agents must use these command sequences exactly unless the human asks for a
@@ -417,7 +434,7 @@ For global OpenCode setup, add makevn to `~/.config/opencode/opencode.json` or
       "type": "local",
       "command": ["makevn-mcp"],
       "enabled": true,
-      "timeout": 900000
+      "timeout": 1800000
     }
   }
 }
@@ -506,8 +523,13 @@ For global Codex MCP setup, add makevn to `~/.codex/config.toml`:
 command = "makevn-mcp"
 enabled = true
 startup_timeout_sec = 20
-tool_timeout_sec = 900
+tool_timeout_sec = 1800
 ```
+
+This client timeout applies to the entire tool call, including all workflow
+steps. Existing clients must load this value from their active configuration.
+The OpenCode agent setup writes this timeout; Codex configuration must be updated
+explicitly. Use a larger value for workflows exceeding 30 minutes.
 
 Project-scoped Codex config belongs in `.codex/config.toml` and is loaded only
 for trusted projects. The Codex CLI and IDE extension share this config.
@@ -804,6 +826,10 @@ until sharing/permissions are resolved. Changes to VM sharing, checkout location
 container recreation or volume deletion require user authorization. No image is
 pulled and no helper container is provisioned. Missing compose JSON, remote paths
 or images without a working `test` probe remain unverified, not confirmed failures.
+A missing/unreadable source warning describes the client filesystem, not proven
+daemon access. If readiness exits 0, report unverified visibility and continue
+already-authorized tests unless another independent prerequisite fails; do not
+request worktree relocation or Docker sharing changes solely for that warning.
 Visibility does not prove database/user initialization: that needs project-specific
 semantic checks. Empty host directories produce informational empty_source diagnostics, not warnings or failures; no missing initialization data is inferred.
 
