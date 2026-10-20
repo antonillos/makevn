@@ -451,7 +451,11 @@ pub(crate) fn validate_call(params: &Value) -> Result<(), String> {
     let spec = TOOL_SPECS.iter().find(|spec| spec.name == name)
         .ok_or_else(|| format!("unknown makevn tool: {name}"))?;
     validate_step_arguments(spec, params.get("arguments"))?;
-    if name == "doctor_configure" {
+    validate_tool_specific_arguments(spec, params)
+}
+
+fn validate_tool_specific_arguments(spec: &ToolSpec, params: &Value) -> Result<(), String> {
+    if spec.name == "doctor_configure" {
         crate::mcp_doctor::validate_arguments(&params["arguments"])?;
     }
     if properties_for_workflow(spec) {
@@ -631,11 +635,7 @@ fn properties_for_workflow(spec: &ToolSpec) -> bool {
 
 fn validate_workflow_step(step: &Value) -> Result<(), String> {
     let object = step.as_object().ok_or("each step must be an object")?;
-    for key in object.keys() {
-        if key != "tool" && key != "arguments" {
-            return Err(format!("unknown step field '{key}'; use 'arguments', not 'args'"));
-        }
-    }
+    validate_workflow_step_fields(object)?;
     let name = step["tool"].as_str().ok_or("each step must have a string 'tool' field")?;
     let spec = TOOL_SPECS.iter().find(|spec| spec.name == name)
         .ok_or_else(|| format!("unknown makevn tool in step: {name}"))?;
@@ -646,6 +646,15 @@ fn validate_workflow_step(step: &Value) -> Result<(), String> {
         return Err(String::from("nested workflow steps are not supported"));
     }
     validate_step_arguments(spec, object.get("arguments"))
+}
+
+fn validate_workflow_step_fields(object: &Map<String, Value>) -> Result<(), String> {
+    for key in object.keys() {
+        if key != "tool" && key != "arguments" {
+            return Err(format!("unknown step field '{key}'; use 'arguments', not 'args'"));
+        }
+    }
+    Ok(())
 }
 
 fn validate_step_arguments(spec: &ToolSpec, arguments: Option<&Value>) -> Result<(), String> {
@@ -672,7 +681,7 @@ pub(crate) fn option_value_matches(ty: &str, value: &Value) -> bool {
         "boolean" => value.is_boolean(),
         "string" => value.is_string(),
         "number" => value.is_number(),
-        "integer" => value.is_i64() || value.is_u64(),
+        "integer" => value.as_number().is_some_and(|number| !number.is_f64()),
         "array" => value.is_array(),
         "object" => value.is_object(),
         _ => false,

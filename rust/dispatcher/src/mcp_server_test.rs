@@ -1077,3 +1077,23 @@ fn missing_python_reports_setup_prerequisite() {
     assert!(guidance.contains("Install Python 3"));
     assert!(guidance.contains("interactive CLI doctor"));
 }
+
+#[test]
+fn integer_options_accept_signed_and_unsigned_integers_only() {
+    for integer in [json!(-1), json!(0), json!(u64::MAX)] {
+        assert!(super::option_value_matches("integer", &integer));
+    }
+    for other in [json!(1.0), json!("1"), json!(true), json!(null)] {
+        assert!(!super::option_value_matches("integer", &other));
+    }
+}
+
+#[test]
+fn configure_cannot_run_inside_a_workflow_before_user_answers() {
+    for tool in ["composite_run", "parallel_run"] {
+        let params = json!({"name": tool, "arguments": {"steps": [
+            {"tool": "doctor_configure", "arguments": {"setupToken": "current", "answers": {"local_containers": false}}}
+        ]}});
+        assert!(super::validate_call(&params).unwrap_err().contains("separately"));
+    }
+}
