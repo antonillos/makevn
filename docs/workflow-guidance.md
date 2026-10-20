@@ -15,13 +15,14 @@ flowchart TD
     I -->|Current| Q{Pending setup questions?}
     INIT --> Q
     FORCE --> Q
-    Q -->|Yes| CLI[Launch CLI doctor in interactive terminal/PTY]
-    CLI --> USER[User answers prompts: compose, health, containers, Karate profiles]
-    USER --> READY[Continue requested workflow]
+    Q -->|Yes| USER[Agent asks grouped questions in chat]
+    USER --> APPLY[doctor_configure: validate token and answers; save config]
+    APPLY --> Q
+    Q -->|Ready| READY[Continue requested workflow]
     Q -->|No| READY
     RESET[User authorizes doctor --reset-config] --> BACKUP[Back up config/profile; reset preferences]
-    BACKUP --> CLI
-    CLI -. Check blockers: stdin_not_tty, stderr_not_tty, compact_mode .-> INPUT[If interactive input unavailable: ask user to run CLI and wait]
+    BACKUP --> CLI[Interactive CLI doctor prompts]
+    CLI --> READY
 ```
 
 Reset is CLI-only, preserves initialization and installation, and rejects

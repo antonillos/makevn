@@ -258,6 +258,7 @@ impl McpSession {
                 output: String::new(),
                 exit_code: 0,
                 duration_ms: 0,
+                doctor_snapshot: None,
                 next_suggestion: None,
             },
             params,

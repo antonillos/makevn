@@ -52,87 +52,47 @@ MAKEVN_GENERATED_CONTRACT_CLEAN_DIRS=""
 EOF
 }
 
+makevn_validate_doctor_setting() {
+  if command -v python3 >/dev/null 2>&1; then
+    python3 "${MAKEVN_LIBEXEC_DIR}/common/doctor_setup.py" validate "$1" "$2"
+    return $?
+  fi
+  case "$1" in
+    app_health_url) [[ "$2" =~ ^https?://[^[:space:]]+$ ]] ;;
+    karate_app_profiles) [[ "$2" =~ ^[A-Za-z0-9_.-]+(,[A-Za-z0-9_.-]+)*$ ]] ;;
+    *) return 1 ;;
+  esac
+}
+
+# Share atomic setup persistence with chat; retain CLI support without Python.
+makevn_update_config_setting() {
+  if command -v python3 >/dev/null 2>&1; then
+    python3 "${MAKEVN_LIBEXEC_DIR}/common/doctor_setup.py" set "$(makevn_config_path "$1")" "$2" "$3"
+    return $?
+  fi
+  local config_path line tmp_file
+  config_path="$(makevn_config_path "$1")"
+  [[ -f "${config_path}" ]] || return 1
+  printf -v line '%s=%q' "$2" "$3"
+  tmp_file="$(mktemp "${config_path}.XXXXXX")"
+  MAKEVN_CONFIG_KEY="$2" MAKEVN_CONFIG_LINE="${line}" awk 'index($0, ENVIRON["MAKEVN_CONFIG_KEY"] "=") == 1 {next} {print} END {print ENVIRON["MAKEVN_CONFIG_LINE"]}' "${config_path}" > "${tmp_file}"
+  mv "${tmp_file}" "${config_path}"
+}
+
 makevn_update_config_compose_file() {
-  local repo_root="$1"
-  local compose_file="$2"
-  local config_path
-  config_path="$(makevn_config_path "${repo_root}")"
-
-  if [[ ! -f "${config_path}" ]]; then
-    return 1
-  fi
-
-  if grep -q '^MAKEVN_COMPOSE_FILE=' "${config_path}"; then
-    local tmp_file
-    tmp_file="$(mktemp)"
-    awk -v val="${compose_file}" 'BEGIN{q="\""} /^MAKEVN_COMPOSE_FILE=/ { print "MAKEVN_COMPOSE_FILE=" q val q; next } { print }' "${config_path}" > "${tmp_file}"
-    mv "${tmp_file}" "${config_path}"
-  else
-    printf 'MAKEVN_COMPOSE_FILE=%q\n' "${compose_file}" >> "${config_path}"
-  fi
+  makevn_update_config_setting "$1" MAKEVN_COMPOSE_FILE "$2"
 }
 
 makevn_update_config_e2e_compose_file() {
-  local repo_root="$1"
-  local compose_file="$2"
-  local config_path
-  config_path="$(makevn_config_path "${repo_root}")"
-
-  if [[ ! -f "${config_path}" ]]; then
-    return 1
-  fi
-
-  if grep -q '^MAKEVN_E2E_COMPOSE_FILE=' "${config_path}"; then
-    local tmp_file
-    tmp_file="$(mktemp)"
-    awk -v val="${compose_file}" 'BEGIN{q="\""} /^MAKEVN_E2E_COMPOSE_FILE=/ { print "MAKEVN_E2E_COMPOSE_FILE=" q val q; next } { print }' "${config_path}" > "${tmp_file}"
-    mv "${tmp_file}" "${config_path}"
-  else
-    printf 'MAKEVN_E2E_COMPOSE_FILE=%q\n' "${compose_file}" >> "${config_path}"
-  fi
+  makevn_update_config_setting "$1" MAKEVN_E2E_COMPOSE_FILE "$2"
 }
 
 makevn_update_config_app_health_url() {
-  local repo_root="$1"
-  local app_health_url="$2"
-  local config_path
-  local config_line
-  config_path="$(makevn_config_path "${repo_root}")"
-
-  if [[ ! -f "${config_path}" ]]; then
-    return 1
-  fi
-
-  printf -v config_line 'MAKEVN_APP_HEALTH_URL=%q' "${app_health_url}"
-
-  if grep -q '^MAKEVN_APP_HEALTH_URL=' "${config_path}"; then
-    local tmp_file
-    tmp_file="$(mktemp)"
-    MAKEVN_CONFIG_HEALTH_LINE="${config_line}" awk '/^MAKEVN_APP_HEALTH_URL=/ { print ENVIRON["MAKEVN_CONFIG_HEALTH_LINE"]; next } { print }' "${config_path}" > "${tmp_file}"
-    mv "${tmp_file}" "${config_path}"
-  else
-    printf '%s\n' "${config_line}" >> "${config_path}"
-  fi
+  makevn_update_config_setting "$1" MAKEVN_APP_HEALTH_URL "$2"
 }
 
 makevn_update_config_local_containers() {
-  local repo_root="$1"
-  local local_containers="$2"
-  local config_path
-  config_path="$(makevn_config_path "${repo_root}")"
-
-  if [[ ! -f "${config_path}" ]]; then
-    return 1
-  fi
-
-  if grep -q '^MAKEVN_LOCAL_CONTAINERS=' "${config_path}"; then
-    local tmp_file
-    tmp_file="$(mktemp)"
-    awk -v val="${local_containers}" 'BEGIN{q="\""} /^MAKEVN_LOCAL_CONTAINERS=/ { print "MAKEVN_LOCAL_CONTAINERS=" q val q; next } { print }' "${config_path}" > "${tmp_file}"
-    mv "${tmp_file}" "${config_path}"
-  else
-    printf 'MAKEVN_LOCAL_CONTAINERS=%q\n' "${local_containers}" >> "${config_path}"
-  fi
+  makevn_update_config_setting "$1" MAKEVN_LOCAL_CONTAINERS "$2"
 }
 
 makevn_update_config_min_coverage_threshold() {

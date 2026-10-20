@@ -134,7 +134,7 @@ test_doctor_health_skip_and_noninteractive() {
   assert_contains "${output}" 'karate-all requires this URL'
   "${CLI}" --repo "${repo}" doctor >"${output}" 2>&1
   assert_not_contains "${output}" 'Health URL ['
-  assert_contains "${output}" 'Set MAKEVN_APP_HEALTH_URL'
+  assert_contains "${output}" 'MCP doctor_configure'
   bash "${ROOT_DIR}/libexec/makevn/backend.sh" doctor --repo "${repo}" --format json >"${output}"
   python3 -c 'import json,sys; data=json.load(open(sys.argv[1])); assert "MAKEVN_APP_HEALTH_URL" in data["suggested_next_step"]["note"]' "${output}"
   "${CLI}" --repo "${repo}" profile refresh >"${output}" 2>&1
