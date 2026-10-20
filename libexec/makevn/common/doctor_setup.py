@@ -81,7 +81,8 @@ def collect_questions(arguments):
                                   "boolean", [True, False]))
     if health_pending == "true":
         questions.append(question("app_health_url", "Confirm or edit the application HTTP health URL. "
-                                  "A suggested URL is not verified.", "string", suggested=health))
+                                  "A suggested URL is not verified. You may specify changes to its port or path "
+                                  "instead of retyping the whole URL.", "string", suggested=health))
     if profiles_pending == "true":
         questions.append(question("karate_app_profiles", "Which literal comma-separated Spring profiles "
                                   f"should the Karate application use? Detected candidates: {profiles}", "string"))
