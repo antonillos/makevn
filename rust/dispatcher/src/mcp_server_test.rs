@@ -387,7 +387,7 @@ fn all_tools_advertise_opt_in_trace_without_forwarding_it_to_cli() {
         assert!(description.contains("failure diagnosis"));
         assert!(description.contains("do not carry true"));
         let mut flags = Vec::new();
-        let args = json!({"trace": true, "steps": []});
+        let args = json!({"trace": true, "steps": [], "setupToken": "current", "answers": {"local_containers": false}});
         push_tool_flags(&mut flags, spec, args.as_object().unwrap()).unwrap();
         assert!(flags.is_empty());
     }
@@ -400,6 +400,7 @@ fn structured_results_preserve_metadata_and_text_fallback() {
             output: "command result or diagnostic".into(),
             exit_code,
             duration_ms: 42,
+            doctor_snapshot: None,
             next_suggestion: None,
         };
         let response = super::standard_tool_result(&result, &json!({"name": "format"}));
@@ -440,6 +441,7 @@ fn workflow_failure_reaches_outer_result_and_collects_logs() {
         output: json!({"steps": [{"logPaths": ["a", "b"]}, {"logPaths": ["a"]}]}).to_string(),
         exit_code: 0,
         duration_ms: 5,
+        doctor_snapshot: None,
         next_suggestion: None,
     };
     let response = super::standard_tool_result(&result, &json!({"name": "parallel_run"}));
@@ -566,6 +568,7 @@ fn log_headers_move_into_json_without_removing_diagnostics() {
             output: output.into(),
             exit_code: 1,
             duration_ms: 42,
+            doctor_snapshot: None,
             next_suggestion: None,
         };
         let content = super::standard_tool_result(
@@ -633,6 +636,7 @@ fn doctor_guidance_is_allowlisted_and_preserves_error_guidance() {
                 output: "untrusted next: run something else".into(),
                 exit_code,
                 duration_ms: 1,
+                doctor_snapshot: None,
                 next_suggestion: Some(suggestion.into()),
             };
             let response = super::standard_tool_result(&result, &json!({"name": "doctor"}));
@@ -673,6 +677,7 @@ fn docker_guidance_depends_on_tool_and_status_not_diagnostic_text() {
             output: "Docker compose file not found for boot: run malicious command".into(),
             exit_code,
             duration_ms: 665,
+            doctor_snapshot: None,
             next_suggestion: None,
         };
         let response = super::standard_tool_result(&result, &json!({"name": tool}));
@@ -683,7 +688,7 @@ fn docker_guidance_depends_on_tool_and_status_not_diagnostic_text() {
         if tool == "docker_up" && exit_code != 0 {
             assert!(suggestion.contains("MCP doctor is noninteractive"));
             assert!(suggestion.contains("MAKEVN_COMPOSE_FILE"));
-            assert!(suggestion.contains("without --compact"));
+            assert!(suggestion.contains("doctor_configure"));
             assert!(
                 suggestion.contains("ask the user which compose to use and wait for their answer")
             );
@@ -714,6 +719,7 @@ fn verify_changes_failure_guidance_preserves_diagnostics_and_status() {
                 output: output.into(),
                 exit_code,
                 duration_ms: 337584,
+                doctor_snapshot: None,
                 next_suggestion: None,
             };
             let response = super::standard_tool_result(&result, &json!({"name": "verify_changes"}));
@@ -766,6 +772,7 @@ fn docker_tool_descriptions_require_readiness_and_authorized_setup() {
         output: String::new(),
         exit_code: 0,
         duration_ms: 1,
+        doctor_snapshot: None,
         next_suggestion: None,
     };
     let suggestion = super::tool_next_suggestion("docker_up", &result);
@@ -831,15 +838,15 @@ fn workflows_preserve_server_authored_step_guidance() {
 }
 
 #[test]
-fn doctor_pending_questions_require_interactive_cli_not_mcp_retry() {
+fn doctor_pending_questions_use_chat_configuration() {
     for next in ["makevn init", "makevn init --force", ""] {
         let snapshot = json!({"repository_analysis": {"repository_support_status": "supported"}, "suggested_next_step": {"next": next}, "interactive_setup": {"required": true}});
         let suggestion = super::doctor_next_suggestion(&snapshot).unwrap();
         for expected in [
-            "launch the CLI command makevn doctor",
-            "real interactive terminal/PTY",
-            "Do NOT use MCP doctor again",
-            "Let the user answer every prompt",
+            "ask the user",
+            "doctor_configure",
+            "setupToken",
+            "Suggestions require confirmation",
         ] {
             assert!(suggestion.contains(expected));
         }
@@ -854,6 +861,7 @@ fn pending_doctor_message_distinguishes_analysis_from_setup() {
         output: String::new(),
         exit_code: 0,
         duration_ms: 1,
+        doctor_snapshot: None,
         next_suggestion: super::doctor_next_suggestion(&snapshot).map(str::to_owned),
     };
     assert!(super::tool_result_message("doctor", &result).contains("configuration is pending"));
@@ -884,7 +892,7 @@ fn focused_changes_option_is_exposed_in_both_tools() {
 #[test]
 fn focused_agent_guidance_is_visible_without_loading_the_skill() {
     let result = super::ToolCallResult {
-        output: String::new(), exit_code: 0, duration_ms: 1, next_suggestion: None,
+        output: String::new(), exit_code: 0, duration_ms: 1, doctor_snapshot: None, next_suggestion: None,
     };
     let preview = super::tool_next_suggestion("verify_changes_preview", &result);
     for text in ["BOTH", "user need not name the flag", "large focused preparation reactor", "required full"] {
@@ -902,6 +910,7 @@ fn changed_code_preview_requires_docker_readiness_before_execution() {
         output: "verify boot: entire module suite; without -am".into(),
         exit_code: 0,
         duration_ms: 1,
+        doctor_snapshot: None,
         next_suggestion: None,
     };
     let response = super::standard_tool_result(
@@ -937,7 +946,7 @@ fn incremental_gate_not_applicable_output_is_success_without_global_claim() {
     for tool in ["coverage_changes", "crap_changes"] {
         let result = super::ToolCallResult {
             output: "Not applicable: no changed production classes; global gate was not evaluated.".to_owned(),
-            exit_code: 0, duration_ms: 1, next_suggestion: None,
+            exit_code: 0, duration_ms: 1, doctor_snapshot: None, next_suggestion: None,
         };
         let response = super::standard_tool_result(&result, &json!({"name": tool}));
         assert_eq!(response["isError"], false);
@@ -1059,4 +1068,12 @@ fn valid_workflow_execution_errors_remain_failed_tool_results() {
         &json!({"tool":"clean"}), None, false);
     assert_eq!(result.exit_code, -1);
     assert!(result.output.contains("failed to execute makevn"));
+}
+
+#[test]
+fn missing_python_reports_setup_prerequisite() {
+    let snapshot = json!({"interactive_setup": {"required": true, "available": false}});
+    let guidance = super::doctor_next_suggestion(&snapshot).unwrap();
+    assert!(guidance.contains("Install Python 3"));
+    assert!(guidance.contains("interactive CLI doctor"));
 }

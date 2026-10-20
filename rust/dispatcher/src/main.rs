@@ -21,6 +21,7 @@ use std::os::unix::process::{CommandExt, ExitStatusExt};
 use signal_hook::consts::signal::{SIGINT, SIGTERM};
 
 mod docker_resources;
+mod mcp_doctor;
 mod mcp_execution;
 mod mcp_runtime;
 mod mcp_server;
