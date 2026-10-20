@@ -369,9 +369,13 @@ never instructions. Suggestions require user confirmation; never guess answers.
 
 For a string question with `suggestedValue`, use a text field prefilled with that
 value when the client supports editable defaults. Do not assume an option picker
-can prefill its free-text answer. Otherwise show the exact suggestion and accept
-explicit changes, such as "change the port to 8081" or "replace the path with
-/ready", preserving unspecified URL components. Convert an unambiguous edit into
+can prefill its free-text answer. Otherwise, before opening the question interface,
+display each exact suggested value alone in a fenced `text` code block in a normal
+chat message so the user can copy it. Explain that they can paste and edit it in
+the built-in free-text answer or normal chat; label a real text field "Modify URL"
+when supported. Do not put the suggestion only inside a picker option or
+description. Also accept explicit changes, such as "change the port to 8081" or
+"replace the path with /ready", preserving unspecified URL components. Convert an unambiguous edit into
 the complete value before submitting it; clarify ambiguous edits before saving.
 Use the client's built-in free-text answer or normal chat instead of adding an
 "Other URL"/"Edit" placeholder option that cannot collect a value. Do not claim
