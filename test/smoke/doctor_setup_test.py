@@ -1,5 +1,6 @@
 """Validate structured answers and transactional config persistence."""
 import importlib.util
+import multiprocessing
 from pathlib import Path
 import subprocess
 import tempfile
@@ -9,6 +10,28 @@ ROOT = Path(__file__).resolve().parents[2]
 spec = importlib.util.spec_from_file_location("doctor_setup", ROOT / "libexec/makevn/common/doctor_setup.py")
 setup = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(setup)
+
+
+def configure_in_process(repo, snapshot, answers, started, replacing, release, results):
+    replace = setup.os.replace
+
+    def pause_before_replace(source, destination):
+        replacing.set()
+        if release is not None and not release.wait(10):
+            raise TimeoutError("Timed out releasing the configuration writer")
+        replace(source, destination)
+
+    setup.os.replace = pause_before_replace
+    started.set()
+    try:
+        if snapshot is None:
+            setup.write_config(Path(repo) / ".makevn/config", answers)
+        else:
+            setup.apply_answers(repo, {"setupToken": snapshot["interactive_setup"]["setupToken"],
+                                       "answers": answers}, snapshot)
+        results.put((multiprocessing.current_process().name, None))
+    except ValueError as error:
+        results.put((multiprocessing.current_process().name, str(error)))
 
 
 class DoctorSetupTests(unittest.TestCase):
@@ -84,6 +107,57 @@ class DoctorSetupTests(unittest.TestCase):
             setup.write_config(self.path, {"MAKEVN_LOCAL_CONTAINERS": "TRUE"}, before)
         self.assertEqual(self.path.read_text(), "# someone else's config\n")
         self.assertFalse(list(self.path.parent.glob(".config-*")))
+        setup.write_config(self.path, {"MAKEVN_LOCAL_CONTAINERS": "TRUE"})
+        self.assertIn("MAKEVN_LOCAL_CONTAINERS=TRUE", self.path.read_text())
+
+    def concurrent_writers(self, use_token):
+        context = multiprocessing.get_context("spawn")
+        started_first, started_second = context.Event(), context.Event()
+        replacing_first, replacing_second = context.Event(), context.Event()
+        release_first, results = context.Event(), context.Queue()
+        snapshot = self.snapshot if use_token else None
+        first_answers = {"local_containers": True} if use_token else {"MAKEVN_LOCAL_CONTAINERS": "TRUE"}
+        second_answers = {"app_health_url": "http://localhost/health"} if use_token else {"MAKEVN_APP_HEALTH_URL": "http://localhost/health"}
+        first = context.Process(name="first", target=configure_in_process,
+                                args=(str(self.repo), snapshot, first_answers, started_first,
+                                      replacing_first, release_first, results))
+        second = context.Process(name="second", target=configure_in_process,
+                                 args=(str(self.repo), snapshot, second_answers, started_second,
+                                       replacing_second, None, results))
+        processes = []
+        try:
+            first.start()
+            processes.append(first)
+            self.assertTrue(replacing_first.wait(10), "First writer did not reach replacement")
+            second.start()
+            processes.append(second)
+            self.assertTrue(started_second.wait(10), "Second writer did not start")
+            self.assertFalse(replacing_second.wait(0.5), "Second writer bypassed the active transaction")
+        finally:
+            release_first.set()
+            for process in processes:
+                process.join(10)
+                if process.is_alive():
+                    process.terminate()
+                    process.join(5)
+        self.assertEqual([first.exitcode, second.exitcode], [0, 0])
+        outcomes = dict(results.get(timeout=5) for _ in processes)
+        results.close()
+        results.join_thread()
+        self.assertIsNone(outcomes["first"])
+        self.assertIn("MAKEVN_LOCAL_CONTAINERS=TRUE", self.path.read_text())
+        self.assertFalse(list(self.path.parent.glob(".config-*")))
+        return outcomes
+
+    def test_concurrent_answers_with_same_token_reject_the_second_writer(self):
+        outcomes = self.concurrent_writers(use_token=True)
+        self.assertIn("changed", outcomes["second"])
+        self.assertNotIn("MAKEVN_APP_HEALTH_URL", self.path.read_text())
+
+    def test_concurrent_cli_updates_preserve_both_answers(self):
+        outcomes = self.concurrent_writers(use_token=False)
+        self.assertIsNone(outcomes["second"])
+        self.assertIn("MAKEVN_APP_HEALTH_URL=http://localhost/health", self.path.read_text())
 
 
 if __name__ == "__main__":

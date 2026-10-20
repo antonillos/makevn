@@ -1,5 +1,6 @@
 """Structured doctor questions and atomic persistence shared with CLI prompts."""
 
+import fcntl
 import hashlib
 import json
 import os
@@ -29,6 +30,13 @@ def valid_profiles(value):
 
 def write_config(path, updates, original=None):
     """Replace only answered settings; never evaluate or interpolate user input."""
+    # Lock a stable sidecar: replacing config changes its inode.
+    with path.with_name(".config.lock").open("a") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        _replace_config(path, updates, original)
+
+
+def _replace_config(path, updates, original):
     original = path.read_bytes() if original is None else original
     lines = original.decode().splitlines(keepends=True)
     pattern = re.compile(r"^(?:" + "|".join(map(re.escape, updates)) + r")=")
