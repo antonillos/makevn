@@ -33,9 +33,9 @@ makevn_prepare_logfile() {
 }
 
 # Suggest recovery only for an actual daemon connection failure, never merely
-# because Colima happens to be installed. Do not start or switch runtimes.
+# because a runtime happens to be installed. Keep recovery within MakeVN.
 makevn_report_docker_runtime_failure() {
-  local command_key="$1" logfile="$2" diagnostic hint profile
+  local command_key="$1" logfile="$2" diagnostic hint
   case "${command_key}" in
     docker-*|karate-docker-*) ;;
     *) return 0 ;;
@@ -44,16 +44,7 @@ makevn_report_docker_runtime_failure() {
   if ! printf '%s\n' "${diagnostic}" | grep -Eiq 'cannot connect to the docker daemon|failed to connect to the docker API|error during connect|is the docker daemon running'; then
     return 0
   fi
-  hint="Hint: Docker engine is unavailable. Start your configured container runtime and retry; check DOCKER_HOST and the active Docker context."
-  if [[ "${diagnostic}" =~ \.colima/([^/[:space:]]+)/docker\.sock ]]; then
-    profile="${BASH_REMATCH[1]}"
-    if [[ "${profile}" == default ]]; then
-      hint="Hint: The Colima Docker socket is unavailable. Run 'colima start', then retry the makevn command."
-    else
-      printf -v profile '%q' "${profile}"
-      hint="Hint: The Colima Docker socket is unavailable. Run 'colima start --profile ${profile}', then retry the makevn command."
-    fi
-  fi
+  hint="Hint: Docker engine is unavailable. Run 'makevn doctor' and inspect MakeVN logs. If the engine remains unavailable, report the environment blocker and stop dependent Docker operations; do not start runtimes or use Docker directly."
   printf '%s\n' "${hint}" >> "${logfile}" || true
   if [[ -n "${MAKEVN_BACKEND_DETAIL_OUT:-}" ]]; then
     printf '%s\n' "${hint}" >> "${MAKEVN_BACKEND_DETAIL_OUT}" || true

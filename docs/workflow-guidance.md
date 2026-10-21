@@ -43,6 +43,8 @@ flowchart TD
     CAPABILITY -->|Yes| MAKEVN[Use MakeVN; preserve authorization and readiness gates]
     CAPABILITY -->|No| GAP[Report missing capability; stop dependent action]
     GAP --> NOFALLBACK[No raw Docker, wrappers, scripts, SDK or API workaround]
+    MAKEVN -->|Daemon connection failure| DIAGNOSE[makevn doctor and preserved MakeVN logs]
+    DIAGNOSE -->|Engine remains unavailable| ENV[Report environment blocker; stop dependent Docker operations]
 ```
 
 ```mermaid
