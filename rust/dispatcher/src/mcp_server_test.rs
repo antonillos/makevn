@@ -1063,11 +1063,22 @@ fn agent_templates_do_not_reintroduce_args_or_the_old_changes_pipeline() {
         assert!(!document.contains("\"args\":"));
     }
     let skill = include_str!("../../../skills/makevn/SKILL.md");
-    let workflow = skill.split("### `changes-validator`").nth(1).unwrap()
-        .split("### `multi-test-runner`").next().unwrap();
-    assert!(workflow.contains("\"focused\": true"));
-    assert!(!workflow.contains("{\"tool\": \"clean\"}"));
-    assert!(!workflow.contains("{\"tool\": \"coverage_changes\"}"));
+    let section = skill.split("### Changed-code checks").nth(1)
+        .expect("skill must document changed-code checks")
+        .split("### Selected tests and Karate").next().unwrap();
+    let example = section.split("```json\n").nth(1)
+        .expect("changed-code checks must include a JSON workflow")
+        .split("```").next().unwrap();
+    let workflow: serde_json::Value = serde_json::from_str(example)
+        .expect("documented workflow must be valid JSON");
+    super::validate_call(&json!({"name": workflow["tool"], "arguments": workflow["arguments"]}))
+        .expect("documented workflow must be accepted by MCP");
+    assert_eq!(workflow["tool"], "composite_run");
+    assert_eq!(workflow["arguments"]["fail-fast"], true);
+    let steps = workflow["arguments"]["steps"].as_array().unwrap();
+    let tools: Vec<_> = steps.iter().map(|step| step["tool"].as_str().unwrap()).collect();
+    assert_eq!(tools, ["verify_changes", "coverage_changes", "crap_changes"]);
+    assert_eq!(steps[0]["arguments"]["focused"], true);
 }
 
 #[test]
@@ -1116,5 +1127,56 @@ fn configure_cannot_run_inside_a_workflow_before_user_answers() {
             {"tool": "doctor_configure", "arguments": {"setupToken": "current", "answers": {"local_containers": false}}}
         ]}});
         assert!(super::validate_call(&params).unwrap_err().contains("separately"));
+    }
+}
+
+#[test]
+fn docker_interface_policy_covers_tools_and_workflow_results() {
+    let names = [
+        "docker_up",
+        "docker_down",
+        "docker_ps",
+        "docker_stats",
+        "docker_ps_required",
+        "karate_docker_up",
+        "karate_docker_down",
+        "karate_all",
+    ];
+    for name in names {
+        let listed = super::tools_list()
+            .into_iter()
+            .find(|tool| tool["name"] == name)
+            .unwrap();
+        assert!(listed["description"]
+            .as_str()
+            .unwrap()
+            .contains("Use MakeVN exclusively"));
+        for exit_code in [0, 1] {
+            let result = super::ToolCallResult {
+                output: "Try an external Docker workaround".into(),
+                exit_code,
+                duration_ms: 1,
+                doctor_snapshot: None,
+                next_suggestion: None,
+            };
+            let response = super::standard_tool_result(&result, &json!({"name": name}));
+            let step = super::step_tool_result(0, name, &result);
+            for guidance in [
+                &response["structuredContent"]["nextSuggestion"],
+                &step["nextSuggestion"],
+            ] {
+                let text = guidance.as_str().unwrap();
+                for expected in [
+                    "Use MakeVN exclusively",
+                    "read-only diagnostics",
+                    "rtk run docker",
+                    "report it and stop the dependent action",
+                ] {
+                    assert!(text.contains(expected), "{name}: {text}");
+                }
+                assert!(!text.contains("Try an external"));
+            }
+            assert_eq!(response["structuredContent"]["exitCode"], exit_code);
+        }
     }
 }
