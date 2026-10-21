@@ -3,6 +3,16 @@
 `makevn-mcp` is the dedicated Rust MCP server for makevn. It has no Node.js or
 JavaScript runtime dependency.
 
+## Docker operations
+
+Use MakeVN exclusively for Docker, including read-only diagnostics. This takes
+precedence over RTK preferences. Missing capabilities must be reported rather
+than bypassed with raw Docker, wrappers, scripts or APIs. See the
+[agent policy](../docs/agents.md#docker-use-dedicated-container-commands) and
+[Docker prerequisite workflow](../skills/makevn/SKILL.md#docker-prerequisite).
+The server repeats this boundary in Docker tool descriptions and results so
+clients receive it even without loading the skill.
+
 ## Installation
 
 Install makevn first through Homebrew, asdf, or the fallback release installer.

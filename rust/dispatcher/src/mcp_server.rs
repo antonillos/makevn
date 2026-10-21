@@ -97,7 +97,7 @@ pub(crate) fn standard_tool_result(result: &ToolCallResult, params: &Value) -> V
         "tool": tool, "exitCode": result.exit_code, "durationMs": result.duration_ms,
         "logPaths": log_paths,
         "untrustedData": {"output": if workflow.is_some() { "" } else { &output }, "workflow": workflow},
-        "nextSuggestion": tool_next_suggestion(tool, result)
+        "nextSuggestion": docker_interface_guidance(tool, tool_next_suggestion(tool, result))
     });
     if let Some(snapshot) = &result.doctor_snapshot {
         structured["interactive_setup"] = snapshot["interactive_setup"].clone();
@@ -105,6 +105,16 @@ pub(crate) fn standard_tool_result(result: &ToolCallResult, params: &Value) -> V
     }
     json!({"content": [{"type": "text", "text": structured.to_string()}],
         "structuredContent": structured, "isError": failed})
+}
+
+const DOCKER_INTERFACE_GUIDANCE: &str = "Use MakeVN exclusively for all Docker work, including read-only diagnostics, inspection, container logs, Compose/worktree ownership, networks, volumes and lifecycle. Prefer MakeVN MCP tools, then supported makevn CLI commands if MCP is unavailable. This overrides generic RTK preferences: never fall back to docker, docker-compose, rtk docker, rtk run docker, scripts, SDKs or the Docker API. Read diagnostics and logPaths returned by MakeVN. If MakeVN lacks the required capability, report it and stop the dependent action instead of using an external workaround. Unknown resource ownership does not authorize resets or volume deletion; preserve existing authorization and readiness gates.";
+
+fn docker_interface_guidance(tool: &str, guidance: &str) -> String {
+    if tool.starts_with("docker_") || tool.starts_with("karate_docker_") || tool == "karate_all" {
+        format!("{guidance} {DOCKER_INTERFACE_GUIDANCE}")
+    } else {
+        guidance.to_owned()
+    }
 }
 
 const TOOL_GUIDANCE: &[(&str, bool, &str)] = &[
@@ -235,7 +245,7 @@ fn step_tool_result(i: usize, tool: &str, result: &ToolCallResult) -> Value {
     let (output, log_paths) = extract_log_headers(&result.output);
     json!({"step": i, "tool": tool, "exitCode": result.exit_code, "durationMs": result.duration_ms,
         "output": output, "logPaths": log_paths,
-        "nextSuggestion": tool_next_suggestion(tool, &result)})
+        "nextSuggestion": docker_interface_guidance(tool, tool_next_suggestion(tool, &result))})
 }
 
 fn resolve_makevn_bin(current_exe: &Path) -> Result<PathBuf, String> {
@@ -424,7 +434,7 @@ fn tool(spec: &ToolSpec) -> Value {
 
     json!({
         "name": spec.name,
-        "description": spec.description,
+        "description": docker_interface_guidance(spec.name, spec.description),
         "inputSchema": schema,
         "outputSchema": result_schema(),
     })
