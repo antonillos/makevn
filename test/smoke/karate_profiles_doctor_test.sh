@@ -11,7 +11,7 @@ printf 'jobs:\n  karate:\n    env:\n      SPRING_PROFILES_ACTIVE: standalone,loc
 printf 'MAKEVN_APP_HEALTH_URL="http://localhost/health"\n' >> "${tmp}/.makevn/config"
 cp "${tmp}/.makevn/config" "${tmp}/original"
 python3 "${ROOT_DIR}/test/smoke/doctor_health_prompt_test.py" "${ROOT_DIR}/bin/makevn" "${tmp}" "${tmp}/out" '[["Karate profiles [standalone,local]", ""]]'
-grep -q '^MAKEVN_KARATE_APP_PROFILES=standalone\\,local$' "${tmp}/.makevn/config"
+[[ "$(source "${tmp}/.makevn/config"; printf '%s' "${MAKEVN_KARATE_APP_PROFILES}")" == standalone,local ]]
 python3 "${ROOT_DIR}/test/smoke/doctor_health_prompt_test.py" "${ROOT_DIR}/bin/makevn" "${tmp}" "${tmp}/out" '[]'
 ! grep -q 'Karate profiles \[' "${tmp}/out"
 cp "${tmp}/original" "${tmp}/.makevn/config"

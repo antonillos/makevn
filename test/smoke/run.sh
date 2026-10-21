@@ -925,6 +925,8 @@ test_mcp_tool_listing() {
   assert_contains "${output_file}" '"name":"verify_ut_coverage"'
   assert_contains "${output_file}" '"name":"verify_changes_preview"'
   assert_contains "${output_file}" '"name":"jdk_list"'
+  python3 -m unittest discover -s "${ROOT_DIR}/test/smoke" -p doctor_setup_test.py
+  python3 "${ROOT_DIR}/test/smoke/doctor_configure_mcp_test.py" "${prefix}/bin/makevn-mcp"
   python3 "${ROOT_DIR}/test/smoke/doctor_mcp_test.py" "${prefix}/bin/makevn-mcp"
   python3 "${ROOT_DIR}/test/smoke/doctor_reset_test.py" "${prefix}/bin/makevn"
   python3 -m unittest discover -s "${ROOT_DIR}/test/smoke" -p demo_mcp_test.py
@@ -4910,6 +4912,7 @@ bash "${ROOT_DIR}/test/smoke/multi_test_history_test.sh"
 python3 "${ROOT_DIR}/test/smoke/test_processes_test.py"
 python3 "${ROOT_DIR}/test/smoke/bind_mounts_test.py"
 bash "${ROOT_DIR}/test/smoke/doctor_pending_profiles_test.sh"
+bash "${ROOT_DIR}/test/smoke/doctor_setup_fallback_test.sh"
 bash "${ROOT_DIR}/test/smoke/init_presentation_test.sh"
 python3 "${ROOT_DIR}/test/smoke/question_style_test.py"
 python3 "${ROOT_DIR}/test/smoke/install_build_test.py"

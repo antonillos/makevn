@@ -258,6 +258,7 @@ impl McpSession {
                 output: String::new(),
                 exit_code: 0,
                 duration_ms: 0,
+                doctor_snapshot: None,
                 next_suggestion: None,
             },
             params,
@@ -363,7 +364,8 @@ fn add_identity(result: &mut Value, record: &ExecutionRecord) {
         result["structuredContent"]["message"] =
             json!("MakeVN execution cancelled; logs preserved.");
         result["structuredContent"]["nextSuggestion"] =
-            json!("Execution cancelled; inspect its preserved logs before retrying.");
+            json!(format!("Execution cancelled; inspect its preserved logs before retrying. {}",
+                result["structuredContent"]["nextSuggestion"].as_str().unwrap_or_default()));
     }
     let logs = result["structuredContent"]["logPaths"]
         .as_array_mut()
@@ -433,3 +435,7 @@ fn control_tool(name: &str, description: &str) -> Value {
     };
     json!({"name":name,"description":description,"inputSchema":input,"outputSchema":output})
 }
+
+#[cfg(test)]
+#[path = "mcp_runtime_test.rs"]
+mod tests;

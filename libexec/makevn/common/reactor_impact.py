@@ -3,6 +3,10 @@ import pathlib
 import re
 
 
+class ExhaustiveScopeRequired(ValueError):
+    """Analysis completed, but a safe focused plan is unavailable."""
+
+
 def literal_path(value):
     if not isinstance(value, str) or not re.fullmatch(r'[A-Za-z0-9_][A-Za-z0-9_./-]*', value):
         raise ValueError('Impact paths must be literal relative paths')
@@ -130,7 +134,7 @@ def reactor_consumers(base, modules, owner, parse):
             selected.add(consumer)
             pending.append(consumer)
     if '.' in selected:
-        raise ValueError('Contract has a Maven-root consumer; use --exhaustive')
+        raise ExhaustiveScopeRequired('Contract has a Maven-root consumer; use --exhaustive')
     return selected
 
 

@@ -1,5 +1,15 @@
 #!/usr/bin/env bash
 
+makevn_collect_focused_plan() {
+  local changed_paths="$1" git_root="$2" comparison_base="$3" purpose="$4" rc=0
+  MAKEVN_VERIFY_CHANGES_FOCUSED_PLAN="$(printf '%s\n' "${changed_paths}" | python3 "${SCRIPT_DIR}/common/changes_scope.py" "${git_root}" "${MAKEVN_VERIFY_CHANGES_MAVEN_BASE_PATH}" "${comparison_base}" --focused-plan)" || rc=$?
+  if [[ "${rc}" == 3 && "${purpose}" == preview ]]; then
+    MAKEVN_VERIFY_CHANGES_SCOPE_REQUIRED=true
+    return 0
+  fi
+  [[ "${rc}" == 0 ]] || makevn_die "Focused planning did not produce a safe plan; inspect diagnostics before verification."
+}
+
 makevn_changes_mode() {
   MAKEVN_VERIFY_CHANGES_MODE=focused
   MAKEVN_VERIFY_CHANGES_MODE_ARGS=0

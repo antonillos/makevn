@@ -21,6 +21,7 @@ use std::os::unix::process::{CommandExt, ExitStatusExt};
 use signal_hook::consts::signal::{SIGINT, SIGTERM};
 
 mod docker_resources;
+mod mcp_doctor;
 mod mcp_execution;
 mod mcp_runtime;
 mod mcp_server;
@@ -1580,7 +1581,7 @@ fn read_failure_hint(log_path: Option<&str>) -> Option<String> {
         }) {
             return Some(hint.to_owned());
         }
-        return Some("Docker is unavailable. Start Docker Desktop or your Docker runtime (e.g. `colima start`), check `docker info`, then retry".to_owned());
+        return Some("Docker engine is unavailable. Run 'makevn doctor' and inspect MakeVN logs. If the engine remains unavailable, report the environment blocker and stop dependent Docker operations; do not start runtimes or use Docker directly.".to_owned());
     }
     for line in content.lines() {
         let trimmed = line.trim();

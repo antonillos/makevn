@@ -45,7 +45,7 @@ makevn_doctor_karate_profiles() {
     printf '%s\n' "$(makevn_dim "Source: ${MAKEVN_EFFECTIVE_KARATE_APP_PROFILES_SOURCE}")" >&2
     input="$(makevn_read_editable_default "Karate profiles [${default_value}] (skip to leave unchanged): " "${default_value}")" || { makevn_resume_frontend_after_prompt; return 0; }
     if [[ "${input}" != skip ]]; then
-      if [[ "${input}" =~ ^[A-Za-z0-9_.-]+(,[A-Za-z0-9_.-]+)*$ ]]; then
+      if makevn_validate_doctor_setting karate_app_profiles "${input}"; then
         makevn_update_config_karate_profiles "${repo_root}" "${input}"
         MAKEVN_EFFECTIVE_KARATE_APP_PROFILES="${input}"
         MAKEVN_EFFECTIVE_KARATE_APP_PROFILES_SOURCE="config (MAKEVN_KARATE_APP_PROFILES)"
@@ -64,10 +64,5 @@ makevn_doctor_karate_profiles() {
 }
 
 makevn_update_config_karate_profiles() {
-  local config_path line tmp_file
-  config_path="$(makevn_config_path "$1")"
-  printf -v line 'MAKEVN_KARATE_APP_PROFILES=%q' "$2"
-  tmp_file="$(mktemp)"
-  MAKEVN_CONFIG_PROFILES_LINE="${line}" awk '/^MAKEVN_KARATE_APP_PROFILES=/ {next} {print} END {print ENVIRON["MAKEVN_CONFIG_PROFILES_LINE"]}' "${config_path}" > "${tmp_file}"
-  mv "${tmp_file}" "${config_path}"
+  makevn_update_config_setting "$1" MAKEVN_KARATE_APP_PROFILES "$2"
 }
