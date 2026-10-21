@@ -14,6 +14,63 @@ spec.loader.exec_module(scope)
 
 
 class ScopeTests(unittest.TestCase):
+    def test_preview_distinguishes_scope_outcome_from_planner_errors(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repo = pathlib.Path(directory)
+            subprocess.run(['git', 'init', '-q', directory], check=True)
+            subprocess.run(['git', '-C', directory, '-c', 'user.name=Test',
+                            '-c', 'user.email=test@example.test', 'commit', '--allow-empty',
+                            '--no-gpg-sign', '-qm', 'fixture'], check=True)
+            repo.joinpath('pom.xml').write_text('<project/>')
+            subprocess.run(['git', '-C', directory, 'add', 'pom.xml'], check=True)
+            script = r'''
+set -euo pipefail
+SCRIPT_DIR="$1/libexec/makevn"
+source "${SCRIPT_DIR}/common.sh"
+source "${SCRIPT_DIR}/commands/changes.sh"
+makevn_detect_maven_base_path() { printf '%s' "$1"; }
+makevn_maven_executable() { printf 'unused'; }
+makevn_effective_local_containers() { :; }
+makevn_detect_parent_branch_spec() { printf HEAD; }
+makevn_refresh_impact() { :; }
+makevn_load_profile() { :; }
+makevn_frontend_owns_loader() { return 0; }
+makevn_write_verify_changes_plan() { touch "$1/plan-written"; }
+if [[ "$3" == preview ]]; then
+  cmd_verify_changes_preview "$2"
+else
+  makevn_collect_verify_changes_scope "$2"
+fi
+'''
+            # An unclassified tracked build file is a completed scope analysis.
+            repo.joinpath('build.sh').write_text('echo build')
+            subprocess.run(['git', '-C', directory, 'add', 'build.sh'], check=True)
+            subprocess.run(['git', '-C', directory, '-c', 'user.name=Test',
+                            '-c', 'user.email=test@example.test', 'commit', '--no-gpg-sign',
+                            '-qm', 'project'], check=True)
+            repo.joinpath('build.sh').write_text('echo changed')
+            command = ['bash', '-c', script, 'test', str(ROOT), directory]
+            result = subprocess.run(command + ['preview'], text=True, capture_output=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn('requires exhaustive scope', result.stdout)
+            self.assertIn('no tests ran', result.stdout)
+            self.assertIn('build.sh', result.stderr)
+            self.assertFalse(repo.joinpath('plan-written').exists())
+            result = subprocess.run(command + ['execute'], text=True, capture_output=True)
+            self.assertNotEqual(result.returncode, 0)
+            repo.joinpath('build.sh').write_text('echo build')
+            repo.joinpath('pom.xml').write_text('<project><description>changed</description></project>')
+            result = subprocess.run(command + ['preview'], text=True, capture_output=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn('requires exhaustive scope', result.stdout)
+            self.assertIn('pom.xml', result.stderr)
+            # Broken XML is still an error, even in preview mode.
+            repo.joinpath('pom.xml').write_text('<broken')
+            result = subprocess.run(command + ['preview'], text=True, capture_output=True)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertNotIn('requires exhaustive scope', result.stdout)
+            self.assertFalse(repo.joinpath('plan-written').exists())
+
     def test_focused_plan_keeps_production_suite_and_selects_boot_it(self):
         with tempfile.TemporaryDirectory() as directory:
             repo = pathlib.Path(directory)
