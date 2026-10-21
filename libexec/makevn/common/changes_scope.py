@@ -7,11 +7,7 @@ import os
 import tempfile
 import xml.etree.ElementTree as ET
 
-from reactor_impact import automatic_resource_rules, leaf_bump_owners, shared_resource_owners
-
-
-class ExhaustiveScopeRequired(ValueError):
-    """Analysis completed, but a safe focused plan is unavailable."""
+from reactor_impact import ExhaustiveScopeRequired, automatic_resource_rules, leaf_bump_owners, shared_resource_owners
 
 
 def parse(text):
@@ -170,7 +166,7 @@ def selection(repo, base, reference, paths):
                 return "."
             owners = shared_resource_owners(repo, base, reactor, absolute, parse)
             if not owners:
-                raise ValueError("Cannot derive a safe shared-resource scope for " + path + "; root/reactor impact is ambiguous; use --exhaustive")
+                raise ExhaustiveScopeRequired("Cannot derive a safe shared-resource scope for " + path + "; root/reactor impact is ambiguous; use --exhaustive")
             modules.update(owners)
         elif "/src/" in relative:
             modules.add(relative.split("/src/", 1)[0])
@@ -264,8 +260,10 @@ if __name__ == "__main__":
         print(planner(pathlib.Path(sys.argv[1]).resolve(), pathlib.Path(sys.argv[2]).resolve(),
                       sys.argv[3], sys.stdin.read().splitlines()))
     except ExhaustiveScopeRequired as error:
-        print("Focused scope unavailable: " + str(error), file=sys.stderr)
-        sys.exit(3)
+        if focused:
+            print("Focused scope unavailable: " + str(error), file=sys.stderr)
+            sys.exit(3)
+        print(".")
     except (OSError, ValueError, ET.ParseError, subprocess.CalledProcessError) as error:
         if focused or "--impact-state" in sys.argv:
             print("Cannot safely focus verification: " + str(error), file=sys.stderr)
