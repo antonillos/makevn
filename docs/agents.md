@@ -144,8 +144,10 @@ Do not pass scope-changing Maven overrides to focus or disable report checks.
 Report the mode and actual scope on completion: **focused checks passed**, not
 “full verification/coverage passed.” Keep mandatory full CI, coverage and CRAP gates.
 
-Changed-code coverage uses a separate full coverage-producing run (choose UT or IT
-coverage according to doctor; a scoped verification is not a global coverage gate):
+Focused changed-code coverage reuses `verify-changes` evidence; see
+[coordinated focused verification](#coordinated-focused-verification-coverage-and-crap).
+For coverage based on complete suites, use a separate coverage-producing run
+(choose UT or IT according to doctor):
 
 ```bash
 makevn verify-ut-coverage # or verify-it-coverage when integration coverage is needed
@@ -158,10 +160,11 @@ Unit-test coverage gate for repositories that do not need boot containers:
 makevn clean verify-ut-coverage coverage-changes
 ```
 
-Integration-test coverage gate for repositories that need boot containers:
+Integration-test coverage gate after the Docker prerequisite workflow in the
+[makevn skill](../skills/makevn/SKILL.md#docker-prerequisite):
 
 ```bash
-makevn docker-up docker-ps-required --wait-seconds 30 clean verify-it-coverage coverage-changes
+makevn docker-ps-required --wait-seconds 30 clean verify-it-coverage coverage-changes
 ```
 
 Use the boot-container sequence only when `makevn doctor` or `.makevn/config`
@@ -228,7 +231,7 @@ on ITs or boot services:
 
 ```bash
 makevn profile refresh
-makevn docker-up docker-ps-required --wait-seconds 30 clean verify-it-coverage coverage-changes
+makevn docker-ps-required --wait-seconds 30 clean verify-it-coverage coverage-changes
 ```
 
 MCP equivalents for OpenCode agents:
@@ -349,7 +352,6 @@ to reset containers or delete volumes. Existing authorization and readiness gate
 still apply. This restriction is on agent operations; MakeVN's implementation may
 invoke Docker internally.
 
-
 The `docker-*` and `karate-docker-*` subcommands are the supported interface for container lifecycle management:
 
 - `makevn docker-up` — start all boot compose services
@@ -362,11 +364,10 @@ The `docker-*` and `karate-docker-*` subcommands are the supported interface for
 
 `makevn docker-up` runs a full lifecycle: `down -v --remove-orphans`,
 `volume prune -f`, then `up --detach` for **all** services. It does not
-support targeting a single service. If only one service needs to be started
-(such as a single dependency service for local development without the full stack),
-use `makevn docker-up` to start everything — the lifecycle guarantees a clean
-state regardless. Do not fall back to `docker compose up -d <service>`; that bypasses `makevn`'s compose file
-resolution, override detection, and logging.
+support targeting a single service. Do not turn a single-service request into a
+full-stack reset without authorization for that scope and its destructive effects.
+Report the missing capability instead. First check required service readiness;
+reuse a healthy stack. See the [Docker prerequisite workflow](../skills/makevn/SKILL.md#docker-prerequisite).
 
 Karate tests need the real application running. For a manual chain, agents should
 use `makevn run-app-bg` before `makevn karate-test` and always finish with
@@ -561,70 +562,16 @@ Inside Codex, the intended flow is the same terminal contract:
 
 Codex-specific repo work should still use normal engineering hygiene: keep edits scoped, verify with concrete commands, and leave the installed `libexec/makevn/` runtime as the source of behavior instead of calling target-repository helper scripts.
 
-## Subagent Workflows
+## Multi-step workflows
 
-These workflows orchestrate multiple makevn commands for common scenarios. Each workflow can be executed either via `composite_run`/`parallel_run` (MCP tools, low context cost ~1k tokens) or via a subagent Task (higher context cost ~34k tokens, but visible step-by-step in TUI).
-
-### Context cost guidance
-
-| Execution method | Context cost | TUI visibility | Use when |
-|---|---|---|---|
-| `composite_run` (MCP) | ~1k tokens | Single tool call | Deterministic sequences, no decisions needed |
-| `parallel_run` (MCP) | ~1k tokens | Single tool call | Independent commands in parallel |
-| Subagent Task | ~34k tokens | Per-step visible | Workflow needs analysis or branching logic |
-
-**Rule of thumb**: Prefer `composite_run` for deterministic command sequences. Use subagent Tasks only when the workflow needs decisions (classify, branch, retry).
-
-### Available workflows
-
-See `skills/makevn/SKILL.md` for detailed workflow definitions:
-
-| Workflow | Execution | Use case |
-|---|---|---|
-| `boot-verify-coverage` | `composite_run` | Docker + clean compile verify + coverage |
-| `changes-validator` | Preview separately, then `composite_run` | Choose focused local feedback or separate full coverage gates |
-| `multi-test-runner` | `composite_run` | Multiple tests with consolidated results |
-| `karate-runner` | `composite_run` | Full Karate E2E lifecycle |
-| `adaptive-test` | Subagent Task | Auto-detect UT/IT, needs decision-making |
-| `parallel-verify` | `parallel_run` | UT and IT in parallel |
-
-### MCP examples
-
-```json
-// Boot verify + coverage (deterministic):
-{
-  "tool": "composite_run",
-  "arguments": {
-    "steps": [
-      {"tool": "docker_up"},
-      {"tool": "docker_ps_required", "arguments": {"wait-seconds": 30}},
-      {"tool": "clean"},
-      {"tool": "compile"},
-      {"tool": "verify"},
-      {"tool": "coverage_changes"}
-    ],
-    "fail-fast": true
-  }
-}
-
-// Parallel UT + IT (independent):
-{
-  "tool": "parallel_run",
-  "arguments": {
-    "steps": [
-      {"tool": "verify_ut_coverage"},
-      {"tool": "verify_it_coverage"}
-    ]
-  }
-}
-```
-
-Note: `composite_run` and `parallel_run` execute as a single MCP tool call, so individual step progress is not visible in the TUI. Use subagent Tasks when step-by-step visibility is desired and the workflow needs decision-making.
-
-See also:
-
-- `docs/cli-contract.md`
-- `docs/backend-contract.md`
+The [makevn skill](../skills/makevn/SKILL.md#multi-step-workflows) maintains the
+workflow recipes for Docker prerequisites, changed-code checks, selected tests
+and Karate. Use `composite_run` with fail-fast for dependent steps; reserve
+`parallel_run` for independent operations without shared build/runtime state.
+Do not parallelize Docker startup/readiness with dependent tests. See the
+[MCP execution contract](../mcp/README.md#execution-visibility-and-cancellation)
+for conflicts, cancellation and retries. Wrapper choice does not shorten the
+underlying build/test execution time.
 
 ### Strict Karate HTTP readiness
 
