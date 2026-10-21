@@ -35,6 +35,7 @@ All Docker operations use MakeVN MCP tools or supported MakeVN CLI commands;
 this includes read-only diagnosis and takes precedence over RTK preferences.
 Tool descriptions and standalone/workflow results carry this rule through
 `docker_interface_guidance` in `rust/dispatcher/src/mcp_server.rs`.
+It also covers `karate_all`, which starts the Karate Docker stack internally.
 
 ```mermaid
 flowchart TD

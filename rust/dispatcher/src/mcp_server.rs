@@ -110,7 +110,7 @@ pub(crate) fn standard_tool_result(result: &ToolCallResult, params: &Value) -> V
 const DOCKER_INTERFACE_GUIDANCE: &str = "Use MakeVN exclusively for all Docker work, including read-only diagnostics, inspection, container logs, Compose/worktree ownership, networks, volumes and lifecycle. Prefer MakeVN MCP tools, then supported makevn CLI commands if MCP is unavailable. This overrides generic RTK preferences: never fall back to docker, docker-compose, rtk docker, rtk run docker, scripts, SDKs or the Docker API. Read diagnostics and logPaths returned by MakeVN. If MakeVN lacks the required capability, report it and stop the dependent action instead of using an external workaround. Unknown resource ownership does not authorize resets or volume deletion; preserve existing authorization and readiness gates.";
 
 fn docker_interface_guidance(tool: &str, guidance: &str) -> String {
-    if tool.starts_with("docker_") || tool.starts_with("karate_docker_") {
+    if tool.starts_with("docker_") || tool.starts_with("karate_docker_") || tool == "karate_all" {
         format!("{guidance} {DOCKER_INTERFACE_GUIDANCE}")
     } else {
         guidance.to_owned()

@@ -1119,6 +1119,7 @@ fn docker_interface_policy_covers_tools_and_workflow_results() {
         "docker_ps_required",
         "karate_docker_up",
         "karate_docker_down",
+        "karate_all",
     ];
     for name in names {
         let listed = super::tools_list()
