@@ -31,6 +31,19 @@ initialization is needed; agents must not invent an `init --force` requirement.
 
 ## Docker readiness and mount visibility
 
+All Docker operations use MakeVN MCP tools or supported MakeVN CLI commands;
+this includes read-only diagnosis and takes precedence over RTK preferences.
+Tool descriptions and standalone/workflow results carry this rule through
+`docker_interface_guidance` in `rust/dispatcher/src/mcp_server.rs`.
+
+```mermaid
+flowchart TD
+    REQUEST[Docker operation or diagnosis] --> CAPABILITY{Supported MakeVN operation?}
+    CAPABILITY -->|Yes| MAKEVN[Use MakeVN; preserve authorization and readiness gates]
+    CAPABILITY -->|No| GAP[Report missing capability; stop dependent action]
+    GAP --> NOFALLBACK[No raw Docker, wrappers, scripts, SDK or API workaround]
+```
+
 ```mermaid
 flowchart TD
     PS[docker_ps: diagnostic listing] --> NEED{Docker needed for workflow?}

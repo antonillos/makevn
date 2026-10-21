@@ -5,6 +5,21 @@ JavaScript runtime dependency.
 
 ## Installation
 
+Use MakeVN exclusively for all Docker work, including discovery, diagnostics,
+container logs, inspection, Compose ownership, networks, volumes, and lifecycle.
+Prefer MakeVN MCP tools; if MCP is unavailable, use supported `makevn` CLI
+commands. This rule takes precedence over generic RTK wrapper preferences.
+Do not invoke `docker`, `docker-compose`, `rtk docker`, `rtk run docker`, shell
+scripts, SDKs, or the Docker API as an alternative, even for read-only diagnosis.
+Read diagnostics and log files already returned by MakeVN. If the public MakeVN
+interface cannot provide the required operation or evidence, report the missing
+capability and stop only the dependent Docker action; do not invent a command or
+seek an external workaround. Unknown Compose/worktree ownership is not permission
+to reset containers or delete volumes. Existing authorization and readiness gates
+still apply. This restriction is on agent operations; MakeVN's implementation may
+invoke Docker internally.
+
+
 Install makevn first through Homebrew, asdf, or the fallback release installer.
 See `docs/agent-install.md`.
 

@@ -1097,3 +1097,53 @@ fn configure_cannot_run_inside_a_workflow_before_user_answers() {
         assert!(super::validate_call(&params).unwrap_err().contains("separately"));
     }
 }
+
+#[test]
+fn docker_interface_policy_covers_tools_and_workflow_results() {
+    let names = [
+        "docker_up",
+        "docker_down",
+        "docker_ps",
+        "docker_stats",
+        "docker_ps_required",
+        "karate_docker_up",
+        "karate_docker_down",
+    ];
+    for name in names {
+        let listed = super::tools_list()
+            .into_iter()
+            .find(|tool| tool["name"] == name)
+            .unwrap();
+        assert!(listed["description"]
+            .as_str()
+            .unwrap()
+            .contains("Use MakeVN exclusively"));
+        for exit_code in [0, 1] {
+            let result = super::ToolCallResult {
+                output: "Try an external Docker workaround".into(),
+                exit_code,
+                duration_ms: 1,
+                doctor_snapshot: None,
+                next_suggestion: None,
+            };
+            let response = super::standard_tool_result(&result, &json!({"name": name}));
+            let step = super::step_tool_result(0, name, &result);
+            for guidance in [
+                &response["structuredContent"]["nextSuggestion"],
+                &step["nextSuggestion"],
+            ] {
+                let text = guidance.as_str().unwrap();
+                for expected in [
+                    "Use MakeVN exclusively",
+                    "read-only diagnostics",
+                    "rtk run docker",
+                    "report it and stop the dependent action",
+                ] {
+                    assert!(text.contains(expected), "{name}: {text}");
+                }
+                assert!(!text.contains("Try an external"));
+            }
+            assert_eq!(response["structuredContent"]["exitCode"], exit_code);
+        }
+    }
+}

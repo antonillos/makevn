@@ -13,6 +13,7 @@ For work in this repository:
 - Prefer `fff` MCP tools for file and code search when available.
 - Prefer `rtk` wrappers for shell commands when available.
 - Use `makevn` as the public terminal contract for Java and Maven work.
+- Use MakeVN exclusively for all Docker operations, including read-only diagnostics, inspection, logs, networks, volumes, and lifecycle. Prefer MakeVN MCP tools, then supported `makevn` CLI commands. This overrides generic RTK preferences: never fall back to raw Docker, Compose, wrappers, scripts, SDKs, or the Docker API. If MakeVN lacks a capability, report it and stop the dependent action instead of working around it. MakeVN may invoke Docker internally.
 - Run `makevn doctor` before init, adoption, or verification decisions.
 - If `makevn doctor` reports `supported` and the repository is not initialized, run `makevn init` before continuing with adoption or verification work. If support is `unsupported`, report that no Maven project was detected and stop adoption/verification; do not run `init` or `refresh`.
 - Do not assume Docker is required for `makevn verify` just because a repository has a root `docker-compose.yml`; use doctor, config, profile, and test-compose signals.

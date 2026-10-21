@@ -335,6 +335,21 @@ or the human confirms that boot services are required.
 
 ### Docker: Use dedicated container commands
 
+Use MakeVN exclusively for all Docker work, including discovery, diagnostics,
+container logs, inspection, Compose ownership, networks, volumes, and lifecycle.
+Prefer MakeVN MCP tools; if MCP is unavailable, use supported `makevn` CLI
+commands. This rule takes precedence over generic RTK wrapper preferences.
+Do not invoke `docker`, `docker-compose`, `rtk docker`, `rtk run docker`, shell
+scripts, SDKs, or the Docker API as an alternative, even for read-only diagnosis.
+Read diagnostics and log files already returned by MakeVN. If the public MakeVN
+interface cannot provide the required operation or evidence, report the missing
+capability and stop only the dependent Docker action; do not invent a command or
+seek an external workaround. Unknown Compose/worktree ownership is not permission
+to reset containers or delete volumes. Existing authorization and readiness gates
+still apply. This restriction is on agent operations; MakeVN's implementation may
+invoke Docker internally.
+
+
 The `docker-*` and `karate-docker-*` subcommands are the supported interface for container lifecycle management:
 
 - `makevn docker-up` — start all boot compose services

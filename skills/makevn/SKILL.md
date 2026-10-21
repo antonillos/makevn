@@ -30,6 +30,21 @@ It provides:
 
 ## Safety Rules
 
+Use MakeVN exclusively for all Docker work, including discovery, diagnostics,
+container logs, inspection, Compose ownership, networks, volumes, and lifecycle.
+Prefer MakeVN MCP tools; if MCP is unavailable, use supported `makevn` CLI
+commands. This rule takes precedence over generic RTK wrapper preferences.
+Do not invoke `docker`, `docker-compose`, `rtk docker`, `rtk run docker`, shell
+scripts, SDKs, or the Docker API as an alternative, even for read-only diagnosis.
+Read diagnostics and log files already returned by MakeVN. If the public MakeVN
+interface cannot provide the required operation or evidence, report the missing
+capability and stop only the dependent Docker action; do not invent a command or
+seek an external workaround. Unknown Compose/worktree ownership is not permission
+to reset containers or delete volumes. Existing authorization and readiness gates
+still apply. This restriction is on agent operations; MakeVN's implementation may
+invoke Docker internally.
+
+
 1. Always determine the repository root before running any `makevn` command. `makevn` must be executed from the repo root, never from a subdirectory or module. Locate the root by finding the `.git` directory.
 2. Run `makevn doctor` before recommending `init`. Check support first: if `unsupported`, report that no Maven project was detected and stop adoption/verification without `init` or `refresh`. Only continue the following initialization and refresh steps for supported repositories. If `.makevn/` already exists in the repo root, the repo is already initialized — skip `init` unless the user explicitly asks to reinitialize. If `doctor` reports that the repository is not initialized, run `makevn init` before continuing with adoption or verification work. After updating makevn itself, run `makevn refresh` to refresh state while preserving user configuration.
 3. Never overwrite an existing `Makefile` or `GNUmakefile`.
