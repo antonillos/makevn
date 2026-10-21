@@ -97,6 +97,7 @@ flowchart TD
     STEPS --> DYNAMIC[Doctor steps preserve snapshot-derived guidance]
     STEPS --> SUCCESS[Successful Docker startup still requires readiness gate]
     STEPS --> FAIL[Failed steps preserve tool-specific recovery guidance]
+    CANCEL[Cancelled execution] --> PRESERVE[Add cancellation advice; retain tool-specific guidance and Docker policy]
 ```
 
 ApplicationContext errors do not establish that Docker is the cause. Diagnostic
