@@ -35,7 +35,7 @@ makevn_print_doctor_suggestions() {
     makevn_print_item "Analysis status" "completed (diagnosis only; setup is not complete)"
     makevn_print_item "Setup status" "pending"
     makevn_print_item "Interaction blockers" "${MAKEVN_DOCTOR_INTERACTION_BLOCKERS:-answers_unresolved}"
-    makevn_print_item "interactive setup required" "Launch CLI makevn doctor in this repository in an interactive terminal/PTY without --compact or --json. Provide a USER-INTERACTIVE terminal, not merely a captured CLI invocation. If that is unavailable, ask the user to run doctor themselves and wait. Do not retry the same captured command or continue Docker/tests while setup is pending. Let the user answer all prompts; MCP doctor cannot ask them."
+    makevn_print_item "interactive setup required" "Answer the pending questions through MCP doctor_configure, or run interactive CLI makevn doctor. Ask the user and wait for their answers before Docker/tests."
   fi
   [[ -n "${MAKEVN_DOCTOR_SUGGESTED_NEXT}${MAKEVN_DOCTOR_SUGGESTED_NOTE}${MAKEVN_DOCTOR_SUGGESTED_OPTIONAL}" ]] || return 0
   [[ -n "${MAKEVN_FRONTEND_STATE_METADATA_OUT:-}" ]] || printf '\n'
@@ -79,10 +79,18 @@ print_doctor() {
   fi
   print_command_intro "${repo_root}" doctor
   makevn_collect_doctor_snapshot "${repo_root}"
+  local setup_rc=0
+  if [[ -n "${MAKEVN_MCP_DOCTOR_ANSWERS:-}" ]]; then
+    makevn_print_doctor_json | python3 "${MAKEVN_LIBEXEC_DIR}/common/doctor_setup.py" apply "${repo_root}" "${MAKEVN_MCP_DOCTOR_ANSWERS}" || setup_rc=$?
+    if [[ "${setup_rc}" == 0 ]]; then
+      makevn_collect_doctor_snapshot "${repo_root}"
+    fi
+  fi
   makevn_refresh_impact "${repo_root}" "" doctor
   if [[ -n "${MAKEVN_MCP_DOCTOR_METADATA_OUT:-}" ]]; then
     makevn_print_doctor_json > "${MAKEVN_MCP_DOCTOR_METADATA_OUT}"
   fi
+  [[ "${setup_rc}" == 0 ]] || return "${setup_rc}"
   makevn_doctor_progress "Reporting repository analysis"
   if [[ "${MAKEVN_DOCTOR_BUILD_STATUS}" != "current" ]]; then
     makevn_print_item "Doctor build" "${MAKEVN_DOCTOR_BUILD_STATUS}: ${MAKEVN_DOCTOR_PREVIOUS_VERSION} -> ${MAKEVN_VERSION}; repository reanalyzed"

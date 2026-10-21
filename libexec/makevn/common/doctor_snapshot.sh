@@ -143,7 +143,7 @@ makevn_prompt_doctor_app_health_url_paused() {
   while true; do
     health_input="$(makevn_read_editable_default "Health URL [${default_health_url}]: " "${default_health_url}")" || return 0
     [[ "${health_input}" != "skip" ]] || return 0
-    if [[ "${health_input}" =~ ^https?://[^[:space:]]+$ ]]; then
+    if makevn_validate_doctor_setting app_health_url "${health_input}"; then
       makevn_update_config_app_health_url "${repo_root}" "${health_input}" || return $?
       detected_app_health_url="${health_input}"
       printf '%s\n' "$(makevn_dim "Saved to .makevn/config (MAKEVN_APP_HEALTH_URL).")" >&2
@@ -578,7 +578,7 @@ makevn_collect_doctor_snapshot() {
       ;;
   esac
   if [[ "${app_runnable}" == "yes" && -z "${detected_app_health_url}" ]]; then
-    MAKEVN_DOCTOR_SUGGESTED_NOTE="Application HTTP readiness is not configured. Set MAKEVN_APP_HEALTH_URL in .makevn/config or run makevn doctor in an interactive terminal after initialization. karate-all requires this URL."
+    MAKEVN_DOCTOR_SUGGESTED_NOTE="Application HTTP readiness is not configured. Configure MAKEVN_APP_HEALTH_URL by answering app_health_url through MCP doctor_configure or interactive makevn doctor after initialization. karate-all requires this URL."
   fi
   MAKEVN_DOCTOR_BIND_MOUNTS='{"status":"unavailable","checks":[]}'
   if command -v python3 >/dev/null 2>&1; then
@@ -591,6 +591,7 @@ makevn_collect_doctor_snapshot() {
   makevn_doctor_refresh_setup_answers "${repo_root}"
   makevn_doctor_interactive_setup_status
   makevn_doctor_interaction_status
+  makevn_doctor_collect_setup "${repo_root}"
   makevn_doctor_record_build "${repo_root}"
 }
 
@@ -604,21 +605,47 @@ makevn_doctor_refresh_setup_answers() {
   fi
 }
 
-# Report questions that noninteractive clients cannot answer.
+# Classify pending decisions independently of the client interaction method.
 makevn_doctor_interactive_setup_status() {
   MAKEVN_DOCTOR_INTERACTIVE_REQUIRED=false
+  MAKEVN_DOCTOR_HEALTH_PENDING=false
+  MAKEVN_DOCTOR_LOCAL_PENDING=false
+  MAKEVN_DOCTOR_PROFILES_PENDING=false
+  [[ "${MAKEVN_DOCTOR_REPO_SUPPORT_STATUS:-supported}" != unsupported ]] || return 0
   if [[ "${MAKEVN_DOCTOR_KARATE_APP_PROFILES:-}" == 'unresolved (explicit selection required)' && -z "${SPRING_PROFILES_ACTIVE+x}" && -z "${MAKEVN_KARATE_APP_PROFILES:-}" ]]; then
     MAKEVN_DOCTOR_INTERACTIVE_REQUIRED=true
+    MAKEVN_DOCTOR_PROFILES_PENDING=true
   fi
   case "${MAKEVN_DOCTOR_COMPOSE_FILE} ${MAKEVN_DOCTOR_E2E_COMPOSE_FILE}" in
     *ambiguous*) MAKEVN_DOCTOR_INTERACTIVE_REQUIRED=true ;;
   esac
   if [[ "${MAKEVN_DOCTOR_APP_RUNNABLE}" == yes && -z "${MAKEVN_APP_HEALTH_URL:-}" ]]; then
+    MAKEVN_DOCTOR_HEALTH_PENDING=true
     MAKEVN_DOCTOR_INTERACTIVE_REQUIRED=true
   fi
   if [[ -n "${verify_it_local_containers_default:-}" && "${local_containers_configured:-no}" != yes && -z "${LOCAL_CONTAINERS+x}" ]]; then
+    MAKEVN_DOCTOR_LOCAL_PENDING=true
     MAKEVN_DOCTOR_INTERACTIVE_REQUIRED=true
   fi
+}
+
+# Expose the same unresolved decisions to chat clients without requiring a TTY.
+makevn_doctor_collect_setup() {
+  local repo_root="$1" boot="" e2e="" health=""
+  MAKEVN_DOCTOR_SETUP_DETAILS='"questions": [], "setupToken": null, "available": false'
+  command -v python3 >/dev/null 2>&1 || return 0
+  if [[ "${MAKEVN_DOCTOR_REPO_SUPPORT_STATUS}" == supported ]]; then
+    [[ "${MAKEVN_DOCTOR_COMPOSE_FILE}" != ambiguous* ]] || boot="$(makevn_find_compose_files "${repo_root}")"
+    [[ "${MAKEVN_DOCTOR_E2E_COMPOSE_FILE}" != ambiguous* ]] || e2e="$(makevn_find_e2e_compose_files "${repo_root}")"
+    if [[ "${MAKEVN_DOCTOR_HEALTH_PENDING}" == true ]]; then
+      health="${detected_app_health_url:-}"
+      [[ -n "${health}" ]] || health="$(makevn_doctor_suggest_app_health_url "${maven_base_path}")"
+    fi
+  fi
+  local details
+  details="$(python3 "${MAKEVN_LIBEXEC_DIR}/common/doctor_setup.py" questions "${repo_root}" "${boot}" "${e2e}" "${health}" "${MAKEVN_DOCTOR_KARATE_APP_PROFILES_CANDIDATES}" "${MAKEVN_DOCTOR_LOCAL_PENDING}" "${MAKEVN_DOCTOR_HEALTH_PENDING}" "${MAKEVN_DOCTOR_PROFILES_PENDING}")"
+  details="${details#\{}"
+  MAKEVN_DOCTOR_SETUP_DETAILS="${details%\}}"
 }
 
 # Analysis success does not imply that interactive configuration is complete.
@@ -640,7 +667,7 @@ makevn_print_doctor_json() {
   printf '  "command": "doctor",\n'
   printf '  "test_processes": %s,\n' "${MAKEVN_DOCTOR_TEST_PROCESSES}"
   printf '  "analysis_status": "completed",\n'
-  printf '  "interactive_setup": {"required": %s, "status": "%s", "blockers": "%s", "command": "makevn doctor", "requires_tty": true},\n' "${MAKEVN_DOCTOR_INTERACTIVE_REQUIRED:-false}" "${MAKEVN_DOCTOR_SETUP_STATUS:-ready}" "$(makevn_json_escape "${MAKEVN_DOCTOR_INTERACTION_BLOCKERS:-}")"
+  printf '  "interactive_setup": {"required": %s, "status": "%s", "blockers": "%s", "command": "makevn doctor", "requires_tty": false, %s},\n' "${MAKEVN_DOCTOR_INTERACTIVE_REQUIRED:-false}" "${MAKEVN_DOCTOR_SETUP_STATUS:-ready}" "$(makevn_json_escape "${MAKEVN_DOCTOR_INTERACTION_BLOCKERS:-}")" "${MAKEVN_DOCTOR_SETUP_DETAILS:-\"questions\": [], \"setupToken\": null}"
   printf '  "doctor_build": {\n'
   printf '    "current_version": "%s",\n' "$(makevn_json_escape "${MAKEVN_VERSION}")"
   printf '    "previous_version": "%s",\n' "$(makevn_json_escape "${MAKEVN_DOCTOR_PREVIOUS_VERSION}")"

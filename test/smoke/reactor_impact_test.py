@@ -59,6 +59,42 @@ class ImpactTests(unittest.TestCase):
     def bump(self, extra=''):
         self.write('contracts/event/pom.xml', self.contract.replace('<wire.version>1', '<wire.version>2') + extra)
 
+    def assert_exhaustive_outcome(self, path):
+        command = [sys.executable, str(ROOT / 'libexec/makevn/common/changes_scope.py'), str(self.repo), str(self.base), 'HEAD']
+        result = subprocess.run(command, input=path + '\n', text=True, capture_output=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout.strip(), '.')
+        result = subprocess.run(command + ['--focused-plan'], input=path + '\n', text=True, capture_output=True)
+        self.assertEqual(result.returncode, 3, result.stderr)
+        self.assertEqual(result.stdout, '')
+        self.assertIn('--exhaustive', result.stderr)
+        script = r'''
+set -euo pipefail
+SCRIPT_DIR="$1/libexec/makevn"
+source "${SCRIPT_DIR}/common.sh"
+source "${SCRIPT_DIR}/commands/changes.sh"
+makevn_detect_maven_base_path() { printf '%s/workspace' "$1"; }
+makevn_maven_executable() { printf unused; }
+makevn_effective_local_containers() { :; }
+makevn_detect_parent_branch_spec() { printf HEAD; }
+makevn_refresh_impact() { :; }
+makevn_load_profile() { :; }
+makevn_frontend_owns_loader() { return 0; }
+if [[ "$3" == preview ]]; then
+  cmd_verify_changes_preview "$2"
+else
+  makevn_collect_verify_changes_scope "$2"
+fi
+'''
+        command = ['bash', '-c', script, 'test', str(ROOT), str(self.repo)]
+        result = subprocess.run(command + ['preview'], text=True, capture_output=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('requires exhaustive scope', result.stdout)
+        self.assertIn('no tests ran', result.stdout)
+        self.assertFalse(self.repo.joinpath('.makevn/verify-changes-plan.env').exists())
+        result = subprocess.run(command + ['execute'], text=True, capture_output=True)
+        self.assertNotEqual(result.returncode, 0)
+
     def test_leaf_version_bump_selects_owner_and_transitive_consumers(self):
         self.bump()
         self.assertEqual(self.plan('workspace/contracts/event/pom.xml'), 'adapter\t*\ncontracts/event\t*\nrunner\t*')
@@ -91,8 +127,9 @@ class ImpactTests(unittest.TestCase):
         root.write_text(root.read_text().replace('</project>', '<build><extensions><extension><groupId>example</groupId><artifactId>event</artifactId><version>1</version></extension></extensions></build></project>'))
         self.commit()
         self.bump()
-        with self.assertRaisesRegex(ValueError, 'Maven-root consumer'):
+        with self.assertRaisesRegex(scope.ExhaustiveScopeRequired, 'Maven-root consumer'):
             self.plan('workspace/contracts/event/pom.xml')
+        self.assert_exhaustive_outcome('workspace/contracts/event/pom.xml')
 
     def test_shared_resources_default_to_complete_reactor_suites(self):
         path = 'workspace/src/test/resources/shared/v2/schema.avsc'
@@ -229,8 +266,29 @@ class ImpactTests(unittest.TestCase):
         path = self.base / 'src/test/custom/RootTests.txt'
         path.parent.mkdir(parents=True)
         path.touch()
-        with self.assertRaises(ValueError):
+        resource = self.base / 'src/test/resources/shared/schema.avsc'
+        resource.parent.mkdir(parents=True)
+        resource.write_text('original')
+        self.commit()
+        resource.write_text('changed')
+        with self.assertRaises(scope.ExhaustiveScopeRequired):
             self.plan('workspace/src/test/resources/shared/schema.avsc')
+        self.assert_exhaustive_outcome('workspace/src/test/resources/shared/schema.avsc')
+
+    def test_nested_planner_xml_and_io_failures_remain_errors(self):
+        self.bump()
+        command = [sys.executable, str(ROOT / 'libexec/makevn/common/changes_scope.py'),
+                   str(self.repo), str(self.base), 'HEAD', '--focused-plan']
+        pom = self.base / 'contracts/event/pom.xml'
+        for broken in ['<broken', None]:
+            with self.subTest(broken=broken):
+                if broken is None:
+                    pom.unlink()
+                else:
+                    pom.write_text(broken)
+                result = subprocess.run(command, input='workspace/contracts/event/pom.xml\n', text=True, capture_output=True)
+                self.assertEqual(result.returncode, 2, result.stderr)
+                self.assertNotIn('Focused scope unavailable', result.stderr)
 
     def test_mapping_cannot_hide_java_or_build_changes(self):
         self.legacy_mapping()

@@ -317,8 +317,9 @@ makevn_collect_verify_changes_scope() {
   MAKEVN_VERIFY_CHANGES_MODULES="$(printf '%s\n' "${changed_paths}" | python3 "${SCRIPT_DIR}/common/changes_scope.py" "${git_root}" "${MAKEVN_VERIFY_CHANGES_MAVEN_BASE_PATH}" "${comparison_base}")"
   MAKEVN_VERIFY_CHANGES_MODULE_SELECTION="${MAKEVN_VERIFY_CHANGES_MODULES}"
   MAKEVN_VERIFY_CHANGES_FOCUSED_PLAN=''
+  MAKEVN_VERIFY_CHANGES_SCOPE_REQUIRED=false
   if [[ "${MAKEVN_VERIFY_CHANGES_MODE:-focused}" == focused ]]; then
-    MAKEVN_VERIFY_CHANGES_FOCUSED_PLAN="$(printf '%s\n' "${changed_paths}" | python3 "${SCRIPT_DIR}/common/changes_scope.py" "${git_root}" "${MAKEVN_VERIFY_CHANGES_MAVEN_BASE_PATH}" "${comparison_base}" --focused-plan)" || makevn_die "Cannot safely focus this change; use --exhaustive."
+    makevn_collect_focused_plan "${changed_paths}" "${git_root}" "${comparison_base}" "${2:-execute}"
   fi
   MAKEVN_VERIFY_CHANGES_CLASSES="$(printf '%s\n' "${MAKEVN_VERIFY_CHANGES_SRC_FILES}" | sed '/^$/d' | sed 's|^.*src/main/java/||' | sed 's|\.java$||' | tr '/' '.' | paste -sd, -)"
 
@@ -388,7 +389,13 @@ cmd_verify_changes_preview() {
   fi
 
   makevn_load_profile "${repo_root}"
-  makevn_collect_verify_changes_scope "${repo_root}"
+  makevn_collect_verify_changes_scope "${repo_root}" preview
+  if [[ "${MAKEVN_VERIFY_CHANGES_SCOPE_REQUIRED}" == true ]]; then
+    makevn_print_item "outcome" "requires exhaustive scope"
+    makevn_print_detail_line "Analysis completed; no tests ran and no focused plan was produced."
+    makevn_print_detail_line "Next: preview with --exhaustive (MCP focused: false), then inspect its scope before execution."
+    return 0
+  fi
   makevn_write_verify_changes_plan "${repo_root}"
   makevn_print_verify_changes_preflight "verify-changes-preview"
 }

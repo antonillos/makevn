@@ -15,12 +15,14 @@ check_hint() {
   grep -Fq "${expected}" "${TMP}/docker.log"
   grep -Fq "${expected}" "${MAKEVN_BACKEND_DETAIL_OUT}"
   grep -Fq 'Existing detail' "${MAKEVN_BACKEND_DETAIL_OUT}"
+  grep -Fq 'report the environment blocker' "${MAKEVN_BACKEND_DETAIL_OUT}"
+  ! grep -Eq 'colima start|docker info|Docker context' "${MAKEVN_BACKEND_DETAIL_OUT}"
 }
-check_hint 'failed to connect to the docker API at unix:///Users/test/.colima/default/docker.sock: no such file' "colima start'"
-check_hint 'Cannot connect to the Docker daemon at unix:///Users/test/.colima/work/docker.sock. Is the docker daemon running?' 'colima start --profile work'
-check_hint 'Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?' 'Start your configured container runtime'
+check_hint 'failed to connect to the docker API at unix:///Users/test/.colima/default/docker.sock: no such file' "makevn doctor"
+check_hint 'Cannot connect to the Docker daemon at unix:///Users/test/.colima/work/docker.sock. Is the docker daemon running?' 'makevn doctor'
+check_hint 'Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?' 'makevn doctor'
 ! grep -Fq 'colima start' "${TMP}/docker.log"
-check_hint 'error during connect: connection refused' 'Start your configured container runtime'
+check_hint 'error during connect: connection refused' 'makevn doctor'
 
 for message in 'compose service exited with code 1' 'permission denied pulling image'; do
   printf '%s\n' "${message}" > "${TMP}/docker.log"
@@ -34,7 +36,7 @@ makevn_report_docker_runtime_failure test "${TMP}/docker.log"
 ! grep -Fq 'Hint:' "${TMP}/docker.log"
 unset MAKEVN_FRONTEND MAKEVN_FRONTEND_OWNS_LOADER
 makevn_report_docker_runtime_failure karate-docker-up "${TMP}/docker.log" 2> "${TMP}/stderr"
-grep -Fq 'Start your configured container runtime' "${TMP}/stderr"
+grep -Fq 'makevn doctor' "${TMP}/stderr"
 printf 'Docker runtime hint tests passed\n'
 
 # The public managed-log path keeps the failing status and publishes the hint
@@ -47,9 +49,9 @@ set +e
 status=$?
 set -e
 [[ ${status} -eq 7 ]]
-grep -Fq "colima start" "${TMP}/output"
-grep -Fq "colima start" "${TMP}/.makevn/logs/docker-up.log"
-grep -Fq "colima start" "${MAKEVN_BACKEND_DETAIL_OUT}"
+grep -Fq "makevn doctor" "${TMP}/output"
+grep -Fq "makevn doctor" "${TMP}/.makevn/logs/docker-up.log"
+grep -Fq "makevn doctor" "${MAKEVN_BACKEND_DETAIL_OUT}"
 
 # Required-service checks preserve Compose daemon errors for the reporter.
 cat > "${TMP}/compose" <<'COMPOSE'
@@ -70,7 +72,7 @@ for mode in stopped missing; do
   makevn_report_docker_runtime_failure docker-ps-required "${TMP}/required.log" 2>/dev/null
   if [[ "${mode}" == stopped ]]; then
     grep -Fq '.colima/work/docker.sock' "${TMP}/required.log"
-    grep -Fq 'colima start --profile work' "${MAKEVN_BACKEND_DETAIL_OUT}"
+    grep -Fq 'makevn doctor' "${MAKEVN_BACKEND_DETAIL_OUT}"
   else
     [[ ! -s "${MAKEVN_BACKEND_DETAIL_OUT}" ]]
     ! grep -Fq 'Hint:' "${TMP}/required.log"

@@ -15,13 +15,14 @@ flowchart TD
     I -->|Current| Q{Pending setup questions?}
     INIT --> Q
     FORCE --> Q
-    Q -->|Yes| CLI[Launch CLI doctor in interactive terminal/PTY]
-    CLI --> USER[User answers prompts: compose, health, containers, Karate profiles]
-    USER --> READY[Continue requested workflow]
+    Q -->|Yes| USER[Agent asks grouped questions in chat]
+    USER --> APPLY[doctor_configure: validate token and answers; save config]
+    APPLY --> Q
+    Q -->|Ready| READY[Continue requested workflow]
     Q -->|No| READY
     RESET[User authorizes doctor --reset-config] --> BACKUP[Back up config/profile; reset preferences]
-    BACKUP --> CLI
-    CLI -. Check blockers: stdin_not_tty, stderr_not_tty, compact_mode .-> INPUT[If interactive input unavailable: ask user to run CLI and wait]
+    BACKUP --> CLI[Interactive CLI doctor prompts]
+    CLI --> READY
 ```
 
 Reset is CLI-only, preserves initialization and installation, and rejects
@@ -29,6 +30,22 @@ noninteractive execution before changing configuration. `doctor` decides whether
 initialization is needed; agents must not invent an `init --force` requirement.
 
 ## Docker readiness and mount visibility
+
+All Docker operations use MakeVN MCP tools or supported MakeVN CLI commands;
+this includes read-only diagnosis and takes precedence over RTK preferences.
+Tool descriptions and standalone/workflow results carry this rule through
+`docker_interface_guidance` in `rust/dispatcher/src/mcp_server.rs`.
+It also covers `karate_all`, which starts the Karate Docker stack internally.
+
+```mermaid
+flowchart TD
+    REQUEST[Docker operation or diagnosis] --> CAPABILITY{Supported MakeVN operation?}
+    CAPABILITY -->|Yes| MAKEVN[Use MakeVN; preserve authorization and readiness gates]
+    CAPABILITY -->|No| GAP[Report missing capability; stop dependent action]
+    GAP --> NOFALLBACK[No raw Docker, wrappers, scripts, SDK or API workaround]
+    MAKEVN -->|Daemon connection failure| DIAGNOSE[makevn doctor and preserved MakeVN logs]
+    DIAGNOSE -->|Engine remains unavailable| ENV[Report environment blocker; stop dependent Docker operations]
+```
 
 ```mermaid
 flowchart TD
@@ -38,13 +55,15 @@ flowchart TD
     NEED -->|Yes| COMPOSE{Compose selected and authorized?}
     COMPOSE -->|Ambiguous| ASK[Ask user and wait; no config edits or alternative provisioning]
     ASK --> COMPOSE
-    COMPOSE -->|Yes| UP[docker_up]
+    COMPOSE -->|Yes| REQUIRED[docker_ps_required: corresponding compose and wait timeout]
     UP -->|Failure| DIAG[Inspect diagnostics and prerequisites]
     DIAG --> COMPOSE
-    UP -->|Success| REQUIRED[docker_ps_required: corresponding compose and wait timeout]
+    UP[docker_up] -->|Success| REQUIRED
     REQUIRED --> HEALTH{Services running and healthy?}
     HEALTH -->|No| FIX[Correct startup failure before tests]
-    FIX --> REQUIRED
+    FIX --> RESET{Startup/reset needed and destructive lifecycle authorized?}
+    RESET -->|Yes| UP
+    RESET -->|No| HOLD[Resolve blocker without resetting services]
     HEALTH -->|Yes| MOUNTS{Host entries visible in container?}
     MOUNTS -->|Mismatch| BLOCK[Block tests; inspect sharing or permissions; do not change credentials]
     BLOCK --> APPROVAL[User authorizes environment changes if needed]
@@ -80,6 +99,7 @@ flowchart TD
     STEPS --> DYNAMIC[Doctor steps preserve snapshot-derived guidance]
     STEPS --> SUCCESS[Successful Docker startup still requires readiness gate]
     STEPS --> FAIL[Failed steps preserve tool-specific recovery guidance]
+    CANCEL[Cancelled execution] --> PRESERVE[Add cancellation advice; retain tool-specific guidance and Docker policy]
 ```
 
 ApplicationContext errors do not establish that Docker is the cause. Diagnostic
@@ -135,7 +155,7 @@ flowchart TD
   Diff --> POM{Root POM change understood?}
   POM -->|Managed versions or inherited direct dependency versions| Consumers[Direct dependency consumers]
   POM -->|Other, unresolved, deleted or profile-dependent| Stop[Stop focused and recommend exhaustive]
-  Stop -->|User explicitly chooses exhaustive| Full[Full verify fallback]
+  Stop -->|User explicitly chooses exhaustive| Full[Selected owner and dependency suites]
   Owners --> Mode{Explicit exhaustive requested?}
   Mode -->|Yes| Verify[Selected module suites plus Maven -am dependencies]
   Mode -->|No - focused default| Prepare[Install dependencies without UT/IT]
@@ -151,8 +171,9 @@ flowchart TD
   Separate --> Gate[Separate full coverage-enabled verify before global coverage gate]
 ```
 
-`verify-changes-preview` shows the selected modules and warns that `-am` still
-executes dependency suites: selecting `boot` can legitimately remain expensive.
+`verify-changes-preview` shows the selected modules and execution mode. Only
+explicit exhaustive execution runs dependency suites through `-am`; focused
+preparation uses `-am` with UT/IT execution disabled.
 It includes changed IT owners even when production changes are in another module.
 POM-only changes are never silently skipped. Static narrowing only recognizes a
 root property-text bump directly referenced in dependencyManagement with direct
@@ -248,8 +269,3 @@ only appropriate when continued independent diagnostics are explicitly wanted.
 Use verify_changes → coverage_changes → crap_changes for focused changed-code
 gates: one fresh UT/IT snapshot, no repeated tests. Overall-project coverage still
 requires the separate full coverage-producing flow.
-
-Focused is now the default for both changed-code commands. Explicit `--focused`
-remains a compatible alias; broader selected suites require `--exhaustive` (MCP
-`focused: false`). Unknown impact requires a scope decision, never an automatic
-full verification fallback.
