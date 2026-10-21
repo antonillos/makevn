@@ -1042,11 +1042,22 @@ fn agent_templates_do_not_reintroduce_args_or_the_old_changes_pipeline() {
         assert!(!document.contains("\"args\":"));
     }
     let skill = include_str!("../../../skills/makevn/SKILL.md");
-    let workflow = skill.split("### `changes-validator`").nth(1).unwrap()
-        .split("### `multi-test-runner`").next().unwrap();
-    assert!(workflow.contains("\"focused\": true"));
-    assert!(!workflow.contains("{\"tool\": \"clean\"}"));
-    assert!(!workflow.contains("{\"tool\": \"coverage_changes\"}"));
+    let section = skill.split("### Changed-code checks").nth(1)
+        .expect("skill must document changed-code checks")
+        .split("### Selected tests and Karate").next().unwrap();
+    let example = section.split("```json\n").nth(1)
+        .expect("changed-code checks must include a JSON workflow")
+        .split("```").next().unwrap();
+    let workflow: serde_json::Value = serde_json::from_str(example)
+        .expect("documented workflow must be valid JSON");
+    super::validate_call(&json!({"name": workflow["tool"], "arguments": workflow["arguments"]}))
+        .expect("documented workflow must be accepted by MCP");
+    assert_eq!(workflow["tool"], "composite_run");
+    assert_eq!(workflow["arguments"]["fail-fast"], true);
+    let steps = workflow["arguments"]["steps"].as_array().unwrap();
+    let tools: Vec<_> = steps.iter().map(|step| step["tool"].as_str().unwrap()).collect();
+    assert_eq!(tools, ["verify_changes", "coverage_changes", "crap_changes"]);
+    assert_eq!(steps[0]["arguments"]["focused"], true);
 }
 
 #[test]
