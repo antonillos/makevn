@@ -10,6 +10,10 @@ import xml.etree.ElementTree as ET
 from reactor_impact import automatic_resource_rules, leaf_bump_owners, shared_resource_owners
 
 
+class ExhaustiveScopeRequired(ValueError):
+    """Analysis completed, but a safe focused plan is unavailable."""
+
+
 def parse(text):
     root = ET.fromstring(text)
     for node in root.iter():
@@ -197,7 +201,7 @@ def focused_plan(repo, base, reference, paths):
     full = selection(repo, base, reference, production)
     if full == ".":
         blockers = [path for path in production if selection(repo, base, reference, [path]) == "."]
-        raise ValueError("Unknown or root-level impact in " + ", ".join(blockers) + "; use --exhaustive")
+        raise ExhaustiveScopeRequired("Unknown or root-level impact in " + ", ".join(blockers) + "; use --exhaustive")
     suites = set(filter(None, full.split(",")))
     tests = {}
     for path in paths:
@@ -214,7 +218,7 @@ def focused_plan(repo, base, reference, paths):
     records = []
     for owner in sorted(suites | tests.keys()):
         if not (base / owner / "pom.xml").is_file():
-            raise ValueError("No owner POM for " + owner + "; use --exhaustive")
+            raise ExhaustiveScopeRequired("No owner POM for " + owner + "; use --exhaustive")
         records.append(owner + "\t" + ("*" if owner in suites else ",".join(sorted(tests[owner]))))
     return "\n".join(records)
 
@@ -259,6 +263,9 @@ if __name__ == "__main__":
         planner = focused_plan if focused else selection
         print(planner(pathlib.Path(sys.argv[1]).resolve(), pathlib.Path(sys.argv[2]).resolve(),
                       sys.argv[3], sys.stdin.read().splitlines()))
+    except ExhaustiveScopeRequired as error:
+        print("Focused scope unavailable: " + str(error), file=sys.stderr)
+        sys.exit(3)
     except (OSError, ValueError, ET.ParseError, subprocess.CalledProcessError) as error:
         if focused or "--impact-state" in sys.argv:
             print("Cannot safely focus verification: " + str(error), file=sys.stderr)

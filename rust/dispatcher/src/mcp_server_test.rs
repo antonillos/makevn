@@ -618,6 +618,27 @@ fn unknown_tools_are_protocol_errors_but_execution_errors_are_tool_results() {
 }
 
 #[test]
+fn preview_completion_is_analysis_not_verification_success() {
+    for exit_code in [0, 1] {
+        let result = super::ToolCallResult {
+            output: "Preview diagnostics".into(), exit_code, duration_ms: 1,
+            doctor_snapshot: None, next_suggestion: None,
+        };
+        let response = super::standard_tool_result(&result, &json!({"name": "verify_changes_preview"}));
+        assert_eq!(response["isError"], exit_code != 0);
+        let data = &response["structuredContent"];
+        if exit_code == 0 {
+            assert!(data["message"].as_str().unwrap().contains("No tests were run"));
+            assert!(data["nextSuggestion"].as_str().unwrap().contains("focused: false"));
+            assert!(data["nextSuggestion"].as_str().unwrap().contains("not a failed test or a valid focused plan"));
+        } else {
+            assert_eq!(data["status"], "error");
+            assert!(data["message"].as_str().unwrap().contains("failed"));
+        }
+    }
+}
+
+#[test]
 fn doctor_guidance_is_allowlisted_and_preserves_error_guidance() {
     for (support, next, expected) in [
         ("supported", "makevn init", "force: false"),

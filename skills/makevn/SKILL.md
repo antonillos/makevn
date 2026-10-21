@@ -1033,3 +1033,14 @@ conservatively select all reactor module suites. Explain the visible scope and
 that external/E2E/global gates are not evaluated; unknown models still reject.
 Impact state is internal only; do not create or maintain root impact overrides.
 Read `docs/focused-impact.md`; keep required external checks separate.
+
+### Preview scope outcomes
+
+When focused impact is unknown, `verify-changes-preview` completes with exit 0
+and reports `requires exhaustive scope`, the blocking paths, and that no tests
+ran or focused plan was produced. This is a planning outcome, not verification
+success. Inspect another preview with `--exhaustive` (MCP `focused: false`) and
+explain its scope before executing in the same mode. Preserve existing user
+authorization; do not ask again solely because the preview needs broader scope.
+Actual planner failures remain errors. `verify-changes` still rejects unsafe
+focused execution and never silently broadens the run.
