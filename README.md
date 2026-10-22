@@ -197,7 +197,7 @@ and direct CLI behavior.
 When tests fail formatting validation, agents should run `makevn format --apply`
 and rerun the original test, never disable the formatter. MCP recovery uses
 `makevn_format` with `apply: true`.
-See [formatting recovery for agents](docs/agents.md#formatting-failure-recovery-for-ai-agents).
+See [formatting recovery for agents](skills/makevn-quality/references/workflows.md#formatting-failure-recovery-for-ai-agents).
 
 ## Standalone operation
 

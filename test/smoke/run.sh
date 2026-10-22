@@ -558,7 +558,8 @@ while True:
     if waited != (0, 0):
         status = waited[1]
         break
-    if time.time() - start > 5:
+    # JDK discovery can exceed five seconds on shared CI runners.
+    if time.time() - start > 30:
         os.kill(pid, signal.SIGTERM)
         time.sleep(0.2)
         try:
