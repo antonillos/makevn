@@ -87,7 +87,17 @@ cp -R "${SCRIPT_DIR}/libexec/makevn/crap" "${LIBEXEC_DIR}/crap"
 cp -R "${SCRIPT_DIR}/libexec/makevn/docker" "${LIBEXEC_DIR}/docker"
 cp -R "${SCRIPT_DIR}/libexec/makevn/jdk" "${LIBEXEC_DIR}/jdk"
 cp -R "${SCRIPT_DIR}/libexec/makevn/compat" "${LIBEXEC_DIR}/compat"
-cp -R "${SCRIPT_DIR}/skills/makevn/." "${SKILL_DIR}/"
+for skill in makevn makevn-test makevn-docker makevn-karate makevn-quality; do
+  destination="${SHARE_DIR}/skills/${skill}"
+  mkdir -p "${destination}"
+  cp -R "${SCRIPT_DIR}/skills/${skill}/." "${destination}/"
+  destination="$(dirname "${SKILL_DIR}")/${skill}"
+  if [[ "${skill}" == makevn ]]; then destination="${SKILL_DIR}"; fi
+  if [[ "${destination}" != "${SHARE_DIR}/skills/${skill}" ]]; then
+    mkdir -p "${destination}"
+    cp -R "${SCRIPT_DIR}/skills/${skill}/." "${destination}/"
+  fi
+done
 
 chmod +x "${LIBEXEC_DIR}/cli.sh" "${LIBEXEC_DIR}/backend.sh" "${LIBEXEC_DIR}/common.sh"
 find "${LIBEXEC_DIR}/commands" "${LIBEXEC_DIR}/coverage" "${LIBEXEC_DIR}/crap" "${LIBEXEC_DIR}/docker" "${LIBEXEC_DIR}/jdk" "${LIBEXEC_DIR}/compat" -type f -name '*.sh' -exec chmod +x {} +

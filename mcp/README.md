@@ -8,8 +8,8 @@ JavaScript runtime dependency.
 Use MakeVN exclusively for Docker, including read-only diagnostics. This takes
 precedence over RTK preferences. Missing capabilities must be reported rather
 than bypassed with raw Docker, wrappers, scripts or APIs. See the
-[agent policy](../docs/agents.md#docker-use-dedicated-container-commands) and
-[Docker prerequisite workflow](../skills/makevn/SKILL.md#docker-prerequisite).
+[agent policy](../skills/makevn-docker/SKILL.md) and
+[Docker prerequisite workflow](../skills/makevn-docker/references/workflows.md#docker-prerequisite).
 The server repeats this boundary in Docker tool descriptions and results so
 clients receive it even without loading the skill.
 
@@ -297,7 +297,7 @@ Inspect the diff, then rerun the same test without `fast: true`.
 Do not add skip flags, change configuration, or manually imitate formatting
 to bypass validation. Recovery hints remain diagnostic data in `untrustedData.output`;
 `nextSuggestion` is separate server-authored guidance.
-See [the agent recovery workflow](../docs/agents.md#formatting-failure-recovery-for-ai-agents)
+See [the agent recovery workflow](../skills/makevn-quality/references/workflows.md#formatting-failure-recovery-for-ai-agents)
 and the [makevn skill](../skills/makevn/SKILL.md).
 
 ## Development
@@ -480,3 +480,11 @@ Focused is now the default for both changed-code commands. Explicit `--focused`
 remains a compatible alias; broader selected suites require `--exhaustive` (MCP
 `focused: false`). Unknown impact requires a scope decision, never an automatic
 full verification fallback.
+
+## Workflow skills
+
+MCP tools remain usable without skills. Register both with
+`makevn agent install opencode --scope global` or
+`makevn agent install codex --scope global`. See the [workflow map](../docs/workflow-guidance.md)
+and [registration and discovery contract](../docs/agent-install.md#skill-registration-contract).
+Use canonical tool names inside workflow steps; clients may prefix advertised names.

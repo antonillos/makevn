@@ -95,10 +95,11 @@ command -v makevn-mcp
 
 ## OpenCode
 
-Install the global MCP entry automatically:
+Register MCP and all five skills:
 
 ```bash
-makevn agent install opencode
+makevn agent install opencode --scope global
+makevn agent status opencode --scope global
 ```
 
 When the current Git repository contains OpenCode configurations under
@@ -143,6 +144,16 @@ hot-reload MCP configuration.
 
 ## Codex
 
+```bash
+makevn agent install codex --scope global
+makevn agent status codex --scope global
+```
+
+Use `--scope project` for `.codex/config.toml` and `.agents/skills/` in the
+current Git worktree. Codex loads project configuration only for trusted projects;
+setup does not change trust or permission settings. Global config honors `CODEX_HOME`.
+
+
 Codex configuration file:
 
 - Global TOML: `~/.codex/config.toml`
@@ -160,10 +171,9 @@ tool_timeout_sec = 1800
 
 This client timeout applies to the entire tool call, including all workflow
 steps. Existing clients must load this value from their active configuration.
-The OpenCode agent setup writes this timeout; Codex configuration must be updated
-explicitly. Use a larger value for workflows exceeding 30 minutes.
+Both agent setup commands write this timeout. Use a larger value for workflows exceeding 30 minutes.
 
-Alternatively, add it with the Codex CLI:
+For MCP-only manual configuration (does not register skills):
 
 ```bash
 codex mcp add makevn -- makevn-mcp
@@ -196,3 +206,53 @@ makevn doctor
 ```
 
 When using MCP tools directly, call the `makevn_doctor` tool first.
+
+## Skill registration contract
+
+`makevn agent install <opencode|codex> [--scope global|project]` registers MCP and
+`makevn`, `makevn-test`, `makevn-docker`, `makevn-karate`, `makevn-quality` together.
+Product installation distributes resources but does not edit client configuration.
+Run agent setup again after a product upgrade. `makevn uninstall` removes repository
+integration only; it does not unregister skills or uninstall the product.
+
+Global skills are shared by both clients under `~/.agents/skills/`; project skills
+are under `.agents/skills/` at the Git worktree root. Both scopes contain complete
+copies, including references. OpenCode global config honors `XDG_CONFIG_HOME`.
+Explicit project setup selects the first existing local config in this order:
+`.opencode/opencode.jsonc`, `.opencode/opencode.json`, `.opencode/config.jsonc`,
+`.opencode/config.json`, `opencode.jsonc`, `opencode.json`; otherwise it creates
+`.opencode/opencode.json`. Without scope, interactive OpenCode setup offers each
+existing config and then global scope; noninteractive setup uses global scope.
+Codex defaults to global scope. Status requires an explicit scope and never prompts.
+
+The `.makevn-skills.json` ownership manifest records version and SHA-256 file hashes.
+Only unchanged managed resources can be updated or removed. Foreign names, local
+edits, missing managed files, extra resources and symlinks block replacement with
+paths and reasons. Inspect and preserve custom content before retrying; setup does
+not override skill permissions. Repeating setup is idempotent. Skill registration
+is shared across clients: registering the second client reuses the same managed
+bundle and configures that client's MCP entry separately.
+
+Preflight validates resources and configuration before changes. Setup serializes
+writers with `.makevn-setup.lock`, stages files, backs up existing configuration
+as `<config>.makevn.bak` if no backup exists, and restores replaced files after an
+operation failure. Existing backups are preserved. A process crash can leave the
+lock behind; verify no setup is active before removing a stale lock. This is not
+a power-loss recovery mechanism. OpenCode JSONC comments may be normalized when
+configuration changes; unrelated configuration values are retained. Existing OpenCode V2 `mcp.servers` layout is
+preserved with native `disabled` and per-phase timeout fields; legacy MCP layouts
+remain compatible. Codex TOML
+comments and unrelated tables are retained.
+
+```bash
+makevn agent status opencode --scope global
+makevn agent status codex --scope project
+```
+
+Status prints distributed-resource and destination paths, skill registration
+(absent/current/outdated/conflict), and MCP configuration status. A completed
+status command is a diagnostic, not proof of healthy configuration or client loading.
+After setup restart/reload the client, inspect its skills catalog and explicitly
+load all five skills. Then evaluate representative workflow requests using the
+[client validation checklist](agent-skills-validation.md). A model can choose not
+to load an available skill; installation cannot guarantee implicit selection.
