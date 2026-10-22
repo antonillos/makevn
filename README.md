@@ -246,3 +246,12 @@ relative to the target repository, not the MCP server's working directory.
 ```json
 {"durationMs": 6739, "exitCode": 0, "tool": "test", "logPaths": [".makevn/logs/test-SampleTest.log"]}
 ```
+
+## Agent skills and workflows
+
+See the [workflow map](docs/workflow-guidance.md) for what MakeVN does, workflow selection,
+CLI/MCP equivalents and evidence. Product installation ships five portable skills;
+register MCP and skills with `makevn agent install opencode --scope global` or
+`makevn agent install codex --scope global`. Repeat setup after upgrades, reload
+the client and check discovery separately from loading. See the
+[agent setup contract](docs/agent-install.md#skill-registration-contract).

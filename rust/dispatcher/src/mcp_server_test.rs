@@ -1062,10 +1062,10 @@ fn agent_templates_do_not_reintroduce_args_or_the_old_changes_pipeline() {
                      include_str!("../../../mcp/README.md")] {
         assert!(!document.contains("\"args\":"));
     }
-    let skill = include_str!("../../../skills/makevn/SKILL.md");
+    let skill = include_str!("../../../skills/makevn-quality/SKILL.md");
     let section = skill.split("### Changed-code checks").nth(1)
         .expect("skill must document changed-code checks")
-        .split("### Selected tests and Karate").next().unwrap();
+        ;
     let example = section.split("```json\n").nth(1)
         .expect("changed-code checks must include a JSON workflow")
         .split("```").next().unwrap();

@@ -879,7 +879,10 @@ test_installer() {
   assert_file_exists "${prefix}/libexec/makevn/crap/jacoco_html.py"
   assert_file_exists "${prefix}/libexec/makevn/compat/verify_changes.sh"
   assert_not_exists "${prefix}/share/makevn/makevn.mk"
-  assert_file_exists "${prefix}/share/makevn/skills/makevn/SKILL.md"
+  for skill in makevn makevn-test makevn-docker makevn-karate makevn-quality; do
+    assert_file_exists "${prefix}/share/makevn/skills/${skill}/SKILL.md"
+    assert_file_exists "${prefix}/share/makevn/skills/${skill}/references/workflows.md"
+  done
   "${prefix}/bin/makevn" --help >/dev/null
 }
 
@@ -899,6 +902,10 @@ test_runtime_archive_includes_crap_reporter() {
     || fail "runtime archive should include CRAP reporter"
   tar -tzf "${archive}" | grep -Fx 'makevn-0.0.0-smoke/libexec/makevn/crap/jacoco_html.py' >/dev/null \
     || fail "runtime archive should include the JaCoCo HTML adapter"
+  for skill in makevn makevn-test makevn-docker makevn-karate makevn-quality; do
+    tar -tzf "${archive}" | grep -Fx "makevn-0.0.0-smoke/share/makevn/skills/${skill}/SKILL.md" >/dev/null \
+      || fail "runtime archive should include ${skill}"
+  done
   if tar -tzf "${archive}" | grep -Fx 'makevn-0.0.0-smoke/share/makevn/makevn.mk' >/dev/null; then
     fail "runtime archive must not ship retired Make templates"
   fi
@@ -4785,6 +4792,7 @@ main() {
   test_format_requires_configured_formatter
   test_checkstyle_requires_configured_plugin
   test_installer
+  python3 "${ROOT_DIR}/test/smoke/agent_skills_test.py"
   test_runtime_archive_includes_crap_reporter
   test_init_does_not_touch_existing_makefile
   test_profile_refresh

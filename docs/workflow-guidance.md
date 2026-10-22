@@ -3,6 +3,57 @@
 This map makes makevn's agent guidance visible. It describes decisions, not an
 execution engine: suggestions do not automatically run commands or grant approval.
 
+## Product and workflow entry points
+
+MakeVN provides a stable terminal interface to existing Java/Maven projects,
+including JDK selection, builds, tests and detected optional integrations.
+The CLI performs operations; MCP exposes them to agents; skills teach decisions;
+`.makevn/config` holds user preferences and generated profile/manifest files hold
+managed state. Maven and the project's plugins still perform the build/test work.
+This repository develops MakeVN in Rust/Bash; it is not itself a Maven fixture.
+
+Install the product using [installation instructions](install.md), then register
+MCP and skills with the [agent setup runbook](agent-install.md). Registration is
+independent of Maven repository initialization. Skills are loaded on demand and
+model selection is not guaranteed. See [OpenCode skill discovery](https://opencode.ai/docs/skills/)
+and [Codex skill authoring](https://learn.chatgpt.com/docs/build-skills).
+
+| I want to… | Skill | CLI → MCP workflow after doctor/setup | Evidence and effects |
+| --- | --- | --- | --- |
+| Adopt a Maven project | makevn | `doctor` → recommended `init` or `init --force` → `doctor`; MCP `doctor` / `init` / `doctor_configure` | Supported project, current initialization and no pending questions; writes managed integration, preserves user Makefiles/config |
+| Build | makevn | `compile` / `package` → `compile` / `package` | Requested phase succeeds; creates build artifacts, not proof of full tests |
+| Run selected UT/IT | makevn-test | `test --name ExampleTest,ExampleIT` → `test` with `name` | Fresh selected test reports; compile first, no fast after edits |
+| Run complete suites | makevn-test | `verify-ut`, `verify-it`, `verify` → `verify_ut`, `verify_it`, `verify` | Results for the selected suite or whole project; Docker only if required |
+| Verify changes | makevn-test | `verify-changes-preview` → inspect → `verify-changes`; MCP `verify_changes_preview` → `verify_changes` | Same mode, fresh owner/test evidence; preparation updates local Maven artifacts |
+| Check container readiness | makevn-docker | `docker-ps-required --compose boot --wait-seconds 30` → `docker_ps_required` | Healthy required services and no confirmed bind mismatch; read-only |
+| Start/reset containers | makevn-docker | authorize destructive scope → `docker-up` → readiness; MCP `docker_up` → `docker_ps_required` | Full lifecycle deletes service data; reuse healthy services first |
+| Run managed E2E | makevn-karate | `karate-all --tag @smoke` → `karate_all` | Docker authorization, configured HTTP health and profiles, Karate result, application cleanup; no implied container teardown |
+| Test external application | makevn-karate | `karate-test --tag @smoke` → `karate_test` | Confirm external target availability; report Karate result, leave external lifecycle to its owner |
+| Check/fix formatting | makevn-quality | `format`, `format --apply`, `checkstyle` → `format`, `checkstyle` | Supported plugin succeeds; apply changes files, inspect diff and rerun original test |
+| Evaluate changed quality | makevn-quality | preview separately → `verify-changes` → `coverage-changes` → `crap-changes`; MCP fail-fast composite | One fresh snapshot; no repeated tests and no global gate claim |
+| Evaluate full coverage | makevn-quality | `verify-ut-coverage` or `verify-it-coverage` → `coverage`; MCP `verify_ut_coverage` / `verify_it_coverage` → `coverage` | Fresh JaCoCo data and aggregate threshold; required IT readiness first |
+| Evaluate mutation | makevn-quality | `mutation` → `mutation` | Detected/configured PIT result; potentially slow |
+| Recover interrupted work | makevn | MCP `execution_list` → `execution_status` → owned `execution_cancel` if needed → terminal status → retry | No overlapping verification, preserved logs; no process-name killing |
+
+Use `makevn <command> --help` and MCP schemas for accepted options. The table's
+MCP names are canonical; clients can add a prefix. CLI examples use the public
+`makevn` command. Unsupported optional capabilities are reported, never emulated
+with guessed goals or infrastructure. On failure inspect exit code, logPaths and
+test reports; classify environment, repository or MakeVN contract failures before
+editing. See each [skill and its bundled recipes](agents.md) for owned policy.
+
+```mermaid
+flowchart TD
+    INSTALL[Install product: distribute five skills] --> SETUP[Agent setup: register MCP and skills]
+    SETUP --> RELOAD[Reload client]
+    RELOAD --> CATALOG[Check available skill metadata]
+    CATALOG --> LOAD[Explicitly load skill]
+    LOAD --> ROUTE[Evaluate workflow choice with representative requests]
+    ROUTE --> DOCTOR[Doctor and repository setup]
+    DOCTOR --> SPECIALTY[Load required specialty and execute]
+    SPECIALTY --> EVIDENCE[Report scope, evidence and remaining gates]
+```
+
 ## Doctor and configuration
 
 ```mermaid
@@ -116,7 +167,7 @@ results; a failed workflow can include successful steps.
 | Interactive reset and report | `libexec/makevn/commands/doctor.sh` |
 | Docker readiness orchestration | `libexec/makevn/commands/docker.sh` |
 | Bind visibility diagnostics | `libexec/makevn/docker/bind_mounts.py` |
-| Agent workflow policy | `docs/agents.md`, `skills/makevn/SKILL.md` |
+| Agent workflow policy | `skills/*/SKILL.md` and their bundled references; `docs/agents.md` is the entry point |
 
 When changing a decision or required next step, update its graph here and its
 regression tests in the same PR. Keep exact suggestion wording in code only;
@@ -155,7 +206,7 @@ flowchart TD
   Diff --> POM{Root POM change understood?}
   POM -->|Managed versions or inherited direct dependency versions| Consumers[Direct dependency consumers]
   POM -->|Other, unresolved, deleted or profile-dependent| Stop[Stop focused and recommend exhaustive]
-  Stop -->|User explicitly chooses exhaustive| Full[Selected owner and dependency suites]
+  Stop -->|Explain exhaustive preview within authorized scope| Full[Selected owner and dependency suites]
   Owners --> Mode{Explicit exhaustive requested?}
   Mode -->|Yes| Verify[Selected module suites plus Maven -am dependencies]
   Mode -->|No - focused default| Prepare[Install dependencies without UT/IT]
@@ -232,7 +283,7 @@ tests expand to the complete owner suite. Unknown/root impact rejects focused
 execution; choose `--exhaustive` to run all selected owner/dependency suites.
 Default invocation is focused. Explicit CLI --exhaustive or MCP focused:false
 runs complete selected owner/dependency suites. Unknown focused impact stops
-instead of silently expanding; the user chooses whether to broaden the run.
+instead of silently expanding; inspect an exhaustive preview and explain the broader scope within existing authorization.
 
 Focused Maven passthrough and configured reactor/test-filter overrides are rejected.
 UT and IT selectors are separated so an IT is not run again by Surefire.
@@ -246,7 +297,7 @@ coverage gates.
 
 ### Agent discoverability
 
-The mode-selection rule lives in `docs/agents.md` and the makevn skill; agents must
+The mode-selection rule lives in the makevn-test skill; agents must
 explain scope when choosing focused feedback, ask if intent is unclear and preserve
 mandatory full gates. It is also exposed without loading the skill: MCP tool and
 `focused` option descriptions, preview/success/failure `nextSuggestion` and CLI

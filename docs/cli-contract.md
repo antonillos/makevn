@@ -104,7 +104,8 @@ Global option rules:
 ### Agent Integration
 
 ```bash
-makevn agent install opencode
+makevn agent install <opencode|codex> [--scope global|project]
+makevn agent status <opencode|codex> --scope global|project
 ```
 
 This frontend-owned command installs or updates the global `makevn` MCP entry

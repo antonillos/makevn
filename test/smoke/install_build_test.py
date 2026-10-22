@@ -12,7 +12,7 @@ with tempfile.TemporaryDirectory() as tmp:
     fixture.mkdir()
     for name in ["install.sh", "build-rust-dispatcher.sh"]:
         shutil.copy2(root / name, fixture / name)
-    for name in ["libexec", "skills/makevn"]:
+    for name in ["libexec", "skills"]:
         shutil.copytree(root / name, fixture / name)
     manifest = fixture / "rust/dispatcher/Cargo.toml"
     manifest.parent.mkdir(parents=True)
@@ -49,6 +49,14 @@ done
     assert result.returncode == 0, result.stderr
     assert calls.read_text().splitlines() == ["build"]
     assert "fresh binary" in (prefix / "bin/makevn").read_text()
+    for name in ["makevn", "makevn-test", "makevn-docker", "makevn-karate", "makevn-quality"]:
+        assert (prefix / f"share/makevn/skills/{name}/SKILL.md").is_file()
+        assert (prefix / f"share/makevn/skills/{name}/references/workflows.md").is_file()
+    custom_skill = Path(tmp) / "custom-skills/custom-base"
+    assert run("--no-build", SKILL_DIR=str(custom_skill)).returncode == 0
+    assert (custom_skill / "SKILL.md").is_file()
+    for name in ["makevn-test", "makevn-docker", "makevn-karate", "makevn-quality"]:
+        assert (custom_skill.parent / name / "SKILL.md").is_file()
     installed = (prefix / "bin/makevn").read_bytes()
     version = (fixture / "target/makevn-version.env").read_bytes()
     installed_version = (prefix / "libexec/makevn/version.env").read_bytes()

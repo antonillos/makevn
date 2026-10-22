@@ -9,7 +9,7 @@ Use MakeVN exclusively for Docker, including read-only diagnostics. This takes
 precedence over RTK preferences. Missing capabilities must be reported rather
 than bypassed with raw Docker, wrappers, scripts or APIs. See the
 [agent policy](../docs/agents.md#docker-use-dedicated-container-commands) and
-[Docker prerequisite workflow](../skills/makevn/SKILL.md#docker-prerequisite).
+[Docker prerequisite workflow](../skills/makevn-docker/references/workflows.md#docker-prerequisite).
 The server repeats this boundary in Docker tool descriptions and results so
 clients receive it even without loading the skill.
 
@@ -480,3 +480,11 @@ Focused is now the default for both changed-code commands. Explicit `--focused`
 remains a compatible alias; broader selected suites require `--exhaustive` (MCP
 `focused: false`). Unknown impact requires a scope decision, never an automatic
 full verification fallback.
+
+## Workflow skills
+
+MCP tools remain usable without skills. Register both with
+`makevn agent install opencode --scope global` or
+`makevn agent install codex --scope global`. See the [workflow map](../docs/workflow-guidance.md)
+and [registration and discovery contract](../docs/agent-install.md#skill-registration-contract).
+Use canonical tool names inside workflow steps; clients may prefix advertised names.

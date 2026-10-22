@@ -1,8 +1,8 @@
 use super::{
     clear_tail_rows, command_help, command_suggestion_suffix, command_supports_frontend_loader,
-    dashboard_hint, detect_local_opencode_configs, dim_text, exit_code_from_status,
+    dashboard_hint, dim_text, exit_code_from_status,
     format_failure_summary, format_resource_sample_cpu, format_resource_sample_ram,
-    insert_backend_option, install_opencode_agent_at, install_root, install_root_with_override,
+    insert_backend_option, install_root, install_root_with_override,
     parse_invocation, parse_mcp_invocation, print_command_help, print_final_dashboard,
     read_backend_metadata, read_failure_hint, register_signal_flag, spinner_hint,
     spinner_resource_suffix, split_command_segments, strip_frontend_tail_flag,
@@ -621,72 +621,7 @@ fn parses_opencode_agent_install_without_backend_dispatch() {
         OsString::from("opencode"),
     ])
     .unwrap();
-    assert_eq!(action, Action::InstallOpenCodeAgent);
-}
-
-#[test]
-fn installs_opencode_agent_idempotently_and_preserves_other_entries() {
-    let unique_suffix = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_nanos();
-    let work_dir = env::temp_dir().join(format!(
-        "makevn-opencode-agent-test-{}-{unique_suffix}",
-        process::id()
-    ));
-    fs::create_dir_all(&work_dir).unwrap();
-    let config_path = work_dir.join("opencode.jsonc");
-    fs::write(
-        &config_path,
-        "{\n  // existing config\n  \"theme\": \"dark\",\n  \"mcp\": {\"other\": {\"enabled\": true}}\n}\n",
-    )
-    .unwrap();
-
-    assert_eq!(install_opencode_agent_at(&work_dir).unwrap(), config_path);
-    let backup = fs::read_to_string(work_dir.join("opencode.jsonc.makevn.bak")).unwrap();
-    assert_eq!(install_opencode_agent_at(&work_dir).unwrap(), config_path);
-
-    let config: serde_json::Value =
-        serde_json::from_str(&fs::read_to_string(&config_path).unwrap()).unwrap();
-    assert_eq!(config["theme"], "dark");
-    assert_eq!(config["mcp"]["other"]["enabled"], true);
-    assert_eq!(
-        config["mcp"]["makevn"]["command"],
-        serde_json::json!(["makevn-mcp"])
-    );
-    assert_eq!(config["mcp"]["makevn"]["timeout"], 1800000);
-    assert!(work_dir.join("opencode.jsonc.makevn.bak").is_file());
-    assert!(backup.contains("// existing config"));
-    assert_eq!(
-        fs::read_to_string(work_dir.join("opencode.jsonc.makevn.bak")).unwrap(),
-        backup
-    );
-
-    fs::remove_dir_all(work_dir).unwrap();
-}
-
-#[test]
-fn detects_all_existing_project_opencode_configs() {
-    let unique_suffix = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_nanos();
-    let work_dir = env::temp_dir().join(format!(
-        "makevn-local-opencode-test-{}-{unique_suffix}",
-        process::id()
-    ));
-    let local_config = work_dir.join(".opencode/opencode.jsonc");
-    let local_json_config = work_dir.join(".opencode/opencode.json");
-    fs::create_dir_all(local_config.parent().unwrap()).unwrap();
-    fs::write(&local_config, "{}\n").unwrap();
-    fs::write(&local_json_config, "{}\n").unwrap();
-
-    assert_eq!(
-        detect_local_opencode_configs(&work_dir),
-        vec![local_config, local_json_config]
-    );
-
-    fs::remove_dir_all(work_dir).unwrap();
+    assert_eq!(action, Action::Agent(crate::agent_setup::Request { client: crate::agent_setup::Client::OpenCode, scope: None, status: false }));
 }
 
 #[test]
