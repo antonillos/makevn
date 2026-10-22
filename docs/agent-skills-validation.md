@@ -54,7 +54,19 @@ and improve descriptions or recipes without claiming deterministic activation.
 - Registration in both clients and scopes, nested-worktree root selection,
   read-only status, idempotence, conflicts, updates and recovery are covered by
   automated tests. These are not model behavior assertions.
-- Explicit model-driven loading and implicit workflow selection remain unverified:
-  no provider/model credentials were configured in the isolated client homes.
-  Use the scenario matrix above in an authenticated client before claiming those
-  behavioral acceptance criteria. No real client configuration was modified.
+- Explicit loading: Codex used its existing ChatGPT login with user configuration
+  ignored and read-only sandboxing; it read all five public SKILL.md files and
+  correctly mapped their responsibilities. OpenCode completed `skill` tool calls
+  for all five IDs across the evaluations, including a separate quality loading
+  probe. A combined five-skill prompt timed out; batch completion is not certified.
+- Implicit selection: Codex completed six hypothetical cases: unsupported Maven,
+  missing initialization, IT prerequisites, ambiguous Compose, missing Karate
+  health URL and no changed production classes. File-read events and answers
+  confirmed relevant skills, prerequisite decisions and limited success claims.
+- OpenCode completed the first five equivalent scenarios with the relevant skill
+  IDs and bundled-reference reads. Its no-production and unknown-impact prompts
+  timed out at 55 seconds; those two model outcomes remain unverified.
+- Model evaluations only loaded skills/read public references and described
+  hypothetical decisions. No Maven/Docker workflows or file edits were performed.
+  These are observed examples with the clients' default models, not a guarantee
+  of implicit selection or execution correctness on arbitrary repositories.

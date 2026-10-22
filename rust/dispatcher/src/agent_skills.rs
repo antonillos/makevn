@@ -1,4 +1,5 @@
 //! Inventory and ownership of the portable workflow skill bundle.
+use crate::agent_transaction::error_text;
 use crate::agent_transaction::{self, Changes};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -27,43 +28,78 @@ struct Manifest {
 fn collect(root: &Path, dir: &Path, files: &mut Inventory) -> Result<(), String> {
     agent_transaction::reject_links(dir)?;
     for entry in fs::read_dir(dir).map_err(|e| format!("Cannot inspect {}: {e}", dir.display()))? {
-        let entry = entry.map_err(|e| e.to_string())?;
-        let path = entry.path();
-        let ty = entry.file_type().map_err(|e| e.to_string())?;
-        if ty.is_dir() {
-            collect(root, &path, files)?;
-        } else if ty.is_file() {
-            let relative = path.strip_prefix(root).map_err(|e| e.to_string())?;
-            let name = relative.to_str().ok_or("Skill paths must be UTF-8")?;
-            files.insert(name.to_owned(), fs::read(&path).map_err(|e| e.to_string())?);
-        } else {
-            return Err(format!("Unsupported skill resource: {}", path.display()));
-        }
+        collect_entry(root, entry.map_err(error_text)?, files)?;
     }
     Ok(())
+}
+
+fn collect_entry(root: &Path, entry: fs::DirEntry, files: &mut Inventory) -> Result<(), String> {
+    let path = entry.path();
+    let ty = entry.file_type().map_err(error_text)?;
+    if ty.is_dir() {
+        collect(root, &path, files)?;
+    } else if ty.is_file() {
+        let (name, bytes) = read_resource(root, &path)?;
+        files.insert(name, bytes);
+    } else {
+        return Err(format!("Unsupported skill resource: {}", path.display()));
+    }
+    Ok(())
+}
+
+fn read_resource(root: &Path, path: &Path) -> Result<(String, Vec<u8>), String> {
+    let relative = path.strip_prefix(root).map_err(error_text)?;
+    let name = relative.to_str().ok_or("Skill paths must be UTF-8")?;
+    let bytes = fs::read(path).map_err(error_text)?;
+    Ok((name.to_owned(), bytes))
 }
 
 fn inventory(root: &Path, required: bool) -> Result<Inventory, String> {
     let mut files = Inventory::new();
     for name in NAMES {
-        let dir = root.join(name);
-        agent_transaction::reject_links(&dir)?;
-        if !dir.exists() && !required {
-            continue;
-        }
-        collect(root, &dir, &mut files)?;
-        if required {
-            let key = format!("{name}/SKILL.md");
-            let text = files.get(&key).ok_or_else(|| format!("Missing {key}"))?;
-            let text = std::str::from_utf8(text).map_err(|e| e.to_string())?;
-            if !text.starts_with(&format!("---\nname: {name}\n"))
-                || !text.contains("\ndescription:")
-            {
-                return Err(format!("Invalid skill metadata: {key}"));
-            }
-        }
+        inspect_skill(root, name, required, &mut files)?;
     }
     Ok(files)
+}
+
+fn inspect_skill(
+    root: &Path,
+    name: &str,
+    required: bool,
+    files: &mut Inventory,
+) -> Result<(), String> {
+    let dir = root.join(name);
+    agent_transaction::reject_links(&dir)?;
+    if !dir.exists() && !required {
+        return Ok(());
+    }
+    collect(root, &dir, files)?;
+    if required {
+        validate_metadata(files, name)?;
+    }
+    Ok(())
+}
+
+fn validate_metadata(files: &Inventory, name: &str) -> Result<(), String> {
+    let key = format!("{name}/SKILL.md");
+    let text = files.get(&key).ok_or_else(|| format!("Missing {key}"))?;
+    let text = std::str::from_utf8(text).map_err(error_text)?;
+    if !text.starts_with(&format!("---\nname: {name}\n")) || !text.contains("\ndescription:") {
+        return Err(format!("Invalid skill metadata: {key}"));
+    }
+    Ok(())
+}
+
+fn reject_unmanaged_directories(target: &Path) -> Result<(), String> {
+    for name in NAMES {
+        if target.join(name).exists() {
+            return Err(format!(
+                "Unmanaged skill directory: {}",
+                target.join(name).display()
+            ));
+        }
+    }
+    Ok(())
 }
 
 fn hashes(files: &Inventory) -> BTreeMap<String, String> {
@@ -124,15 +160,17 @@ pub fn prepare(source: &Path, target: &Path, version: &str) -> Result<Changes, S
     validate_owned(target, &current, owner.as_ref())?;
     // Empty directories without a manifest are also user-owned.
     if owner.is_none() {
-        for name in NAMES {
-            if target.join(name).exists() {
-                return Err(format!(
-                    "Unmanaged skill directory: {}",
-                    target.join(name).display()
-                ));
-            }
-        }
+        reject_unmanaged_directories(target)?;
     }
+    build_changes(target, current, desired, version)
+}
+
+fn build_changes(
+    target: &Path,
+    current: Inventory,
+    desired: Inventory,
+    version: &str,
+) -> Result<Changes, String> {
     let mut changes = Changes::new();
     for name in current.keys() {
         changes.insert(target.join(name), None);
@@ -147,7 +185,7 @@ pub fn prepare(source: &Path, target: &Path, version: &str) -> Result<Changes, S
     }
     changes.insert(
         target.join(MANIFEST),
-        Some(serde_json::to_vec_pretty(&owner).map_err(|e| e.to_string())?),
+        Some(serde_json::to_vec_pretty(&owner).map_err(error_text)?),
     );
     Ok(changes)
 }
@@ -165,20 +203,17 @@ fn inspect(source: &Path, target: &Path, version: &str) -> Result<String, String
     let owner = manifest(target)?;
     validate_owned(target, &current, owner.as_ref())?;
     let Some(owner) = owner else {
-        for name in NAMES {
-            if target.join(name).exists() {
-                return Err(format!(
-                    "Unmanaged skill directory: {}",
-                    target.join(name).display()
-                ));
-            }
-        }
+        reject_unmanaged_directories(target)?;
         return Ok("absent".into());
     };
-    if owner.version != version || owner.files != hashes(&desired) {
-        return Ok(format!("outdated (registered {})", owner.version));
+    Ok(describe_registration(&owner, &desired, version))
+}
+
+fn describe_registration(owner: &Manifest, desired: &Inventory, version: &str) -> String {
+    if owner.version != version || owner.files != hashes(desired) {
+        return format!("outdated (registered {})", owner.version);
     }
-    Ok("current (five skills; client loading unverified)".into())
+    "current (five skills; client loading unverified)".into()
 }
 
 pub fn source(root: &Path) -> PathBuf {

@@ -1,4 +1,5 @@
 //! Client setup is separate from Java repository initialization.
+use crate::agent_transaction::error_text;
 use crate::{agent_skills, agent_transaction};
 use std::env;
 use std::ffi::OsString;
@@ -26,39 +27,47 @@ pub struct Request {
 const USAGE: &str = "Usage: makevn agent <install|status> <opencode|codex> [--scope global|project]; status requires --scope";
 
 pub fn parse(args: &[OsString]) -> Result<Request, String> {
-    if args.len() != 2 && args.len() != 4 {
+    let [action, client, remaining @ ..] = args else {
         return Err(USAGE.into());
-    }
-    let status = match args[0].to_str() {
-        Some("install") => false,
-        Some("status") => true,
-        _ => return Err(USAGE.into()),
     };
-    let client = match args[1].to_str() {
-        Some("opencode") => Client::OpenCode,
-        Some("codex") => Client::Codex,
-        _ => return Err(USAGE.into()),
-    };
-    let scope = if args.len() == 4 {
-        if args[2] != "--scope" {
-            return Err(USAGE.into());
-        }
-        Some(match args[3].to_str() {
-            Some("global") => Scope::Global,
-            Some("project") => Scope::Project,
-            _ => return Err(USAGE.into()),
-        })
-    } else {
-        None
-    };
+    let status = parse_action(action)?;
+    let scope = parse_scope(remaining)?;
     if status && scope.is_none() {
         return Err(USAGE.into());
     }
     Ok(Request {
-        client,
+        client: parse_client(client)?,
         scope,
         status,
     })
+}
+
+fn parse_action(action: &OsString) -> Result<bool, String> {
+    match action.to_str() {
+        Some("install") => Ok(false),
+        Some("status") => Ok(true),
+        _ => Err(USAGE.into()),
+    }
+}
+
+fn parse_client(client: &OsString) -> Result<Client, String> {
+    match client.to_str() {
+        Some("opencode") => Ok(Client::OpenCode),
+        Some("codex") => Ok(Client::Codex),
+        _ => Err(USAGE.into()),
+    }
+}
+
+fn parse_scope(args: &[OsString]) -> Result<Option<Scope>, String> {
+    match args {
+        [] => Ok(None),
+        [flag, scope] if flag == "--scope" => match scope.to_str() {
+            Some("global") => Ok(Some(Scope::Global)),
+            Some("project") => Ok(Some(Scope::Project)),
+            _ => Err(USAGE.into()),
+        },
+        _ => Err(USAGE.into()),
+    }
 }
 
 pub fn run(request: &Request) -> Result<(), String> {
@@ -68,11 +77,11 @@ pub fn run(request: &Request) -> Result<(), String> {
     let repo = crate::resolve_repo_root(None)?;
     let config_home = env::var_os("XDG_CONFIG_HOME")
         .map(PathBuf::from)
-        .unwrap_or_else(|| home.join(".config"));
+        .unwrap_or(home.join(".config"));
     let codex_home = env::var_os("CODEX_HOME")
         .map(PathBuf::from)
-        .unwrap_or_else(|| home.join(".codex"));
-    let exe = env::current_exe().map_err(|e| e.to_string())?;
+        .unwrap_or(home.join(".codex"));
+    let exe = env::current_exe().map_err(error_text)?;
     let source = agent_skills::source(&crate::install_root(&exe)?);
     execute(request, &home, &repo, &config_home, &codex_home, &source)
 }
@@ -85,15 +94,9 @@ fn execute(
     codex_home: &Path,
     source: &Path,
 ) -> Result<(), String> {
-    let global = match request.client {
-        Client::OpenCode => opencode_config(&config_home.join("opencode")),
-        Client::Codex => codex_home.join("config.toml"),
-    };
-    let (scope, config) = select_config(request, &repo, &global)?;
-    let target = match scope {
-        Scope::Global => home.join(".agents/skills"),
-        Scope::Project => repo.join(".agents/skills"),
-    };
+    let global = global_config(request.client, config_home, codex_home);
+    let (scope, config) = select_config(request, repo, &global)?;
+    let target = skills_target(scope, home, repo);
     println!(
         "Client: {:?}; scope: {:?}\nConfig: {}\nSkills: {}\nDistributed resources: {}",
         request.client,
@@ -126,6 +129,30 @@ fn execute(
     Ok(())
 }
 
+fn global_config(client: Client, config_home: &Path, codex_home: &Path) -> PathBuf {
+    match client {
+        Client::OpenCode => opencode_config(&config_home.join("opencode")),
+        Client::Codex => codex_home.join("config.toml"),
+    }
+}
+
+fn skills_target(scope: Scope, home: &Path, repo: &Path) -> PathBuf {
+    match scope {
+        Scope::Global => home.join(".agents/skills"),
+        Scope::Project => repo.join(".agents/skills"),
+    }
+}
+
+fn project_config(client: Client, repo: &Path) -> PathBuf {
+    match client {
+        Client::OpenCode => local_configs(repo)
+            .into_iter()
+            .next()
+            .unwrap_or(repo.join(".opencode/opencode.json")),
+        Client::Codex => repo.join(".codex/config.toml"),
+    }
+}
+
 fn opencode_config(dir: &Path) -> PathBuf {
     let jsonc = dir.join("opencode.jsonc");
     if jsonc.is_file() {
@@ -155,15 +182,8 @@ fn select_config(
     repo: &Path,
     global: &Path,
 ) -> Result<(Scope, PathBuf), String> {
-    let project = match request.client {
-        Client::OpenCode => local_configs(repo)
-            .into_iter()
-            .next()
-            .unwrap_or_else(|| repo.join(".opencode/opencode.json")),
-        Client::Codex => repo.join(".codex/config.toml"),
-    };
     match request.scope {
-        Some(Scope::Project) => Ok((Scope::Project, project)),
+        Some(Scope::Project) => Ok((Scope::Project, project_config(request.client, repo))),
         Some(Scope::Global) => Ok((Scope::Global, global.to_path_buf())),
         None if request.client == Client::OpenCode && io::stdin().is_terminal() => choose_opencode(
             repo,
@@ -185,24 +205,8 @@ fn choose_opencode(
     if configs.is_empty() {
         return Ok((Scope::Global, global.to_path_buf()));
     }
-    writeln!(output, "Where should makevn be installed?").map_err(|e| e.to_string())?;
-    for (i, config) in configs.iter().enumerate() {
-        writeln!(output, "  {}) Local config ({})", i + 1, config.display())
-            .map_err(|e| e.to_string())?;
-    }
-    writeln!(output, "  {}) Global config", configs.len() + 1).map_err(|e| e.to_string())?;
-    write!(output, "Select [1]: ").map_err(|e| e.to_string())?;
-    output.flush().map_err(|e| e.to_string())?;
-    let mut answer = String::new();
-    input.read_line(&mut answer).map_err(|e| e.to_string())?;
-    let selected = if answer.trim().is_empty() {
-        1
-    } else {
-        answer
-            .trim()
-            .parse::<usize>()
-            .map_err(|_| "Invalid selection")?
-    };
+    write_choices(&configs, output)?;
+    let selected = read_choice(input)?;
     if selected == configs.len() + 1 {
         return Ok((Scope::Global, global.to_path_buf()));
     }
@@ -211,6 +215,31 @@ fn choose_opencode(
         .and_then(|i| configs.get(i))
         .ok_or("Invalid selection")?;
     Ok((Scope::Project, config.clone()))
+}
+
+fn write_choices(configs: &[PathBuf], output: &mut impl Write) -> Result<(), String> {
+    writeln!(output, "Where should makevn be installed?").map_err(error_text)?;
+    for (i, config) in configs.iter().enumerate() {
+        writeln!(output, "  {}) Local config ({})", i + 1, config.display()).map_err(error_text)?;
+    }
+    writeln!(output, "  {}) Global config", configs.len() + 1).map_err(error_text)?;
+    write!(output, "Select [1]: ").map_err(error_text)?;
+    output.flush().map_err(error_text)?;
+    Ok(())
+}
+
+fn read_choice(input: &mut impl io::BufRead) -> Result<usize, String> {
+    let mut answer = String::new();
+    input.read_line(&mut answer).map_err(error_text)?;
+    let selected = if answer.trim().is_empty() {
+        1
+    } else {
+        answer
+            .trim()
+            .parse::<usize>()
+            .map_err(|_| "Invalid selection")?
+    };
+    Ok(selected)
 }
 
 fn opencode_document(text: &str) -> Result<serde_json::Value, String> {
@@ -250,7 +279,7 @@ fn configure(client: Client, text: &str, path: &Path) -> Result<String, String> 
             }
             serde_json::to_string_pretty(&document)
                 .map(|s| s + "\n")
-                .map_err(|e| e.to_string())
+                .map_err(error_text)
         }
         Client::Codex => configure_codex(text),
     }
@@ -259,7 +288,7 @@ fn configure(client: Client, text: &str, path: &Path) -> Result<String, String> 
 fn configure_codex(text: &str) -> Result<String, String> {
     let mut document = text
         .parse::<DocumentMut>()
-        .map_err(|e| format!("Invalid Codex TOML: {e}"))?;
+        .map_err(|e| format!("Invalid Codex TOML: {}", e.message()))?;
     if !document.contains_key("mcp_servers") {
         document["mcp_servers"] = Item::Table(Table::new());
     }
@@ -301,7 +330,7 @@ fn read_config(client: Client, path: &Path) -> Result<String, String> {
         Client::OpenCode => b"{}".to_vec(),
         Client::Codex => vec![],
     }))
-    .map_err(|e| e.to_string())
+    .map_err(error_text)
 }
 
 struct Lock(PathBuf);
@@ -318,31 +347,56 @@ fn install(
     target: &Path,
     version: &str,
 ) -> Result<(), String> {
-    // Preflight before creating a lock or any destination files.
-    let _ = agent_skills::prepare(source, target, version)?;
-    let original = read_config(client, config)?;
-    let updated = configure(client, &original, config)?;
-    agent_transaction::reject_links(target)?;
-    fs::create_dir_all(target).map_err(|e| e.to_string())?;
-    let lock = target.join(".makevn-setup.lock");
-    OpenOptions::new().write(true).create_new(true).open(&lock)
-        .map_err(|e| format!("Cannot acquire setup lock {}: {e}; check for an active setup before removing a stale lock", lock.display()))?;
-    let _lock = Lock(lock);
+    let (original, updated) = preflight(client, config, source, target, version)?;
+    let _lock = acquire_lock(target)?;
     let mut changes = agent_skills::prepare(source, target, version)?;
     if read_config(client, config)? != original {
         return Err("Configuration changed during setup; retry".into());
     }
-    if updated != original {
-        if let Some(bytes) = agent_transaction::read(config)? {
-            let backup = PathBuf::from(format!("{}.makevn.bak", config.display()));
-            // Keep the first backup; never overwrite a user's recovery copy.
-            if !backup.exists() {
-                changes.insert(backup, Some(bytes));
-            }
-        }
-        changes.insert(config.to_path_buf(), Some(updated.into_bytes()));
-    }
+    changes.extend(configuration_changes(config, &original, &updated)?);
     agent_transaction::apply(changes)
+}
+
+fn preflight(
+    client: Client,
+    config: &Path,
+    source: &Path,
+    target: &Path,
+    version: &str,
+) -> Result<(String, String), String> {
+    // Validate before creating a lock or any destination files.
+    let _ = agent_skills::prepare(source, target, version)?;
+    let original = read_config(client, config)?;
+    let updated = configure(client, &original, config)?;
+    Ok((original, updated))
+}
+
+fn acquire_lock(target: &Path) -> Result<Lock, String> {
+    agent_transaction::reject_links(target)?;
+    fs::create_dir_all(target).map_err(error_text)?;
+    let lock = target.join(".makevn-setup.lock");
+    OpenOptions::new().write(true).create_new(true).open(&lock)
+        .map_err(|e| format!("Cannot acquire setup lock {}: {e}; check for an active setup before removing a stale lock", lock.display()))?;
+    Ok(Lock(lock))
+}
+
+fn configuration_changes(
+    config: &Path,
+    original: &str,
+    updated: &str,
+) -> Result<agent_transaction::Changes, String> {
+    let mut changes = agent_transaction::Changes::new();
+    if updated == original {
+        return Ok(changes);
+    }
+    if let Some(bytes) = agent_transaction::read(config)? {
+        let backup = PathBuf::from(format!("{}.makevn.bak", config.display()));
+        if !backup.exists() {
+            changes.insert(backup, Some(bytes));
+        }
+    }
+    changes.insert(config.to_path_buf(), Some(updated.as_bytes().to_vec()));
+    Ok(changes)
 }
 
 #[cfg(test)]

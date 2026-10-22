@@ -2,9 +2,14 @@
 use std::collections::BTreeMap;
 use std::fs::{self, OpenOptions};
 use std::io::Write;
+use std::os::unix::fs::OpenOptionsExt;
 use std::path::{Path, PathBuf};
 
 pub type Changes = BTreeMap<PathBuf, Option<Vec<u8>>>;
+
+pub fn error_text(error: impl std::fmt::Display) -> String {
+    error.to_string()
+}
 
 pub fn read(path: &Path) -> Result<Option<Vec<u8>>, String> {
     match fs::read(path) {
@@ -54,12 +59,13 @@ impl Transaction {
         let mut file = OpenOptions::new()
             .write(true)
             .create_new(true)
+            .mode(0o600)
             .open(&temp)
             .map_err(|e| format!("Cannot stage {}: {e}", path.display()))?;
         self.staged.push(temp.clone());
-        file.write_all(bytes).map_err(|e| e.to_string())?;
+        file.write_all(bytes).map_err(error_text)?;
         if let Ok(metadata) = fs::metadata(path) {
-            fs::set_permissions(&temp, metadata.permissions()).map_err(|e| e.to_string())?;
+            fs::set_permissions(&temp, metadata.permissions()).map_err(error_text)?;
         }
         Ok(temp)
     }

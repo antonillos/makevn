@@ -1,5 +1,6 @@
 use super::*;
 use crate::agent_test_fixture::Fixture;
+use std::os::unix::fs::PermissionsExt;
 
 #[test]
 fn parses_clients_scopes_and_rejects_ambiguous_status() {
@@ -98,9 +99,17 @@ fn installs_both_clients_idempotently_and_preserves_permissions_and_backups() {
         let first = fs::read(&config).unwrap();
         let backup = PathBuf::from(format!("{}.makevn.bak", config.display()));
         assert_eq!(fs::read_to_string(&backup).unwrap(), original);
+        assert_eq!(
+            fs::metadata(&backup).unwrap().permissions().mode() & 0o777,
+            0o600
+        );
         install(client, &config, &source, &target, "1").unwrap();
         assert_eq!(fs::read(&config).unwrap(), first);
         assert_eq!(fs::read_to_string(&backup).unwrap(), original);
+        assert_eq!(
+            fs::metadata(&backup).unwrap().permissions().mode() & 0o777,
+            0o600
+        );
         assert_eq!(config_status(client, &config), "current");
         let text = fs::read_to_string(&config).unwrap();
         if client == Client::OpenCode {
@@ -243,4 +252,11 @@ fn preserves_native_opencode_v2_server_layout_and_permissions() {
     assert!(document["mcp"].get("makevn").is_none());
     assert_eq!(config_status(Client::OpenCode, &config), "current");
     assert!(configure(Client::OpenCode, r#"{"mcp":{"servers":false}}"#, &config).is_err());
+}
+
+#[test]
+fn invalid_toml_diagnostics_do_not_echo_configuration_values() {
+    let error = configure_codex("[provider]\nkey = 'private-test-value\n").unwrap_err();
+    assert!(error.contains("Invalid Codex TOML"));
+    assert!(!error.contains("private-test-value"));
 }
