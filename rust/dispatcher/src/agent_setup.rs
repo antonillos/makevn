@@ -6,7 +6,7 @@ use std::ffi::OsString;
 use std::fs::{self, OpenOptions};
 use std::io::{self, IsTerminal, Write};
 use std::path::{Path, PathBuf};
-use toml_edit::{value, DocumentMut, Item, Table};
+use toml_edit::{value, DocumentMut, InlineTable, Item, Table};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Client {
@@ -96,6 +96,12 @@ fn execute(
 ) -> Result<(), String> {
     let global = global_config(request.client, config_home, codex_home);
     let (scope, config) = select_config(request, repo, &global)?;
+    if scope == Scope::Project && crate::find_git_root(repo).is_none() {
+        return Err(format!(
+            "Project scope requires a Git worktree: {}",
+            repo.display()
+        ));
+    }
     let target = skills_target(scope, home, repo);
     println!(
         "Client: {:?}; scope: {:?}\nConfig: {}\nSkills: {}\nDistributed resources: {}",
@@ -296,7 +302,7 @@ fn configure_codex(text: &str) -> Result<String, String> {
         .as_table_like_mut()
         .ok_or("mcp_servers must be a TOML table")?;
     if !servers.contains_key("makevn") {
-        servers.insert("makevn", Item::Table(Table::new()));
+        servers.insert("makevn", value(InlineTable::new()));
     }
     let server = servers
         .get_mut("makevn")

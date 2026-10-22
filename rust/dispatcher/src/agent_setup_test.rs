@@ -174,6 +174,7 @@ fn executes_registration_and_read_only_status_in_both_scopes() {
     let repo = fixture.0.join("repo");
     fs::create_dir(&home).unwrap();
     fs::create_dir(&repo).unwrap();
+    fs::create_dir(repo.join(".git")).unwrap();
     for scope in [Scope::Global, Scope::Project] {
         for client in [Client::OpenCode, Client::Codex] {
             for status in [true, false, true] {
@@ -259,4 +260,77 @@ fn invalid_toml_diagnostics_do_not_echo_configuration_values() {
     let error = configure_codex("[provider]\nkey = 'private-test-value\n").unwrap_err();
     assert!(error.contains("Invalid Codex TOML"));
     assert!(!error.contains("private-test-value"));
+}
+
+#[test]
+fn inline_codex_servers_support_install_status_and_idempotence() {
+    let fixture = Fixture::new();
+    let source = fixture.bundle();
+    let target = fixture.0.join("skills");
+    let config = fixture.0.join("config.toml");
+    for original in [
+        "mcp_servers = { other = { command = 'other' } }\n",
+        "mcp_servers = { other = { command = 'other' }, makevn = { url = 'https://example.test', args = ['old'], custom = true } }\n",
+    ] {
+        fs::write(&config, original).unwrap();
+        assert!(config_status(Client::Codex, &config).contains("outdated"));
+        assert_eq!(fs::read_to_string(&config).unwrap(), original);
+        install(Client::Codex, &config, &source, &target, "1").unwrap();
+        let updated = fs::read_to_string(&config).unwrap();
+        let document = updated.parse::<DocumentMut>().unwrap();
+        assert_eq!(document["mcp_servers"]["other"]["command"].as_str(), Some("other"));
+        let server = &document["mcp_servers"]["makevn"];
+        assert_eq!(server["command"].as_str(), Some("makevn-mcp"));
+        assert!(server.get("url").is_none());
+        assert!(server.get("args").is_none());
+        if original.contains("custom") {
+            assert_eq!(server["custom"].as_bool(), Some(true));
+        }
+        assert_eq!(config_status(Client::Codex, &config), "current");
+        install(Client::Codex, &config, &source, &target, "1").unwrap();
+        assert_eq!(fs::read_to_string(&config).unwrap(), updated);
+    }
+}
+
+#[test]
+fn project_scope_rejects_non_git_directories_without_writes() {
+    let fixture = Fixture::new();
+    let source = fixture.bundle();
+    let home = fixture.0.join("home");
+    fs::create_dir(&home).unwrap();
+    for client in [Client::OpenCode, Client::Codex] {
+        for status in [false, true] {
+            let error = execute(
+                &Request {
+                    client,
+                    scope: Some(Scope::Project),
+                    status,
+                },
+                &home,
+                &home,
+                &home.join(".config"),
+                &home.join(".codex"),
+                &source,
+            )
+            .unwrap_err();
+            assert!(error.contains("Project scope requires a Git worktree"));
+            assert_eq!(fs::read_dir(&home).unwrap().count(), 0);
+        }
+    }
+    // Linked worktrees use a .git file rather than a directory.
+    fs::write(home.join(".git"), "gitdir: /example/worktrees/project\n").unwrap();
+    execute(
+        &Request {
+            client: Client::Codex,
+            scope: Some(Scope::Project),
+            status: false,
+        },
+        &home,
+        &home,
+        &home.join(".config"),
+        &home.join(".codex"),
+        &source,
+    )
+    .unwrap();
+    assert!(home.join(".codex/config.toml").is_file());
 }
