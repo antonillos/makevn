@@ -15,7 +15,7 @@ This repository develops MakeVN in Rust/Bash; it is not itself a Maven fixture.
 Install the product using [installation instructions](install.md), then register
 MCP and skills with the [agent setup runbook](agent-install.md). Registration is
 independent of Maven repository initialization. Skills are loaded on demand and
-model selection is not guaranteed. See [OpenCode skill discovery](https://opencode.ai/docs/skills/)
+model selection is not guaranteed. See [OpenCode skill discovery](https://opencode.ai/v2/docs/skills/)
 and [Codex skill authoring](https://learn.chatgpt.com/docs/build-skills).
 
 | I want to… | Skill | CLI → MCP workflow after doctor/setup | Evidence and effects |

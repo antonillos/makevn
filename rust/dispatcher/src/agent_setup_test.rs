@@ -219,3 +219,28 @@ fn interactive_selection_keeps_all_configs_and_checks_input() {
     assert!(prompt.contains("opencode.json"));
     assert!(prompt.contains("Global config"));
 }
+
+#[test]
+fn preserves_native_opencode_v2_server_layout_and_permissions() {
+    let fixture = Fixture::new();
+    let source = fixture.bundle();
+    let target = fixture.0.join("skills");
+    let config = fixture.0.join("opencode.jsonc");
+    fs::write(&config, r#"{"permissions":[{"action":"skill","resource":"makevn","effect":"deny"}],"mcp":{"servers":{"other":{"type":"local","command":["other"]}},"timeout":{"execution":42}}}"#).unwrap();
+    install(Client::OpenCode, &config, &source, &target, "1").unwrap();
+    let document = opencode_document(&fs::read_to_string(&config).unwrap()).unwrap();
+    assert_eq!(
+        document["mcp"]["servers"]["makevn"]["timeout"]["execution"],
+        1800000
+    );
+    assert_eq!(document["mcp"]["servers"]["makevn"]["disabled"], false);
+    assert_eq!(
+        document["mcp"]["servers"]["other"]["command"],
+        serde_json::json!(["other"])
+    );
+    assert_eq!(document["mcp"]["timeout"]["execution"], 42);
+    assert_eq!(document["permissions"][0]["effect"], "deny");
+    assert!(document["mcp"].get("makevn").is_none());
+    assert_eq!(config_status(Client::OpenCode, &config), "current");
+    assert!(configure(Client::OpenCode, r#"{"mcp":{"servers":false}}"#, &config).is_err());
+}

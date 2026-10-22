@@ -440,15 +440,17 @@ fn configure_opencode_mcp(
         .or_insert_with(|| serde_json::Value::Object(serde_json::Map::new()))
         .as_object_mut()
         .ok_or_else(|| String::from("OpenCode config field 'mcp' must be a JSON object"))?;
-    mcp.insert(
-        String::from("makevn"),
-        serde_json::json!({
-            "type": "local",
-            "command": ["makevn-mcp"],
-            "enabled": true,
-            "timeout": 1800000
-        }),
-    );
+    if let Some(servers) = mcp.get_mut("servers") {
+        let servers = servers.as_object_mut().ok_or("OpenCode mcp.servers must be an object")?;
+        servers.insert(String::from("makevn"), serde_json::json!({
+            "type": "local", "command": ["makevn-mcp"], "disabled": false,
+            "timeout": {"startup": 1800000, "catalog": 1800000, "execution": 1800000}
+        }));
+    } else {
+        mcp.insert(String::from("makevn"), serde_json::json!({
+            "type": "local", "command": ["makevn-mcp"], "enabled": true, "timeout": 1800000
+        }));
+    }
     Ok(())
 }
 

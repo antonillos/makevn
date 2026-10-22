@@ -239,7 +239,9 @@ as `<config>.makevn.bak` if no backup exists, and restores replaced files after 
 operation failure. Existing backups are preserved. A process crash can leave the
 lock behind; verify no setup is active before removing a stale lock. This is not
 a power-loss recovery mechanism. OpenCode JSONC comments may be normalized when
-configuration changes; unrelated configuration values are retained. Codex TOML
+configuration changes; unrelated configuration values are retained. Existing OpenCode V2 `mcp.servers` layout is
+preserved with native `disabled` and per-phase timeout fields; legacy MCP layouts
+remain compatible. Codex TOML
 comments and unrelated tables are retained.
 
 ```bash
