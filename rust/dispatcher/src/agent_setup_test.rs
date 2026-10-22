@@ -156,3 +156,66 @@ fn setup_lock_and_invalid_configurations_fail_with_diagnostics() {
     fs::write(&config, "invalid[").unwrap();
     assert!(config_status(Client::Codex, &config).starts_with("invalid"));
 }
+
+#[test]
+fn executes_registration_and_read_only_status_in_both_scopes() {
+    let fixture = Fixture::new();
+    let source = fixture.bundle();
+    let home = fixture.0.join("home");
+    let repo = fixture.0.join("repo");
+    fs::create_dir(&home).unwrap();
+    fs::create_dir(&repo).unwrap();
+    for scope in [Scope::Global, Scope::Project] {
+        for client in [Client::OpenCode, Client::Codex] {
+            for status in [true, false, true] {
+                execute(
+                    &Request {
+                        client,
+                        scope: Some(scope),
+                        status,
+                    },
+                    &home,
+                    &repo,
+                    &home.join(".config"),
+                    &home.join(".codex"),
+                    &source,
+                )
+                .unwrap();
+            }
+        }
+    }
+}
+
+#[test]
+fn interactive_selection_keeps_all_configs_and_checks_input() {
+    let fixture = Fixture::new();
+    let repo = &fixture.0;
+    let global = repo.join("global");
+    let mut output = vec![];
+    assert_eq!(
+        choose_opencode(repo, &global, &mut &b""[..], &mut output).unwrap(),
+        (Scope::Global, global.clone())
+    );
+    fs::create_dir(repo.join(".opencode")).unwrap();
+    fs::write(repo.join(".opencode/opencode.jsonc"), "{}").unwrap();
+    fs::write(repo.join(".opencode/opencode.json"), "{}").unwrap();
+    for (answer, expected) in [
+        ("\n", repo.join(".opencode/opencode.jsonc")),
+        ("2\n", repo.join(".opencode/opencode.json")),
+        ("3\n", global.clone()),
+    ] {
+        assert_eq!(
+            choose_opencode(repo, &global, &mut answer.as_bytes(), &mut output)
+                .unwrap()
+                .1,
+            expected
+        );
+    }
+    for answer in ["0\n", "4\n", "invalid\n"] {
+        assert!(choose_opencode(repo, &global, &mut answer.as_bytes(), &mut output).is_err());
+    }
+    let prompt = String::from_utf8(output).unwrap();
+    assert!(prompt.contains("opencode.jsonc"));
+    assert!(prompt.contains("opencode.json"));
+    assert!(prompt.contains("Global config"));
+}

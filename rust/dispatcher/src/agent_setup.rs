@@ -72,6 +72,19 @@ pub fn run(request: &Request) -> Result<(), String> {
     let codex_home = env::var_os("CODEX_HOME")
         .map(PathBuf::from)
         .unwrap_or_else(|| home.join(".codex"));
+    let exe = env::current_exe().map_err(|e| e.to_string())?;
+    let source = agent_skills::source(&crate::install_root(&exe)?);
+    execute(request, &home, &repo, &config_home, &codex_home, &source)
+}
+
+fn execute(
+    request: &Request,
+    home: &Path,
+    repo: &Path,
+    config_home: &Path,
+    codex_home: &Path,
+    source: &Path,
+) -> Result<(), String> {
     let global = match request.client {
         Client::OpenCode => opencode_config(&config_home.join("opencode")),
         Client::Codex => codex_home.join("config.toml"),
@@ -81,8 +94,6 @@ pub fn run(request: &Request) -> Result<(), String> {
         Scope::Global => home.join(".agents/skills"),
         Scope::Project => repo.join(".agents/skills"),
     };
-    let exe = env::current_exe().map_err(|e| e.to_string())?;
-    let source = agent_skills::source(&crate::install_root(&exe)?);
     println!(
         "Client: {:?}; scope: {:?}\nConfig: {}\nSkills: {}\nDistributed resources: {}",
         request.client,
@@ -154,33 +165,40 @@ fn select_config(
     match request.scope {
         Some(Scope::Project) => Ok((Scope::Project, project)),
         Some(Scope::Global) => Ok((Scope::Global, global.to_path_buf())),
-        None if request.client == Client::OpenCode && io::stdin().is_terminal() => {
-            choose_opencode(repo, global)
-        }
+        None if request.client == Client::OpenCode && io::stdin().is_terminal() => choose_opencode(
+            repo,
+            global,
+            &mut io::stdin().lock(),
+            &mut io::stdout().lock(),
+        ),
         None => Ok((Scope::Global, global.to_path_buf())),
     }
 }
 
-fn choose_opencode(repo: &Path, global: &Path) -> Result<(Scope, PathBuf), String> {
+fn choose_opencode(
+    repo: &Path,
+    global: &Path,
+    input: &mut impl io::BufRead,
+    output: &mut impl Write,
+) -> Result<(Scope, PathBuf), String> {
     let configs = local_configs(repo);
     if configs.is_empty() {
         return Ok((Scope::Global, global.to_path_buf()));
     }
-    println!("Where should makevn be installed?");
+    writeln!(output, "Where should makevn be installed?").map_err(|e| e.to_string())?;
     for (i, config) in configs.iter().enumerate() {
-        println!("  {}) Local config ({})", i + 1, config.display());
+        writeln!(output, "  {}) Local config ({})", i + 1, config.display())
+            .map_err(|e| e.to_string())?;
     }
-    println!("  {}) Global config", configs.len() + 1);
-    print!("Select [1]: ");
-    io::stdout().flush().map_err(|e| e.to_string())?;
-    let mut input = String::new();
-    io::stdin()
-        .read_line(&mut input)
-        .map_err(|e| e.to_string())?;
-    let selected = if input.trim().is_empty() {
+    writeln!(output, "  {}) Global config", configs.len() + 1).map_err(|e| e.to_string())?;
+    write!(output, "Select [1]: ").map_err(|e| e.to_string())?;
+    output.flush().map_err(|e| e.to_string())?;
+    let mut answer = String::new();
+    input.read_line(&mut answer).map_err(|e| e.to_string())?;
+    let selected = if answer.trim().is_empty() {
         1
     } else {
-        input
+        answer
             .trim()
             .parse::<usize>()
             .map_err(|_| "Invalid selection")?
