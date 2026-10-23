@@ -150,7 +150,7 @@ makevn --repo "/path/to/java-repo" verify-changes
 
 | Goal | Command |
 | --- | --- |
-| Inspect repository context | `makevn doctor` |
+| Inspect repository context | `makevn doctor` (concise JVM/mount summaries; `makevn doctor --json` for full diagnostics) |
 | Initialize local makevn state | `makevn init` |
 | Run one or more tests | `makevn test --name UserRepositoryTest` |
 | Build and verify | `makevn package`, `makevn verify` |
