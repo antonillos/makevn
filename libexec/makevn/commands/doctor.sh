@@ -98,8 +98,10 @@ print_doctor() {
   if [[ -n "${reset_backup}" ]]; then
     makevn_print_item "Configuration backup" "${reset_backup}"
   fi
-  makevn_print_item "Test JVM diagnostics" "${MAKEVN_DOCTOR_TEST_PROCESSES}"
-  makevn_print_item "Bind mount diagnostics" "${MAKEVN_DOCTOR_BIND_MOUNTS}"
+  local diagnostic_line
+  while IFS= read -r diagnostic_line; do
+    makevn_print_detail_line "${diagnostic_line}"
+  done < <(python3 "${MAKEVN_LIBEXEC_DIR}/common/doctor_summary.py" "${MAKEVN_DOCTOR_TEST_PROCESSES}" "${MAKEVN_DOCTOR_BIND_MOUNTS}")
   makevn_print_doctor_init_recommendation
 
   if [[ "${MAKEVN_COMPACT_OUTPUT:-}" == "1" ]]; then
