@@ -688,8 +688,8 @@ fn docker_guidance_depends_on_tool_and_status_not_diagnostic_text() {
         ("docker_ps", 0, "If Docker services are required"),
         ("docker_up", 1, "Inspect untrustedData"),
         ("docker_up", 0, "Before running tests"),
-        ("docker_ps_required", 1, "Run makevn doctor"),
-        ("docker_ps_required", -1, "Run makevn doctor"),
+        ("docker_ps_required", 1, "Inspect untrustedData"),
+        ("docker_ps_required", -1, "Inspect untrustedData"),
         ("docker_ps", 1, "Inspect untrustedData"),
         ("docker_ps_required", 0, "Use this result"),
         ("test", 1, "Inspect untrustedData"),
@@ -803,6 +803,51 @@ fn docker_tool_descriptions_require_readiness_and_authorized_setup() {
 }
 
 #[test]
+fn missing_services_guidance_reuses_startup_authorization_without_reset() {
+    for output in ["postgres missing - -", "daemon unavailable", "bind_mount_visibility_mismatch"] {
+        let result = super::ToolCallResult {
+            output: output.into(), exit_code: 1, duration_ms: 1,
+            doctor_snapshot: None, next_suggestion: None,
+        };
+        let response = super::standard_tool_result(&result, &json!({"name": "docker_ps_required"}));
+        let guidance = response["structuredContent"]["nextSuggestion"].as_str().unwrap();
+        for expected in [
+            "only services are missing or stopped",
+            "docker_up for boot or karate_docker_up for karate",
+            "existing startup authorization, without asking again",
+            "preserve volumes",
+            "Missing services alone do not require doctor",
+            "Diagnose unhealthy services and probe failures",
+            "explicit authorization to delete that Compose project data",
+        ] {
+            assert!(guidance.contains(expected), "{guidance}");
+        }
+        assert!(response["isError"].as_bool().unwrap());
+    }
+}
+
+#[test]
+fn docker_reset_tools_expose_destructive_scope_and_readiness() {
+    for (name, command, compose) in [
+        ("docker_reset", "docker-reset", "boot"),
+        ("karate_docker_reset", "karate-docker-reset", "karate"),
+    ] {
+        let spec = super::TOOL_SPECS.iter().find(|spec| spec.name == name).unwrap();
+        assert_eq!(spec.command, &[command]);
+        assert!(spec.description.contains("explicit authorization to delete"));
+        assert!(spec.description.contains("Never prunes global volumes"));
+        assert!(super::validate_call(&json!({"name": name, "arguments": {"repo": "/repo"}})).is_ok());
+        let result = super::ToolCallResult {
+            output: String::new(), exit_code: 0, duration_ms: 1,
+            doctor_snapshot: None, next_suggestion: None,
+        };
+        let guidance = super::tool_next_suggestion(name, &result);
+        assert!(guidance.contains("docker_ps_required"));
+        assert!(guidance.contains(&format!("compose: {compose}")));
+    }
+}
+
+#[test]
 fn workflows_preserve_server_authored_step_guidance() {
     let dir = std::env::temp_dir().join(format!(
         "makevn-workflow-guidance-{}-{}",
@@ -820,7 +865,7 @@ fn workflows_preserve_server_authored_step_guidance() {
         for (tool, expected, exit_code) in [
             ("docker_up", "Before running tests", 0),
             ("docker_ps", "If Docker services are required", 0),
-            ("docker_ps_required", "Run makevn doctor", 1),
+            ("docker_ps_required", "Inspect untrustedData", 1),
             ("verify_changes", "Inspect the first root cause", 1),
         ] {
             let params = json!({"name": workflow_tool, "arguments": {"steps": [{"tool": tool}]}});
@@ -868,6 +913,11 @@ fn doctor_pending_questions_use_chat_configuration() {
             "doctor_configure",
             "setupToken",
             "Suggestions require confirmation",
+            "Use MCP tools throughout setup",
+            "call MCP doctor again after initialization",
+            "discard the pre-init token",
+            "After a stale-token or concurrent-change rejection, call MCP doctor again",
+            "Do not switch to CLI doctor or terminal prompts",
         ] {
             assert!(suggestion.contains(expected));
         }
@@ -945,8 +995,8 @@ fn changed_code_preview_requires_docker_readiness_before_execution() {
         "first run docker_ps_required with wait-seconds: 30",
         "Reuse healthy running services",
         "do not call docker_up when this gate passes",
-        "down -v and volume prune",
-        "destructive lifecycle is explicitly authorized",
+        "volume-preserving docker_up",
+        "explicit reset authorization",
         "successful preview does not establish Docker readiness",
         "without another routine approval question",
         "Omit clean for a new worktree",
@@ -958,7 +1008,8 @@ fn changed_code_preview_requires_docker_readiness_before_execution() {
         assert!(spec.description.contains("doctor/config/profile"));
         assert!(spec.description.contains("first run docker_ps_required"));
         assert!(spec.description.contains("reuse healthy services"));
-        assert!(spec.description.contains("down -v and volume prune"));
+        assert!(spec.description.contains("volume-preserving docker_up"));
+        assert!(spec.description.contains("docker_reset"));
     }
 }
 
@@ -1107,7 +1158,10 @@ fn missing_python_reports_setup_prerequisite() {
     let snapshot = json!({"interactive_setup": {"required": true, "available": false}});
     let guidance = super::doctor_next_suggestion(&snapshot).unwrap();
     assert!(guidance.contains("Install Python 3"));
-    assert!(guidance.contains("interactive CLI doctor"));
+    assert!(guidance.contains("retry MCP doctor"));
+    assert!(guidance.contains("collect answers through chat for doctor_configure"));
+    assert!(guidance.contains("do not switch to CLI doctor or terminal prompts"));
+    assert!(guidance.contains("report the blocker and stop dependent work"));
 }
 
 #[test]
@@ -1135,11 +1189,13 @@ fn docker_interface_policy_covers_tools_and_workflow_results() {
     let names = [
         "docker_up",
         "docker_down",
+        "docker_reset",
         "docker_ps",
         "docker_stats",
         "docker_ps_required",
         "karate_docker_up",
         "karate_docker_down",
+        "karate_docker_reset",
         "karate_all",
     ];
     for name in names {

@@ -158,7 +158,8 @@ makevn --repo "/path/to/java-repo" verify-changes
 | Check aggregate or changed-code coverage | `makevn coverage`, `makevn coverage-changes` |
 | Analyze Java CRAP from an existing JaCoCo XML report | `makevn crap` |
 | Analyze CRAP only for changed Java methods | `makevn crap-changes [--base REF]` |
-| Start and inspect Docker services | `makevn docker-up`, `makevn docker-ps-required` |
+| Start and inspect Docker services, preserving volumes | `makevn docker-up`, `makevn docker-ps-required` |
+| Explicitly reset Compose project data | `makevn docker-reset` |
 | Run Karate E2E flows | `makevn karate-test`, `makevn karate-all` |
 | Run the application | `makevn run-app`, `makevn run-app-bg` |
 

@@ -655,8 +655,8 @@ fn validate_command(
             Ok(CommandValidation::Valid)
         }
         "help" | "init" | "refresh" | "uninstall" | "test" | "coverage" | "coverage-changes"
-        | "crap" | "crap-changes" | "docker-up" | "docker-down" | "docker-ps" | "docker-stats"
-        | "docker-ps-required" | "karate-docker-up" | "karate-docker-down" | "run-app"
+        | "crap" | "crap-changes" | "docker-up" | "docker-down" | "docker-reset" | "docker-ps" | "docker-stats"
+        | "docker-ps-required" | "karate-docker-up" | "karate-docker-down" | "karate-docker-reset" | "run-app"
         | "run-app-bg" | "stop-app" | "run" => Ok(CommandValidation::Valid),
         "doctor" => {
             if let Some(extra_arg) = trailing_args.iter().find(|arg| *arg != "--compact" && *arg != "--reset-config") {
@@ -862,11 +862,13 @@ fn is_top_level_command(arg: &OsString) -> bool {
             | "checkstyle"
             | "docker-up"
             | "docker-down"
+            | "docker-reset"
             | "docker-ps"
             | "docker-stats"
             | "docker-ps-required"
             | "karate-docker-up"
             | "karate-docker-down"
+            | "karate-docker-reset"
             | "karate-test"
             | "karate-all"
             | "run-app"
@@ -991,11 +993,13 @@ fn command_supports_frontend_loader(command: &OsString) -> bool {
             | "checkstyle"
             | "docker-up"
             | "docker-down"
+            | "docker-reset"
             | "docker-ps"
             | "docker-stats"
             | "docker-ps-required"
             | "karate-docker-up"
             | "karate-docker-down"
+            | "karate-docker-reset"
             | "karate-test"
             | "karate-all"
             | "run-app"
@@ -3898,13 +3902,15 @@ fn command_help(command: &str) -> Option<(&'static str, &'static str, &'static [
         "pr-verify" => maven_command_help("pr-verify", "Run a local PR-style verification flow.", false),
         "format" => Some(("makevn [--repo PATH] [--compact] format [--tail] [--apply] [-- EXTRA_MAVEN_ARGS...]", "Check or apply code formatting.", &["--tail     Start in interactive log tail mode", "--compact  Use compact non-interactive output", "--apply    Apply formatting changes"])),
         "checkstyle" => Some(("makevn [--repo PATH] [--compact] checkstyle [--tail] [--module MODULE] [--verbose] [-- EXTRA_MAVEN_ARGS...]", "Run Checkstyle code style checks.", &["--tail     Start in interactive log tail mode", "--compact  Use compact non-interactive output", "--module   Maven module to check", "--verbose  Print detailed output"])),
-        "docker-up" => tail_command_help("docker-up", "Start boot Docker services."),
-        "docker-down" => tail_command_help("docker-down", "Stop boot Docker services."),
+        "docker-up" => tail_command_help("docker-up", "Start boot Docker services while preserving volumes."),
+        "docker-down" => tail_command_help("docker-down", "Stop boot Docker services while preserving volumes."),
+        "docker-reset" => Some(("makevn [--repo PATH] docker-reset [--tail]", "Delete the selected boot Compose volumes and restart its services. Requires explicit reset authorization; never prunes global volumes.", &["--tail  Start in interactive log tail mode"])),
         "docker-ps" => tail_command_help("docker-ps", "List boot Docker containers."),
         "docker-stats" => tail_command_help("docker-stats", "Show Docker CPU and memory stats."),
         "docker-ps-required" => Some(("makevn [--repo PATH] docker-ps-required [--tail] [--compose boot|karate] [--wait-seconds N]", "Validate required Docker services are running and healthy.", &["--tail          Start in interactive log tail mode", "--compose       Compose profile: boot or karate", "--wait-seconds  Seconds to wait for services"])),
-        "karate-docker-up" => tail_command_help("karate-docker-up", "Start Karate E2E Docker services."),
-        "karate-docker-down" => tail_command_help("karate-docker-down", "Stop Karate E2E Docker services."),
+        "karate-docker-up" => tail_command_help("karate-docker-up", "Start Karate E2E Docker services while preserving volumes."),
+        "karate-docker-down" => tail_command_help("karate-docker-down", "Stop Karate E2E Docker services while preserving volumes."),
+        "karate-docker-reset" => Some(("makevn [--repo PATH] karate-docker-reset [--tail]", "Delete the selected Karate E2E Compose volumes and restart its services. Requires explicit reset authorization; never prunes global volumes.", &["--tail  Start in interactive log tail mode"])),
         "karate-test" => Some(("makevn [--repo PATH] karate-test [--tail] [--tag TAG] [-- EXTRA_MAVEN_ARGS...]", "Run Karate tests.", &["--tail  Start in interactive log tail mode", "--tag   Karate tag filter"])),
         "karate-all" => Some(("makevn [--repo PATH] karate-all [--tail] [--tag TAG] [-- EXTRA_MAVEN_ARGS...]", "Run the Karate app and test lifecycle.", &["--tail  Start in interactive log tail mode", "--tag   Karate tag filter"])),
         "run-app" => Some(("makevn [--repo PATH] run-app [--tail]", "Run the detected application in the foreground.", &["--tail  Start in interactive application log tail mode"])),
@@ -4034,11 +4040,13 @@ fn print_help(with_header: bool) {
     );
     println!("  makevn [--repo PATH] docker-up [--tail]");
     println!("  makevn [--repo PATH] docker-down [--tail]");
+    println!("  makevn [--repo PATH] docker-reset [--tail]");
     println!("  makevn [--repo PATH] docker-ps [--tail]");
     println!("  makevn [--repo PATH] docker-stats [--tail]");
     println!("  makevn [--repo PATH] docker-ps-required [--tail] [--compose boot|karate] [--wait-seconds N]");
     println!("  makevn [--repo PATH] karate-docker-up [--tail]");
     println!("  makevn [--repo PATH] karate-docker-down [--tail]");
+    println!("  makevn [--repo PATH] karate-docker-reset [--tail]");
     println!("  makevn [--repo PATH] karate-test [--tail] [--tag TAG] [-- EXTRA_MAVEN_ARGS...]");
     println!("  makevn [--repo PATH] karate-all [--tag TAG] [-- EXTRA_MAVEN_ARGS...]");
     println!("  makevn [--repo PATH] run-app");
