@@ -181,7 +181,7 @@ fn doctor_next_suggestion(snapshot: &Value) -> Option<&'static str> {
     }
     if snapshot["interactive_setup"]["required"] == true {
         if snapshot["interactive_setup"]["available"] == false {
-            return Some("Structured doctor configuration requires Python 3. Install Python 3 before retrying doctor, or use the existing interactive CLI doctor. Do not guess configuration answers.");
+            return Some("Structured doctor configuration requires Python 3. Install Python 3 within existing authorization, then retry MCP doctor. Keep setup in MCP and collect answers through chat for doctor_configure; do not switch to CLI doctor or terminal prompts. If the prerequisite cannot be resolved, report the blocker and stop dependent work. Do not guess configuration answers.");
         }
         return Some(crate::mcp_doctor::PENDING_GUIDANCE);
     }

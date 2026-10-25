@@ -64,21 +64,33 @@ flowchart TD
     I -->|Missing| INIT[init]
     I -->|Stale or incomplete| FORCE[init --force: preserve settings]
     I -->|Current| Q{Pending setup questions?}
-    INIT --> Q
-    FORCE --> Q
+    INIT --> D
+    FORCE --> D
     Q -->|Yes| USER[Agent asks grouped questions in chat]
     USER --> APPLY[doctor_configure: validate token and answers; save config]
-    APPLY --> Q
-    Q -->|Ready| READY[Continue requested workflow]
-    Q -->|No| READY
+    APPLY -->|Success: refreshed diagnosis| Q
+    APPLY -->|Failure| RECOVER[Inspect diagnostics; follow setup recovery rules]
+    RECOVER -->|Stale token or concurrent change| D
+    Q -->|No| READY[Continue requested workflow]
     RESET[User authorizes doctor --reset-config] --> BACKUP[Back up config/profile; reset preferences]
     BACKUP --> CLI[Interactive CLI doctor prompts]
-    CLI --> READY
+    CLI --> Q
 ```
 
 Reset is CLI-only, preserves initialization and installation, and rejects
 noninteractive execution before changing configuration. `doctor` decides whether
 initialization is needed; agents must not invent an `init --force` requirement.
+After init, discard the pre-init token. After a stale-token or concurrent-change
+rejection, obtain a fresh doctor diagnosis before resubmitting; the failed call's
+snapshot may predate the change. Successful configuration already returns a fresh
+diagnosis. Interactive CLI setup/reset requires a PTY without compact/JSON mode or
+inherited `MAKEVN_COMPACT_OUTPUT`. See the
+[setup and recovery rules](../skills/makevn/references/workflows.md#setup-decisions-and-recovery)
+for partial answers, invalid inputs and unavailable structured setup.
+In an MCP session, keep doctor/init/configure calls in MCP and collect answers in
+chat. An unavailable tool or prerequisite requires remediation or a reported
+blocker, not a switch to CLI doctor or terminal prompts. The interactive CLI
+setup/reset instructions apply to direct CLI use.
 
 ## Docker readiness and mount visibility
 

@@ -868,6 +868,11 @@ fn doctor_pending_questions_use_chat_configuration() {
             "doctor_configure",
             "setupToken",
             "Suggestions require confirmation",
+            "Use MCP tools throughout setup",
+            "call MCP doctor again after initialization",
+            "discard the pre-init token",
+            "After a stale-token or concurrent-change rejection, call MCP doctor again",
+            "Do not switch to CLI doctor or terminal prompts",
         ] {
             assert!(suggestion.contains(expected));
         }
@@ -1107,7 +1112,10 @@ fn missing_python_reports_setup_prerequisite() {
     let snapshot = json!({"interactive_setup": {"required": true, "available": false}});
     let guidance = super::doctor_next_suggestion(&snapshot).unwrap();
     assert!(guidance.contains("Install Python 3"));
-    assert!(guidance.contains("interactive CLI doctor"));
+    assert!(guidance.contains("retry MCP doctor"));
+    assert!(guidance.contains("collect answers through chat for doctor_configure"));
+    assert!(guidance.contains("do not switch to CLI doctor or terminal prompts"));
+    assert!(guidance.contains("report the blocker and stop dependent work"));
 }
 
 #[test]
