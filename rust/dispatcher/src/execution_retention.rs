@@ -101,15 +101,21 @@ fn expired_id(path: &Path, days: u64, now: u64) -> Option<String> {
 }
 
 fn registered_record(path: &Path) -> Option<(String, crate::mcp_execution::ExecutionRecord)> {
-    let id = path.file_stem()?.to_str()?;
-    if path.extension()? != "json"
-        || validate_id(id).is_err()
-        || !fs::symlink_metadata(path).ok()?.is_file()
-    {
+    let id = record_id(path)?;
+    if !regular_record(path) {
         return None;
     }
     let record = read_record(path).ok()?;
     (record.execution_id == id).then(|| (id.to_owned(), record))
+}
+
+fn record_id(path: &Path) -> Option<&str> {
+    let id = path.file_stem()?.to_str()?;
+    (path.extension()? == "json" && validate_id(id).is_ok()).then_some(id)
+}
+
+fn regular_record(path: &Path) -> bool {
+    fs::symlink_metadata(path).is_ok_and(|metadata| metadata.is_file())
 }
 
 fn inactive_lock(directory: &Path) -> Result<Option<File>, String> {
