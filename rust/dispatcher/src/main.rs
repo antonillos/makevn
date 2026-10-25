@@ -27,12 +27,19 @@ mod agent_skills;
 mod agent_transaction;
 mod docker_resources;
 mod mcp_doctor;
+mod execution_retention;
 mod mcp_execution;
 mod mcp_runtime;
 mod mcp_server;
 mod mcp_supervisor;
 
 fn main() {
+    if env::args_os().nth(1).as_deref() == Some(std::ffi::OsStr::new("execution-cleanup")) {
+        match execution_retention::cli(env::args_os().skip(2).collect()) {
+            Ok(()) => return,
+            Err(error) => exit_with_error(error),
+        }
+    }
     if env::args_os().nth(1).as_deref() == Some(std::ffi::OsStr::new("--makevn-mcp-supervisor")) {
         match mcp_supervisor::run() {
             Ok(code) => process::exit(code),
@@ -3984,6 +3991,7 @@ fn print_help(with_header: bool) {
     println!("'makevn' commands over editor-specific instructions.");
     println!();
     println!("Usage:");
+    println!("  makevn execution-cleanup [--retention-days DAYS] [--dry-run]");
     println!("  makevn agent install <opencode|codex> [--scope global|project]");
     println!("  makevn agent status <opencode|codex> --scope global|project");
     println!("  makevn [--repo PATH] doctor");

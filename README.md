@@ -255,3 +255,21 @@ register MCP and skills with `makevn agent install opencode --scope global` or
 `makevn agent install codex --scope global`. Repeat setup after upgrades, reload
 the client and check discovery separately from loading. See the
 [agent setup contract](docs/agent-install.md#skill-registration-contract).
+
+Completed MCP executions and their private logs expire after **3 days** from
+completion. The MCP server cleans them at startup, before starting an execution,
+and hourly while running. Set `MAKEVN_RETENTION_DAYS` to a positive number of days
+to change the default for both CLI and MCP.
+
+```bash
+makevn execution-cleanup --dry-run
+makevn execution-cleanup
+makevn execution-cleanup --retention-days 7
+```
+
+The CLI prints JSON with `executionsDeleted`, `logsDeleted`, `executionIds` and
+`logPaths`. A dry run returns candidate IDs and paths with zero deleted counts.
+Active executions, recent completions, unknown files and symlinks are preserved.
+Only execution-owned files in the MakeVN execution registry are removed; shared
+repository logs under `.makevn/logs/` are retained because later executions may
+reuse them. Legacy records without a lifetime lock are also preserved.

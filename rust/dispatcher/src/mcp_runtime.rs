@@ -58,6 +58,7 @@ pub fn run(executable: PathBuf, backend: PathBuf) -> Result<i32, String> {
         sender,
         stopping: false,
     };
+    crate::execution_retention::automatic(&session.store)?;
     session.serve(receiver, interrupted)
 }
 
@@ -93,7 +94,14 @@ impl McpSession {
         interrupted: Arc<AtomicBool>,
     ) -> Result<i32, String> {
         let mut failure = None;
+        let mut last_cleanup = std::time::Instant::now();
         loop {
+            if last_cleanup.elapsed() >= Duration::from_secs(3600) {
+                if let Err(error) = crate::execution_retention::automatic(&self.store) {
+                    eprintln!("Execution retention cleanup failed: {error}");
+                }
+                last_cleanup = std::time::Instant::now();
+            }
             if interrupted.load(Ordering::SeqCst) {
                 self.stop();
             }
@@ -263,7 +271,9 @@ impl McpSession {
             },
             params,
         );
-        if params["name"] == "execution_list" {
+        if params["name"] == "execution_cleanup" {
+            result["structuredContent"]["cleanup"] = crate::execution_retention::cleanup(&self.store, args)?;
+        } else if params["name"] == "execution_list" {
             result["structuredContent"]["executions"] =
                 serde_json::to_value(self.store.list(args)?).map_err(|error| error.to_string())?;
         } else {
@@ -393,7 +403,7 @@ fn write_message(message: Value) -> Result<(), String> {
 fn control_name(name: &str) -> bool {
     matches!(
         name,
-        "execution_list" | "execution_status" | "execution_cancel"
+        "execution_list" | "execution_status" | "execution_cancel" | "execution_cleanup"
     )
 }
 
@@ -417,7 +427,8 @@ fn validate_control_arguments(params: &Value) -> Result<(), String> {
 }
 
 pub fn control_tools() -> Vec<Value> {
-    [("execution_list", "List active MakeVN executions across local MCP sessions. includeFinished also returns preserved terminal executions."),
+    [("execution_cleanup", "Remove terminal executions and their private logs older than retentionDays (default MAKEVN_RETENTION_DAYS or 3). dryRun previews candidates without deleting."),
+     ("execution_list", "List active MakeVN executions across local MCP sessions. includeFinished also returns preserved terminal executions."),
      ("execution_status", "Inspect one execution, including its owning session, repository, PR, state and logs."),
      ("execution_cancel", "Cancel only an execution owned by this MCP session. Idempotent for stopped executions; cleanup uses five seconds of grace and two seconds of confirmation.")]
         .into_iter().map(|(name, description)| control_tool(name, description)).collect()
@@ -425,7 +436,10 @@ pub fn control_tools() -> Vec<Value> {
 
 fn control_tool(name: &str, description: &str) -> Value {
     let mut output = mcp_server::result_schema();
-    let input = if name == "execution_list" {
+    let input = if name == "execution_cleanup" {
+        output["properties"]["cleanup"] = crate::execution_retention::schema();
+        json!({"type":"object", "properties":{"retentionDays":{"type":"integer","minimum":1}, "dryRun":{"type":"boolean","default":false}}, "additionalProperties":false})
+    } else if name == "execution_list" {
         output["properties"]["executions"] =
             json!({"type":"array", "items":crate::mcp_execution::record_schema()});
         json!({"type":"object", "properties":{"repo":{"type":"string"}, "includeFinished":{"type":"boolean","default":false}}, "additionalProperties":false})
