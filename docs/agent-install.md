@@ -212,7 +212,7 @@ When using MCP tools directly, call the `makevn_doctor` tool first.
 `makevn agent install <opencode|codex> [--scope global|project]` registers MCP and
 `makevn`, `makevn-test`, `makevn-docker`, `makevn-karate`, `makevn-quality` together.
 Product installation distributes resources but does not edit client configuration.
-Run agent setup again after a product upgrade. `makevn uninstall` removes repository
+Run `makevn agent upgrade` after a product upgrade. `makevn uninstall` removes repository
 integration only; it does not unregister skills or uninstall the product.
 
 Global skills are shared by both clients under `~/.agents/skills/`; project skills
@@ -256,3 +256,34 @@ After setup restart/reload the client, inspect its skills catalog and explicitly
 load all five skills. Then evaluate representative workflow requests using the
 [client validation checklist](agent-skills-validation.md). A model can choose not
 to load an available skill; installation cannot guarantee implicit selection.
+
+## Upgrade existing agent integration
+
+After upgrading MakeVN through its installation channel, synchronize the existing
+agent integration with the resources shipped in the installed version:
+
+```bash
+makevn agent upgrade
+```
+
+The current Git worktree takes precedence when it contains a managed skill
+manifest or a registered MakeVN MCP entry. Otherwise, upgrade falls back to the
+global integration. Repository initialization alone (`.makevn/`) does not establish
+a project agent registration. Running from a repository subdirectory still uses
+the worktree root. No Maven project or doctor initialization is required.
+
+Upgrade refreshes the shared skills and references and all registered Codex and
+OpenCode MCP configurations in the selected scope. It does not register clients
+that have no MakeVN entry. A skills-only registration is also supported. If no
+integration exists, run `makevn agent install <opencode|codex>` first.
+
+Use `makevn agent upgrade --scope global` or `--scope project` to override scope
+detection. Explicit project scope requires a Git worktree. Upgrade preserves
+unrelated configuration and uses the same ownership checks, backups, locking and
+rollback as installation. Local skill edits block replacement; a project conflict
+does not silently fall back to global scope. All selected configurations are
+validated before resources are replaced.
+
+This command updates agent integration from the installed distribution; it does
+not download a release or update the MakeVN executable. Restart/reload registered
+clients afterward to discover the updated MCP schema and skills.

@@ -30,7 +30,9 @@ are in `~/.agents/skills/`; project skills are in `.agents/skills/`. Without sco
 OpenCode retains interactive selection when local configurations exist; Codex uses
 global scope. Status always requires scope and never writes files. See the
 [registration contract](agent-install.md#skill-registration-contract) for ownership,
-updates, conflicts and backups. Repeat setup after upgrading MakeVN.
+updates, conflicts and backups. Run `makevn agent upgrade` after upgrading MakeVN.
+It updates the existing project integration first, falling back to global scope,
+and detects registered clients without requiring their names.
 
 Restart/reload the client. Check its available skills, explicitly load each skill,
 then try representative requests. Installed files, available metadata, loaded
