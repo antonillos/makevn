@@ -2,12 +2,21 @@
 
 Use `docker-*` and `karate-docker-*` subcommands for container operations.
 
-`makevn docker-up` runs a full lifecycle: `down -v --remove-orphans`,
-`volume prune -f`, then `up --detach` for **all** boot compose services.
-There is no option to target a single service. Do not broaden a single-service
-request into a destructive full-stack reset. Report that missing capability;
-use the full lifecycle only when its scope and destructive effects are authorized.
-Follow the Docker prerequisite workflow below and never fall back to raw Docker.
+`makevn docker-up` runs `up --detach` for all boot Compose services and preserves
+volumes. `makevn docker-down` removes the project's containers and networks while
+retaining volumes. Karate up/down follow the same contract, including the selected
+`PROFILE`. Startup is not a reset and does not require volume-deletion approval.
+
+`makevn docker-reset` and `makevn karate-docker-reset` explicitly run
+`down -v --remove-orphans` for the selected Compose project, then `up --detach`.
+A failed teardown stops the reset before startup. These commands delete that
+project's volume data and require explicit reset authorization; ordinary startup
+or test authorization is insufficient. No lifecycle command runs global volume
+pruning. External Compose volumes remain managed by their owner.
+
+There is no single-service option. Do not broaden a single-service request into
+a full-stack action without authorization for that scope. Follow the prerequisite
+workflow below and never fall back to raw Docker.
 
 Do not guess a root `make` target from a `makevn` subcommand name. This is invalid unless the repository itself defines such a target:
 
@@ -26,10 +35,22 @@ When doctor/configuration or the approved workflow requires boot containers:
 
 1. Run `docker_ps_required` with `wait-seconds: 30` separately.
 2. If it passes, reuse the running services. Do not reset a healthy stack.
-3. If it fails, inspect MakeVN diagnostics. Use `docker_up` only when startup/reset
-   is needed and its destructive lifecycle is already explicitly authorized;
-   ordinary test authorization does not authorize deleting service data.
-4. After startup, rerun `docker_ps_required`; continue only when it passes.
+3. If it fails, classify the returned diagnostics using the table below.
+4. After authorized startup or reset, rerun `docker_ps_required` with the same
+   Compose and an appropriate wait timeout; continue only when it passes.
+
+| Readiness result | Next action |
+| --- | --- |
+| Only missing/stopped services; setup and Compose resolved; no probe errors or ownership conflict | Call `docker_up` for boot or `karate_docker_up` for Karate under existing startup authorization. Do not ask again if that scope is already authorized. If authorization is missing, ask only to start the services. |
+| Running but unhealthy/starting services | Inspect logs and readiness diagnostics; allow an appropriate startup wait when justified. Do not loop up or reset automatically. |
+| Daemon, Compose or inspection errors | Resolve the reported prerequisite first. Rows marked missing alongside probe errors do not establish that startup is the remedy. |
+| Ambiguous Compose or unresolved initialization/configuration | Use MCP `doctor` and its setup flow in the same repository. Missing containers alone do not justify doctor, init, or `doctor --reset-config`. |
+| Confirmed bind mismatch or unknown ownership | Diagnose the checkout/mount/project scope and obtain any needed authorization before changing the environment. |
+| Diagnosed need for fresh service data | Use the matching reset tool only with explicit authorization for deletion of that Compose project's data; do not reuse ordinary startup authorization. |
+
+In an MCP session, perform these calls through MCP and collect decisions in chat.
+Saving doctor preferences and resetting Docker data are separate operations.
+Reuse previously supplied authorization and ask only unresolved decisions.
 
 An unavailable bind-visibility probe is a limitation, not a confirmed failure.
 Report it and continue authorized tests if readiness passes. A confirmed

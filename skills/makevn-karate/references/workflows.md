@@ -1,7 +1,9 @@
 ### Managed E2E lifecycle
 
 Prefer `karate_all` for the managed application/test lifecycle after doctor/setup
-and authorization for its Docker lifecycle. It owns application cleanup. Do not
+and authorization for its Docker startup, which preserves volumes. Resetting E2E
+data is a separate explicitly authorized `karate_docker_reset` operation.
+It owns application cleanup. Do not
 use `fail-fast: false` to arrange cleanup around dependent startup/test steps:
 that also permits tests after failed prerequisites. For a necessary manual flow,
 stop on prerequisite failure and perform authorized cleanup separately. Container

@@ -10,7 +10,9 @@ Load [makevn](../makevn/SKILL.md) first if not already read; finish doctor/setup
 Read [application and E2E details](references/workflows.md) before execution.
 Confirm Karate and E2E capabilities in doctor; do not assume every repository has them.
 Load [makevn-docker](../makevn-docker/SKILL.md) when containers are required, including
-authorization for the full lifecycle invoked by `karate-all`.
+authorization for the startup invoked by `karate-all`. Its container startup
+preserves volumes; deleting E2E data requires an explicitly authorized
+`karate_docker_reset` operation.
 
 | Intent | CLI | MCP | Evidence |
 | --- | --- | --- | --- |

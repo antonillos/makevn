@@ -46,11 +46,13 @@ Usage:
   makevn [--repo PATH] checkstyle [--module MODULE] [--verbose] [-- EXTRA_MAVEN_ARGS...]
   makevn [--repo PATH] docker-up [--tail]
   makevn [--repo PATH] docker-down [--tail]
+  makevn [--repo PATH] docker-reset [--tail]
   makevn [--repo PATH] docker-ps [--tail]
   makevn [--repo PATH] docker-stats [--tail]
   makevn [--repo PATH] docker-ps-required [--tail] [--compose boot|karate] [--wait-seconds N]
   makevn [--repo PATH] karate-docker-up [--tail]
   makevn [--repo PATH] karate-docker-down [--tail]
+  makevn [--repo PATH] karate-docker-reset [--tail]
   makevn [--repo PATH] karate-test [--tag TAG] [-- EXTRA_MAVEN_ARGS...]
   makevn [--repo PATH] karate-all [--tag TAG] [-- EXTRA_MAVEN_ARGS...]
   makevn [--repo PATH] run-app
@@ -118,7 +120,7 @@ print_command_intro() {
 
 makevn_cli_is_top_level_command() {
   case "$1" in
-    help|doctor|init|uninstall|profile|compile|test-compile|compile-tests|validate|package|clean|build|test|verify-ut|verify-ut-coverage|verify-it|verify-it-coverage|verify|verify-changes-preview|verify-changes|coverage|coverage-changes|crap|crap-changes|pr-verify|format|checkstyle|docker-up|docker-down|docker-ps|docker-stats|docker-ps-required|karate-docker-up|karate-docker-down|karate-test|karate-all|run-app|run-app-bg|stop-app|run|jdk|mutation)
+    help|doctor|init|uninstall|profile|compile|test-compile|compile-tests|validate|package|clean|build|test|verify-ut|verify-ut-coverage|verify-it|verify-it-coverage|verify|verify-changes-preview|verify-changes|coverage|coverage-changes|crap|crap-changes|pr-verify|format|checkstyle|docker-up|docker-down|docker-reset|docker-ps|docker-stats|docker-ps-required|karate-docker-up|karate-docker-down|karate-docker-reset|karate-test|karate-all|run-app|run-app-bg|stop-app|run|jdk|mutation)
       return 0
       ;;
   esac
@@ -392,6 +394,9 @@ case "${COMMAND}" in
   docker-down)
     cmd_docker_down "${REPO_ROOT}" "$@"
     ;;
+  docker-reset)
+    cmd_docker_reset "${REPO_ROOT}" "$@"
+    ;;
   docker-ps)
     cmd_docker_ps "${REPO_ROOT}" "$@"
     ;;
@@ -406,6 +411,9 @@ case "${COMMAND}" in
     ;;
   karate-docker-down)
     cmd_karate_docker_down "${REPO_ROOT}" "$@"
+    ;;
+  karate-docker-reset)
+    cmd_karate_docker_reset "${REPO_ROOT}" "$@"
     ;;
   karate-test)
     cmd_karate_test "${REPO_ROOT}" "$@"
