@@ -274,3 +274,12 @@ Active executions, recent completions, unknown files and symlinks are preserved.
 Only execution-owned files in the MakeVN execution registry are removed; shared
 repository logs under `.makevn/logs/` are retained because later executions may
 reuse them. Legacy records without a lifetime lock are also preserved.
+
+### CLI help
+
+Use `makevn --help` for the command index and `makevn <command> --help` for
+command details. Nested help also supports `makevn help agent install` and
+`makevn agent install -h`. Help uses DESCRIPTION, USAGE, ARGUMENTS, FLAGS, GLOBAL FLAGS and
+SUBCOMMANDS in that order when applicable, with aligned descriptions. Terminal
+output uses lilac commands, green flags and gray placeholders; redirected output,
+`NO_COLOR` and `MAKEVN_AGENT_OUTPUT=1` use plain text.

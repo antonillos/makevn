@@ -197,7 +197,7 @@ pub fn schema() -> Value {
 
 pub fn cli(args: Vec<OsString>) -> Result<(), String> {
     let Some(options) = parse_cli(args)? else {
-        println!("Usage: makevn execution-cleanup [--retention-days DAYS] [--dry-run]\nDefault: MAKEVN_RETENTION_DAYS or 3 days. Outputs JSON counts and candidate paths.");
+        crate::cli_help::print_command_help("execution-cleanup");
         return Ok(());
     };
     retention_days(&options)?;
