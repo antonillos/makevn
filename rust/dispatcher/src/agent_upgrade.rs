@@ -125,13 +125,21 @@ fn upgrade(
     let prepared = prepare_configs(configs)?;
     let _lock = acquire_lock(target)?;
     let mut changes = agent_skills::prepare(source, target, version)?;
+    changes.extend(configuration_updates(prepared)?);
+    agent_transaction::apply(changes)
+}
+
+fn configuration_updates(
+    prepared: Vec<(Client, &PathBuf, String, String)>,
+) -> Result<agent_transaction::Changes, String> {
+    let mut changes = agent_transaction::Changes::new();
     for (client, path, original, updated) in prepared {
         if read_config(client, path)? != original {
             return Err("Configuration changed during setup; retry".into());
         }
         changes.extend(configuration_changes(path, &original, &updated)?);
     }
-    agent_transaction::apply(changes)
+    Ok(changes)
 }
 
 fn prepare_configs(

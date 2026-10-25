@@ -191,3 +191,18 @@ fn detects_native_opencode_and_multiple_configs_without_following_symlinks() {
         .unwrap_err()
         .contains("symlink"));
 }
+
+#[test]
+fn rejects_configuration_changed_after_preparation() {
+    let fixture = Fixture::new();
+    let config = fixture.0.join("config.toml");
+    fs::write(&config, "[mcp_servers.makevn]\ncommand = 'old'\n").unwrap();
+    let configs = [(Client::Codex, config.clone())];
+    let prepared = prepare_configs(&configs).unwrap();
+    let concurrent = "[mcp_servers.makevn]\ncommand = 'concurrent'\n";
+    fs::write(&config, concurrent).unwrap();
+    assert!(configuration_updates(prepared)
+        .unwrap_err()
+        .contains("Configuration changed during setup"));
+    assert_eq!(fs::read_to_string(&config).unwrap(), concurrent);
+}
