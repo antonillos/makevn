@@ -204,10 +204,12 @@ fn tail_command_help_covers_all_interactive_commands() {
     for command in [
         "docker-up",
         "docker-down",
+        "docker-reset",
         "docker-ps",
         "docker-stats",
         "karate-docker-up",
         "karate-docker-down",
+        "karate-docker-reset",
     ] {
         let (usage, description, options) = tail_command_help(command, "description").unwrap();
         assert!(usage.contains(command));
@@ -1241,11 +1243,13 @@ fn all_top_level_commands_have_command_help() {
         "checkstyle",
         "docker-up",
         "docker-down",
+        "docker-reset",
         "docker-ps",
         "docker-stats",
         "docker-ps-required",
         "karate-docker-up",
         "karate-docker-down",
+        "karate-docker-reset",
         "karate-test",
         "karate-all",
         "run-app",

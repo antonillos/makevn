@@ -26,7 +26,8 @@ and [Codex skill authoring](https://learn.chatgpt.com/docs/build-skills).
 | Run complete suites | makevn-test | `verify-ut`, `verify-it`, `verify` → `verify_ut`, `verify_it`, `verify` | Results for the selected suite or whole project; Docker only if required |
 | Verify changes | makevn-test | `verify-changes-preview` → inspect → `verify-changes`; MCP `verify_changes_preview` → `verify_changes` | Same mode, fresh owner/test evidence; preparation updates local Maven artifacts |
 | Check container readiness | makevn-docker | `docker-ps-required --compose boot --wait-seconds 30` → `docker_ps_required` | Healthy required services and no confirmed bind mismatch; read-only |
-| Start/reset containers | makevn-docker | authorize destructive scope → `docker-up` → readiness; MCP `docker_up` → `docker_ps_required` | Full lifecycle deletes service data; reuse healthy services first |
+| Start containers | makevn-docker | authorized `docker-up` → readiness; MCP `docker_up` → `docker_ps_required` | Preserves volumes; reuse healthy services and existing startup authorization |
+| Reset service data | makevn-docker | explicitly authorize data deletion → `docker-reset` → readiness; MCP `docker_reset` → `docker_ps_required` | Deletes only the selected Compose project's volumes; no global prune |
 | Run managed E2E | makevn-karate | `karate-all --tag @smoke` → `karate_all` | Docker authorization, configured HTTP health and profiles, Karate result, application cleanup; no implied container teardown |
 | Test external application | makevn-karate | `karate-test --tag @smoke` → `karate_test` | Confirm external target availability; report Karate result, leave external lifecycle to its owner |
 | Check/fix formatting | makevn-quality | `format`, `format --apply`, `checkstyle` → `format`, `checkstyle` | Supported plugin succeeds; apply changes files, inspect diff and rerun original test |
@@ -123,10 +124,14 @@ flowchart TD
     DIAG --> COMPOSE
     UP[docker_up] -->|Success| REQUIRED
     REQUIRED --> HEALTH{Services running and healthy?}
-    HEALTH -->|No| FIX[Correct startup failure before tests]
-    FIX --> RESET{Startup/reset needed and destructive lifecycle authorized?}
-    RESET -->|Yes| UP
-    RESET -->|No| HOLD[Resolve blocker without resetting services]
+    HEALTH -->|No| FIX{Readiness failure cause?}
+    FIX -->|Only missing or stopped; no probe or ownership errors| START{Startup already authorized?}
+    START -->|Yes| UP
+    START -->|No| ASKSTART[Ask to start services]
+    ASKSTART --> UP
+    FIX -->|Unhealthy, probe error or mount failure| DIAG
+    DIAG -->|Reset diagnosed and data deletion authorized| RESET[docker_reset]
+    RESET -->|Success| REQUIRED
     HEALTH -->|Yes| MOUNTS{Host entries visible in container?}
     MOUNTS -->|Mismatch| BLOCK[Block tests; inspect sharing or permissions; do not change credentials]
     BLOCK --> APPROVAL[User authorizes environment changes if needed]

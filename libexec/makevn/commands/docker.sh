@@ -252,75 +252,65 @@ cmd_docker_ps_required() {
   fi
 }
 
-cmd_docker_up() {
-  local repo_root="$1"
-  local compose_file=""
-  local compose_override_file=""
-  local docker_compose_cmd=""
-  local compose_error=""
-  local -a docker_compose=()
-  local -a compose_args=()
+makevn_run_docker_lifecycle() {
+  local repo_root="$1" compose_kind="$2" action="$3"
+  local title="docker-${action}"
+  local compose_file="" compose_override_file="" docker_compose_cmd=""
+  local -a docker_compose=() compose_args=()
 
-  shift
+  shift 3
   makevn_parse_docker_args "$@"
-
-  compose_file="$(makevn_boot_compose_file_path "${repo_root}" || true)"
-  compose_override_file="$(makevn_boot_compose_override_file_path "${repo_root}" || true)"
+  [[ "${compose_kind}" != karate ]] || title="karate-${title}"
+  compose_file="$(makevn_docker_compose_file_for_kind "${repo_root}" "${compose_kind}" || true)"
+  compose_override_file="$(makevn_docker_compose_override_file_for_kind "${repo_root}" "${compose_kind}" || true)"
   if [[ ! -f "${compose_file}" ]]; then
-    compose_error="$(makevn_boot_compose_resolution_error "${repo_root}")"
-    makevn_die "Docker compose selection failed. ${compose_error}"
+    if [[ "${compose_kind}" == boot ]]; then
+      makevn_die "Docker compose selection failed. $(makevn_boot_compose_resolution_error "${repo_root}")"
+    fi
+    makevn_die "Karate docker compose file not found. Configure MAKEVN_E2E_COMPOSE_FILE or add e2e/karate/src/test/resources/compose/docker-compose.yml."
   fi
 
   docker_compose_cmd="$(makevn_resolve_docker_compose_command || true)"
   [[ -n "${docker_compose_cmd}" ]] || makevn_die "Neither docker-compose nor 'docker compose' is available."
   read -r -a docker_compose <<< "${docker_compose_cmd}"
-
   while IFS= read -r arg; do
     compose_args+=("${arg}")
   done < <(makevn_collect_compose_args "${compose_file}" "${compose_override_file}")
+  if [[ "${compose_kind}" == karate && -n "${PROFILE:-}" ]]; then
+    compose_args+=(--profile "${PROFILE}")
+  fi
 
   makevn_publish_compose_resources "${repo_root}" "${docker_compose_cmd}" "${compose_file}" "${compose_override_file}"
+  makevn_run_logged "${repo_root}" "${title}" "${title}" "${title}" bash -e -c '
+    action="$1"
+    shift
+    case "${action}" in
+      up) "$@" up --detach ;;
+      down) "$@" down ;;
+      reset)
+        "$@" down -v --remove-orphans
+        "$@" up --detach
+        ;;
+    esac
+  ' bash "${action}" "${docker_compose[@]}" "${compose_args[@]}"
+}
 
-  makevn_run_logged "${repo_root}" docker-up docker-up docker-up bash -c '
-    "$@" down -v --remove-orphans
-    docker volume prune -f
-    "$@" up --detach
-  ' bash "${docker_compose[@]}" "${compose_args[@]}"
+cmd_docker_up() {
+  local repo_root="$1"
+  shift
+  makevn_run_docker_lifecycle "${repo_root}" boot up "$@"
 }
 
 cmd_docker_down() {
   local repo_root="$1"
-  local compose_file=""
-  local compose_override_file=""
-  local docker_compose_cmd=""
-  local compose_error=""
-  local -a docker_compose=()
-  local -a compose_args=()
-
   shift
-  makevn_parse_docker_args "$@"
+  makevn_run_docker_lifecycle "${repo_root}" boot down "$@"
+}
 
-  compose_file="$(makevn_boot_compose_file_path "${repo_root}" || true)"
-  compose_override_file="$(makevn_boot_compose_override_file_path "${repo_root}" || true)"
-  if [[ ! -f "${compose_file}" ]]; then
-    compose_error="$(makevn_boot_compose_resolution_error "${repo_root}")"
-    makevn_die "Docker compose selection failed. ${compose_error}"
-  fi
-
-  docker_compose_cmd="$(makevn_resolve_docker_compose_command || true)"
-  [[ -n "${docker_compose_cmd}" ]] || makevn_die "Neither docker-compose nor 'docker compose' is available."
-  read -r -a docker_compose <<< "${docker_compose_cmd}"
-
-  while IFS= read -r arg; do
-    compose_args+=("${arg}")
-  done < <(makevn_collect_compose_args "${compose_file}" "${compose_override_file}")
-
-  makevn_publish_compose_resources "${repo_root}" "${docker_compose_cmd}" "${compose_file}" "${compose_override_file}"
-
-  makevn_run_logged "${repo_root}" docker-down docker-down docker-down bash -c '
-    "$@" down -v --remove-orphans
-    docker volume prune -f
-  ' bash "${docker_compose[@]}" "${compose_args[@]}"
+cmd_docker_reset() {
+  local repo_root="$1"
+  shift
+  makevn_run_docker_lifecycle "${repo_root}" boot reset "$@"
 }
 
 cmd_docker_ps() {
