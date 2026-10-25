@@ -76,6 +76,23 @@ class SkillBundleTest(unittest.TestCase):
                     self.assertIn('Skills status: current', status.stdout)
                     self.assertIn('MCP status: current', status.stdout)
             self.assertFalse((subdir / '.agents').exists())
+            resource = prefix / 'share/makevn/skills/makevn/references/upgrade-test.md'
+            resource.write_text('New version resource\n')
+            command = [str(prefix / 'bin/makevn'), 'agent', 'upgrade']
+            result = subprocess.run(command, cwd=subdir, env=env, capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            local_resource = repo / '.agents/skills/makevn/references/upgrade-test.md'
+            global_resource = home / '.agents/skills/makevn/references/upgrade-test.md'
+            self.assertEqual(local_resource.read_text(), resource.read_text())
+            self.assertFalse(global_resource.exists())
+            result = subprocess.run(command + ['--scope', 'global'], cwd=subdir, env=env, capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(global_resource.read_text(), resource.read_text())
+            local_resource.write_text('Local customization\n')
+            result = subprocess.run(command, cwd=subdir, env=env, capture_output=True, text=True)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn('locally modified', result.stderr)
+            self.assertEqual(local_resource.read_text(), 'Local customization\n')
 
     def test_release_archive_has_complete_bundle(self):
         with tempfile.TemporaryDirectory() as tmp:
