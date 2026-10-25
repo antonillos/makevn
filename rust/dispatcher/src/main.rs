@@ -3897,13 +3897,13 @@ fn command_help(command: &str) -> Option<(&'static str, &'static str, &'static [
         "checkstyle" => Some(("makevn [--repo PATH] [--compact] checkstyle [--tail] [--module MODULE] [--verbose] [-- EXTRA_MAVEN_ARGS...]", "Run Checkstyle code style checks.", &["--tail     Start in interactive log tail mode", "--compact  Use compact non-interactive output", "--module   Maven module to check", "--verbose  Print detailed output"])),
         "docker-up" => tail_command_help("docker-up", "Start boot Docker services while preserving volumes."),
         "docker-down" => tail_command_help("docker-down", "Stop boot Docker services while preserving volumes."),
-        "docker-reset" => tail_command_help("docker-reset", "Delete the selected boot Compose volumes and restart its services. Requires explicit reset authorization; never prunes global volumes."),
+        "docker-reset" => Some(("makevn [--repo PATH] docker-reset [--tail]", "Delete the selected boot Compose volumes and restart its services. Requires explicit reset authorization; never prunes global volumes.", &["--tail  Start in interactive log tail mode"])),
         "docker-ps" => tail_command_help("docker-ps", "List boot Docker containers."),
         "docker-stats" => tail_command_help("docker-stats", "Show Docker CPU and memory stats."),
         "docker-ps-required" => Some(("makevn [--repo PATH] docker-ps-required [--tail] [--compose boot|karate] [--wait-seconds N]", "Validate required Docker services are running and healthy.", &["--tail          Start in interactive log tail mode", "--compose       Compose profile: boot or karate", "--wait-seconds  Seconds to wait for services"])),
         "karate-docker-up" => tail_command_help("karate-docker-up", "Start Karate E2E Docker services while preserving volumes."),
         "karate-docker-down" => tail_command_help("karate-docker-down", "Stop Karate E2E Docker services while preserving volumes."),
-        "karate-docker-reset" => tail_command_help("karate-docker-reset", "Delete the selected Karate E2E Compose volumes and restart its services. Requires explicit reset authorization; never prunes global volumes."),
+        "karate-docker-reset" => Some(("makevn [--repo PATH] karate-docker-reset [--tail]", "Delete the selected Karate E2E Compose volumes and restart its services. Requires explicit reset authorization; never prunes global volumes.", &["--tail  Start in interactive log tail mode"])),
         "karate-test" => Some(("makevn [--repo PATH] karate-test [--tail] [--tag TAG] [-- EXTRA_MAVEN_ARGS...]", "Run Karate tests.", &["--tail  Start in interactive log tail mode", "--tag   Karate tag filter"])),
         "karate-all" => Some(("makevn [--repo PATH] karate-all [--tail] [--tag TAG] [-- EXTRA_MAVEN_ARGS...]", "Run the Karate app and test lifecycle.", &["--tail  Start in interactive log tail mode", "--tag   Karate tag filter"])),
         "run-app" => Some(("makevn [--repo PATH] run-app [--tail]", "Run the detected application in the foreground.", &["--tail  Start in interactive application log tail mode"])),
@@ -3963,12 +3963,10 @@ fn tail_command_help(
     let usage = match command {
         "docker-up" => "makevn [--repo PATH] docker-up [--tail]",
         "docker-down" => "makevn [--repo PATH] docker-down [--tail]",
-        "docker-reset" => "makevn [--repo PATH] docker-reset [--tail]",
         "docker-ps" => "makevn [--repo PATH] docker-ps [--tail]",
         "docker-stats" => "makevn [--repo PATH] docker-stats [--tail]",
         "karate-docker-up" => "makevn [--repo PATH] karate-docker-up [--tail]",
         "karate-docker-down" => "makevn [--repo PATH] karate-docker-down [--tail]",
-        "karate-docker-reset" => "makevn [--repo PATH] karate-docker-reset [--tail]",
         _ => return None,
     };
     Some((
