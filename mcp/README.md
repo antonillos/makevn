@@ -527,3 +527,18 @@ MCP tools remain usable without skills. Register both with
 `makevn agent install codex --scope global`. See the [workflow map](../docs/workflow-guidance.md)
 and [registration and discovery contract](../docs/agent-install.md#skill-registration-contract).
 Use canonical tool names inside workflow steps; clients may prefix advertised names.
+
+### Execution retention
+
+`execution_cleanup` accepts optional `retentionDays` (positive integer) and
+`dryRun` (boolean). Retention defaults to `MAKEVN_RETENTION_DAYS` or 3 days since
+completion. `structuredContent.cleanup` contains `retentionDays`, `dryRun`,
+`executionsDeleted`, `logsDeleted`, `executionIds` and `logPaths`. Dry runs list
+candidates and return zero deleted counts. This control tool does not start or
+record a new execution and works without a Maven repository.
+
+Automatic cleanup runs at server startup and before execution admission.
+Cleanup requires a terminal state and an unlocked lifetime lock. It only removes
+known private execution files; shared repository logs, unknown files, symlinks
+and legacy records without lifetime ownership evidence remain untouched.
+The equivalent CLI is `makevn execution-cleanup [--retention-days DAYS] [--dry-run]`.
