@@ -30,6 +30,14 @@ fn every_command_has_consistent_plain_help() {
 #[test]
 fn root_lists_all_commands_and_uses_reference_palette() {
     let plain = render_root(false);
+    assert!(plain.contains("\nCOMMANDS\n"));
+    assert!(!plain.contains("SUBCOMMANDS"));
+    assert!(render_command("agent", false)
+        .unwrap()
+        .contains("\nSUBCOMMANDS\n"));
+    assert!(!render_command("doctor", false)
+        .unwrap()
+        .contains("SUBCOMMANDS"));
     for command in COMMANDS {
         assert!(plain.contains(&format!("  {command} ")));
     }

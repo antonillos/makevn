@@ -197,7 +197,6 @@ pub(super) fn print_mcp_help() {
         &[],
         &[],
         &["-h, --help  Print help", "--version  Print the MakeVN version"],
-        &[],
         color_enabled(),
     ));
 }
@@ -265,7 +264,6 @@ fn page(
     arguments: &[&str],
     flags: &[&str],
     globals: &[&str],
-    commands: &[&str],
     color: bool,
 ) -> String {
     let mut output = format!(
@@ -277,7 +275,6 @@ fn page(
     rows(&mut output, "ARGUMENTS", arguments, "38;5;245", color);
     rows(&mut output, "FLAGS", flags, "38;5;155", color);
     rows(&mut output, "GLOBAL FLAGS", globals, "38;5;155", color);
-    rows(&mut output, "SUBCOMMANDS", commands, "38;5;147", color);
     output
 }
 
@@ -299,9 +296,9 @@ fn render_root(color: bool) -> String {
         &[],
         &[],
         GLOBAL_FLAGS,
-        &commands,
         color,
     );
+    rows(&mut output, "COMMANDS", &commands, "38;5;147", color);
     output.push_str("\nRun makevn <command> --help for command usage and flags.\n");
     output
 }
@@ -326,15 +323,9 @@ fn render_command(command: &str, color: bool) -> Option<String> {
     } else {
         &[]
     };
-    Some(page(
-        description,
-        usage,
-        arguments,
-        &flags,
-        globals,
-        children,
-        color,
-    ))
+    let mut output = page(description, usage, arguments, &flags, globals, color);
+    rows(&mut output, "SUBCOMMANDS", children, "38;5;147", color);
+    Some(output)
 }
 
 fn global_flags(command: &str) -> &[&str] {
