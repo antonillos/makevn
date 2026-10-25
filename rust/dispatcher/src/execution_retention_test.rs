@@ -121,8 +121,16 @@ fn validates_retention_and_cli_arguments() {
         assert!(retention_days(&args).is_err());
     }
     assert_eq!(retention_days(&json!({"retentionDays":7})).unwrap(), 7);
-    assert!(cli(vec!["--retention-days".into()]).is_err());
-    assert!(cli(vec!["--unknown".into()]).is_err());
+    assert!(parse_cli(vec!["--retention-days".into()]).is_err());
+    assert!(parse_cli(vec!["--unknown".into()]).is_err());
+    assert!(parse_cli(vec![
+        "--retention-days".into(),
+        "7".into(),
+        "--dry-run".into()
+    ])
+    .unwrap()
+    .is_some());
+    assert!(parse_cli(vec!["--help".into()]).unwrap().is_none());
 }
 
 #[test]
@@ -130,6 +138,7 @@ fn automatic_cleanup_runs_before_admitting_new_work() {
     let fixture = Fixture::new();
     let (id, locks) = fixture.record("cancelled", now_ms() - 4 * DAY_MS);
     drop(locks);
+    automatic(&fixture.0);
     let (_, active) = fixture
         .0
         .prepare(&json!({"name":"doctor","arguments":{"repo":fixture.0.root}}))

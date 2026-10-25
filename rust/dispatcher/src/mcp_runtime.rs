@@ -58,7 +58,7 @@ pub fn run(executable: PathBuf, backend: PathBuf) -> Result<i32, String> {
         sender,
         stopping: false,
     };
-    crate::execution_retention::automatic(&session.store)?;
+    crate::execution_retention::automatic(&session.store);
     session.serve(receiver, interrupted)
 }
 
@@ -94,14 +94,7 @@ impl McpSession {
         interrupted: Arc<AtomicBool>,
     ) -> Result<i32, String> {
         let mut failure = None;
-        let mut last_cleanup = std::time::Instant::now();
         loop {
-            if last_cleanup.elapsed() >= Duration::from_secs(3600) {
-                if let Err(error) = crate::execution_retention::automatic(&self.store) {
-                    eprintln!("Execution retention cleanup failed: {error}");
-                }
-                last_cleanup = std::time::Instant::now();
-            }
             if interrupted.load(Ordering::SeqCst) {
                 self.stop();
             }
@@ -161,6 +154,12 @@ impl McpSession {
     }
 
     fn call(&mut self, id: Value, params: Value) -> Result<(), String> {
+        if params["name"] == "execution_cleanup" {
+            let result = cleanup_control(&self.store, &params).unwrap_or_else(|error| {
+                mcp_server::standard_tool_result(&ToolCallResult::failure(error), &params)
+            });
+            return write_message(json!({"jsonrpc":"2.0", "id":id, "result":result}));
+        }
         if control_name(params["name"].as_str().unwrap_or_default()) {
             let result = self.control(&params).unwrap_or_else(|error| {
                 mcp_server::standard_tool_result(&ToolCallResult::failure(error), &params)
@@ -177,6 +176,7 @@ impl McpSession {
     }
 
     fn launch(&mut self, id: Value, params: Value) -> Result<(), String> {
+        crate::execution_retention::automatic(&self.store);
         let (mut record, locks) = self.store.prepare(&params)?;
         let execution_id = record.execution_id.clone();
         let (mut child, ownership) = match mcp_supervisor::spawn(
@@ -271,9 +271,7 @@ impl McpSession {
             },
             params,
         );
-        if params["name"] == "execution_cleanup" {
-            result["structuredContent"]["cleanup"] = crate::execution_retention::cleanup(&self.store, args)?;
-        } else if params["name"] == "execution_list" {
+        if params["name"] == "execution_list" {
             result["structuredContent"]["executions"] =
                 serde_json::to_value(self.store.list(args)?).map_err(|error| error.to_string())?;
         } else {
@@ -400,10 +398,28 @@ fn write_message(message: Value) -> Result<(), String> {
         .map_err(|error| error.to_string())
 }
 
+fn cleanup_control(store: &ExecutionStore, params: &Value) -> Result<Value, String> {
+    validate_control_arguments(params)?;
+    let mut result = mcp_server::standard_tool_result(
+        &ToolCallResult {
+            output: String::new(),
+            exit_code: 0,
+            duration_ms: 0,
+            doctor_snapshot: None,
+            next_suggestion: None,
+        },
+        params,
+    );
+    result["structuredContent"]["cleanup"] =
+        crate::execution_retention::cleanup(store, &params["arguments"])?;
+    mirror_content(&mut result);
+    Ok(result)
+}
+
 fn control_name(name: &str) -> bool {
     matches!(
         name,
-        "execution_list" | "execution_status" | "execution_cancel" | "execution_cleanup"
+        "execution_list" | "execution_status" | "execution_cancel"
     )
 }
 

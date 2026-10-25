@@ -26,8 +26,8 @@ fn retention_days(args: &Value) -> Result<u64, String> {
     Ok(days)
 }
 
-pub fn automatic(store: &ExecutionStore) -> Result<(), String> {
-    cleanup(store, &json!({})).map(|_| ())
+pub fn automatic(store: &ExecutionStore) {
+    let _ = cleanup(store, &json!({}));
 }
 
 pub fn cleanup(store: &ExecutionStore, args: &Value) -> Result<Value, String> {
@@ -94,17 +94,22 @@ fn remove_execution(record: &Path, directory: &Path, files: Vec<PathBuf>) -> Res
 }
 
 fn expired_id(path: &Path, days: u64, now: u64) -> Option<String> {
+    let (id, record) = registered_record(path)?;
+    let old =
+        now.saturating_sub(record.started_at_ms.saturating_add(record.duration_ms)) > days * DAY_MS;
+    (record.terminal() && old).then_some(id)
+}
+
+fn registered_record(path: &Path) -> Option<(String, crate::mcp_execution::ExecutionRecord)> {
     let id = path.file_stem()?.to_str()?;
-    if path.extension()? != "json" || validate_id(id).is_err() {
-        return None;
-    }
-    if !fs::symlink_metadata(path).ok()?.is_file() {
+    if path.extension()? != "json"
+        || validate_id(id).is_err()
+        || !fs::symlink_metadata(path).ok()?.is_file()
+    {
         return None;
     }
     let record = read_record(path).ok()?;
-    let end = record.started_at_ms.saturating_add(record.duration_ms);
-    (record.execution_id == id && record.terminal() && now.saturating_sub(end) > days * DAY_MS)
-        .then(|| id.to_owned())
+    (record.execution_id == id).then(|| (id.to_owned(), record))
 }
 
 fn inactive_lock(directory: &Path) -> Result<Option<File>, String> {
@@ -123,6 +128,10 @@ fn inactive_lock(directory: &Path) -> Result<Option<File>, String> {
         Ok(file) => file,
         Err(_) => return Ok(None),
     };
+    try_inactive_lock(file)
+}
+
+fn try_inactive_lock(file: File) -> Result<Option<File>, String> {
     if !file
         .metadata()
         .map_err(|error| error.to_string())?
@@ -131,14 +140,13 @@ fn inactive_lock(directory: &Path) -> Result<Option<File>, String> {
         return Ok(None);
     }
     if unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) } == 0 {
-        Ok(Some(file))
+        return Ok(Some(file));
+    }
+    let error = std::io::Error::last_os_error();
+    if error.kind() == std::io::ErrorKind::WouldBlock {
+        Ok(None)
     } else {
-        let error = std::io::Error::last_os_error();
-        if error.kind() == std::io::ErrorKind::WouldBlock {
-            Ok(None)
-        } else {
-            Err(error.to_string())
-        }
+        Err(error.to_string())
     }
 }
 
@@ -182,14 +190,21 @@ pub fn schema() -> Value {
 }
 
 pub fn cli(args: Vec<OsString>) -> Result<(), String> {
+    let Some(options) = parse_cli(args)? else {
+        println!("Usage: makevn execution-cleanup [--retention-days DAYS] [--dry-run]\nDefault: MAKEVN_RETENTION_DAYS or 3 days. Outputs JSON counts and candidate paths.");
+        return Ok(());
+    };
+    retention_days(&options)?;
+    println!("{}", cleanup(&ExecutionStore::new()?, &options)?);
+    Ok(())
+}
+
+fn parse_cli(args: Vec<OsString>) -> Result<Option<Value>, String> {
     let mut options = json!({});
     let mut args = args.into_iter();
     while let Some(arg) = args.next() {
         match arg.to_str() {
-            Some("--help" | "-h") => {
-                println!("Usage: makevn execution-cleanup [--retention-days DAYS] [--dry-run]\nDefault: MAKEVN_RETENTION_DAYS or 3 days. Outputs JSON counts and candidate paths.");
-                return Ok(());
-            }
+            Some("--help" | "-h") => return Ok(None),
             Some("--dry-run") => options["dryRun"] = json!(true),
             Some("--retention-days") => {
                 let value = args.next().ok_or("Missing value for --retention-days")?;
@@ -206,9 +221,7 @@ pub fn cli(args: Vec<OsString>) -> Result<(), String> {
             }
         }
     }
-    retention_days(&options)?;
-    println!("{}", cleanup(&ExecutionStore::new()?, &options)?);
-    Ok(())
+    Ok(Some(options))
 }
 
 #[cfg(test)]

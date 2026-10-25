@@ -40,7 +40,7 @@ fn cancellation_preserves_tool_guidance_and_mirrors_the_final_result() {
 fn cleanup_tool_exposes_options_and_structured_counts() {
     let tools = control_tools();
     let tool = tools.iter().find(|tool| tool["name"] == "execution_cleanup").unwrap();
-    assert!(control_name("execution_cleanup"));
+    assert!(!control_name("execution_cleanup"));
     assert_eq!(tool["inputSchema"]["properties"]["dryRun"]["type"], "boolean");
     assert_eq!(tool["outputSchema"]["properties"]["cleanup"]["properties"]["logsDeleted"]["type"], "integer");
     assert!(validate_control_arguments(&json!({"name":"execution_cleanup","arguments":{"retentionDays":7,"dryRun":true}})).is_ok());

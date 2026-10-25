@@ -81,7 +81,6 @@ impl ExecutionStore {
     }
 
     pub fn prepare(&self, params: &Value) -> Result<(ExecutionRecord, Vec<File>), String> {
-        crate::execution_retention::automatic(self)?;
         let mut record = prepare_record(&self.session_id, params)?;
         let _admission = registry_admission(&self.root)?;
         let mut locks = acquire_locks(&self.root, &record, params)?;

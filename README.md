@@ -258,9 +258,9 @@ the client and check discovery separately from loading. See the
 [agent setup contract](docs/agent-install.md#skill-registration-contract).
 
 Completed MCP executions and their private logs expire after **3 days** from
-completion. The MCP server cleans them at startup, before starting an execution,
-and hourly while running. Set `MAKEVN_RETENTION_DAYS` to a positive number of days
-to change the default for both CLI and MCP.
+completion. The MCP server cleans them at startup and before starting an execution.
+Set `MAKEVN_RETENTION_DAYS` to a positive number of days to change the default
+for both CLI and MCP.
 
 ```bash
 makevn execution-cleanup --dry-run

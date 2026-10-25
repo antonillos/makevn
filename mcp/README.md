@@ -537,7 +537,7 @@ completion. `structuredContent.cleanup` contains `retentionDays`, `dryRun`,
 candidates and return zero deleted counts. This control tool does not start or
 record a new execution and works without a Maven repository.
 
-Automatic cleanup runs at server startup, before execution admission and hourly.
+Automatic cleanup runs at server startup and before execution admission.
 Cleanup requires a terminal state and an unlocked lifetime lock. It only removes
 known private execution files; shared repository logs, unknown files, symlinks
 and legacy records without lifetime ownership evidence remain untouched.
