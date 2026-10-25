@@ -73,7 +73,15 @@ pub fn parse_scope(args: &[OsString]) -> Result<Option<Scope>, String> {
     }
 }
 
-pub fn run(request: &Request) -> Result<(), String> {
+struct SetupPaths {
+    home: PathBuf,
+    repo: PathBuf,
+    config_home: PathBuf,
+    codex_home: PathBuf,
+    source: PathBuf,
+}
+
+fn setup_paths() -> Result<SetupPaths, String> {
     let home = env::var_os("HOME")
         .map(PathBuf::from)
         .ok_or("HOME is not set")?;
@@ -86,7 +94,25 @@ pub fn run(request: &Request) -> Result<(), String> {
         .unwrap_or(home.join(".codex"));
     let exe = env::current_exe().map_err(error_text)?;
     let source = agent_skills::source(&crate::install_root(&exe)?);
-    execute(request, &home, &repo, &config_home, &codex_home, &source)
+    Ok(SetupPaths {
+        home,
+        repo,
+        config_home,
+        codex_home,
+        source,
+    })
+}
+
+pub fn run(request: &Request) -> Result<(), String> {
+    let paths = setup_paths()?;
+    execute(
+        request,
+        &paths.home,
+        &paths.repo,
+        &paths.config_home,
+        &paths.codex_home,
+        &paths.source,
+    )
 }
 
 fn execute(

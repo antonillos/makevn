@@ -2,19 +2,15 @@
 use super::*;
 
 pub fn run(scope: Option<Scope>) -> Result<(), String> {
-    let home = env::var_os("HOME")
-        .map(PathBuf::from)
-        .ok_or("HOME is not set")?;
-    let repo = crate::resolve_repo_root(None)?;
-    let config_home = env::var_os("XDG_CONFIG_HOME")
-        .map(PathBuf::from)
-        .unwrap_or(home.join(".config"));
-    let codex_home = env::var_os("CODEX_HOME")
-        .map(PathBuf::from)
-        .unwrap_or(home.join(".codex"));
-    let exe = env::current_exe().map_err(error_text)?;
-    let source = agent_skills::source(&crate::install_root(&exe)?);
-    execute(scope, &home, &repo, &config_home, &codex_home, &source)
+    let paths = setup_paths()?;
+    execute(
+        scope,
+        &paths.home,
+        &paths.repo,
+        &paths.config_home,
+        &paths.codex_home,
+        &paths.source,
+    )
 }
 
 fn candidates(
@@ -126,14 +122,7 @@ fn upgrade(
     version: &str,
 ) -> Result<(), String> {
     let _ = agent_skills::prepare(source, target, version)?;
-    let prepared = configs
-        .iter()
-        .map(|(client, path)| {
-            let original = read_config(*client, path)?;
-            let updated = configure(*client, &original, path)?;
-            Ok((*client, path, original, updated))
-        })
-        .collect::<Result<Vec<_>, String>>()?;
+    let prepared = prepare_configs(configs)?;
     let _lock = acquire_lock(target)?;
     let mut changes = agent_skills::prepare(source, target, version)?;
     for (client, path, original, updated) in prepared {
@@ -143,6 +132,19 @@ fn upgrade(
         changes.extend(configuration_changes(path, &original, &updated)?);
     }
     agent_transaction::apply(changes)
+}
+
+fn prepare_configs(
+    configs: &[(Client, PathBuf)],
+) -> Result<Vec<(Client, &PathBuf, String, String)>, String> {
+    configs
+        .iter()
+        .map(|(client, path)| {
+            let original = read_config(*client, path)?;
+            let updated = configure(*client, &original, path)?;
+            Ok((*client, path, original, updated))
+        })
+        .collect()
 }
 
 #[cfg(test)]
