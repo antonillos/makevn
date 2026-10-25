@@ -156,8 +156,8 @@ For the current target behavior and packaging assumptions, see:
 See the [workflow map](workflow-guidance.md) for what MakeVN does, workflow selection,
 CLI/MCP equivalents and evidence. Product installation ships five portable skills;
 register MCP and skills with `makevn agent install opencode --scope global` or
-`makevn agent install codex --scope global`. Repeat setup after upgrades, reload
-the client and check discovery separately from loading. See the
+`makevn agent install codex --scope global`. Run `makevn agent upgrade` after
+upgrading MakeVN, reload the client and check discovery separately from loading. See the
 [agent setup contract](agent-install.md#skill-registration-contract).
 
 For source installation, `SKILL_DIR` still selects the base skill destination;

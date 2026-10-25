@@ -128,6 +128,8 @@ Setup registers MCP plus skills; it does not initialize a Maven repository.
 Global skills live in `~/.agents/skills/`, project skills in `.agents/skills/`.
 Restart/reload the client and check its available skills, then explicitly load
 one. Disk status cannot prove a session discovered or loaded it. Codex project
-configuration requires project trust. Rerun agent setup after upgrading MakeVN.
+configuration requires project trust. Run `makevn agent upgrade` after upgrading
+MakeVN. It updates existing project integration before global integration, including skills, references and registered
+MCP configurations. Use `--scope global|project` only to override detection.
 Existing foreign skills or local edits block replacement; inspect conflicts rather
 than deleting user content. Agent selection remains model-dependent.

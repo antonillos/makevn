@@ -109,6 +109,13 @@ fn main() {
         process::exit(exit_code);
     }
 
+    if let Action::AgentUpgrade(scope) = action {
+        match agent_setup::upgrade::run(scope) {
+            Ok(()) => return,
+            Err(message) => exit_with_error(message),
+        }
+    }
+
     if let Action::Agent(ref request) = action {
         match agent_setup::run(request) {
             Ok(()) => return,
@@ -140,7 +147,7 @@ fn main() {
         Action::PrintHelp { .. } => unreachable!(),
         Action::PrintCommandHelp { .. } => unreachable!(),
         Action::RunMcpServer => unreachable!(),
-        Action::Agent(_) => unreachable!(),
+        Action::Agent(_) | Action::AgentUpgrade(_) => unreachable!(),
     };
 
     let exit_code = match dispatch_backend_invocations(
@@ -167,6 +174,7 @@ enum Action {
     DispatchToBackend(Vec<BackendInvocation>),
     RunMcpServer,
     Agent(agent_setup::Request),
+    AgentUpgrade(Option<agent_setup::Scope>),
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -358,6 +366,9 @@ fn parse_invocation(args: Vec<OsString>) -> Result<Action, String> {
     if args.first() == Some(&OsString::from("agent")) {
         if args.len() == 2 && matches!(args[1].to_str(), Some("--help" | "-h")) {
             return Ok(Action::PrintCommandHelp { command: String::from("agent") });
+        }
+        if args.get(1).is_some_and(|arg| arg == "upgrade") {
+            return agent_setup::parse_scope(&args[2..]).map(Action::AgentUpgrade);
         }
         return agent_setup::parse(&args[1..]).map(Action::Agent);
     }
@@ -3874,7 +3885,7 @@ fn print_command_help(command: &str) {
 fn command_help(command: &str) -> Option<(&'static str, &'static str, &'static [&'static str])> {
     match command {
         "help" => Some(("makevn help", "Print the full makevn help.", &[])),
-        "agent" => Some(("makevn agent <install|status> <opencode|codex> [--scope global|project]", "Register MCP and five workflow skills, or inspect registration without changes. Installation does not prove a running client loaded a skill.", &["--scope global|project  Select configuration and skills scope; status requires it."])),
+        "agent" => Some(("makevn agent <install|status> <opencode|codex> [--scope global|project] | makevn agent upgrade [--scope global|project]", "Register MCP and five workflow skills, upgrade the existing integration (project before global), or inspect registration without changes. Installation does not prove a running client loaded a skill.", &["--scope global|project  Select configuration and skills scope; status requires it."])),
         "doctor" => Some(("makevn [--repo PATH] doctor [--compact] [--reset-config]", "Inspect repository setup and makevn configuration.", &["--compact  Print brief, noninteractive setup advice", "--reset-config  Back up settings and ask setup questions again (interactive CLI only)"])),
         "init" => Some(("makevn [--repo PATH] init [--dry-run] [--force]", "Initialize .makevn configuration for the repository.", &["--dry-run  Show what would change without writing files", "--force    Refresh existing generated files"])),
         "uninstall" => Some(("makevn [--repo PATH] uninstall [--dry-run]", "Remove makevn local repository state.", &["--dry-run  Show what would be removed"])),
@@ -3999,6 +4010,7 @@ fn print_help(with_header: bool) {
     println!("Usage:");
     println!("  makevn execution-cleanup [--retention-days DAYS] [--dry-run]");
     println!("  makevn agent install <opencode|codex> [--scope global|project]");
+    println!("  makevn agent upgrade [--scope global|project]");
     println!("  makevn agent status <opencode|codex> --scope global|project");
     println!("  makevn [--repo PATH] doctor");
     println!("  makevn [--repo PATH] init [--dry-run] [--force]");
