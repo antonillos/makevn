@@ -253,8 +253,8 @@ relative to the target repository, not the MCP server's working directory.
 See the [workflow map](docs/workflow-guidance.md) for what MakeVN does, workflow selection,
 CLI/MCP equivalents and evidence. Product installation ships five portable skills;
 register MCP and skills with `makevn agent install opencode --scope global` or
-`makevn agent install codex --scope global`. Repeat setup after upgrades, reload
-the client and check discovery separately from loading. See the
+`makevn agent install codex --scope global`. Run `makevn agent upgrade` after
+upgrading MakeVN, reload the client and check discovery separately from loading. See the
 [agent setup contract](docs/agent-install.md#skill-registration-contract).
 
 Completed MCP executions and their private logs expire after **3 days** from
@@ -274,3 +274,13 @@ Active executions, recent completions, unknown files and symlinks are preserved.
 Only execution-owned files in the MakeVN execution registry are removed; shared
 repository logs under `.makevn/logs/` are retained because later executions may
 reuse them. Legacy records without a lifetime lock are also preserved.
+
+### CLI help
+
+Use `makevn --help` for the command index and `makevn <command> --help` for
+command details. Nested help also supports `makevn help agent install` and
+`makevn agent install -h`. Help uses DESCRIPTION, USAGE, ARGUMENTS, FLAGS, GLOBAL FLAGS and
+COMMANDS (root) or SUBCOMMANDS (nested) in that order when applicable, with aligned
+descriptions. Terminal
+output uses lilac commands, green flags and gray placeholders; redirected output,
+`NO_COLOR` and `MAKEVN_AGENT_OUTPUT=1` use plain text.
