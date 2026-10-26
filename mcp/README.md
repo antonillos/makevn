@@ -394,7 +394,11 @@ that the client provides a prefilled editor when it does not.
 Submit user-provided or previously user-authorized answers with `doctor_configure`
 in the same repository. Pass `setupToken` and an `answers` object keyed by question
 id: `boot_compose`, `e2e_compose`, `local_containers` (boolean), `app_health_url`,
-and `karate_app_profiles`. Compose answers use the exact offered path; Spring
+`karate_app_profiles`, and `code_java_home`. JDK answers select an exact offered
+installation path and persist `MAKEVN_CODE_JAVA_HOME`; multiple compatible
+automatic candidates remain pending until the user chooses. A required but missing
+compatible JDK is reported as a diagnostic error while doctor itself succeeds;
+its next suggestion blocks builds and verification until Java is resolved. Compose answers use the exact offered path; Spring
 profiles use literal comma-separated names. The tool validates the whole batch
 before atomically updating `.makevn/config`, preserves unrelated settings and
 returns a fresh diagnosis. Partial answers are accepted; omitted questions remain

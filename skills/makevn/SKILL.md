@@ -63,7 +63,11 @@ After doctor/setup, use `makevn compile`, `makevn test-compile`, `makevn package
 `compile`, `test_compile`, `package`, `validate`. Build success proves only that
 requested build phase; it does not establish all tests or quality gates passed.
 Use `makevn jdk current` / `makevn jdk list` for Java context from `.tool-versions`.
-Missing executables are environment issues; do not bypass MakeVN with raw Maven.
+Multiple compatible automatic JDK candidates require a user choice through doctor
+and `doctor_configure`; one candidate is selected automatically. If the repository
+requires Java and no usable compatible JDK is found, doctor reports a JDK error
+while completing diagnosis successfully. Resolve it before builds or verification. Missing
+executables are environment issues; do not bypass MakeVN with raw Maven.
 
 `makevn refresh` is `init --force`: repair stale initialization after an upgrade.
 `makevn profile refresh` re-detects workflows and flags after configuration changes;

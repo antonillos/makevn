@@ -72,7 +72,7 @@ makevn_compatible_java_resolution_hint() {
   local homes=""
   homes="$(makevn_compatible_java_homes_csv "${java_version}")"
   [[ -n "${homes}" ]] || return 1
-  printf 'No exact JDK %s detected. Compatible newer local JDKs: %s. Configure MAKEVN_CODE_JAVA_HOME in .makevn/config after confirming with the user.\n' "${java_version}" "${homes}"
+  printf 'Compatible local JDKs for Java %s: %s. Run makevn doctor and confirm a JDK selection.\n' "${java_version}" "${homes}"
 }
 
 makevn_effective_java_home() {
@@ -127,36 +127,8 @@ makevn_effective_java_home() {
     if [[ -z "${java_version}" ]]; then
       java_version="$(makevn_detect_java_version_from_pom "${maven_base_path}" || true)"
     fi
-    if [[ -n "${java_version}" ]]; then
-      local resolved_java_home=""
-      if [[ "${MAKEVN_RESOLVE_COMPATIBLE_JAVA_FIRST:-}" == "1" ]]; then
-        resolved_java_home="$(makevn_resolve_compatible_java_version_home "${java_version}" || true)"
-        if [[ -n "${resolved_java_home}" ]]; then
-          printf '%s\n' "${resolved_java_home}"
-          return 0
-        fi
-      fi
-      resolved_java_home="$(makevn_resolve_java_version_home "${java_version}" || true)"
-      if [[ -n "${resolved_java_home}" ]]; then
-        printf '%s\n' "${resolved_java_home}"
-        return 0
-      fi
-      if [[ "${MAKEVN_RESOLVE_COMPATIBLE_JAVA_FIRST:-}" != "1" ]]; then
-        resolved_java_home="$(makevn_resolve_compatible_java_version_home "${java_version}" || true)"
-        if [[ -n "${resolved_java_home}" ]]; then
-          printf '%s\n' "${resolved_java_home}"
-          return 0
-        fi
-      fi
-    else
-      local enforcer_ranges=""
-      enforcer_ranges="$(makevn_java_enforcer_ranges "${maven_base_path}")"
-      if [[ -n "${enforcer_ranges}" && "${enforcer_ranges}" != '!'* ]]; then
-        # Without a compiler target, Enforcer alone constrains the inventory.
-        makevn_resolve_compatible_java_version_home 1
-        return $?
-      fi
-    fi
+    makevn_resolve_single_java_home "${maven_base_path}" "${java_version}"
+    return $?
   fi
 
   return 1

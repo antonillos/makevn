@@ -108,6 +108,7 @@ print_doctor() {
     makevn_print_item "Current makevn status" "${MAKEVN_DOCTOR_CURRENT_STATUS}"
     makevn_print_item "Repository support status" "${MAKEVN_DOCTOR_REPO_SUPPORT_STATUS}"
     makevn_print_doctor_suggestions
+    makevn_print_doctor_java_error
     return 0
   fi
 
@@ -158,6 +159,7 @@ print_doctor() {
   fi
 
   makevn_print_doctor_suggestions
+  makevn_print_doctor_java_error
 }
 
 # Keep installation, logs, and runtime state; back up user settings before reset.

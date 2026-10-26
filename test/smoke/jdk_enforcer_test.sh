@@ -26,6 +26,7 @@ if bash "${manager}" resolve-compatible-version 125; then
   echo 'Enforcer upper bound ignored'; exit 1
 fi
 output="$(bash "${ROOT}/libexec/makevn/cli.sh" --repo "${tmp}/repo" doctor)"
+[[ "${output}" == *'Code JDK error: No usable JDK'* ]]
 [[ "${output}" == *'Resolved code JAVA_HOME: unresolved'* ]]
 [[ "${output}" == *'Maven Enforcer requireJavaVersion: [125,126)'* ]]
 cat > "${tmp}/repo/mvnw" <<'MVN'
@@ -104,13 +105,49 @@ output="$(bash "${ROOT}/libexec/makevn/cli.sh" --repo "${tmp}/repo" doctor)"
 [[ "${output}" == *"Resolved code JAVA_HOME: ${expected}"* ]]
 bash "${ROOT}/libexec/makevn/backend.sh" compile --repo "${tmp}/repo" --compact >"${tmp}/output" 2>&1
 [[ "$(cat "${tmp}/repo/maven-java-home")" == "${expected}" ]]
+# Multiple installations of the same major require a user choice too.
+second="${tmp}/jdks/125.0.3"
+mkdir -p "${second}/bin"
+printf '#!/bin/sh\necho '\''openjdk version "125.0.3"'\'' >&2\n' > "${second}/bin/java"
+chmod +x "${second}/bin/java"
+bash "${ROOT}/libexec/makevn/cli.sh" --repo "${tmp}/repo" init >"${tmp}/output" 2>&1
+bash "${ROOT}/libexec/makevn/backend.sh" doctor --repo "${tmp}/repo" --format json >"${tmp}/snapshot"
+python3 - "${tmp}/snapshot" "${expected}" "${second}" >"${tmp}/answers" <<'PYTEST'
+import json
+import sys
+snapshot = json.load(open(sys.argv[1]))
+setup = snapshot['interactive_setup']
+assert setup['required'] and setup['status'] == 'pending'
+question = next(q for q in setup['questions'] if q['id'] == 'code_java_home')
+assert set(question['options']) == set(sys.argv[2:])
+assert question['suggestedValue'] in question['options']
+print(json.dumps({'setupToken': setup['setupToken'], 'answers': {'code_java_home': sys.argv[3]}}))
+PYTEST
+rm -f "${tmp}/repo/maven-java-home"
+if bash "${ROOT}/libexec/makevn/backend.sh" compile --repo "${tmp}/repo" --compact >"${tmp}/output" 2>&1; then
+  echo 'compile silently selected one of multiple compatible JDKs'; exit 1
+fi
+[[ ! -e "${tmp}/repo/maven-java-home" ]]
+MAKEVN_MCP_DOCTOR_ANSWERS="$(cat "${tmp}/answers")" bash "${ROOT}/libexec/makevn/backend.sh" doctor --repo "${tmp}/repo" --compact >"${tmp}/output" 2>&1
+bash "${ROOT}/libexec/makevn/backend.sh" compile --repo "${tmp}/repo" --compact >"${tmp}/output" 2>&1
+[[ "$(cat "${tmp}/repo/maven-java-home")" == "${second}" ]]
+rm -f "${tmp}/repo/.makevn/config"
+printf '# makevn local configuration\n' > "${tmp}/repo/.makevn/config"
+python3 "${ROOT}/test/smoke/jdk_choice_pty_test.py" "${ROOT}/libexec/makevn/cli.sh" "${tmp}/repo" "${second}"
+rm -rf "${second}"
+rm -f "${tmp}/repo/.makevn/config"
 # No accepted installation must leave Java unresolved and prevent Maven execution.
 rm -rf "${expected}"
 rm -f "${tmp}/repo/maven-java-home"
 output="$(bash "${ROOT}/libexec/makevn/cli.sh" --repo "${tmp}/repo" doctor)"
+[[ "${output}" == *'Code JDK error: No usable JDK'* ]]
 [[ "${output}" == *'Resolved code JAVA_HOME: unresolved'* ]]
 if bash "${ROOT}/libexec/makevn/backend.sh" compile --repo "${tmp}/repo" --compact >"${tmp}/output" 2>&1; then
   echo 'Enforcer-only discovery started Maven with a forbidden JDK'; exit 1
 fi
 [[ ! -e "${tmp}/repo/maven-java-home" ]]
+for mode in compact json; do
+  bash "${ROOT}/libexec/makevn/backend.sh" doctor --repo "${tmp}/repo" --format "${mode/compact/text}" --compact >"${tmp}/output" 2>&1
+  grep -q 'No usable JDK' "${tmp}/output"
+done
 echo 'Enforcer-only JDK regression tests passed'

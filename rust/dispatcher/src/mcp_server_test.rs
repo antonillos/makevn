@@ -1180,3 +1180,22 @@ fn docker_interface_policy_covers_tools_and_workflow_results() {
         }
     }
 }
+
+#[test]
+fn missing_required_jdk_is_diagnostic_success_with_blocking_guidance() {
+    let snapshot = json!({
+        "repository_analysis": {"repository_support_status": "supported", "code_java_error": "No usable JDK"},
+        "interactive_setup": {"required": false},
+        "suggested_next_step": {"next": ""}
+    });
+    let guidance = super::doctor_next_suggestion(&snapshot).unwrap();
+    assert!(guidance.contains("Doctor completed its diagnosis"));
+    assert!(guidance.contains("before builds or verification"));
+    let result = super::ToolCallResult {
+        output: "Code JDK error: No usable JDK".into(), exit_code: 0, duration_ms: 1,
+        doctor_snapshot: Some(snapshot), next_suggestion: Some(guidance.into()),
+    };
+    let response = super::standard_tool_result(&result, &json!({"name": "doctor"}));
+    assert_eq!(response["isError"], false);
+    assert_eq!(response["structuredContent"]["exitCode"], 0);
+}

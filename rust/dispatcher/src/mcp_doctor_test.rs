@@ -14,6 +14,7 @@ fn doctor_exposes_questions_and_configure_in_the_mcp_contract() {
     let tools = crate::mcp_server::tools_list();
     let configure = tools.iter().find(|tool| tool["name"] == "doctor_configure").unwrap();
     assert_eq!(configure["inputSchema"]["properties"]["answers"], super::answers_schema());
+    assert_eq!(configure["inputSchema"]["properties"]["answers"]["properties"]["code_java_home"]["type"], "string");
     assert_eq!(configure["outputSchema"]["properties"]["interactive_setup"], super::setup_schema());
     assert!(!crate::mcp_execution::inspection("doctor_configure"));
 }

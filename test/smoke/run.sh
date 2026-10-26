@@ -677,7 +677,8 @@ EOF
   output="$(JAVA_HOME= MAKEVN_JDK_CANDIDATE_BASES="${fake_home_root}/.sdkman/candidates/java" HOME="${fake_home_root}" ${CLI} --repo "${repo}" doctor)"
 
   [[ "${output}" == *"Code Java version: 6"* ]] || fail "doctor should detect the requested Java version from pom.xml"
-  [[ "${output}" == *"Resolved code JAVA_HOME: ${java17_home}"* ]] || fail "doctor should resolve to the lowest compatible newer JDK when no exact match is installed"
+  [[ "${output}" == *"Setup status: pending"* ]] || fail "doctor should ask the user to choose between compatible JDKs"
+  [[ "${output}" == *"Resolved code JAVA_HOME: unresolved"* ]] || fail "doctor must not silently select a compatible JDK"
 }
 
 test_doctor_reports_compatible_newer_tool_versions_java_home() {

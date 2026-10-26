@@ -32,7 +32,8 @@ pub(crate) fn answers_schema() -> Value {
         "properties": {
             "boot_compose": {"type": "string"}, "e2e_compose": {"type": "string"},
             "local_containers": {"type": "boolean"}, "app_health_url": {"type": "string"},
-            "karate_app_profiles": {"type": "string"}
+            "karate_app_profiles": {"type": "string"},
+            "code_java_home": {"type": "string"}
         }})
 }
 

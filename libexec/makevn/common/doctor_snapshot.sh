@@ -385,7 +385,7 @@ makevn_collect_doctor_snapshot() {
   local MAKEVN_JDK_MAVEN_BASE_PATH="${maven_base_path}"
   export MAKEVN_JDK_MAVEN_BASE_PATH
   makevn_doctor_progress "Resolving Java homes"
-  code_java_home="$(MAKEVN_RESOLVE_COMPATIBLE_JAVA_FIRST=1 makevn_effective_java_home "${repo_root}" code "${maven_base_path}" || true)"
+  code_java_home="$(makevn_effective_java_home "${repo_root}" code "${maven_base_path}" || true)"
   if [[ -n "${code_tool_versions_java_version}" ]]; then
     code_exact_java_home="$(makevn_resolve_java_version_home "${code_tool_versions_java_version}" || true)"
     if [[ -z "${code_exact_java_home}" && -z "${MAKEVN_CODE_JAVA_HOME:-}" ]]; then
@@ -407,6 +407,7 @@ makevn_collect_doctor_snapshot() {
   if [[ -z "${code_java_home}" && -n "${java_enforcer_ranges}" ]]; then
     code_java_home_recommendation="No stable JDK satisfies Maven Enforcer requireJavaVersion: ${java_enforcer_ranges}. Install an accepted stable JDK; do not bypass Enforcer."
   fi
+  makevn_doctor_java_selection "${repo_root}" "${maven_base_path}" "${code_java_version}" "${code_tool_versions}"
   karate_java_home="$(makevn_effective_java_home "${repo_root}" karate "${maven_base_path}" || true)"
   repo_support_status="$(makevn_repository_support_status "${repo_root}")"
   if [[ -n "${maven_base_path}" ]]; then
@@ -611,6 +612,7 @@ makevn_doctor_interactive_setup_status() {
   MAKEVN_DOCTOR_HEALTH_PENDING=false
   MAKEVN_DOCTOR_LOCAL_PENDING=false
   MAKEVN_DOCTOR_PROFILES_PENDING=false
+  [[ -z "${MAKEVN_DOCTOR_JAVA_CANDIDATES:-}" ]] || MAKEVN_DOCTOR_INTERACTIVE_REQUIRED=true
   [[ "${MAKEVN_DOCTOR_REPO_SUPPORT_STATUS:-supported}" != unsupported ]] || return 0
   if [[ "${MAKEVN_DOCTOR_KARATE_APP_PROFILES:-}" == 'unresolved (explicit selection required)' && -z "${SPRING_PROFILES_ACTIVE+x}" && -z "${MAKEVN_KARATE_APP_PROFILES:-}" ]]; then
     MAKEVN_DOCTOR_INTERACTIVE_REQUIRED=true
@@ -643,7 +645,7 @@ makevn_doctor_collect_setup() {
     fi
   fi
   local details
-  details="$(python3 "${MAKEVN_LIBEXEC_DIR}/common/doctor_setup.py" questions "${repo_root}" "${boot}" "${e2e}" "${health}" "${MAKEVN_DOCTOR_KARATE_APP_PROFILES_CANDIDATES}" "${MAKEVN_DOCTOR_LOCAL_PENDING}" "${MAKEVN_DOCTOR_HEALTH_PENDING}" "${MAKEVN_DOCTOR_PROFILES_PENDING}")"
+  details="$(python3 "${MAKEVN_LIBEXEC_DIR}/common/doctor_setup.py" questions "${repo_root}" "${boot}" "${e2e}" "${health}" "${MAKEVN_DOCTOR_KARATE_APP_PROFILES_CANDIDATES}" "${MAKEVN_DOCTOR_LOCAL_PENDING}" "${MAKEVN_DOCTOR_HEALTH_PENDING}" "${MAKEVN_DOCTOR_PROFILES_PENDING}" "${MAKEVN_DOCTOR_JAVA_CANDIDATES:-}" "${MAKEVN_DOCTOR_JAVA_RECOMMENDED:-}" "${MAKEVN_DOCTOR_JAVA_DETAILS:-}")"
   details="${details#\{}"
   MAKEVN_DOCTOR_SETUP_DETAILS="${details%\}}"
 }
@@ -680,6 +682,7 @@ makevn_print_doctor_json() {
   printf '    "existing_makevn": "%s",\n' "$(makevn_json_escape "${MAKEVN_DOCTOR_EXISTING_STATE_DIR}")"
   printf '    "current_makevn_status": "%s",\n' "$(makevn_json_escape "${MAKEVN_DOCTOR_CURRENT_STATUS}")"
   printf '    "code_tool_versions": "%s",\n' "$(makevn_json_escape "${MAKEVN_DOCTOR_CODE_TOOL_VERSIONS}")"
+  printf '    "code_java_error": "%s",\n' "$(makevn_json_escape "${MAKEVN_DOCTOR_JAVA_ERROR:-}")"
   printf '    "code_java_version": "%s",\n' "$(makevn_json_escape "${MAKEVN_DOCTOR_CODE_JAVA_VERSION}")"
   printf '    "application_runnable": "%s",\n' "$(makevn_json_escape "${MAKEVN_DOCTOR_APP_RUNNABLE}")"
   printf '    "karate_tool_versions": "%s",\n' "$(makevn_json_escape "${MAKEVN_DOCTOR_KARATE_TOOL_VERSIONS}")"
