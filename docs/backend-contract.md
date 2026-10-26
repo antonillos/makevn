@@ -145,6 +145,7 @@ Run command family:
 - `run`
 - `docker-up`
 - `docker-down`
+- `docker-reset`
 
 Recommended invocation pattern:
 

@@ -341,6 +341,40 @@ def transport_failure(executable, state, observer, repo):
     stopped(observer, record, owned)
 
 
+def retention_cleanup(session, executable, state):
+    record = session.executions(includeFinished=True)[0]
+    execution_id = record["executionId"]
+    registry = state / "makevn" / "executions"
+    path = registry / f"{execution_id}.json"
+    record["startedAtMs"] = int(time.time() * 1000) - 4 * 86400000
+    record["durationMs"] = 1
+    foreign = state / "foreign.log"
+    foreign.write_text("keep")
+    record["logPaths"].append(str(foreign))
+    path.write_text(json.dumps(record))
+    preview = session.call("execution_cleanup", dryRun=True)["structuredContent"]["cleanup"]
+    assert execution_id in preview["executionIds"]
+    assert preview["executionsDeleted"] == preview["logsDeleted"] == 0
+    assert path.exists()
+    result = subprocess.run([str(executable), "execution-cleanup", "--dry-run"],
+                            env={**os.environ, "XDG_STATE_HOME": str(state)},
+                            capture_output=True, text=True, check=True)
+    assert json.loads(result.stdout) == preview
+    configured = subprocess.run([str(executable), "execution-cleanup", "--dry-run"],
+                                env={**os.environ, "XDG_STATE_HOME": str(state), "MAKEVN_RETENTION_DAYS": "7"},
+                                capture_output=True, text=True, check=True)
+    assert json.loads(configured.stdout)["executionIds"] == []
+    assert json.loads(configured.stdout)["retentionDays"] == 7
+    assert session.call("execution_cleanup", retentionDays=0)["isError"] is True
+    deleted = session.call("execution_cleanup")["structuredContent"]["cleanup"]
+    assert deleted["executionsDeleted"] == 1
+    assert deleted["logsDeleted"] == len(preview["logPaths"]) > 0
+    assert not path.exists()
+    assert not (registry / execution_id).exists()
+    assert foreign.read_text() == "keep"
+    assert session.call("execution_cleanup")["structuredContent"]["cleanup"]["executionsDeleted"] == 0
+
+
 def run(executable):
     with tempfile.TemporaryDirectory(prefix="makevn-mcp-lifecycle-") as directory:
         root = Path(directory)
@@ -358,7 +392,7 @@ def run(executable):
         second = Session(mcp, state)
         try:
             tools = first.call_method("tools/list", {})["result"]["tools"]
-            assert {"execution_list", "execution_status", "execution_cancel"} <= {tool["name"] for tool in tools}
+            assert {"execution_list", "execution_status", "execution_cancel", "execution_cleanup"} <= {tool["name"] for tool in tools}
             assert next(tool for tool in tools if tool["name"] == "verify")["inputSchema"]["properties"]["pr"]["type"] == "string"
             assert first.call_method("unknown/method", {})["error"]["code"] == -32601
             responsiveness_and_cancellation(first, second, repos[0], repos[1])
@@ -372,6 +406,7 @@ def run(executable):
             transport_failure(mcp, state, first, repos[12])
             lingering_children(first, repos[13])
             lingering_children(first, repos[14], tool="mutation")
+            retention_cleanup(first, mcp, state)
         finally:
             first.close()
             second.close()

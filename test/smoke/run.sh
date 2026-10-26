@@ -928,6 +928,8 @@ test_mcp_tool_listing() {
     | "${prefix}/bin/makevn-mcp" > "${output_file}"
 
   assert_contains "${output_file}" '"name":"docker_up"'
+  assert_contains "${output_file}" '"name":"docker_reset"'
+  assert_contains "${output_file}" '"name":"karate_docker_reset"'
   assert_contains "${output_file}" '"name":"docker_ps_required"'
   assert_not_contains "${output_file}" '"name":"make_install"'
   assert_not_contains "${output_file}" '"name":"make_uninstall"'
@@ -937,6 +939,7 @@ test_mcp_tool_listing() {
   python3 -m unittest discover -s "${ROOT_DIR}/test/smoke" -p doctor_setup_test.py
   python3 "${ROOT_DIR}/test/smoke/doctor_configure_mcp_test.py" "${prefix}/bin/makevn-mcp"
   python3 "${ROOT_DIR}/test/smoke/doctor_mcp_test.py" "${prefix}/bin/makevn-mcp"
+  python3 "${ROOT_DIR}/test/smoke/docker_lifecycle_test.py" "${prefix}/bin/makevn" "${prefix}/bin/makevn-mcp"
   python3 "${ROOT_DIR}/test/smoke/doctor_reset_test.py" "${prefix}/bin/makevn"
   python3 -m unittest discover -s "${ROOT_DIR}/test/smoke" -p demo_mcp_test.py
   python3 "${ROOT_DIR}/test/smoke/structured_mcp_test.py" "${prefix}/bin/makevn-mcp"
@@ -1622,9 +1625,9 @@ EOF
   output="$(PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" docker-ps)"
   stats_output="$(PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" docker-stats)"
 
-  assert_matches "${repo}/.docker-compose.log" '^docker-compose -f .*/code/boot/src/test/resources/compose/docker-compose\.yml -f .*/code/boot/src/test/resources/compose/docker-compose\.override\.yml down -v --remove-orphans$'
+  assert_matches "${repo}/.docker-compose.log" '^docker-compose -f .*/code/boot/src/test/resources/compose/docker-compose\.yml -f .*/code/boot/src/test/resources/compose/docker-compose\.override\.yml down$'
   assert_matches "${repo}/.docker-compose.log" '^docker-compose -f .*/code/boot/src/test/resources/compose/docker-compose\.yml -f .*/code/boot/src/test/resources/compose/docker-compose\.override\.yml up --detach$'
-  assert_contains "${repo}/.docker.log" "docker volume prune -f"
+  assert_not_contains "${repo}/.docker.log" "docker volume prune"
   assert_contains "${repo}/.docker.log" "docker stats --no-stream --format table {{.Name}}\\t{{.CPUPerc}}\\t{{.MemUsage}}\\t{{.MemPerc}}"
   [[ "${output}" == *"fake-db"* ]] || fail "expected docker ps output to include fake container name"
   [[ "${stats_output}" == *"fake-db"* ]] || fail "expected docker stats output to include fake container name"
@@ -1935,7 +1938,7 @@ EOF
   PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" karate-test --tag @smoke >/dev/null
   output="$(PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" karate-all --tag @smoke)"
 
-  assert_matches "${repo}/.docker-compose.log" '^docker-compose -f .*/e2e/karate/src/test/resources/compose/docker-compose\.yml -f .*/e2e/karate/src/test/resources/compose/docker-compose\.override\.yml down -v --remove-orphans$'
+  assert_matches "${repo}/.docker-compose.log" '^docker-compose -f .*/e2e/karate/src/test/resources/compose/docker-compose\.yml -f .*/e2e/karate/src/test/resources/compose/docker-compose\.override\.yml down$'
   assert_matches "${repo}/.docker-compose.log" '^docker-compose -f .*/e2e/karate/src/test/resources/compose/docker-compose\.yml -f .*/e2e/karate/src/test/resources/compose/docker-compose\.override\.yml up --detach$'
   assert_matches "${repo}/.docker-compose.log" '^docker-compose -f .*/e2e/karate/src/test/resources/compose/docker-compose\.yml -f .*/e2e/karate/src/test/resources/compose/docker-compose\.override\.yml ps -q db$'
   assert_matches "${repo}/.mvnw.log" '^ARGS=-nsu -f .*/e2e/karate/pom\.xml test -Dkarate\.env=local -Dkarate\.report\.options=--showLog true -Dkarate\.options=-t@smoke$'
