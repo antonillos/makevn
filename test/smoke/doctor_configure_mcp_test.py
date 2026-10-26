@@ -113,4 +113,44 @@ with tempfile.TemporaryDirectory(prefix="makevn-doctor-unsupported-") as directo
     configure(repo, doctor, {"local_containers": True}, error=True)
     assert not (repo / ".makevn/config").exists()
 
+with tempfile.TemporaryDirectory(prefix="makevn-doctor-jdk-") as directory:
+    repo = Path(directory) / "repo"
+    repo.mkdir()
+    (repo / "pom.xml").write_text(
+        '<project><build><plugins><plugin><artifactId>maven-enforcer-plugin</artifactId>'
+        '<executions><execution><goals><goal>enforce</goal></goals><configuration><rules>'
+        '<requireJavaVersion><version>[125,127)</version></requireJavaVersion>'
+        '</rules></configuration></execution></executions></plugin></plugins></build></project>')
+    candidates = Path(directory) / "jdks"
+    homes = [candidates / version for version in ("125", "126")]
+    for home in homes:
+        executable = home / "bin/java"
+        executable.parent.mkdir(parents=True)
+        executable.write_text(f'#!/bin/sh\necho \'openjdk version "{home.name}"\' >&2\n')
+        executable.chmod(0o755)
+    with patch.dict(os.environ, {"MAKEVN_JDK_CANDIDATE_BASES": str(candidates), "JAVA_HOME": ""}):
+        call(repo, "doctor")
+        call(repo, "init")
+        doctor = call(repo, "doctor")
+        assert "code_java_home" in questions(doctor), doctor
+        choice = questions(doctor)["code_java_home"]
+        assert set(choice["options"]) == set(map(str, homes)), doctor
+        assert choice["suggestedValue"] == str(homes[0]), choice
+        assert 'openjdk version "125"' in choice["prompt"], choice
+        config = repo / ".makevn/config"
+        before = config.read_bytes()
+        configure(repo, doctor, {"code_java_home": "/not-an-offered-jdk"}, error=True)
+        assert config.read_bytes() == before
+        completed = configure(repo, doctor, {"code_java_home": str(homes[1])})
+        assert completed["interactive_setup"]["required"] is False, completed
+        assert completed["interactive_setup"]["status"] == "ready", completed
+        assert str(homes[1]) in config.read_text()
+        config.write_bytes(before)
+        for home in homes:
+            (home / "bin/java").unlink()
+        missing = call(repo, "doctor")
+        assert missing["exitCode"] == 0, missing
+        assert "no usable JDK" in missing["nextSuggestion"], missing
+        assert "No usable JDK" in missing["untrustedData"]["output"], missing
+
 print("Doctor chat configuration MCP tests passed")

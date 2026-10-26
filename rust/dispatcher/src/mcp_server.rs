@@ -179,6 +179,9 @@ fn doctor_next_suggestion(snapshot: &Value) -> Option<&'static str> {
     if snapshot["repository_analysis"]["repository_support_status"] == "unsupported" {
         return Some("No Maven project was detected; do not run init or verification.");
     }
+    if snapshot["repository_analysis"]["code_java_error"].as_str().is_some_and(|error| !error.is_empty()) {
+        return Some("Doctor completed its diagnosis but no usable JDK satisfies the repository Java requirement. Follow any initialization recommendation, install or configure a compatible JDK, then run doctor again before builds or verification.");
+    }
     if snapshot["test_processes"]["status"] == "possible_conflict" {
         return Some("Possible competing test JVMs from this repository/worktrees detected. Inspect PID, start time and checkout in doctor diagnostics; ask the user to resolve the conflict before Docker-dependent tests. Do not kill processes automatically, retry tests in a loop, or provision alternative infrastructure.");
     }

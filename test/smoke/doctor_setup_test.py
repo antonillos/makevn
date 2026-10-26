@@ -52,6 +52,22 @@ class DoctorSetupTests(unittest.TestCase):
         setup.apply_answers(str(self.repo), {"setupToken": token or self.details["setupToken"],
                                             "answers": answers}, self.snapshot)
 
+    def test_jdk_choice_requires_an_offered_path_and_preserves_other_settings(self):
+        self.details = setup.collect_questions([
+            str(self.repo), "", "", "", "", "false", "false", "false",
+            "/jdks/25.0.2\n/jdks/25.0.3", "/jdks/25.0.2"])
+        self.snapshot["interactive_setup"] = self.details
+        item = self.details["questions"][0]
+        self.assertEqual(item["id"], "code_java_home")
+        self.assertEqual(item["suggestedValue"], "/jdks/25.0.2")
+        before = self.path.read_bytes()
+        with self.assertRaisesRegex(ValueError, "available option"):
+            self.apply({"code_java_home": "/jdks/27"})
+        self.assertEqual(self.path.read_bytes(), before)
+        self.apply({"code_java_home": "/jdks/25.0.3"})
+        self.assertIn("MAKEVN_CODE_JAVA_HOME=/jdks/25.0.3", self.path.read_text())
+        self.assertIn('OTHER="keep"', self.path.read_text())
+
     def test_all_answers_and_shell_roundtrip(self):
         url = "http://localhost/health?value='$(touch${IFS}SENTINEL)`id`&other=ok"
         self.apply({"boot_compose": "/boot/b", "e2e_compose": "/e2e/a", "local_containers": False,

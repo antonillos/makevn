@@ -168,7 +168,8 @@ that the client provides a prefilled editor when it does not.
 Submit user-provided or previously user-authorized answers with `doctor_configure`
 in the same repository. Pass `setupToken` and an `answers` object keyed by question
 id: `boot_compose`, `e2e_compose`, `local_containers` (boolean), `app_health_url`,
-and `karate_app_profiles`. Compose answers use the exact offered path; Spring
+`karate_app_profiles`, and `code_java_home`. The JDK answer must be an exact offered
+installation path. Compose answers use the exact offered path; Spring
 profiles use literal comma-separated names. The tool validates the whole batch
 before atomically updating `.makevn/config`, preserves unrelated settings and
 returns a fresh diagnosis on success. Partial answers are accepted; omitted
@@ -244,7 +245,19 @@ for projects that deliberately require an experimental compiler.
 
 Automatic code-JDK selection also checks unconditional local
 `maven-enforcer-plugin` `requireJavaVersion` rules before treating newer JDKs
-as compatible. Numeric minimum, exact, bounded and union ranges are supported,
+as compatible. When no compiler Java version or tool pin is declared, these
+rules alone identify the installed stable JDKs satisfying all rules. A single
+compatible installation is selected automatically. Multiple compatible installations
+(including different installations of the same major) require a user choice through
+`code_java_home` in `doctor_configure` or interactive CLI doctor. Doctor recommends
+the lowest compatible major and saves the chosen path in `MAKEVN_CODE_JAVA_HOME`.
+Explicit configuration and tool pins remain authoritative. An exported `JAVA_HOME`
+is retained when it is a stable compatible candidate. Until the choice is
+saved, builds stop rather than silently selecting a candidate. If Java is required
+and no usable compatible JDK is found, doctor reports `Code JDK error` in detailed
+and compact modes and `repository_analysis.code_java_error` in JSON. Diagnosis
+still succeeds (exit zero); builds and verification must wait for a usable JDK.
+Numeric minimum, exact, bounded and union ranges are supported,
 including patch versions and properties from local relative parent POMs. Rules in unconditional local reactor modules also constrain the selected JDK. For
 example, `[25,26)` rejects 27 and requires an accepted stable 25.x. Doctor
 reports the restriction if no candidate satisfies it; makevn never adds an
