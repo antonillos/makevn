@@ -2,11 +2,14 @@
 set -euo pipefail
 ROOT_DIR="$(CDPATH= cd -- "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 CLI="${ROOT_DIR}/bin/makevn"
+python3 "${ROOT_DIR}/test/smoke/doctor_summary_test.py"
 TMP="$(mktemp -d)"
 trap 'rm -rf "${TMP}"' EXIT
 printf '<project><modelVersion>4.0.0</modelVersion><groupId>x</groupId><artifactId>x</artifactId><version>1</version></project>\n' >"${TMP}/pom.xml"
 output="$("${CLI}" --repo "${TMP}" doctor --compact)"
 [[ "${output}" == *'next: makevn init'* && "${output}" != *'Resolved code JAVA_HOME'* ]]
+[[ "${output}" == *'Test JVMs:'* && "${output}" == *'Bind mounts:'* ]]
+[[ "${output}" != *'Test JVM diagnostics:'* && "${output}" != *'Bind mount diagnostics:'* ]]
 [[ ! -e "${TMP}/.makevn" ]]
 "${CLI}" --repo "${TMP}" init >/dev/null
 output="$("${CLI}" --repo "${TMP}" doctor --compact)"

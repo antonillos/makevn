@@ -558,7 +558,8 @@ while True:
     if waited != (0, 0):
         status = waited[1]
         break
-    if time.time() - start > 5:
+    # JDK discovery can exceed five seconds on shared CI runners.
+    if time.time() - start > 30:
         os.kill(pid, signal.SIGTERM)
         time.sleep(0.2)
         try:
@@ -879,7 +880,10 @@ test_installer() {
   assert_file_exists "${prefix}/libexec/makevn/crap/jacoco_html.py"
   assert_file_exists "${prefix}/libexec/makevn/compat/verify_changes.sh"
   assert_not_exists "${prefix}/share/makevn/makevn.mk"
-  assert_file_exists "${prefix}/share/makevn/skills/makevn/SKILL.md"
+  for skill in makevn makevn-test makevn-docker makevn-karate makevn-quality; do
+    assert_file_exists "${prefix}/share/makevn/skills/${skill}/SKILL.md"
+    assert_file_exists "${prefix}/share/makevn/skills/${skill}/references/workflows.md"
+  done
   "${prefix}/bin/makevn" --help >/dev/null
 }
 
@@ -899,6 +903,10 @@ test_runtime_archive_includes_crap_reporter() {
     || fail "runtime archive should include CRAP reporter"
   tar -tzf "${archive}" | grep -Fx 'makevn-0.0.0-smoke/libexec/makevn/crap/jacoco_html.py' >/dev/null \
     || fail "runtime archive should include the JaCoCo HTML adapter"
+  for skill in makevn makevn-test makevn-docker makevn-karate makevn-quality; do
+    tar -tzf "${archive}" | grep -Fx "makevn-0.0.0-smoke/share/makevn/skills/${skill}/SKILL.md" >/dev/null \
+      || fail "runtime archive should include ${skill}"
+  done
   if tar -tzf "${archive}" | grep -Fx 'makevn-0.0.0-smoke/share/makevn/makevn.mk' >/dev/null; then
     fail "runtime archive must not ship retired Make templates"
   fi
@@ -919,6 +927,8 @@ test_mcp_tool_listing() {
     | "${prefix}/bin/makevn-mcp" > "${output_file}"
 
   assert_contains "${output_file}" '"name":"docker_up"'
+  assert_contains "${output_file}" '"name":"docker_reset"'
+  assert_contains "${output_file}" '"name":"karate_docker_reset"'
   assert_contains "${output_file}" '"name":"docker_ps_required"'
   assert_not_contains "${output_file}" '"name":"make_install"'
   assert_not_contains "${output_file}" '"name":"make_uninstall"'
@@ -928,6 +938,7 @@ test_mcp_tool_listing() {
   python3 -m unittest discover -s "${ROOT_DIR}/test/smoke" -p doctor_setup_test.py
   python3 "${ROOT_DIR}/test/smoke/doctor_configure_mcp_test.py" "${prefix}/bin/makevn-mcp"
   python3 "${ROOT_DIR}/test/smoke/doctor_mcp_test.py" "${prefix}/bin/makevn-mcp"
+  python3 "${ROOT_DIR}/test/smoke/docker_lifecycle_test.py" "${prefix}/bin/makevn" "${prefix}/bin/makevn-mcp"
   python3 "${ROOT_DIR}/test/smoke/doctor_reset_test.py" "${prefix}/bin/makevn"
   python3 -m unittest discover -s "${ROOT_DIR}/test/smoke" -p demo_mcp_test.py
   python3 "${ROOT_DIR}/test/smoke/structured_mcp_test.py" "${prefix}/bin/makevn-mcp"
@@ -1613,9 +1624,9 @@ EOF
   output="$(PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" docker-ps)"
   stats_output="$(PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" docker-stats)"
 
-  assert_matches "${repo}/.docker-compose.log" '^docker-compose -f .*/code/boot/src/test/resources/compose/docker-compose\.yml -f .*/code/boot/src/test/resources/compose/docker-compose\.override\.yml down -v --remove-orphans$'
+  assert_matches "${repo}/.docker-compose.log" '^docker-compose -f .*/code/boot/src/test/resources/compose/docker-compose\.yml -f .*/code/boot/src/test/resources/compose/docker-compose\.override\.yml down$'
   assert_matches "${repo}/.docker-compose.log" '^docker-compose -f .*/code/boot/src/test/resources/compose/docker-compose\.yml -f .*/code/boot/src/test/resources/compose/docker-compose\.override\.yml up --detach$'
-  assert_contains "${repo}/.docker.log" "docker volume prune -f"
+  assert_not_contains "${repo}/.docker.log" "docker volume prune"
   assert_contains "${repo}/.docker.log" "docker stats --no-stream --format table {{.Name}}\\t{{.CPUPerc}}\\t{{.MemUsage}}\\t{{.MemPerc}}"
   [[ "${output}" == *"fake-db"* ]] || fail "expected docker ps output to include fake container name"
   [[ "${stats_output}" == *"fake-db"* ]] || fail "expected docker stats output to include fake container name"
@@ -1926,7 +1937,7 @@ EOF
   PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" karate-test --tag @smoke >/dev/null
   output="$(PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" karate-all --tag @smoke)"
 
-  assert_matches "${repo}/.docker-compose.log" '^docker-compose -f .*/e2e/karate/src/test/resources/compose/docker-compose\.yml -f .*/e2e/karate/src/test/resources/compose/docker-compose\.override\.yml down -v --remove-orphans$'
+  assert_matches "${repo}/.docker-compose.log" '^docker-compose -f .*/e2e/karate/src/test/resources/compose/docker-compose\.yml -f .*/e2e/karate/src/test/resources/compose/docker-compose\.override\.yml down$'
   assert_matches "${repo}/.docker-compose.log" '^docker-compose -f .*/e2e/karate/src/test/resources/compose/docker-compose\.yml -f .*/e2e/karate/src/test/resources/compose/docker-compose\.override\.yml up --detach$'
   assert_matches "${repo}/.docker-compose.log" '^docker-compose -f .*/e2e/karate/src/test/resources/compose/docker-compose\.yml -f .*/e2e/karate/src/test/resources/compose/docker-compose\.override\.yml ps -q db$'
   assert_matches "${repo}/.mvnw.log" '^ARGS=-nsu -f .*/e2e/karate/pom\.xml test -Dkarate\.env=local -Dkarate\.report\.options=--showLog true -Dkarate\.options=-t@smoke$'
@@ -4785,6 +4796,7 @@ main() {
   test_format_requires_configured_formatter
   test_checkstyle_requires_configured_plugin
   test_installer
+  python3 "${ROOT_DIR}/test/smoke/agent_skills_test.py"
   test_runtime_archive_includes_crap_reporter
   test_init_does_not_touch_existing_makefile
   test_profile_refresh

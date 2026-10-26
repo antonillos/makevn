@@ -104,7 +104,8 @@ Global option rules:
 ### Agent Integration
 
 ```bash
-makevn agent install opencode
+makevn agent install <opencode|codex> [--scope global|project]
+makevn agent status <opencode|codex> --scope global|project
 ```
 
 This frontend-owned command installs or updates the global `makevn` MCP entry
@@ -149,6 +150,7 @@ These commands are optional and require a detected Karate Maven project (`e2e/ka
 ```bash
 makevn karate-docker-up [--tail]
 makevn karate-docker-down [--tail]
+makevn karate-docker-reset [--tail]
 makevn karate-test [--tag TAG] [-- EXTRA_MAVEN_ARGS...]
 makevn karate-all [--tag TAG] [-- EXTRA_MAVEN_ARGS...]
 makevn run-app
@@ -156,7 +158,7 @@ makevn run-app-bg
 makevn stop-app
 ```
 
-`karate-docker-up` waits for required services from the detected E2E compose to become running and healthy before returning. `karate-docker-up` and `karate-docker-down` include a sibling `docker-compose.override.yml` when present. `karate-test --tag @tag` maps to Karate's tag filtering.
+`karate-docker-up` starts the detected E2E services while preserving volumes. Check readiness separately with `docker-ps-required --compose karate`. Karate up/down/reset include a sibling `docker-compose.override.yml` when present and honor `PROFILE`. Only `karate-docker-reset` removes the selected Compose project volumes before restarting; up/down never prune volumes. `karate-test --tag @tag` maps to Karate's tag filtering.
 
 `run-app-bg` starts the built application jar, records its PID under `.makevn/app/`, waits for the configured or detected application health URL, and returns so it can be chained before `karate-test`. `stop-app` validates the recorded jar before stopping the process. `karate-all` composes `karate-docker-up`, `package` unless `SKIP_PACKAGE=true`, `run-app-bg`, `karate-test`, and `stop-app`.
 
@@ -276,10 +278,25 @@ Rules:
 ```bash
 makevn docker-up [--tail]
 makevn docker-down [--tail]
+makevn docker-reset [--tail]
 makevn docker-ps [--tail]
 makevn docker-stats [--tail]
 makevn docker-ps-required [--tail] [--compose boot|karate] [--wait-seconds N]
 ```
+
+`docker-up` starts services with `up --detach`, preserving volumes. `docker-down`
+removes containers and networks but retains volumes. `docker-reset` explicitly
+removes the selected Compose project's containers and volumes, then starts its
+services; failure during teardown prevents startup. No lifecycle operation prunes
+global volumes. The same contract applies to Karate up/down/reset and the container
+startup performed by `karate-all`. External volumes are never removed by Compose.
+Anonymous volumes survive down but are not automatically reattached by a later up;
+use named volumes for data that must persist across container removal.
+
+Compatibility: up/down previously deleted volumes and performed global pruning.
+Callers that require fresh service data must now explicitly use the matching reset
+command. Agents must obtain authorization for that deletion; an already-authorized
+ordinary startup needs no additional reset confirmation.
 
 `docker-stats` prints a one-shot `docker stats --no-stream` table for all currently running containers with stable columns for name, CPU %, memory usage, and memory %. It does not depend on compose detection so agents can use it for broad troubleshooting.
 
@@ -388,6 +405,7 @@ Initial set:
 - `run --json`
 - `docker-up --json`
 - `docker-down --json`
+- `docker-reset --json`
 
 Each line must be a complete JSON object.
 
@@ -496,10 +514,12 @@ Initially supported command family:
 - `pr-verify`
 - `docker-up`
 - `docker-down`
+- `docker-reset`
 - `docker-ps`
 - `docker-ps-required`
 - `karate-docker-up`
 - `karate-docker-down`
+- `karate-docker-reset`
 - `karate-test`
 
 Commands such as `doctor`, `init`, `uninstall`, `profile refresh`, `coverage-changes`, `jdk current`, `jdk list`, `karate-all`, `run-app`, `run-app-bg`, and `stop-app` should reject `--tail`.

@@ -20,14 +20,30 @@ use std::os::unix::process::{CommandExt, ExitStatusExt};
 #[cfg(unix)]
 use signal_hook::consts::signal::{SIGINT, SIGTERM};
 
+#[cfg(test)]
+mod agent_test_fixture;
+mod cli_help;
+use cli_help::{print_command_help, print_help, print_mcp_help};
+#[cfg(test)]
+use cli_help::{command_help, maven_command_help, tail_command_help};
+mod agent_setup;
+mod agent_skills;
+mod agent_transaction;
 mod docker_resources;
 mod mcp_doctor;
+mod execution_retention;
 mod mcp_execution;
 mod mcp_runtime;
 mod mcp_server;
 mod mcp_supervisor;
 
 fn main() {
+    if env::args_os().nth(1).as_deref() == Some(std::ffi::OsStr::new("execution-cleanup")) {
+        match execution_retention::cli(env::args_os().skip(2).collect()) {
+            Ok(()) => return,
+            Err(error) => exit_with_error(error),
+        }
+    }
     if env::args_os().nth(1).as_deref() == Some(std::ffi::OsStr::new("--makevn-mcp-supervisor")) {
         match mcp_supervisor::run() {
             Ok(code) => process::exit(code),
@@ -97,14 +113,16 @@ fn main() {
         process::exit(exit_code);
     }
 
-    if let Action::InstallOpenCodeAgent = action {
-        match install_opencode_agent() {
-            Ok(path) => {
-                println!("makevn MCP installed for OpenCode");
-                println!("  Config: {}", path.display());
-                println!("  Restart OpenCode to load the makevn MCP tools.");
-                return;
-            }
+    if let Action::AgentUpgrade(scope) = action {
+        match agent_setup::upgrade::run(scope) {
+            Ok(()) => return,
+            Err(message) => exit_with_error(message),
+        }
+    }
+
+    if let Action::Agent(ref request) = action {
+        match agent_setup::run(request) {
+            Ok(()) => return,
             Err(message) => exit_with_error(message),
         }
     }
@@ -133,7 +151,7 @@ fn main() {
         Action::PrintHelp { .. } => unreachable!(),
         Action::PrintCommandHelp { .. } => unreachable!(),
         Action::RunMcpServer => unreachable!(),
-        Action::InstallOpenCodeAgent => unreachable!(),
+        Action::Agent(_) | Action::AgentUpgrade(_) => unreachable!(),
     };
 
     let exit_code = match dispatch_backend_invocations(
@@ -159,7 +177,8 @@ enum Action {
     PrintCommandHelp { command: String },
     DispatchToBackend(Vec<BackendInvocation>),
     RunMcpServer,
-    InstallOpenCodeAgent,
+    Agent(agent_setup::Request),
+    AgentUpgrade(Option<agent_setup::Scope>),
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -348,23 +367,17 @@ enum CommandValidation {
 }
 
 fn parse_invocation(args: Vec<OsString>) -> Result<Action, String> {
+    if let Some(command) = cli_help::requested_command(&args)? {
+        return Ok(Action::PrintCommandHelp { command });
+    }
     if args.first() == Some(&OsString::from("agent")) {
-        return match args.as_slice() {
-            [agent, install, client]
-                if agent == "agent" && install == "install" && client == "opencode" =>
-            {
-                Ok(Action::InstallOpenCodeAgent)
-            }
-            [agent, help]
-                if agent == "agent"
-                    && matches!(help.to_string_lossy().as_ref(), "--help" | "-h") =>
-            {
-                Ok(Action::PrintCommandHelp {
-                    command: String::from("agent"),
-                })
-            }
-            _ => Err(String::from("Usage: makevn agent install opencode")),
-        };
+        if args.len() == 2 && matches!(args[1].to_str(), Some("--help" | "-h")) {
+            return Ok(Action::PrintCommandHelp { command: String::from("agent") });
+        }
+        if args.get(1).is_some_and(|arg| arg == "upgrade") {
+            return agent_setup::parse_scope(&args[2..]).map(Action::AgentUpgrade);
+        }
+        return agent_setup::parse(&args[1..]).map(Action::Agent);
     }
 
     let mut index = 0;
@@ -437,107 +450,6 @@ fn parse_invocation(args: Vec<OsString>) -> Result<Action, String> {
     Ok(Action::DispatchToBackend(backend_invocations))
 }
 
-fn install_opencode_agent() -> Result<PathBuf, String> {
-    let config_root = env::var_os("XDG_CONFIG_HOME")
-        .map(PathBuf::from)
-        .or_else(|| env::var_os("HOME").map(|home| PathBuf::from(home).join(".config")))
-        .ok_or_else(|| String::from("HOME is not set; cannot locate OpenCode configuration"))?;
-    let global_dir = config_root.join("opencode");
-    let repo_root = resolve_repo_root(None)?;
-    let local_configs = detect_local_opencode_configs(&repo_root);
-    if !local_configs.is_empty() {
-        println!("Found local OpenCode configurations:");
-        for config in &local_configs {
-            println!("  {}", config.display());
-        }
-        if io::stdin().is_terminal() {
-            println!("Where should makevn be installed?");
-            for (index, config) in local_configs.iter().enumerate() {
-                println!("  {}) Local config ({})", index + 1, config.display());
-            }
-            println!("  {}) Global config", local_configs.len() + 1);
-            print!("Select [1]: ");
-            io::stdout()
-                .flush()
-                .map_err(|error| format!("failed to write prompt: {error}"))?;
-            let mut selection = String::new();
-            io::stdin()
-                .read_line(&mut selection)
-                .map_err(|error| format!("failed to read selection: {error}"))?;
-            let selected = if selection.trim().is_empty() {
-                1
-            } else {
-                selection
-                    .trim()
-                    .parse::<usize>()
-                    .map_err(|_| String::from("Invalid selection"))?
-            };
-            if let Some(local_config) = selected
-                .checked_sub(1)
-                .and_then(|index| local_configs.get(index))
-            {
-                return install_opencode_agent_config(local_config);
-            }
-            if selected == local_configs.len() + 1 {
-                return install_opencode_agent_at(&global_dir);
-            }
-            return Err(format!(
-                "Invalid selection; choose a number from 1 to {}",
-                local_configs.len() + 1
-            ));
-        }
-    }
-    install_opencode_agent_at(&global_dir)
-}
-
-fn install_opencode_agent_at(opencode_dir: &Path) -> Result<PathBuf, String> {
-    fs::create_dir_all(opencode_dir).map_err(|error| {
-        format!(
-            "failed to create OpenCode config directory {}: {error}",
-            opencode_dir.display()
-        )
-    })?;
-
-    let jsonc_path = opencode_dir.join("opencode.jsonc");
-    let json_path = opencode_dir.join("opencode.json");
-    let config_path = if jsonc_path.is_file() {
-        jsonc_path
-    } else {
-        json_path
-    };
-    install_opencode_agent_config(&config_path)
-}
-
-fn detect_local_opencode_configs(repo_root: &Path) -> Vec<PathBuf> {
-    let opencode_dir = repo_root.join(".opencode");
-    [
-        opencode_dir.join("opencode.jsonc"),
-        opencode_dir.join("opencode.json"),
-        opencode_dir.join("config.jsonc"),
-        opencode_dir.join("config.json"),
-    ]
-    .into_iter()
-    .filter(|path| path.is_file())
-    .collect()
-}
-
-fn install_opencode_agent_config(config_path: &Path) -> Result<PathBuf, String> {
-    let original = read_opencode_config(config_path)?;
-    let mut config: serde_json::Value = serde_json::from_str(&original)
-        .or_else(|_| serde_json::from_str(&strip_jsonc_comments(&original)))
-        .map_err(|error| format!("failed to parse {}: {error}", config_path.display()))?;
-    let original_config = config.clone();
-    configure_opencode_mcp(&mut config, config_path)?;
-    if config == original_config {
-        return Ok(config_path.to_path_buf());
-    }
-    let updated = serde_json::to_string_pretty(&config)
-        .map_err(|error| format!("failed to serialize OpenCode config: {error}"))?;
-
-    write_opencode_config(config_path, &updated)?;
-    Ok(config_path.to_path_buf())
-}
-
 fn configure_opencode_mcp(
     config: &mut serde_json::Value,
     config_path: &Path,
@@ -553,48 +465,17 @@ fn configure_opencode_mcp(
         .or_insert_with(|| serde_json::Value::Object(serde_json::Map::new()))
         .as_object_mut()
         .ok_or_else(|| String::from("OpenCode config field 'mcp' must be a JSON object"))?;
-    mcp.insert(
-        String::from("makevn"),
-        serde_json::json!({
-            "type": "local",
-            "command": ["makevn-mcp"],
-            "enabled": true,
-            "timeout": 1800000
-        }),
-    );
-    Ok(())
-}
-
-fn read_opencode_config(config_path: &Path) -> Result<String, String> {
-    if let Some(parent) = config_path.parent() {
-        fs::create_dir_all(parent).map_err(|error| {
-            format!(
-                "failed to create OpenCode config directory {}: {error}",
-                parent.display()
-            )
-        })?;
-    }
-    let original = if config_path.is_file() {
-        fs::read_to_string(config_path)
-            .map_err(|error| format!("failed to read {}: {error}", config_path.display()))?
+    if let Some(servers) = mcp.get_mut("servers") {
+        let servers = servers.as_object_mut().ok_or("OpenCode mcp.servers must be an object")?;
+        servers.insert(String::from("makevn"), serde_json::json!({
+            "type": "local", "command": ["makevn-mcp"], "disabled": false,
+            "timeout": {"startup": 1800000, "catalog": 1800000, "execution": 1800000}
+        }));
     } else {
-        String::from("{}")
-    };
-    Ok(original)
-}
-
-fn write_opencode_config(config_path: &Path, updated: &str) -> Result<(), String> {
-    if config_path.is_file() {
-        let backup_path = PathBuf::from(format!("{}.makevn.bak", config_path.display()));
-        fs::copy(config_path, &backup_path)
-            .map_err(|error| format!("failed to back up {}: {error}", config_path.display()))?;
+        mcp.insert(String::from("makevn"), serde_json::json!({
+            "type": "local", "command": ["makevn-mcp"], "enabled": true, "timeout": 1800000
+        }));
     }
-    fs::write(config_path, format!("{updated}\n"))
-        .map_err(|error| format!("failed to write {}: {error}", config_path.display()))?;
-    let written = fs::read_to_string(config_path)
-        .map_err(|error| format!("failed to verify {}: {error}", config_path.display()))?;
-    serde_json::from_str::<serde_json::Value>(&written)
-        .map_err(|error| format!("written OpenCode config is invalid: {error}"))?;
     Ok(())
 }
 
@@ -792,8 +673,8 @@ fn validate_command(
             Ok(CommandValidation::Valid)
         }
         "help" | "init" | "refresh" | "uninstall" | "test" | "coverage" | "coverage-changes"
-        | "crap" | "crap-changes" | "docker-up" | "docker-down" | "docker-ps" | "docker-stats"
-        | "docker-ps-required" | "karate-docker-up" | "karate-docker-down" | "run-app"
+        | "crap" | "crap-changes" | "docker-up" | "docker-down" | "docker-reset" | "docker-ps" | "docker-stats"
+        | "docker-ps-required" | "karate-docker-up" | "karate-docker-down" | "karate-docker-reset" | "run-app"
         | "run-app-bg" | "stop-app" | "run" => Ok(CommandValidation::Valid),
         "doctor" => {
             if let Some(extra_arg) = trailing_args.iter().find(|arg| *arg != "--compact" && *arg != "--reset-config") {
@@ -999,11 +880,13 @@ fn is_top_level_command(arg: &OsString) -> bool {
             | "checkstyle"
             | "docker-up"
             | "docker-down"
+            | "docker-reset"
             | "docker-ps"
             | "docker-stats"
             | "docker-ps-required"
             | "karate-docker-up"
             | "karate-docker-down"
+            | "karate-docker-reset"
             | "karate-test"
             | "karate-all"
             | "run-app"
@@ -1128,11 +1011,13 @@ fn command_supports_frontend_loader(command: &OsString) -> bool {
             | "checkstyle"
             | "docker-up"
             | "docker-down"
+            | "docker-reset"
             | "docker-ps"
             | "docker-stats"
             | "docker-ps-required"
             | "karate-docker-up"
             | "karate-docker-down"
+            | "karate-docker-reset"
             | "karate-test"
             | "karate-all"
             | "run-app"
@@ -3981,261 +3866,6 @@ fn install_root_with_override(
 fn exit_with_error(message: String) -> ! {
     eprintln!("Error: {message}");
     process::exit(1);
-}
-
-fn print_command_help(command: &str) {
-    let Some((usage, description, options)) = command_help(command) else {
-        eprintln!("Error: Unknown command: {command}");
-        process::exit(1);
-    };
-
-    println!("makevn {command}");
-    println!();
-    println!("{description}");
-    println!();
-    println!("Usage:");
-    println!("  {usage}");
-    if !options.is_empty() {
-        println!();
-        println!("Options:");
-        for option in options {
-            println!("  {option}");
-        }
-    }
-}
-
-fn command_help(command: &str) -> Option<(&'static str, &'static str, &'static [&'static str])> {
-    match command {
-        "help" => Some(("makevn help", "Print the full makevn help.", &[])),
-        "agent" => Some(("makevn agent install opencode", "Install the makevn MCP server in the global OpenCode configuration.", &[])),
-        "doctor" => Some(("makevn [--repo PATH] doctor [--compact] [--reset-config]", "Inspect repository setup and makevn configuration.", &["--compact  Print brief, noninteractive setup advice", "--reset-config  Back up settings and ask setup questions again (interactive CLI only)"])),
-        "init" => Some(("makevn [--repo PATH] init [--dry-run] [--force]", "Initialize .makevn configuration for the repository.", &["--dry-run  Show what would change without writing files", "--force    Refresh existing generated files"])),
-        "uninstall" => Some(("makevn [--repo PATH] uninstall [--dry-run]", "Remove makevn local repository state.", &["--dry-run  Show what would be removed"])),
-        "refresh" => Some(("makevn [--repo PATH] refresh [--dry-run]", "Refresh initialization while preserving user configuration.", &["--dry-run  Show what would change without writing files"])),
-        "profile" => Some(("makevn [--repo PATH] profile refresh", "Refresh detected repository profile information.", &[])),
-        "compile" => maven_command_help("compile", "Compile project sources.", false),
-        "test-compile" => maven_command_help("test-compile", "Compile project tests.", false),
-        "compile-tests" => maven_command_help("compile-tests", "Compile project tests.", false),
-        "validate" => maven_command_help("validate", "Validate the Maven project model.", false),
-        "package" => maven_command_help("package", "Package the project without running tests.", false),
-        "build" => maven_command_help("build", "Run the full Maven build.", false),
-        "clean" => maven_command_help("clean", "Clean Maven build output.", false),
-        "test" => Some(("makevn [--repo PATH] [--compact] test [--tail] [--name TEST]... [--fast] [--clean-generated-contract-targets] [-- EXTRA_MAVEN_ARGS...]", "Run tests with optional filtering.", &["--tail                              Start in interactive log tail mode", "--compact                           Use compact non-interactive output", "--name                              Test class name or comma-separated names", "--fast                              Skip compilation when sources have not changed", "--clean-generated-contract-targets  Clean stale generated sources before running"])),
-        "verify-ut" => maven_command_help("verify-ut", "Run unit-test-only verification.", true),
-        "verify-ut-coverage" => maven_command_help("verify-ut-coverage", "Run unit-test-only verification with coverage.", true),
-        "verify-it" => maven_command_help("verify-it", "Run integration-test-only verification.", true),
-        "verify-it-coverage" => maven_command_help("verify-it-coverage", "Run integration-test-only verification with coverage.", true),
-        "verify" => maven_command_help("verify", "Run full combined verification.", true),
-        "verify-changes-preview" => Some(("makevn [--repo PATH] verify-changes-preview [--focused|--exhaustive]", "Preview changed-code scope without Maven; focused by default. For user-requested faster local feedback, explain --focused limitations and use the same mode in preview and execution. A large preparation reactor does not mean its test suites run.", &[])),
-        "verify-changes" => maven_command_help("verify-changes", "Verify changed-code scope; focused by default, --exhaustive is explicit. --focused prepares dependencies without UT/IT then verifies production owner suites and selected changed tests without -am; not a full integration/coverage gate. Use the same mode as preview and report its scope.", true),
-        "coverage" => Some(("makevn [--repo PATH] coverage [--threshold PCT]", "Check the latest aggregate coverage report.", &["--threshold  Required coverage percentage"])),
-        "coverage-changes" => Some(("makevn [--repo PATH] coverage-changes [--threshold PCT] [--overall-threshold PCT] [--verbose]", "Check incremental and per-module coverage.", &["--threshold          Per-module coverage percentage", "--overall-threshold  Overall coverage percentage", "--verbose            Print detailed coverage output"])),
-        "crap" => Some(("makevn [--repo PATH] crap [install-analyzer] [--jacoco-xml PATH] [--threshold SCORE] [--max-warnings COUNT]", "Calculate Java CRAP metrics from existing JaCoCo XML coverage.", &["install-analyzer  Download and verify the pinned crap4java release", "--jacoco-xml      Use a specific existing JaCoCo XML report", "--threshold       CRAP score warning threshold (default: 8)", "--max-warnings    Fail when the warning count exceeds this ratchet"])),
-        "crap-changes" => Some(("makevn [--repo PATH] crap-changes [--base REF]", "Show CRAP for changed production Java methods using existing JaCoCo coverage.", &["--base  Override the detected base branch/ref"])),
-        "pr-verify" => maven_command_help("pr-verify", "Run a local PR-style verification flow.", false),
-        "format" => Some(("makevn [--repo PATH] [--compact] format [--tail] [--apply] [-- EXTRA_MAVEN_ARGS...]", "Check or apply code formatting.", &["--tail     Start in interactive log tail mode", "--compact  Use compact non-interactive output", "--apply    Apply formatting changes"])),
-        "checkstyle" => Some(("makevn [--repo PATH] [--compact] checkstyle [--tail] [--module MODULE] [--verbose] [-- EXTRA_MAVEN_ARGS...]", "Run Checkstyle code style checks.", &["--tail     Start in interactive log tail mode", "--compact  Use compact non-interactive output", "--module   Maven module to check", "--verbose  Print detailed output"])),
-        "docker-up" => tail_command_help("docker-up", "Start boot Docker services."),
-        "docker-down" => tail_command_help("docker-down", "Stop boot Docker services."),
-        "docker-ps" => tail_command_help("docker-ps", "List boot Docker containers."),
-        "docker-stats" => tail_command_help("docker-stats", "Show Docker CPU and memory stats."),
-        "docker-ps-required" => Some(("makevn [--repo PATH] docker-ps-required [--tail] [--compose boot|karate] [--wait-seconds N]", "Validate required Docker services are running and healthy.", &["--tail          Start in interactive log tail mode", "--compose       Compose profile: boot or karate", "--wait-seconds  Seconds to wait for services"])),
-        "karate-docker-up" => tail_command_help("karate-docker-up", "Start Karate E2E Docker services."),
-        "karate-docker-down" => tail_command_help("karate-docker-down", "Stop Karate E2E Docker services."),
-        "karate-test" => Some(("makevn [--repo PATH] karate-test [--tail] [--tag TAG] [-- EXTRA_MAVEN_ARGS...]", "Run Karate tests.", &["--tail  Start in interactive log tail mode", "--tag   Karate tag filter"])),
-        "karate-all" => Some(("makevn [--repo PATH] karate-all [--tail] [--tag TAG] [-- EXTRA_MAVEN_ARGS...]", "Run the Karate app and test lifecycle.", &["--tail  Start in interactive log tail mode", "--tag   Karate tag filter"])),
-        "run-app" => Some(("makevn [--repo PATH] run-app [--tail]", "Run the detected application in the foreground.", &["--tail  Start in interactive application log tail mode"])),
-        "run-app-bg" => Some(("makevn [--repo PATH] run-app-bg", "Run the detected application in the background.", &[])),
-        "stop-app" => Some(("makevn [--repo PATH] stop-app", "Stop the background application started by makevn.", &[])),
-        "run" => Some(("makevn [--repo PATH] run", "Run the repository-configured command.", &[])),
-        "jdk" => Some(("makevn [--repo PATH] jdk current|list", "Show or list discovered JDK installations.", &[])),
-        "mutation" => Some(("makevn [--repo PATH] [--compact] mutation [--tail] [--module MODULE] [--verbose]", "Run PIT mutation testing.", &["--tail     Start in interactive log tail mode", "--compact  Use compact non-interactive output", "--module   Maven module to test", "--verbose  Print detailed output"])),
-        _ => None,
-    }
-}
-
-fn maven_command_help(
-    command: &'static str,
-    description: &'static str,
-    clean_contract: bool,
-) -> Option<(&'static str, &'static str, &'static [&'static str])> {
-    let usages = [
-        ("compile", "makevn [--repo PATH] [--compact] compile [--tail] [-- EXTRA_MAVEN_ARGS...]"),
-        ("test-compile", "makevn [--repo PATH] [--compact] test-compile [--tail] [-- EXTRA_MAVEN_ARGS...]"),
-        ("compile-tests", "makevn [--repo PATH] [--compact] compile-tests [--tail] [-- EXTRA_MAVEN_ARGS...]"),
-        ("validate", "makevn [--repo PATH] [--compact] validate [--tail] [-- EXTRA_MAVEN_ARGS...]"),
-        ("package", "makevn [--repo PATH] [--compact] package [--tail] [-- EXTRA_MAVEN_ARGS...]"),
-        ("build", "makevn [--repo PATH] [--compact] build [--tail] [-- EXTRA_MAVEN_ARGS...]"),
-        ("clean", "makevn [--repo PATH] [--compact] clean [--tail] [-- EXTRA_MAVEN_ARGS...]"),
-        ("verify-ut", "makevn [--repo PATH] [--compact] verify-ut [--tail] [--clean-generated-contract-targets] [-- EXTRA_MAVEN_ARGS...]"),
-        ("verify-ut-coverage", "makevn [--repo PATH] [--compact] verify-ut-coverage [--tail] [--clean-generated-contract-targets] [-- EXTRA_MAVEN_ARGS...]"),
-        ("verify-it", "makevn [--repo PATH] [--compact] verify-it [--tail] [--clean-generated-contract-targets] [-- EXTRA_MAVEN_ARGS...]"),
-        ("verify-it-coverage", "makevn [--repo PATH] [--compact] verify-it-coverage [--tail] [--clean-generated-contract-targets] [-- EXTRA_MAVEN_ARGS...]"),
-        ("verify", "makevn [--repo PATH] [--compact] verify [--tail] [--clean-generated-contract-targets] [-- EXTRA_MAVEN_ARGS...]"),
-        ("verify-changes", "makevn [--repo PATH] [--compact] verify-changes [--tail] [--focused|--exhaustive] [--clean-generated-contract-targets] [-- EXTRA_MAVEN_ARGS...]"),
-        ("pr-verify", "makevn [--repo PATH] [--compact] pr-verify [--tail] [-- EXTRA_MAVEN_ARGS...]"),
-    ];
-    let usage = usages.iter().find(|(name, _)| *name == command)?.1;
-    let base_options = &[
-        "--tail     Start in interactive log tail mode",
-        "--compact  Use compact non-interactive output",
-        "--          Forward remaining arguments to Maven",
-    ];
-    if clean_contract {
-        let options: &[&str] = &[
-            "--tail                              Start in interactive log tail mode",
-            "--compact                           Use compact non-interactive output",
-            "--clean-generated-contract-targets  Clean stale generated sources before running",
-            "--                                  Forward remaining arguments to Maven",
-        ];
-        Some((usage, description, options))
-    } else {
-        Some((usage, description, base_options))
-    }
-}
-
-fn tail_command_help(
-    command: &'static str,
-    description: &'static str,
-) -> Option<(&'static str, &'static str, &'static [&'static str])> {
-    let usage = match command {
-        "docker-up" => "makevn [--repo PATH] docker-up [--tail]",
-        "docker-down" => "makevn [--repo PATH] docker-down [--tail]",
-        "docker-ps" => "makevn [--repo PATH] docker-ps [--tail]",
-        "docker-stats" => "makevn [--repo PATH] docker-stats [--tail]",
-        "karate-docker-up" => "makevn [--repo PATH] karate-docker-up [--tail]",
-        "karate-docker-down" => "makevn [--repo PATH] karate-docker-down [--tail]",
-        _ => return None,
-    };
-    Some((
-        usage,
-        description,
-        &["--tail  Start in interactive log tail mode"],
-    ))
-}
-
-fn print_help(with_header: bool) {
-    if with_header {
-        println!(":: makevn help");
-    }
-
-    println!("makevn {}", makevn_version());
-    println!();
-    println!("Terminal-first workflows for Java Maven repositories.");
-    println!();
-    println!("If a repository already uses Maven, local build and test flows should be runnable");
-    println!("from the terminal without IDE-specific setup. Agents in OpenCode should prefer");
-    println!("'makevn' commands over editor-specific instructions.");
-    println!();
-    println!("Usage:");
-    println!("  makevn agent install opencode");
-    println!("  makevn [--repo PATH] doctor");
-    println!("  makevn [--repo PATH] init [--dry-run] [--force]");
-    println!("  makevn [--repo PATH] refresh [--dry-run]");
-    println!("  makevn [--repo PATH] uninstall [--dry-run]");
-    println!("  makevn [--repo PATH] profile refresh");
-    println!("  makevn [--repo PATH] [--compact] compile [--tail] [-- EXTRA_MAVEN_ARGS...]");
-    println!("  makevn [--repo PATH] [--compact] test-compile [--tail] [-- EXTRA_MAVEN_ARGS...]");
-    println!("  makevn [--repo PATH] [--compact] compile-tests [--tail] [-- EXTRA_MAVEN_ARGS...]");
-    println!("  makevn [--repo PATH] [--compact] validate [--tail] [-- EXTRA_MAVEN_ARGS...]");
-    println!("  makevn [--repo PATH] [--compact] package [--tail] [-- EXTRA_MAVEN_ARGS...]");
-    println!("  makevn [--repo PATH] [--compact] build [--tail] [-- EXTRA_MAVEN_ARGS...]");
-    println!("  makevn [--repo PATH] [--compact] clean [--tail] [-- EXTRA_MAVEN_ARGS...]");
-    println!(
-        "  makevn [--repo PATH] [--compact] test [--tail] [--name TEST]... [--fast] [--clean-generated-contract-targets] [-- EXTRA_MAVEN_ARGS...]"
-    );
-    println!("  makevn [--repo PATH] [--compact] verify-ut [--tail] [--clean-generated-contract-targets] [-- EXTRA_MAVEN_ARGS...]");
-    println!(
-        "  makevn [--repo PATH] [--compact] verify-ut-coverage [--tail] [--clean-generated-contract-targets] [-- EXTRA_MAVEN_ARGS...]"
-    );
-    println!("  makevn [--repo PATH] [--compact] verify-it [--tail] [--clean-generated-contract-targets] [-- EXTRA_MAVEN_ARGS...]");
-    println!(
-        "  makevn [--repo PATH] [--compact] verify-it-coverage [--tail] [--clean-generated-contract-targets] [-- EXTRA_MAVEN_ARGS...]"
-    );
-    println!("  makevn [--repo PATH] [--compact] verify [--tail] [--clean-generated-contract-targets] [-- EXTRA_MAVEN_ARGS...]");
-    println!("  makevn [--repo PATH] verify-changes-preview [--focused|--exhaustive]");
-    println!("  makevn [--repo PATH] [--compact] verify-changes [--tail] [--focused|--exhaustive] [--clean-generated-contract-targets] [-- EXTRA_MAVEN_ARGS...]");
-    println!("  makevn [--repo PATH] coverage [--threshold PCT]");
-    println!("  makevn [--repo PATH] coverage-changes [--threshold PCT] [--overall-threshold PCT] [--verbose]");
-    println!("  makevn [--repo PATH] crap [--jacoco-xml PATH] [--threshold SCORE] [--max-warnings COUNT]");
-    println!("  makevn [--repo PATH] crap-changes [--base REF]");
-    println!("  makevn [--repo PATH] crap install-analyzer");
-    println!("  makevn [--repo PATH] [--compact] pr-verify [--tail] [-- EXTRA_MAVEN_ARGS...]");
-    println!(
-        "  makevn [--repo PATH] [--compact] format [--tail] [--apply] [-- EXTRA_MAVEN_ARGS...]"
-    );
-    println!(
-        "  makevn [--repo PATH] [--compact] checkstyle [--tail] [--module MODULE] [--verbose] [-- EXTRA_MAVEN_ARGS...]"
-    );
-    println!("  makevn [--repo PATH] docker-up [--tail]");
-    println!("  makevn [--repo PATH] docker-down [--tail]");
-    println!("  makevn [--repo PATH] docker-ps [--tail]");
-    println!("  makevn [--repo PATH] docker-stats [--tail]");
-    println!("  makevn [--repo PATH] docker-ps-required [--tail] [--compose boot|karate] [--wait-seconds N]");
-    println!("  makevn [--repo PATH] karate-docker-up [--tail]");
-    println!("  makevn [--repo PATH] karate-docker-down [--tail]");
-    println!("  makevn [--repo PATH] karate-test [--tail] [--tag TAG] [-- EXTRA_MAVEN_ARGS...]");
-    println!("  makevn [--repo PATH] karate-all [--tag TAG] [-- EXTRA_MAVEN_ARGS...]");
-    println!("  makevn [--repo PATH] run-app");
-    println!("  makevn [--repo PATH] run-app-bg");
-    println!("  makevn [--repo PATH] stop-app");
-    println!("  makevn [--repo PATH] run");
-    println!("  makevn [--repo PATH] jdk current");
-    println!("  makevn [--repo PATH] jdk list");
-    println!();
-    println!("Examples:");
-    println!("  makevn doctor");
-    println!("  makevn init");
-    println!("  makevn profile refresh");
-    println!("  makevn compile");
-    println!("  makevn test-compile");
-    println!("  makevn compile-tests");
-    println!("  makevn validate");
-    println!("  makevn package");
-    println!("  makevn build");
-    println!("  makevn clean");
-    println!("  makevn test --name UserRepositoryTest");
-    println!("  makevn test --name UserRepositoryTest,OrderRepositoryTest");
-    println!("  makevn test --name UserRepositoryTest --name OrderRepositoryTest");
-    println!("  makevn test --fast --name UserRepositoryTest");
-    println!("  makevn verify-ut");
-    println!("  makevn verify-ut-coverage");
-    println!("  makevn verify-it");
-    println!("  makevn verify-changes-preview [--focused|--exhaustive]");
-    println!("  makevn verify-changes");
-    println!("  makevn coverage");
-    println!("  makevn coverage-changes");
-    println!("  makevn crap");
-    println!("  makevn crap-changes");
-    println!("  makevn pr-verify");
-    println!("  makevn format --apply");
-    println!("  makevn checkstyle --module domain --verbose");
-    println!("  makevn docker-up");
-    println!("  makevn docker-stats");
-    println!("  makevn karate-test");
-    println!("  makevn karate-test --tag @smoke");
-    println!("  makevn run-app-bg");
-    println!("  makevn stop-app");
-    println!();
-    println!("Notes:");
-    println!("  - 'doctor' inspects the repository before and after initialization.");
-    println!("  - 'init' creates '.makevn/' without inspecting or modifying root Makefiles.");
-    println!("  - '--compact' shortens reports; MAKEVN_AGENT_OUTPUT=1 disables TTY presentation for agents.");
-    println!("  - '--tail' starts managed-log commands in tail mode; without it, press 't' while a command is running to tail the current log.");
-    println!("  - 'makevn-mcp' starts the MCP server over stdio (Model Context Protocol).");
-}
-
-fn print_mcp_help() {
-    println!("makevn-mcp {}", makevn_version());
-    println!();
-    println!("Model Context Protocol server for makevn.");
-    println!();
-    println!("Usage:");
-    println!("  makevn-mcp");
-    println!("  makevn-mcp --help");
-    println!("  makevn-mcp --version");
-    println!();
-    println!("Run without arguments from an MCP client. The server communicates over stdio.");
 }
 
 struct Lossy<'a>(&'a OsString);

@@ -109,7 +109,7 @@ By default this installs into `~/.local`:
 - `~/.local/bin/makevn-mcp`
 - `~/.local/libexec/makevn/`
 - `~/.local/share/makevn/`
-- `~/.local/share/makevn/skills/makevn/`
+- `~/.local/share/makevn/skills/{makevn,makevn-test,makevn-docker,makevn-karate,makevn-quality}/`
 
 If `~/.local/bin` is not in your `PATH`, add it first.
 
@@ -150,3 +150,17 @@ For the current target behavior and packaging assumptions, see:
 
 - `docs/cli-contract.md`
 - `docs/backend-contract.md`
+
+## Agent skills and workflows
+
+See the [workflow map](workflow-guidance.md) for what MakeVN does, workflow selection,
+CLI/MCP equivalents and evidence. Product installation ships five portable skills;
+register MCP and skills with `makevn agent install opencode --scope global` or
+`makevn agent install codex --scope global`. Run `makevn agent upgrade` after
+upgrading MakeVN, reload the client and check discovery separately from loading. See the
+[agent setup contract](agent-install.md#skill-registration-contract).
+
+For source installation, `SKILL_DIR` still selects the base skill destination;
+the four specialties are installed beside it. The conventional
+`share/makevn/skills/` bundle is also installed and is the source used by agent
+setup, so a custom base directory name does not break portable registration.

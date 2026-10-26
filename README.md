@@ -150,7 +150,7 @@ makevn --repo "/path/to/java-repo" verify-changes
 
 | Goal | Command |
 | --- | --- |
-| Inspect repository context | `makevn doctor` |
+| Inspect repository context | `makevn doctor` (concise JVM/mount summaries; `makevn doctor --json` for full diagnostics) |
 | Initialize local makevn state | `makevn init` |
 | Run one or more tests | `makevn test --name UserRepositoryTest` |
 | Build and verify | `makevn package`, `makevn verify` |
@@ -158,7 +158,8 @@ makevn --repo "/path/to/java-repo" verify-changes
 | Check aggregate or changed-code coverage | `makevn coverage`, `makevn coverage-changes` |
 | Analyze Java CRAP from an existing JaCoCo XML report | `makevn crap` |
 | Analyze CRAP only for changed Java methods | `makevn crap-changes [--base REF]` |
-| Start and inspect Docker services | `makevn docker-up`, `makevn docker-ps-required` |
+| Start and inspect Docker services, preserving volumes | `makevn docker-up`, `makevn docker-ps-required` |
+| Explicitly reset Compose project data | `makevn docker-reset` |
 | Run Karate E2E flows | `makevn karate-test`, `makevn karate-all` |
 | Run the application | `makevn run-app`, `makevn run-app-bg` |
 
@@ -197,7 +198,7 @@ and direct CLI behavior.
 When tests fail formatting validation, agents should run `makevn format --apply`
 and rerun the original test, never disable the formatter. MCP recovery uses
 `makevn_format` with `apply: true`.
-See [formatting recovery for agents](docs/agents.md#formatting-failure-recovery-for-ai-agents).
+See [formatting recovery for agents](skills/makevn-quality/references/workflows.md#formatting-failure-recovery-for-ai-agents).
 
 ## Standalone operation
 
@@ -246,3 +247,40 @@ relative to the target repository, not the MCP server's working directory.
 ```json
 {"durationMs": 6739, "exitCode": 0, "tool": "test", "logPaths": [".makevn/logs/test-SampleTest.log"]}
 ```
+
+## Agent skills and workflows
+
+See the [workflow map](docs/workflow-guidance.md) for what MakeVN does, workflow selection,
+CLI/MCP equivalents and evidence. Product installation ships five portable skills;
+register MCP and skills with `makevn agent install opencode --scope global` or
+`makevn agent install codex --scope global`. Run `makevn agent upgrade` after
+upgrading MakeVN, reload the client and check discovery separately from loading. See the
+[agent setup contract](docs/agent-install.md#skill-registration-contract).
+
+Completed MCP executions and their private logs expire after **3 days** from
+completion. The MCP server cleans them at startup and before starting an execution.
+Set `MAKEVN_RETENTION_DAYS` to a positive number of days to change the default
+for both CLI and MCP.
+
+```bash
+makevn execution-cleanup --dry-run
+makevn execution-cleanup
+makevn execution-cleanup --retention-days 7
+```
+
+The CLI prints JSON with `executionsDeleted`, `logsDeleted`, `executionIds` and
+`logPaths`. A dry run returns candidate IDs and paths with zero deleted counts.
+Active executions, recent completions, unknown files and symlinks are preserved.
+Only execution-owned files in the MakeVN execution registry are removed; shared
+repository logs under `.makevn/logs/` are retained because later executions may
+reuse them. Legacy records without a lifetime lock are also preserved.
+
+### CLI help
+
+Use `makevn --help` for the command index and `makevn <command> --help` for
+command details. Nested help also supports `makevn help agent install` and
+`makevn agent install -h`. Help uses DESCRIPTION, USAGE, ARGUMENTS, FLAGS, GLOBAL FLAGS and
+COMMANDS (root) or SUBCOMMANDS (nested) in that order when applicable, with aligned
+descriptions. Terminal
+output uses lilac commands, green flags and gray placeholders; redirected output,
+`NO_COLOR` and `MAKEVN_AGENT_OUTPUT=1` use plain text.
