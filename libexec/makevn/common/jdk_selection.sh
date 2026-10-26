@@ -1,15 +1,18 @@
 #!/usr/bin/env bash
 
 makevn_automatic_java_homes() {
-  local base="$1" version="$2" ranges="" homes=""
+  local base="$1" version="$2" ranges="" homes="" java_home="${JAVA_HOME:-}"
   if [[ -z "${version}" ]]; then
     ranges="$(makevn_java_enforcer_ranges "${base}")"
     [[ -n "${ranges}" && "${ranges}" != '!'* ]] || return 0
     version=1
   fi
   homes="$(MAKEVN_JDK_MAVEN_BASE_PATH="${base}" makevn_list_compatible_java_homes "${version}")"
-  if [[ -n "${JAVA_HOME:-}" ]] && grep -Fxq "${JAVA_HOME}" <<< "${homes}"; then
-    printf '%s\n' "${JAVA_HOME}"
+  if [[ -d "${java_home}/Contents/Home" ]]; then
+    java_home="${java_home}/Contents/Home"
+  fi
+  if [[ -n "${java_home}" ]] && grep -Fxq "${java_home}" <<< "${homes}"; then
+    printf '%s\n' "${java_home}"
   else
     printf '%s\n' "${homes}"
   fi

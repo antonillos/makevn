@@ -110,6 +110,16 @@ second="${tmp}/jdks/125.0.3"
 mkdir -p "${second}/bin"
 printf '#!/bin/sh\necho '\''openjdk version "125.0.3"'\'' >&2\n' > "${second}/bin/java"
 chmod +x "${second}/bin/java"
+# An exported macOS bundle remains an explicit choice among compatible JDKs.
+bundle="${tmp}/selected.jdk"
+mkdir -p "${bundle}/Contents/Home/bin"
+cp "${expected}/bin/java" "${bundle}/Contents/Home/bin/java"
+output="$(JAVA_HOME="${bundle}" bash "${ROOT}/libexec/makevn/cli.sh" --repo "${tmp}/repo" doctor)"
+[[ "${output}" == *"Resolved code JAVA_HOME: ${bundle}/Contents/Home"* ]]
+[[ "${output}" != *'Setup status: pending'* ]]
+JAVA_HOME="${bundle}" bash "${ROOT}/libexec/makevn/backend.sh" compile --repo "${tmp}/repo" --compact >"${tmp}/output" 2>&1
+[[ "$(cat "${tmp}/repo/maven-java-home")" == "${bundle}/Contents/Home" ]]
+rm -rf "${bundle}"
 bash "${ROOT}/libexec/makevn/cli.sh" --repo "${tmp}/repo" init >"${tmp}/output" 2>&1
 bash "${ROOT}/libexec/makevn/backend.sh" doctor --repo "${tmp}/repo" --format json >"${tmp}/snapshot"
 python3 - "${tmp}/snapshot" "${expected}" "${second}" >"${tmp}/answers" <<'PYTEST'
