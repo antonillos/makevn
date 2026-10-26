@@ -182,7 +182,9 @@ for projects that deliberately require an experimental compiler.
 
 Automatic code-JDK selection also checks unconditional local
 `maven-enforcer-plugin` `requireJavaVersion` rules before treating newer JDKs
-as compatible. Numeric minimum, exact, bounded and union ranges are supported,
+as compatible. When no compiler Java version or tool pin is declared, these
+rules alone select the lowest installed stable JDK major satisfying all rules.
+Numeric minimum, exact, bounded and union ranges are supported,
 including patch versions and properties from local relative parent POMs. Rules in unconditional local reactor modules also constrain the selected JDK. For
 example, `[25,26)` rejects 27 and requires an accepted stable 25.x. Doctor
 reports the restriction if no candidate satisfies it; makevn never adds an

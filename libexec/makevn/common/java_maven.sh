@@ -148,6 +148,14 @@ makevn_effective_java_home() {
           return 0
         fi
       fi
+    else
+      local enforcer_ranges=""
+      enforcer_ranges="$(makevn_java_enforcer_ranges "${maven_base_path}")"
+      if [[ -n "${enforcer_ranges}" && "${enforcer_ranges}" != '!'* ]]; then
+        # Without a compiler target, Enforcer alone constrains the inventory.
+        makevn_resolve_compatible_java_version_home 1
+        return $?
+      fi
     fi
   fi
 

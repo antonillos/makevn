@@ -91,3 +91,26 @@ output="$(bash "${ROOT}/libexec/makevn/cli.sh" --repo "${tmp}/repo" doctor)"
 bash "${ROOT}/libexec/makevn/backend.sh" compile --repo "${tmp}/repo" --compact >"${tmp}/output" 2>&1
 [[ "$(cat "${tmp}/repo/maven-java-home")" == "${tmp}/jdks/127" ]]
 echo 'Reactor Enforcer JDK regression tests passed'
+# Enforcer alone selects Java when no compiler property or tool pin exists.
+rm -rf "${tmp}/repo/feature"
+cat > "${tmp}/repo/pom.xml" <<'POM'
+<project><build><plugins><plugin><artifactId>maven-enforcer-plugin</artifactId>
+<executions><execution><goals><goal>enforce</goal></goals><configuration><rules>
+<requireJavaVersion><version>[125,126)</version></requireJavaVersion>
+</rules></configuration></execution></executions></plugin></plugins></build></project>
+POM
+rm -f "${tmp}/repo/.makevn/profile.env"
+output="$(bash "${ROOT}/libexec/makevn/cli.sh" --repo "${tmp}/repo" doctor)"
+[[ "${output}" == *"Resolved code JAVA_HOME: ${expected}"* ]]
+bash "${ROOT}/libexec/makevn/backend.sh" compile --repo "${tmp}/repo" --compact >"${tmp}/output" 2>&1
+[[ "$(cat "${tmp}/repo/maven-java-home")" == "${expected}" ]]
+# No accepted installation must leave Java unresolved and prevent Maven execution.
+rm -rf "${expected}"
+rm -f "${tmp}/repo/maven-java-home"
+output="$(bash "${ROOT}/libexec/makevn/cli.sh" --repo "${tmp}/repo" doctor)"
+[[ "${output}" == *'Resolved code JAVA_HOME: unresolved'* ]]
+if bash "${ROOT}/libexec/makevn/backend.sh" compile --repo "${tmp}/repo" --compact >"${tmp}/output" 2>&1; then
+  echo 'Enforcer-only discovery started Maven with a forbidden JDK'; exit 1
+fi
+[[ ! -e "${tmp}/repo/maven-java-home" ]]
+echo 'Enforcer-only JDK regression tests passed'
