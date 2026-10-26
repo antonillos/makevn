@@ -1,90 +1,22 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-makevn_collect_karate_compose_args() {
-  local compose_file="$1"
-  local compose_override_file="$2"
-
-  printf '%s\n' "-f"
-  printf '%s\n' "${compose_file}"
-  if [[ -f "${compose_override_file}" ]]; then
-    printf '%s\n' "-f"
-    printf '%s\n' "${compose_override_file}"
-  fi
-}
-
 cmd_karate_docker_down() {
   local repo_root="$1"
-  local compose_file=""
-  local compose_override_file=""
-  local docker_compose_cmd=""
-  local -a docker_compose=()
-  local -a compose_args=()
-
   shift
-  makevn_parse_docker_args "$@"
-
-  compose_file="$(makevn_karate_compose_file_path "${repo_root}" || true)"
-  compose_override_file="$(makevn_karate_compose_override_file_path "${repo_root}" || true)"
-  [[ -f "${compose_file}" ]] || makevn_die "Karate docker compose file not found. Configure MAKEVN_E2E_COMPOSE_FILE or add e2e/karate/src/test/resources/compose/docker-compose.yml."
-
-  docker_compose_cmd="$(makevn_resolve_docker_compose_command || true)"
-  [[ -n "${docker_compose_cmd}" ]] || makevn_die "Neither docker-compose nor 'docker compose' is available."
-  read -r -a docker_compose <<< "${docker_compose_cmd}"
-
-  while IFS= read -r arg; do
-    compose_args+=("${arg}")
-  done < <(makevn_collect_karate_compose_args "${compose_file}" "${compose_override_file}")
-
-  makevn_publish_compose_resources "${repo_root}" "${docker_compose_cmd}" "${compose_file}" "${compose_override_file}"
-
-  makevn_run_logged "${repo_root}" karate-docker-down karate-docker-down karate-docker-down bash -c '
-    "$@" down -v --remove-orphans
-    docker volume prune -f
-  ' bash "${docker_compose[@]}" "${compose_args[@]}"
+  makevn_run_docker_lifecycle "${repo_root}" karate down "$@"
 }
 
 cmd_karate_docker_up() {
   local repo_root="$1"
-  local compose_file=""
-  local compose_override_file=""
-  local docker_compose_cmd=""
-  local profile="${PROFILE:-}"
-  local -a docker_compose=()
-  local -a compose_args=()
-
   shift
-  makevn_parse_docker_args "$@"
+  makevn_run_docker_lifecycle "${repo_root}" karate up "$@"
+}
 
-  compose_file="$(makevn_karate_compose_file_path "${repo_root}" || true)"
-  compose_override_file="$(makevn_karate_compose_override_file_path "${repo_root}" || true)"
-  [[ -f "${compose_file}" ]] || makevn_die "Karate docker compose file not found. Configure MAKEVN_E2E_COMPOSE_FILE or add e2e/karate/src/test/resources/compose/docker-compose.yml."
-
-  docker_compose_cmd="$(makevn_resolve_docker_compose_command || true)"
-  [[ -n "${docker_compose_cmd}" ]] || makevn_die "Neither docker-compose nor 'docker compose' is available."
-  read -r -a docker_compose <<< "${docker_compose_cmd}"
-
-  while IFS= read -r arg; do
-    compose_args+=("${arg}")
-  done < <(makevn_collect_karate_compose_args "${compose_file}" "${compose_override_file}")
-
-  makevn_publish_compose_resources "${repo_root}" "${docker_compose_cmd}" "${compose_file}" "${compose_override_file}"
-
-  if [[ -n "${profile}" ]]; then
-    makevn_run_logged "${repo_root}" karate-docker-up karate-docker-up karate-docker-up bash -c '
-      profile="$1"
-      shift
-      "$@" down -v --remove-orphans
-      docker volume prune -f
-      "$@" --profile "${profile}" up --detach
-    ' bash "${profile}" "${docker_compose[@]}" "${compose_args[@]}"
-  else
-    makevn_run_logged "${repo_root}" karate-docker-up karate-docker-up karate-docker-up bash -c '
-      "$@" down -v --remove-orphans
-      docker volume prune -f
-      "$@" up --detach
-    ' bash "${docker_compose[@]}" "${compose_args[@]}"
-  fi
+cmd_karate_docker_reset() {
+  local repo_root="$1"
+  shift
+  makevn_run_docker_lifecycle "${repo_root}" karate reset "$@"
 }
 
 cmd_karate_test() {

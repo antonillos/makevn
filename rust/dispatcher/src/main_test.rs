@@ -215,6 +215,11 @@ fn tail_command_help_covers_all_interactive_commands() {
         assert_eq!(options.len(), 1);
     }
     assert!(tail_command_help("verify", "description").is_none());
+    for command in ["docker-reset", "karate-docker-reset"] {
+        let (usage, _, options) = command_help(command).unwrap();
+        assert!(usage.contains(command));
+        assert!(options.iter().any(|option| option.starts_with("--tail")));
+    }
 }
 
 #[test]
@@ -1241,11 +1246,13 @@ fn all_top_level_commands_have_command_help() {
         "checkstyle",
         "docker-up",
         "docker-down",
+        "docker-reset",
         "docker-ps",
         "docker-stats",
         "docker-ps-required",
         "karate-docker-up",
         "karate-docker-down",
+        "karate-docker-reset",
         "karate-test",
         "karate-all",
         "run-app",
@@ -2706,4 +2713,22 @@ fn interrupted_runs_render_cancelled_without_failure_advice() {
     let summary = super::summary_from_backend_metadata(130, "3s".into(), "verify-changes", None);
     assert_eq!(super::completed_summary_line(&summary), "[-] verify-changes | 3s");
     assert_eq!(super::focused_phase_mark(130), super::dim_text("-"));
+}
+
+#[test]
+fn parses_agent_upgrade_with_conventional_scope_or_explicit_override() {
+    for (args, scope) in [
+        (vec!["agent", "upgrade"], None),
+        (vec!["agent", "upgrade", "--scope", "project"], Some(crate::agent_setup::Scope::Project)),
+        (vec!["agent", "upgrade", "--scope", "global"], Some(crate::agent_setup::Scope::Global)),
+    ] {
+        assert_eq!(parse_invocation(args.into_iter().map(OsString::from).collect()).unwrap(), Action::AgentUpgrade(scope));
+    }
+    for args in [
+        vec!["agent", "upgrade", "codex"],
+        vec!["agent", "upgrade", "--scope", "other"],
+        vec!["agent", "upgrade", "--scope"],
+    ] {
+        assert!(parse_invocation(args.into_iter().map(OsString::from).collect()).is_err());
+    }
 }

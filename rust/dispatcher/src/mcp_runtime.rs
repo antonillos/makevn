@@ -58,6 +58,7 @@ pub fn run(executable: PathBuf, backend: PathBuf) -> Result<i32, String> {
         sender,
         stopping: false,
     };
+    crate::execution_retention::automatic(&session.store);
     session.serve(receiver, interrupted)
 }
 
@@ -153,6 +154,12 @@ impl McpSession {
     }
 
     fn call(&mut self, id: Value, params: Value) -> Result<(), String> {
+        if params["name"] == "execution_cleanup" {
+            let result = cleanup_control(&self.store, &params).unwrap_or_else(|error| {
+                mcp_server::standard_tool_result(&ToolCallResult::failure(error), &params)
+            });
+            return write_message(json!({"jsonrpc":"2.0", "id":id, "result":result}));
+        }
         if control_name(params["name"].as_str().unwrap_or_default()) {
             let result = self.control(&params).unwrap_or_else(|error| {
                 mcp_server::standard_tool_result(&ToolCallResult::failure(error), &params)
@@ -169,6 +176,7 @@ impl McpSession {
     }
 
     fn launch(&mut self, id: Value, params: Value) -> Result<(), String> {
+        crate::execution_retention::automatic(&self.store);
         let (mut record, locks) = self.store.prepare(&params)?;
         let execution_id = record.execution_id.clone();
         let (mut child, ownership) = match mcp_supervisor::spawn(
@@ -390,6 +398,24 @@ fn write_message(message: Value) -> Result<(), String> {
         .map_err(|error| error.to_string())
 }
 
+fn cleanup_control(store: &ExecutionStore, params: &Value) -> Result<Value, String> {
+    validate_control_arguments(params)?;
+    let mut result = mcp_server::standard_tool_result(
+        &ToolCallResult {
+            output: String::new(),
+            exit_code: 0,
+            duration_ms: 0,
+            doctor_snapshot: None,
+            next_suggestion: None,
+        },
+        params,
+    );
+    result["structuredContent"]["cleanup"] =
+        crate::execution_retention::cleanup(store, &params["arguments"])?;
+    mirror_content(&mut result);
+    Ok(result)
+}
+
 fn control_name(name: &str) -> bool {
     matches!(
         name,
@@ -417,7 +443,8 @@ fn validate_control_arguments(params: &Value) -> Result<(), String> {
 }
 
 pub fn control_tools() -> Vec<Value> {
-    [("execution_list", "List active MakeVN executions across local MCP sessions. includeFinished also returns preserved terminal executions."),
+    [("execution_cleanup", "Remove terminal executions and their private logs older than retentionDays (default MAKEVN_RETENTION_DAYS or 3). dryRun previews candidates without deleting."),
+     ("execution_list", "List active MakeVN executions across local MCP sessions. includeFinished also returns preserved terminal executions."),
      ("execution_status", "Inspect one execution, including its owning session, repository, PR, state and logs."),
      ("execution_cancel", "Cancel only an execution owned by this MCP session. Idempotent for stopped executions; cleanup uses five seconds of grace and two seconds of confirmation.")]
         .into_iter().map(|(name, description)| control_tool(name, description)).collect()
@@ -425,7 +452,10 @@ pub fn control_tools() -> Vec<Value> {
 
 fn control_tool(name: &str, description: &str) -> Value {
     let mut output = mcp_server::result_schema();
-    let input = if name == "execution_list" {
+    let input = if name == "execution_cleanup" {
+        output["properties"]["cleanup"] = crate::execution_retention::schema();
+        json!({"type":"object", "properties":{"retentionDays":{"type":"integer","minimum":1}, "dryRun":{"type":"boolean","default":false}}, "additionalProperties":false})
+    } else if name == "execution_list" {
         output["properties"]["executions"] =
             json!({"type":"array", "items":crate::mcp_execution::record_schema()});
         json!({"type":"object", "properties":{"repo":{"type":"string"}, "includeFinished":{"type":"boolean","default":false}}, "additionalProperties":false})

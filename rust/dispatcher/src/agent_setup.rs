@@ -8,6 +8,9 @@ use std::io::{self, IsTerminal, Write};
 use std::path::{Path, PathBuf};
 use toml_edit::{value, DocumentMut, InlineTable, Item, Table};
 
+#[path = "agent_upgrade.rs"]
+pub mod upgrade;
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Client {
     OpenCode,
@@ -24,7 +27,7 @@ pub struct Request {
     pub scope: Option<Scope>,
     pub status: bool,
 }
-const USAGE: &str = "Usage: makevn agent <install|status> <opencode|codex> [--scope global|project]; status requires --scope";
+const USAGE: &str = "Usage: makevn agent <install|status> <opencode|codex> [--scope global|project]; status requires --scope. Upgrade existing integration: makevn agent upgrade [--scope global|project]";
 
 pub fn parse(args: &[OsString]) -> Result<Request, String> {
     let [action, client, remaining @ ..] = args else {
@@ -58,7 +61,7 @@ fn parse_client(client: &OsString) -> Result<Client, String> {
     }
 }
 
-fn parse_scope(args: &[OsString]) -> Result<Option<Scope>, String> {
+pub fn parse_scope(args: &[OsString]) -> Result<Option<Scope>, String> {
     match args {
         [] => Ok(None),
         [flag, scope] if flag == "--scope" => match scope.to_str() {
@@ -70,7 +73,15 @@ fn parse_scope(args: &[OsString]) -> Result<Option<Scope>, String> {
     }
 }
 
-pub fn run(request: &Request) -> Result<(), String> {
+struct SetupPaths {
+    home: PathBuf,
+    repo: PathBuf,
+    config_home: PathBuf,
+    codex_home: PathBuf,
+    source: PathBuf,
+}
+
+fn setup_paths() -> Result<SetupPaths, String> {
     let home = env::var_os("HOME")
         .map(PathBuf::from)
         .ok_or("HOME is not set")?;
@@ -83,7 +94,25 @@ pub fn run(request: &Request) -> Result<(), String> {
         .unwrap_or(home.join(".codex"));
     let exe = env::current_exe().map_err(error_text)?;
     let source = agent_skills::source(&crate::install_root(&exe)?);
-    execute(request, &home, &repo, &config_home, &codex_home, &source)
+    Ok(SetupPaths {
+        home,
+        repo,
+        config_home,
+        codex_home,
+        source,
+    })
+}
+
+pub fn run(request: &Request) -> Result<(), String> {
+    let paths = setup_paths()?;
+    execute(
+        request,
+        &paths.home,
+        &paths.repo,
+        &paths.config_home,
+        &paths.codex_home,
+        &paths.source,
+    )
 }
 
 fn execute(
