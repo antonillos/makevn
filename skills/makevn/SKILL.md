@@ -108,6 +108,15 @@ requires Java and no usable compatible JDK is found, doctor reports a JDK error
 while completing diagnosis successfully. Resolve it before builds or verification. Missing
 executables are environment issues; do not bypass MakeVN with raw Maven.
 
+Automatic JDK selection checks local Enforcer `requireJavaVersion` rules,
+including unconditional reactor modules and local relative parents. Execution
+`skip` properties matter only when that execution has a Java rule (including
+plugin-level rules). An unresolved skip in a snapshots-only execution must not
+block JDK selection. An unresolved property affecting a Java rule does block it;
+do not bypass Enforcer or alter the POM to hide a detection failure. See the
+[JDK selection reference](references/workflows.md#stable-automatic-jdk-selection)
+for supported ranges and effective-POM limitations.
+
 `makevn refresh` is `init --force`: repair stale initialization after an upgrade.
 `makevn profile refresh` re-detects workflows and flags after configuration changes;
 it does not replace initialization. Resetting configuration requires explicit

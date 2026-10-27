@@ -12,6 +12,29 @@ spec.loader.exec_module(enforcer)
 
 
 class EnforcerTests(unittest.TestCase):
+    def test_unresolved_skip_only_blocks_java_executions(self):
+        plugin = """<project><build><plugins><plugin>
+        <artifactId>maven-enforcer-plugin</artifactId><executions>
+        <execution><id>enforce-versions</id><goals><goal>enforce</goal></goals>
+        <configuration><rules>
+        <requireMavenVersion><version>[3.9.14,3.10.0)</version></requireMavenVersion>
+        <requireJavaVersion><version>[25,26)</version></requireJavaVersion>
+        </rules></configuration></execution>
+        <execution><id>enforce-snapshots</id><goals><goal>enforce</goal></goals>
+        <configuration><skip>${skipEnforceSnapshots}</skip><rules>
+        <requireSnapshotVersion><failWhenParentIsRelease>false</failWhenParentIsRelease>
+        </requireSnapshotVersion></rules></configuration></execution>
+        </executions></plugin></plugins></build></project>"""
+        with tempfile.TemporaryDirectory() as directory:
+            pom = Path(directory) / "pom.xml"
+            pom.write_text(plugin)
+            self.assertEqual(enforcer.rules(pom), ["[25,26)"])
+            self.assertTrue(enforcer.accepts(enforcer.rules(pom)[0], "25.0.3"))
+            pom.write_text(plugin.replace("<configuration><rules>",
+                                          "<configuration><skip>${skipJava}</skip><rules>", 1))
+            with self.assertRaisesRegex(ValueError, "unresolved Enforcer property: .*skipJava"):
+                enforcer.rules(pom)
+
     def test_ranges(self):
         cases = [
             ("[25,26)", "25.0.2", True), ("[25,26)", "26", False),

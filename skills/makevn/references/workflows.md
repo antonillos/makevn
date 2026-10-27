@@ -263,6 +263,15 @@ example, `[25,26)` rejects 27 and requires an accepted stable 25.x. Doctor
 reports the restriction if no candidate satisfies it; makevn never adds an
 Enforcer skip flag or changes the project's range.
 
+Only executions containing `requireJavaVersion` rules, either in their own
+configuration or the plugin's shared configuration, require their effective
+`skip` value to be resolved. A snapshots-only execution with
+`<skip>${skipEnforceSnapshots}</skip>` does not constrain Java selection, even
+when that property is undefined. An unresolved skip on a Java-rule execution
+still stops automatic selection. For example, a separate Java execution with
+`[25,26)` accepts stable 25.0.3 despite that unrelated snapshots property;
+installing another JDK or rerunning init does not fix a parser failure.
+
 This read-only inspection requires Python 3 and is not a complete Maven
 `effective-pom` evaluator: remote parent rules and profile activation remain
 Maven's responsibility. Unresolved or unsupported detected local rules stop
