@@ -31,8 +31,11 @@ OpenCode retains interactive selection when local configurations exist; Codex us
 global scope. Status always requires scope and never writes files. See the
 [registration contract](agent-install.md#skill-registration-contract) for ownership,
 updates, conflicts and backups. Run `makevn agent upgrade` after upgrading MakeVN.
-It updates the existing project integration first, falling back to global scope,
-and detects registered clients without requiring their names.
+It detects registered clients without requiring their names. In a terminal it
+asks which integration to upgrade when there are multiple choices, showing the
+resolved destination of linked configurations before any write. Noninteractive
+use selects project integration first, falling back to global scope, and rejects
+linked paths.
 
 Restart/reload the client. Check its available skills, explicitly load each skill,
 then try representative requests. Installed files, available metadata, loaded
