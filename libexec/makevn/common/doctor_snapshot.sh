@@ -190,6 +190,7 @@ makevn_doctor_initialization_status() {
 
 makevn_collect_doctor_snapshot() {
   local repo_root="$1"
+  makevn_require_unambiguous_maven_project "${repo_root}"
   local maven_base_path=""
   local code_tool_versions=""
   local karate_tool_versions=""
@@ -535,11 +536,14 @@ makevn_collect_doctor_snapshot() {
   MAKEVN_DOCTOR_TEST_PROFILE="${test_profile}"
   MAKEVN_DOCTOR_VERIFY_PROFILE="${verify_profile}"
   MAKEVN_DOCTOR_CODE_MAVEN="$(makevn_maven_executable "${repo_root}" "${maven_base_path}" 2>/dev/null || printf unresolved)"
+  MAKEVN_DOCTOR_CODE_MAVEN_DIAGNOSTIC="$(makevn_maven_diagnostic "${repo_root}" "${maven_base_path}" "${MAKEVN_DOCTOR_CODE_MAVEN}" "${code_java_home}")"
   local karate_base_path=""
   karate_base_path="$(makevn_detect_karate_base_path "${repo_root}" || true)"
   MAKEVN_DOCTOR_KARATE_MAVEN="not detected"
+  MAKEVN_DOCTOR_KARATE_MAVEN_DIAGNOSTIC="not detected"
   if [[ -n "${karate_base_path}" ]]; then
     MAKEVN_DOCTOR_KARATE_MAVEN="$(makevn_maven_executable "${repo_root}" "${karate_base_path}" karate 2>/dev/null || printf unresolved)"
+    MAKEVN_DOCTOR_KARATE_MAVEN_DIAGNOSTIC="$(makevn_maven_diagnostic "${repo_root}" "${karate_base_path}" "${MAKEVN_DOCTOR_KARATE_MAVEN}" "${karate_java_home}")"
   fi
   MAKEVN_DOCTOR_CODE_JAVA_HOME="${code_java_home:-unresolved}"
   MAKEVN_DOCTOR_COMPATIBLE_CODE_JAVA_HOMES="${compatible_code_java_homes:-none}"
@@ -706,7 +710,9 @@ makevn_print_doctor_json() {
   printf '    "test_profile": "%s",\n' "$(makevn_json_escape "${MAKEVN_DOCTOR_TEST_PROFILE}")"
   printf '    "verify_profile": "%s",\n' "$(makevn_json_escape "${MAKEVN_DOCTOR_VERIFY_PROFILE}")"
   printf '    "resolved_code_maven": "%s",\n' "$(makevn_json_escape "${MAKEVN_DOCTOR_CODE_MAVEN}")"
+  printf '    "code_maven_diagnostic": "%s",\n' "$(makevn_json_escape "${MAKEVN_DOCTOR_CODE_MAVEN_DIAGNOSTIC}")"
   printf '    "resolved_karate_maven": "%s",\n' "$(makevn_json_escape "${MAKEVN_DOCTOR_KARATE_MAVEN}")"
+  printf '    "karate_maven_diagnostic": "%s",\n' "$(makevn_json_escape "${MAKEVN_DOCTOR_KARATE_MAVEN_DIAGNOSTIC}")"
   printf '    "resolved_code_java_home": "%s",\n' "$(makevn_json_escape "${MAKEVN_DOCTOR_CODE_JAVA_HOME}")"
   printf '    "compatible_code_java_homes": "%s",\n' "$(makevn_json_escape "${MAKEVN_DOCTOR_COMPATIBLE_CODE_JAVA_HOMES}")"
   printf '    "code_java_home_recommendation": "%s",\n' "$(makevn_json_escape "${MAKEVN_DOCTOR_CODE_JAVA_HOME_RECOMMENDATION}")"

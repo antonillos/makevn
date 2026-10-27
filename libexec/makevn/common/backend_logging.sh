@@ -282,6 +282,8 @@ makevn_run_logged_in_context() {
     makevn_die "Could not resolve ${context} JDK. Run 'makevn doctor' or configure .makevn/config first."
   fi
 
+  makevn_check_maven_command "${maven_base_path}" "${command_cwd}" "${java_home}" "$@" || return $?
+
   logs_dir="$(makevn_logs_dir "${repo_root}")"
   logfile="${logs_dir}/${log_name}.log"
   makevn_prepare_logfile "${logfile}" || return $?

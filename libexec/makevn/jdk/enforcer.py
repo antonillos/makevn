@@ -41,12 +41,12 @@ def expand(value, properties):
     return value.strip()
 
 
-def number(value):
+def number(value, java=True):
     if not re.fullmatch(r"\d+(?:[._]\d+)*(?:-\d+)?", value):
         raise ValueError("unsupported Enforcer version: " + value)
     parts = tuple(map(int, re.split(r"[._-]", value)))
     # Enforcer's special handling of the Java 8 shorthand.
-    return (1, 8) + parts[1:] if parts[0] == 8 else parts
+    return (1, 8) + parts[1:] if java and parts[0] == 8 else parts
 
 
 def compare(left, right):
@@ -56,9 +56,9 @@ def compare(left, right):
     return (left > right) - (left < right)
 
 
-def intervals(value):
+def intervals(value, java=True):
     if not value.startswith(("[", "(")):
-        return [(number(value), True, None, False)]
+        return [(number(value, java), True, None, False)]
     result = []
     remaining = value
     while remaining:
@@ -69,12 +69,12 @@ def intervals(value):
         if "," not in body:
             if start != "[" or end != "]":
                 raise ValueError("invalid exact Enforcer range: " + value)
-            bound = number(body.strip())
+            bound = number(body.strip(), java)
             result.append((bound, True, bound, True))
         else:
             low, high = body.split(",", 1)
-            result.append((number(low.strip()) if low.strip() else None, start == "[",
-                           number(high.strip()) if high.strip() else None, end == "]"))
+            result.append((number(low.strip(), java) if low.strip() else None, start == "[",
+                           number(high.strip(), java) if high.strip() else None, end == "]"))
         remaining = remaining[match.end():].strip()
         if remaining:
             if not remaining.startswith(","):
@@ -85,15 +85,15 @@ def intervals(value):
     return result
 
 
-def accepts(value, version):
+def accepts(value, version, java=True):
     base, separator, build = version.partition("+")
-    actual = number(base)
+    actual = number(base, java)
     if separator:
         build = build.removesuffix("-LTS")
         if not build.isdigit():
             raise ValueError("unsupported JDK build: " + version)
         actual += (0,) * max(0, 3 - len(actual)) + (int(build),)
-    for low, low_closed, high, high_closed in intervals(value):
+    for low, low_closed, high, high_closed in intervals(value, java):
         lower = 1 if low is None else compare(actual, low)
         upper = -1 if high is None else compare(actual, high)
         if (lower > 0 or lower == 0 and low_closed) and (upper < 0 or upper == 0 and high_closed):
@@ -109,7 +109,7 @@ def model_properties(roots):
     return properties
 
 
-def rules(pom, roots=None):
+def rules(pom, roots=None, rule_name="requireJavaVersion"):
     roots = models(pom) if roots is None else roots
     properties = model_properties(roots)
     result = []
@@ -131,25 +131,28 @@ def rules(pom, roots=None):
                     continue
                 specific = execution.find("configuration")
                 configurations = [config for config in (shared, specific) if config is not None]
+                version_rules = [rule for config in configurations
+                                 for rule in config.findall("rules/" + rule_name)]
+                if not version_rules:
+                    continue
                 skip = next((config.findtext("skip") for config in reversed(configurations)
                              if config.find("skip") is not None), "false")
                 if expand(skip, properties).lower() == "true":
                     continue
-                for config in configurations:
-                    for rule in config.findall("rules/requireJavaVersion"):
-                        value = expand(rule.findtext("version", ""), properties)
-                        intervals(value)  # Validate before candidate filtering.
-                        result.append(value)
+                for rule in version_rules:
+                    value = expand(rule.findtext("version", ""), properties)
+                    intervals(value, java=rule_name == "requireJavaVersion")
+                    result.append(value)
     return list(dict.fromkeys(result))
 
 
-def reactor_rules(pom, ancestors=frozenset()):
+def reactor_rules(pom, ancestors=frozenset(), rule_name="requireJavaVersion"):
     pom = pom.resolve()
     if pom in ancestors:
         raise ValueError("cyclic reactor module POM")
     roots = models(pom)
     properties = model_properties(roots)
-    result = rules(pom, roots)
+    result = rules(pom, roots, rule_name)
     for module in roots[-1].findall("modules/module"):
         name = expand(module.text or "", properties)
         if not name:
@@ -157,7 +160,7 @@ def reactor_rules(pom, ancestors=frozenset()):
         candidate = pom.parent / name
         if candidate.is_dir() or candidate.suffix != ".xml":
             candidate /= "pom.xml"
-        result.extend(reactor_rules(candidate, ancestors | {pom}))
+        result.extend(reactor_rules(candidate, ancestors | {pom}, rule_name))
     return list(dict.fromkeys(result))
 
 

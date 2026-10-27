@@ -108,6 +108,28 @@ requires Java and no usable compatible JDK is found, doctor reports a JDK error
 while completing diagnosis successfully. Resolve it before builds or verification. Missing
 executables are environment issues; do not bypass MakeVN with raw Maven.
 
+Doctor reports the selected Maven version and compatibility with unconditional
+local `requireMavenVersion` rules. Maven commands check compatibility before
+running build goals. Explicit pins and wrappers retain precedence; MakeVN does
+not silently substitute another installation. Doctor inspects wrapper declarations
+without executing or downloading the wrapper; runtime checks use its actual
+version. Resolve incompatible or unknown versions before verification when a
+local rule constrains Maven.
+
+Project discovery prefers the root POM, then `code/pom.xml`, then a unique
+outermost nested POM. Nested modules must not displace their aggregator. Multiple
+independent candidates stop diagnosis/init with an ambiguity error; use an
+isolated checkout of the intended project instead of guessing a candidate.
+
+Automatic JDK selection checks local Enforcer `requireJavaVersion` rules,
+including unconditional reactor modules and local relative parents. Execution
+`skip` properties matter only when that execution has a Java rule (including
+plugin-level rules). An unresolved skip in a snapshots-only execution must not
+block JDK selection. An unresolved property affecting a Java rule does block it;
+do not bypass Enforcer or alter the POM to hide a detection failure. See the
+[JDK selection reference](references/workflows.md#stable-automatic-jdk-selection)
+for supported ranges and effective-POM limitations.
+
 `makevn refresh` is `init --force`: repair stale initialization after an upgrade.
 `makevn profile refresh` re-detects workflows and flags after configuration changes;
 it does not replace initialization. Resetting configuration requires explicit

@@ -43,3 +43,5 @@ source "${MAKEVN_LIBEXEC_DIR}/common/maven_resolution.sh"
 
 # shellcheck source=/dev/null
 source "${MAKEVN_LIBEXEC_DIR}/common/jdk_selection.sh"
+# shellcheck source=/dev/null
+source "${MAKEVN_LIBEXEC_DIR}/common/maven_validation.sh"

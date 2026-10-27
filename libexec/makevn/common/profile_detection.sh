@@ -597,7 +597,6 @@ makevn_detect_pit_goal() {
 
 makevn_detect_maven_base_path_fresh() {
   local repo_root="$1"
-  local first_pom=""
 
   if [[ -f "${repo_root}/pom.xml" ]]; then
     printf '%s\n' "${repo_root}"
@@ -609,13 +608,7 @@ makevn_detect_maven_base_path_fresh() {
     return 0
   fi
 
-  first_pom="$(find "${repo_root}" -name pom.xml -not -path '*/target/*' -not -path '*/node_modules/*' 2>/dev/null | LC_ALL=C sort | head -n 1 || true)"
-  if [[ -n "${first_pom}" ]]; then
-    printf '%s\n' "$(dirname "${first_pom}")"
-    return 0
-  fi
-
-  return 1
+  python3 "${MAKEVN_LIBEXEC_DIR}/common/maven_project.py" "${repo_root}"
 }
 
 makevn_detect_code_tool_versions_fresh() {

@@ -230,6 +230,25 @@ Without a Maven pin, the existing root wrapper, context wrapper, then `mvn`
 PATH selection is preserved. Detailed doctor reports the effective executable
 for code and Karate independently.
 
+Doctor also reports the selected Maven version, its executable and compatibility
+with unconditional local `requireMavenVersion` rules, including reactor modules
+and relative parents. For wrappers it reads the version from `distributionUrl`
+without running the wrapper or downloading Maven, and labels that evidence as
+a declaration. Before a Maven build goal, MakeVN checks the actual executable's
+`--version` under the selected JDK and working directory. An incompatible or
+unresolved version/rule blocks constrained builds; configure/install an accepted
+version rather than bypassing Enforcer. With no detected local Maven constraint,
+builds retain their existing behavior. Remote parents and activated profiles
+still require Maven's own Enforcer evaluation. This inspection requires Python 3.
+
+Project discovery prefers `pom.xml` at the Git root, then `code/pom.xml`.
+Otherwise it selects a unique outermost nested POM, excluding generated/state
+directories (`target`, `node_modules`, `.git`, `.makevn`). It does not select a
+reactor child ahead of an existing ancestor POM. Multiple independent roots
+produce an ambiguity error, not an alphabetical choice. Diagnose an isolated
+checkout containing the intended project before initialization. Passing a nested
+directory inside a Git checkout does not change MakeVN's Git-root contract.
+
 
 ### Stable automatic JDK selection
 
