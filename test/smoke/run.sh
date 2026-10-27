@@ -1835,6 +1835,7 @@ server:
 security:
   ignored-paths: /internal/**
 EOF
+  printf '<project/>\n' > "${repo}/code/boot/pom.xml"
   printf '<project/>\n' > "${repo}/e2e/karate/pom.xml"
   printf 'services:\n  db:\n    image: postgres:16\n' > "${repo}/e2e/karate/src/test/resources/compose/docker-compose.yml"
   printf 'services:\n  db:\n    environment:\n      FOO: bar\n' > "${repo}/e2e/karate/src/test/resources/compose/docker-compose.override.yml"
