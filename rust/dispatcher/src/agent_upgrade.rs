@@ -1,8 +1,20 @@
 //! Synchronize the existing client integration with installed product resources.
 use super::*;
 
+#[path = "agent_upgrade_choice.rs"]
+mod choice;
+
 pub fn run(scope: Option<Scope>) -> Result<(), String> {
     let paths = setup_paths()?;
+    if io::stdin().is_terminal() && io::stdout().is_terminal() {
+        let (scope, configs) = choice::select(
+            scope,
+            &paths,
+            &mut io::stdin().lock(),
+            &mut io::stdout().lock(),
+        )?;
+        return finish(scope, &configs, &paths.home, &paths.repo, &paths.source);
+    }
     execute(
         scope,
         &paths.home,
@@ -11,6 +23,13 @@ pub fn run(scope: Option<Scope>) -> Result<(), String> {
         &paths.codex_home,
         &paths.source,
     )
+    .map_err(|error| {
+        if error.contains("Refusing symlink") {
+            format!("{error}. Run makevn agent upgrade in an interactive terminal to choose a configuration and confirm its real destination; use --scope global to select only the global integration")
+        } else {
+            error
+        }
+    })
 }
 
 fn candidates(
@@ -82,8 +101,18 @@ fn execute(
     source: &Path,
 ) -> Result<(), String> {
     let (scope, configs) = select(scope, home, repo, config_home, codex_home)?;
+    finish(scope, &configs, home, repo, source)
+}
+
+fn finish(
+    scope: Scope,
+    configs: &[(Client, PathBuf)],
+    home: &Path,
+    repo: &Path,
+    source: &Path,
+) -> Result<(), String> {
     let target = skills_target(scope, home, repo);
-    upgrade(&configs, source, &target, crate::makevn_version())?;
+    upgrade(configs, source, &target, crate::makevn_version())?;
     println!("Upgraded {:?} integration: {}\nRestart/reload registered clients to load updated MCP tools and skills.", scope, target.display());
     Ok(())
 }
