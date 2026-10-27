@@ -131,15 +131,18 @@ def rules(pom, roots=None):
                     continue
                 specific = execution.find("configuration")
                 configurations = [config for config in (shared, specific) if config is not None]
+                java_rules = [rule for config in configurations
+                              for rule in config.findall("rules/requireJavaVersion")]
+                if not java_rules:
+                    continue
                 skip = next((config.findtext("skip") for config in reversed(configurations)
                              if config.find("skip") is not None), "false")
                 if expand(skip, properties).lower() == "true":
                     continue
-                for config in configurations:
-                    for rule in config.findall("rules/requireJavaVersion"):
-                        value = expand(rule.findtext("version", ""), properties)
-                        intervals(value)  # Validate before candidate filtering.
-                        result.append(value)
+                for rule in java_rules:
+                    value = expand(rule.findtext("version", ""), properties)
+                    intervals(value)  # Validate before candidate filtering.
+                    result.append(value)
     return list(dict.fromkeys(result))
 
 
