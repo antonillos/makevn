@@ -4,6 +4,7 @@
 This is not an effective-POM evaluator: remote parents and profile activation
 remain Maven's responsibility. Unresolvable local rules fail closed.
 """
+from copy import deepcopy
 import re
 import sys
 import xml.etree.ElementTree as ET
@@ -109,6 +110,29 @@ def model_properties(roots):
     return properties
 
 
+def merge_execution_configuration(shared, specific):
+    """Merge by element name, with the execution as dominant configuration."""
+    if specific is None:
+        return deepcopy(shared)
+    merged = deepcopy(specific)
+    if shared is None or specific.get("combine.self") == "override":
+        return merged
+    merged.attrib = {**shared.attrib, **specific.attrib}
+    if not (specific.text or "").strip():
+        merged.text = shared.text
+    if merged.get("combine.children") == "append":
+        merged[:] = [deepcopy(child) for child in shared] + list(merged)
+        return merged
+    for inherited in shared:
+        child = specific.find(inherited.tag)
+        if child is None:
+            merged.append(deepcopy(inherited))
+        else:
+            index = list(specific).index(child)
+            merged[index] = merge_execution_configuration(inherited, child)
+    return merged
+
+
 def rules(pom, roots=None, rule_name="requireJavaVersion"):
     roots = models(pom) if roots is None else roots
     properties = model_properties(roots)
@@ -130,13 +154,13 @@ def rules(pom, roots=None, rule_name="requireJavaVersion"):
                 if root is not roots[-1] and execution.findtext("inherited") == "false":
                     continue
                 specific = execution.find("configuration")
-                configurations = [config for config in (shared, specific) if config is not None]
-                version_rules = [rule for config in configurations
-                                 for rule in config.findall("rules/" + rule_name)]
+                configuration = merge_execution_configuration(shared, specific)
+                if configuration is None:
+                    continue
+                version_rules = configuration.findall("rules/" + rule_name)
                 if not version_rules:
                     continue
-                skip = next((config.findtext("skip") for config in reversed(configurations)
-                             if config.find("skip") is not None), "false")
+                skip = configuration.findtext("skip", "false")
                 if expand(skip, properties).lower() == "true":
                     continue
                 for rule in version_rules:

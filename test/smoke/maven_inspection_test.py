@@ -31,6 +31,23 @@ def pom(rule="[3.9.14,3.10.0)"):
 
 
 class MavenInspectionTests(unittest.TestCase):
+    def test_execution_version_overrides_shared_plugin_rule(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "pom.xml").write_text('''<project><build><plugins><plugin>
+            <artifactId>maven-enforcer-plugin</artifactId><configuration><rules>
+            <requireMavenVersion><version>[3.8,3.9)</version></requireMavenVersion>
+            </rules></configuration><executions><execution><goals><goal>enforce</goal></goals>
+            <configuration><rules><requireMavenVersion><version>[3.9,4)</version>
+            </requireMavenVersion></rules></configuration></execution></executions>
+            </plugin></plugins></build></project>''')
+            executable = root / "mvn"
+            executable.write_text("#!/bin/sh\necho 'Apache Maven 3.9.10'\n")
+            executable.chmod(0o755)
+            self.assertEqual(inspection.reactor_rules(root / "pom.xml", rule_name="requireMavenVersion"),
+                             ["[3.9,4)"])
+            self.assertIn("compatible", inspection.inspect(str(executable), root, root, "", True))
+
     def test_nested_aggregator_and_ambiguity(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

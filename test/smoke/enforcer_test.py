@@ -12,6 +12,46 @@ spec.loader.exec_module(enforcer)
 
 
 class EnforcerTests(unittest.TestCase):
+    def test_execution_configuration_merge(self):
+        cases = [
+            ("<rules><RULE><version>[3.9,4)</version></RULE></rules>", ["[3.9,4)"]),
+            ("<rules><RULE><message>custom message</message></RULE></rules>", ["[3.8,3.9)"]),
+            ('<rules combine.self="override"><requireSnapshotVersion/></rules>', []),
+            ('<rules><RULE combine.self="override"><version>[3.9,4)</version></RULE></rules>',
+             ["[3.9,4)"]),
+            ('<rules combine.children="append"><RULE><version>[3.9,4)</version></RULE></rules>',
+             ["[3.8,3.9)", "[3.9,4)"]),
+            ("<skip>true</skip>", []),
+        ]
+        with tempfile.TemporaryDirectory() as directory:
+            pom = Path(directory) / "pom.xml"
+            for rule_name in ("requireJavaVersion", "requireMavenVersion"):
+                for configuration, expected in cases:
+                    with self.subTest(rule=rule_name, configuration=configuration):
+                        pom.write_text('''<project><build><plugins><plugin>
+                        <artifactId>maven-enforcer-plugin</artifactId><configuration><rules>
+                        <RULE><version>[3.8,3.9)</version></RULE></rules></configuration>
+                        <executions><execution><goals><goal>enforce</goal></goals><configuration>'''
+                                       .replace("RULE", rule_name) + configuration.replace("RULE", rule_name) +
+                                       '''</configuration></execution></executions></plugin></plugins>
+                                       </build></project>''')
+                        self.assertEqual(enforcer.reactor_rules(pom, rule_name=rule_name), expected)
+
+    def test_execution_override_does_not_change_other_executions(self):
+        with tempfile.TemporaryDirectory() as directory:
+            pom = Path(directory) / "pom.xml"
+            pom.write_text('''<project><build><plugins><plugin>
+            <artifactId>maven-enforcer-plugin</artifactId><configuration><rules>
+            <requireMavenVersion><version>[3.8,3.9)</version></requireMavenVersion>
+            </rules></configuration><executions>
+            <execution><goals><goal>enforce</goal></goals><configuration><rules>
+            <requireMavenVersion><version>[3.9,4)</version></requireMavenVersion>
+            </rules></configuration></execution>
+            <execution><goals><goal>enforce</goal></goals></execution>
+            </executions></plugin></plugins></build></project>''')
+            self.assertEqual(enforcer.reactor_rules(pom, rule_name="requireMavenVersion"),
+                             ["[3.9,4)", "[3.8,3.9)"])
+
     def test_unresolved_skip_only_blocks_java_executions(self):
         plugin = """<project><build><plugins><plugin>
         <artifactId>maven-enforcer-plugin</artifactId><executions>
