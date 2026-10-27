@@ -6,14 +6,16 @@ mod choice;
 
 pub fn run(scope: Option<Scope>) -> Result<(), String> {
     let paths = setup_paths()?;
-    if io::stdin().is_terminal() && io::stdout().is_terminal() {
-        let (scope, configs) = choice::select(
-            scope,
-            &paths,
-            &mut io::stdin().lock(),
-            &mut io::stdout().lock(),
-        )?;
-        return finish(scope, &configs, &paths.home, &paths.repo, &paths.source);
+    dispatch(scope, &paths)
+}
+
+fn interactive_terminal() -> bool {
+    io::stdin().is_terminal() && io::stdout().is_terminal()
+}
+
+fn dispatch(scope: Option<Scope>, paths: &SetupPaths) -> Result<(), String> {
+    if interactive_terminal() {
+        return interactive_upgrade(scope, paths);
     }
     execute(
         scope,
@@ -23,13 +25,25 @@ pub fn run(scope: Option<Scope>) -> Result<(), String> {
         &paths.codex_home,
         &paths.source,
     )
-    .map_err(|error| {
-        if error.contains("Refusing symlink") {
-            format!("{error}. Run makevn agent upgrade in an interactive terminal to choose a configuration and confirm its real destination; use --scope global to select only the global integration")
-        } else {
-            error
-        }
-    })
+    .map_err(noninteractive_error)
+}
+
+fn interactive_upgrade(scope: Option<Scope>, paths: &SetupPaths) -> Result<(), String> {
+    let (scope, configs) = choice::select(
+        scope,
+        paths,
+        &mut io::stdin().lock(),
+        &mut io::stdout().lock(),
+    )?;
+    finish(scope, &configs, &paths.home, &paths.repo, &paths.source)
+}
+
+fn noninteractive_error(error: String) -> String {
+    if error.contains("Refusing symlink") {
+        format!("{error}. Run makevn agent upgrade in an interactive terminal to choose a configuration and confirm its real destination; use --scope global to select only the global integration")
+    } else {
+        error
+    }
 }
 
 fn candidates(

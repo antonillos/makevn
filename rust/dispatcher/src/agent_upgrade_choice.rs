@@ -66,18 +66,18 @@ fn discover(scope: Option<Scope>, paths: &SetupPaths) -> Result<Vec<Choice>, Str
     Ok(choices)
 }
 
-fn append_choices(
-    scope: Scope,
-    paths: &SetupPaths,
-    choices: &mut Vec<Choice>,
-) -> Result<(), String> {
+fn configuration_destination(path: &Path) -> Result<PathBuf, String> {
+    match agent_transaction::reject_links(path) {
+        Ok(()) => Ok(path.to_path_buf()),
+        Err(_) => fs::canonicalize(path)
+            .map_err(|e| format!("Cannot resolve configuration {}: {e}", path.display())),
+    }
+}
+
+fn discover_configs(scope: Scope, paths: &SetupPaths) -> Result<Vec<Config>, String> {
     let mut configs = Vec::new();
     for (client, path) in candidates(scope, &paths.repo, &paths.config_home, &paths.codex_home) {
-        let destination = match agent_transaction::reject_links(&path) {
-            Ok(()) => path.clone(),
-            Err(_) => fs::canonicalize(&path)
-                .map_err(|e| format!("Cannot resolve configuration {}: {e}", path.display()))?,
-        };
+        let destination = configuration_destination(&path)?;
         if registered(client, &destination)? {
             configs.push(Config {
                 client,
@@ -86,6 +86,15 @@ fn append_choices(
             });
         }
     }
+    Ok(configs)
+}
+
+fn append_choices(
+    scope: Scope,
+    paths: &SetupPaths,
+    choices: &mut Vec<Choice>,
+) -> Result<(), String> {
+    let configs = discover_configs(scope, paths)?;
     let manifest = skills_target(scope, &paths.home, &paths.repo).join(".makevn-skills.json");
     agent_transaction::reject_links(&manifest)?;
     if configs.is_empty() && !manifest.exists() {
@@ -115,42 +124,64 @@ fn choose(
     if choices.len() == 1 && !choices[0].configs.iter().any(Config::linked) {
         return Ok(0);
     }
+    write_menu(choices, output)?;
+    read_selection(choices.len(), input, output)
+}
+
+fn write_menu(choices: &[Choice], output: &mut impl Write) -> Result<(), String> {
     writeln!(
         output,
         "Which integration should MakeVN upgrade? (0 cancels)"
     )
     .map_err(error_text)?;
     for (index, choice) in choices.iter().enumerate() {
-        writeln!(
+        write_choice(index, choice, output)?;
+    }
+    Ok(())
+}
+
+fn write_choice(index: usize, choice: &Choice, output: &mut impl Write) -> Result<(), String> {
+    writeln!(
+        output,
+        "  {}) {:?} integration ({} configuration(s))",
+        index + 1,
+        choice.scope,
+        choice.configs.len()
+    )
+    .map_err(error_text)?;
+    for config in &choice.configs {
+        write_config(config, output)?;
+    }
+    if choice.configs.is_empty() {
+        writeln!(output, "     Managed skills only").map_err(error_text)?;
+    }
+    Ok(())
+}
+
+fn write_config(config: &Config, output: &mut impl Write) -> Result<(), String> {
+    write!(
+        output,
+        "     {:?}: {}",
+        config.client,
+        config.path.display()
+    )
+    .map_err(error_text)?;
+    if config.linked() {
+        write!(
             output,
-            "  {}) {:?} integration ({} configuration(s))",
-            index + 1,
-            choice.scope,
-            choice.configs.len()
+            " -> {} (update destination, preserve link)",
+            config.destination.display()
         )
         .map_err(error_text)?;
-        for config in &choice.configs {
-            write!(
-                output,
-                "     {:?}: {}",
-                config.client,
-                config.path.display()
-            )
-            .map_err(error_text)?;
-            if config.linked() {
-                write!(
-                    output,
-                    " -> {} (update destination, preserve link)",
-                    config.destination.display()
-                )
-                .map_err(error_text)?;
-            }
-            writeln!(output).map_err(error_text)?;
-        }
-        if choice.configs.is_empty() {
-            writeln!(output, "     Managed skills only").map_err(error_text)?;
-        }
     }
+    writeln!(output).map_err(error_text)
+}
+
+fn read_selection(
+    count: usize,
+    input: &mut impl io::BufRead,
+    output: &mut impl Write,
+) -> Result<usize, String> {
     write!(output, "Select an option: ").map_err(error_text)?;
     output.flush().map_err(error_text)?;
     let mut answer = String::new();
@@ -160,7 +191,7 @@ fn choose(
         .parse::<usize>()
         .ok()
         .and_then(|n| n.checked_sub(1))
-        .filter(|n| *n < choices.len())
+        .filter(|n| *n < count)
         .ok_or("No integration selected; nothing was changed")?;
     Ok(selected)
 }
