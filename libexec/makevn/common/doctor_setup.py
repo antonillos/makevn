@@ -12,6 +12,7 @@ import tempfile
 
 
 SETTINGS = {
+    "code_java_home": "MAKEVN_CODE_JAVA_HOME",
     "boot_compose": "MAKEVN_COMPOSE_FILE",
     "e2e_compose": "MAKEVN_E2E_COMPOSE_FILE",
     "local_containers": "MAKEVN_LOCAL_CONTAINERS",
@@ -68,7 +69,9 @@ def question(identifier, prompt, kind, options=None, suggested=None):
 
 
 def collect_questions(arguments):
-    repo, boot, e2e, health, profiles, local_pending, health_pending, profiles_pending = arguments
+    repo, boot, e2e, health, profiles, local_pending, health_pending, profiles_pending = arguments[:8]
+    java_homes, java_recommended = arguments[8:10] if len(arguments) > 8 else ("", "")
+    java_details = arguments[10] if len(arguments) > 10 else ""
     questions = []
     for identifier, label, candidates in [
         ("boot_compose", "boot tests", boot), ("e2e_compose", "Karate E2E", e2e)
@@ -86,6 +89,10 @@ def collect_questions(arguments):
     if profiles_pending == "true":
         questions.append(question("karate_app_profiles", "Which literal comma-separated Spring profiles "
                                   f"should the Karate application use? Detected candidates: {profiles}", "string"))
+    if java_homes:
+        questions.append(question("code_java_home", "Which compatible JDK should this repository use? "
+                                  f"The lowest compatible major is recommended.\n{java_details}", "choice",
+                                  java_homes.splitlines(), suggested=java_recommended))
     path = Path(repo) / ".makevn/config"
     config = path.read_bytes() if path.is_file() else b""
     return {"questions": questions, "setupToken": setup_token(Path(repo), questions, config), "available": True}

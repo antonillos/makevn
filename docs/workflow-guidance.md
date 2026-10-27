@@ -26,7 +26,8 @@ and [Codex skill authoring](https://learn.chatgpt.com/docs/build-skills).
 | Run complete suites | makevn-test | `verify-ut`, `verify-it`, `verify` → `verify_ut`, `verify_it`, `verify` | Results for the selected suite or whole project; Docker only if required |
 | Verify changes | makevn-test | `verify-changes-preview` → inspect → `verify-changes`; MCP `verify_changes_preview` → `verify_changes` | Same mode, fresh owner/test evidence; preparation updates local Maven artifacts |
 | Check container readiness | makevn-docker | `docker-ps-required --compose boot --wait-seconds 30` → `docker_ps_required` | Healthy required services and no confirmed bind mismatch; read-only |
-| Start/reset containers | makevn-docker | authorize destructive scope → `docker-up` → readiness; MCP `docker_up` → `docker_ps_required` | Full lifecycle deletes service data; reuse healthy services first |
+| Start containers | makevn-docker | authorized `docker-up` → readiness; MCP `docker_up` → `docker_ps_required` | Preserves volumes; reuse healthy services and existing startup authorization |
+| Reset service data | makevn-docker | explicitly authorize data deletion → `docker-reset` → readiness; MCP `docker_reset` → `docker_ps_required` | Deletes only the selected Compose project's volumes; no global prune |
 | Run managed E2E | makevn-karate | `karate-all --tag @smoke` → `karate_all` | Docker authorization, configured HTTP health and profiles, Karate result, application cleanup; no implied container teardown |
 | Test external application | makevn-karate | `karate-test --tag @smoke` → `karate_test` | Confirm external target availability; report Karate result, leave external lifecycle to its owner |
 | Check/fix formatting | makevn-quality | `format`, `format --apply`, `checkstyle` → `format`, `checkstyle` | Supported plugin succeeds; apply changes files, inspect diff and rerun original test |
@@ -64,21 +65,33 @@ flowchart TD
     I -->|Missing| INIT[init]
     I -->|Stale or incomplete| FORCE[init --force: preserve settings]
     I -->|Current| Q{Pending setup questions?}
-    INIT --> Q
-    FORCE --> Q
+    INIT --> D
+    FORCE --> D
     Q -->|Yes| USER[Agent asks grouped questions in chat]
     USER --> APPLY[doctor_configure: validate token and answers; save config]
-    APPLY --> Q
-    Q -->|Ready| READY[Continue requested workflow]
-    Q -->|No| READY
+    APPLY -->|Success: refreshed diagnosis| Q
+    APPLY -->|Failure| RECOVER[Inspect diagnostics; follow setup recovery rules]
+    RECOVER -->|Stale token or concurrent change| D
+    Q -->|No| READY[Continue requested workflow]
     RESET[User authorizes doctor --reset-config] --> BACKUP[Back up config/profile; reset preferences]
     BACKUP --> CLI[Interactive CLI doctor prompts]
-    CLI --> READY
+    CLI --> Q
 ```
 
 Reset is CLI-only, preserves initialization and installation, and rejects
 noninteractive execution before changing configuration. `doctor` decides whether
 initialization is needed; agents must not invent an `init --force` requirement.
+After init, discard the pre-init token. After a stale-token or concurrent-change
+rejection, obtain a fresh doctor diagnosis before resubmitting; the failed call's
+snapshot may predate the change. Successful configuration already returns a fresh
+diagnosis. Interactive CLI setup/reset requires a PTY without compact/JSON mode or
+inherited `MAKEVN_COMPACT_OUTPUT`. See the
+[setup and recovery rules](../skills/makevn/references/workflows.md#setup-decisions-and-recovery)
+for partial answers, invalid inputs and unavailable structured setup.
+In an MCP session, keep doctor/init/configure calls in MCP and collect answers in
+chat. An unavailable tool or prerequisite requires remediation or a reported
+blocker, not a switch to CLI doctor or terminal prompts. The interactive CLI
+setup/reset instructions apply to direct CLI use.
 
 ## Docker readiness and mount visibility
 
@@ -111,10 +124,14 @@ flowchart TD
     DIAG --> COMPOSE
     UP[docker_up] -->|Success| REQUIRED
     REQUIRED --> HEALTH{Services running and healthy?}
-    HEALTH -->|No| FIX[Correct startup failure before tests]
-    FIX --> RESET{Startup/reset needed and destructive lifecycle authorized?}
-    RESET -->|Yes| UP
-    RESET -->|No| HOLD[Resolve blocker without resetting services]
+    HEALTH -->|No| FIX{Readiness failure cause?}
+    FIX -->|Only missing or stopped; no probe or ownership errors| START{Startup already authorized?}
+    START -->|Yes| UP
+    START -->|No| ASKSTART[Ask to start services]
+    ASKSTART --> UP
+    FIX -->|Unhealthy, probe error or mount failure| DIAG
+    DIAG -->|Reset diagnosed and data deletion authorized| RESET[docker_reset]
+    RESET -->|Success| REQUIRED
     HEALTH -->|Yes| MOUNTS{Host entries visible in container?}
     MOUNTS -->|Mismatch| BLOCK[Block tests; inspect sharing or permissions; do not change credentials]
     BLOCK --> APPROVAL[User authorizes environment changes if needed]

@@ -188,7 +188,7 @@ pub fn new_id() -> Result<String, String> {
     Ok(bytes.iter().map(|byte| format!("{byte:02x}")).collect())
 }
 
-fn validate_id(id: &str) -> Result<(), String> {
+pub(crate) fn validate_id(id: &str) -> Result<(), String> {
     if id.len() != 32 || !id.bytes().all(|byte| byte.is_ascii_hexdigit()) {
         return Err("invalid executionId".into());
     }
@@ -220,7 +220,7 @@ pub fn save_record(root: &Path, record: &ExecutionRecord) -> Result<(), String> 
     fs::rename(temporary, path).map_err(|error| error.to_string())
 }
 
-fn read_record(path: &Path) -> Result<ExecutionRecord, String> {
+pub(crate) fn read_record(path: &Path) -> Result<ExecutionRecord, String> {
     let mut file = OpenOptions::new()
         .read(true)
         .custom_flags(libc::O_NOFOLLOW)
@@ -437,7 +437,7 @@ fn acquire_lock(path: &Path, key: &str, record: &ExecutionRecord) -> Result<File
     Ok(file)
 }
 
-fn registry_admission(root: &Path) -> Result<File, String> {
+pub(crate) fn registry_admission(root: &Path) -> Result<File, String> {
     let file = OpenOptions::new()
         .read(true)
         .write(true)
