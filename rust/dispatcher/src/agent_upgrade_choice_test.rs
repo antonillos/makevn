@@ -187,3 +187,50 @@ fn linked_directory_can_be_confirmed_and_global_skills_only_can_be_selected() {
     let (scope, _) = select(None, &paths, &mut &b""[..], &mut Vec::new()).unwrap();
     assert_eq!(scope, Scope::Global);
 }
+
+#[test]
+fn linked_global_directory_skips_absent_alternatives_and_keeps_project_choice() {
+    let fixture = Fixture::new();
+    let paths = paths(&fixture);
+    let directory = fixture.0.join("shared-opencode");
+    let destination = directory.join("opencode.jsonc");
+    register(&paths, &destination, Scope::Global);
+    fs::create_dir_all(&paths.config_home).unwrap();
+    let alias = paths.config_home.join("opencode");
+    symlink(&directory, &alias).unwrap();
+    let mut output = Vec::new();
+    let (scope, configs) =
+        select(Some(Scope::Global), &paths, &mut &b"1\n"[..], &mut output).unwrap();
+    assert_eq!(scope, Scope::Global);
+    assert_eq!(configs, vec![(Client::OpenCode, destination.clone())]);
+    finish(scope, &configs, &paths.home, &paths.repo, &paths.source).unwrap();
+    assert_eq!(fs::read_link(&alias).unwrap(), directory);
+    assert!(!alias.join("opencode.json").exists());
+    assert!(String::from_utf8(output)
+        .unwrap()
+        .contains(&destination.display().to_string()));
+
+    let project = paths.repo.join("opencode.jsonc");
+    register(&paths, &project, Scope::Project);
+    let (scope, configs) = select(None, &paths, &mut &b"1\n"[..], &mut Vec::new()).unwrap();
+    assert_eq!(scope, Scope::Project);
+    assert_eq!(configs, vec![(Client::OpenCode, project)]);
+}
+
+#[test]
+fn broken_configuration_link_in_valid_directory_still_blocks_discovery() {
+    let fixture = Fixture::new();
+    let paths = paths(&fixture);
+    let directory = paths.config_home.join("opencode");
+    fs::create_dir_all(&directory).unwrap();
+    let broken = directory.join("opencode.jsonc");
+    symlink("missing.jsonc", &broken).unwrap();
+    assert!(discover(Some(Scope::Global), &paths)
+        .err()
+        .unwrap()
+        .contains("Cannot resolve configuration"));
+    assert_eq!(
+        fs::read_link(&broken).unwrap(),
+        PathBuf::from("missing.jsonc")
+    );
+}

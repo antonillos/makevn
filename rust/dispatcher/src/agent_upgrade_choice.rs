@@ -66,10 +66,17 @@ fn discover(scope: Option<Scope>, paths: &SetupPaths) -> Result<Vec<Choice>, Str
     Ok(choices)
 }
 
-fn configuration_destination(path: &Path) -> Result<PathBuf, String> {
+fn missing_alternative(path: &Path) -> bool {
+    fs::symlink_metadata(path).is_err_and(|error| error.kind() == io::ErrorKind::NotFound)
+        && path.parent().is_some_and(Path::is_dir)
+}
+
+fn configuration_destination(path: &Path) -> Result<Option<PathBuf>, String> {
     match agent_transaction::reject_links(path) {
-        Ok(()) => Ok(path.to_path_buf()),
+        Ok(()) => Ok(Some(path.to_path_buf())),
+        Err(_) if missing_alternative(path) => Ok(None),
         Err(_) => fs::canonicalize(path)
+            .map(Some)
             .map_err(|e| format!("Cannot resolve configuration {}: {e}", path.display())),
     }
 }
@@ -77,7 +84,9 @@ fn configuration_destination(path: &Path) -> Result<PathBuf, String> {
 fn discover_configs(scope: Scope, paths: &SetupPaths) -> Result<Vec<Config>, String> {
     let mut configs = Vec::new();
     for (client, path) in candidates(scope, &paths.repo, &paths.config_home, &paths.codex_home) {
-        let destination = configuration_destination(&path)?;
+        let Some(destination) = configuration_destination(&path)? else {
+            continue;
+        };
         if registered(client, &destination)? {
             configs.push(Config {
                 client,
