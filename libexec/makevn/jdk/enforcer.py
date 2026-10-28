@@ -170,7 +170,7 @@ def rules(pom, roots=None, rule_name="requireJavaVersion"):
     return list(dict.fromkeys(result))
 
 
-def reactor_rules(pom, ancestors=frozenset(), rule_name="requireJavaVersion"):
+def reactor_rules(pom, ancestors=frozenset(), rule_name="requireJavaVersion", deferred_modules=None):
     pom = pom.resolve()
     if pom in ancestors:
         raise ValueError("cyclic reactor module POM")
@@ -178,13 +178,19 @@ def reactor_rules(pom, ancestors=frozenset(), rule_name="requireJavaVersion"):
     properties = model_properties(roots)
     result = rules(pom, roots, rule_name)
     for module in roots[-1].findall("modules/module"):
-        name = expand(module.text or "", properties)
+        try:
+            name = expand(module.text or "", properties)
+        except ValueError:
+            if deferred_modules is None:
+                raise
+            deferred_modules.append(module.text or "")
+            continue
         if not name:
             raise ValueError("empty reactor module path")
         candidate = pom.parent / name
         if candidate.is_dir() or candidate.suffix != ".xml":
             candidate /= "pom.xml"
-        result.extend(reactor_rules(candidate, ancestors | {pom}, rule_name))
+        result.extend(reactor_rules(candidate, ancestors | {pom}, rule_name, deferred_modules))
     return list(dict.fromkeys(result))
 
 

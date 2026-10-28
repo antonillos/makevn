@@ -31,6 +31,35 @@ def pom(rule="[3.9.14,3.10.0)"):
 
 
 class MavenInspectionTests(unittest.TestCase):
+    def test_profile_module_path_is_deferred_without_probing_unconstrained_build(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "pom.xml").write_text('''<project><modules><module>${module.dir}</module></modules>
+            <profiles><profile><id>default</id><activation><activeByDefault>true</activeByDefault></activation>
+            <properties><module.dir>child</module.dir></properties></profile></profiles></project>''')
+            (root / "child").mkdir()
+            (root / "child/pom.xml").write_text("<project/>")
+            message = inspection.inspect("missing-maven", root, root, "", True)
+            self.assertIn("deferred to Maven", message)
+
+    def test_deferred_module_does_not_hide_known_maven_constraints(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "pom.xml").write_text(pom().replace("<build>",
+                "<modules><module>${module.dir}</module><module>child</module></modules><build>", 1))
+            (root / "child").mkdir()
+            (root / "child/pom.xml").write_text(pom("[3.9.15,4)"))
+            executable = root / "mvn"
+            executable.write_text("#!/bin/sh\necho 'Apache Maven 3.9.14'\n")
+            executable.chmod(0o755)
+            with self.assertRaisesRegex(ValueError, "does not satisfy"):
+                inspection.inspect(str(executable), root, root, "", True)
+            executable.write_text("#!/bin/sh\necho 'Apache Maven 3.9.15'\n")
+            self.assertIn("deferred to Maven", inspection.inspect(str(executable), root, root, "", True))
+            (root / "child/pom.xml").write_text(pom("${unknown.range}"))
+            with self.assertRaisesRegex(ValueError, "unresolved Enforcer property"):
+                inspection.inspect(str(executable), root, root, "", True)
+
     def test_execution_version_overrides_shared_plugin_rule(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

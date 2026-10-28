@@ -38,9 +38,13 @@ def installed_version(executable, cwd, java_home):
 
 
 def inspect(executable, base, cwd, java_home, checking=False):
-    requirements = reactor_rules(Path(base) / "pom.xml", rule_name="requireMavenVersion")
+    deferred_modules = []
+    requirements = reactor_rules(Path(base) / "pom.xml", rule_name="requireMavenVersion",
+                                 deferred_modules=deferred_modules)
+    deferred = ("; unresolved module paths deferred to Maven: " + ", ".join(dict.fromkeys(deferred_modules))
+                if deferred_modules else "")
     if checking and not requirements:
-        return "No local Maven version constraint"
+        return "No locally resolved Maven version constraint" + deferred
     selected = shutil.which(executable) or executable
     wrapper = Path(selected).name == "mvnw"
     if wrapper and not checking:
@@ -54,7 +58,7 @@ def inspect(executable, base, cwd, java_home, checking=False):
         raise ValueError(f"Maven {version} at {selected} does not satisfy requireMavenVersion: {required}. "
                          "Install/select a compatible Maven using .tool-versions or the wrapper; do not bypass Enforcer.")
     status = "compatible" if requirements else "not constrained locally"
-    return f"{version} ({source}); executable: {selected}; required: {required}; {status}"
+    return f"{version} ({source}); executable: {selected}; required: {required}; {status}" + deferred
 
 
 def main(args):

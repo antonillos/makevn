@@ -51,6 +51,22 @@ mkdir -p "${ASDF_DATA_DIR}/installs/maven/3.9.14/bin"
 cp "${fixture}/path/mvn" "${ASDF_DATA_DIR}/installs/maven/3.9.14/bin/mvn"
 printf 'maven 3.9.14\n' > "${aggregate}/.tool-versions"
 [[ "$(makevn_maven_executable "${repo}" "${aggregate}")" == "${ASDF_DATA_DIR}/installs/maven/3.9.14/bin/mvn" ]]
+# Profile-defined module paths remain Maven's responsibility for unconstrained builds.
+profile_repo="${fixture}/profile-repo"
+mkdir -p "${profile_repo}/child" "${profile_repo}/.makevn"
+cat > "${profile_repo}/pom.xml" <<'XML'
+<project><modelVersion>4.0.0</modelVersion><groupId>test</groupId><artifactId>profile</artifactId><version>1</version>
+<modules><module>${module.dir}</module></modules><profiles><profile><id>default</id>
+<activation><activeByDefault>true</activeByDefault></activation><properties><module.dir>child</module.dir></properties>
+</profile></profiles></project>
+XML
+printf '<project/>\n' > "${profile_repo}/child/pom.xml"
+printf 'MAKEVN_CODE_JAVA_HOME="%s"\n' "${fixture}/jdk" > "${profile_repo}/.makevn/config"
+output="$("${ROOT_DIR}/bin/makevn" --repo "${profile_repo}" doctor --compact)"
+[[ "${output}" == *'unresolved module paths deferred to Maven: ${module.dir}'* ]]
+"${ROOT_DIR}/bin/makevn" --repo "${profile_repo}" init >/dev/null
+TEST_MAVEN_MARKER="${fixture}/profile-executed" "${ROOT_DIR}/bin/makevn" --repo "${profile_repo}" validate >/dev/null
+[[ -f "${fixture}/profile-executed" ]]
 # Independent projects must not be silently chosen by alphabetical order.
 mkdir -p "${repo}/another"
 printf '<project/>\n' > "${repo}/another/pom.xml"

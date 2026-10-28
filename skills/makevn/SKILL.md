@@ -116,6 +116,9 @@ without executing or downloading the wrapper; runtime checks use its actual
 version. Resolve incompatible or unknown versions before verification when a
 local rule constrains Maven.
 
+Unresolved module paths are reported as an inspection limit and left to Maven;
+checks still enforce constraints from locally resolved modules.
+
 Project discovery prefers the root POM, then `code/pom.xml`, then a unique
 outermost nested POM. Nested modules must not displace their aggregator. Multiple
 independent candidates stop diagnosis/init with an ambiguity error; use an

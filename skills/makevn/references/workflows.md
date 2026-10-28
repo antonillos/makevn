@@ -242,7 +242,11 @@ a declaration. Before a Maven build goal, MakeVN checks the actual executable's
 unresolved version/rule blocks constrained builds; configure/install an accepted
 version rather than bypassing Enforcer. With no detected local Maven constraint,
 builds retain their existing behavior. Remote parents and activated profiles
-still require Maven's own Enforcer evaluation. This inspection requires Python 3.
+still require Maven's own Enforcer evaluation. Module paths with properties that
+cannot be resolved locally (for example, profile properties) are deferred to
+Maven and reported as an inspection limit. Constraints from all resolved local
+modules still apply; unresolved properties in detected Enforcer rules still
+block execution. This inspection requires Python 3.
 
 Project discovery prefers `pom.xml` at the Git root, then `code/pom.xml`.
 Otherwise it selects a unique outermost nested POM, excluding generated/state
