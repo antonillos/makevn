@@ -1835,6 +1835,7 @@ server:
 security:
   ignored-paths: /internal/**
 EOF
+  printf '<project/>\n' > "${repo}/code/boot/pom.xml"
   printf '<project/>\n' > "${repo}/e2e/karate/pom.xml"
   printf 'services:\n  db:\n    image: postgres:16\n' > "${repo}/e2e/karate/src/test/resources/compose/docker-compose.yml"
   printf 'services:\n  db:\n    environment:\n      FOO: bar\n' > "${repo}/e2e/karate/src/test/resources/compose/docker-compose.override.yml"
@@ -4888,6 +4889,8 @@ main() {
   bash "${ROOT_DIR}/test/smoke/karate_profiles_doctor_test.sh"
   bash "${ROOT_DIR}/test/smoke/maven_resolution_test.sh"
   bash "${ROOT_DIR}/test/smoke/maven_system_test.sh"
+  python3 "${ROOT_DIR}/test/smoke/maven_inspection_test.py"
+  bash "${ROOT_DIR}/test/smoke/maven_validation_test.sh"
   bash "${ROOT_DIR}/test/smoke/jdk_discovery_test.sh"
   bash "${ROOT_DIR}/test/smoke/jdk_brew_test.sh"
   python3 "${ROOT_DIR}/test/smoke/enforcer_test.py"

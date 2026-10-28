@@ -108,6 +108,22 @@ requires Java and no usable compatible JDK is found, doctor reports a JDK error
 while completing diagnosis successfully. Resolve it before builds or verification. Missing
 executables are environment issues; do not bypass MakeVN with raw Maven.
 
+Doctor reports the selected Maven version and compatibility with unconditional
+local `requireMavenVersion` rules. Maven commands check compatibility before
+running build goals. Explicit pins and wrappers retain precedence; MakeVN does
+not silently substitute another installation. Doctor inspects wrapper declarations
+without executing or downloading the wrapper; runtime checks use its actual
+version. Resolve incompatible or unknown versions before verification when a
+local rule constrains Maven.
+
+Unresolved module paths are reported as an inspection limit and left to Maven;
+checks still enforce constraints from locally resolved modules.
+
+Project discovery prefers the root POM, then `code/pom.xml`, then a unique
+outermost nested POM. Nested modules must not displace their aggregator. Multiple
+independent candidates stop diagnosis/init with an ambiguity error; use an
+isolated checkout of the intended project instead of guessing a candidate.
+
 Automatic JDK selection checks local Enforcer `requireJavaVersion` rules,
 including unconditional reactor modules and local relative parents. Execution
 `skip` properties matter only when that execution has a Java rule (including

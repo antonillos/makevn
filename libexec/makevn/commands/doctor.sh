@@ -107,6 +107,7 @@ print_doctor() {
   if [[ "${MAKEVN_COMPACT_OUTPUT:-}" == "1" ]]; then
     makevn_print_item "Current makevn status" "${MAKEVN_DOCTOR_CURRENT_STATUS}"
     makevn_print_item "Repository support status" "${MAKEVN_DOCTOR_REPO_SUPPORT_STATUS}"
+    makevn_print_item "Code Maven version" "${MAKEVN_DOCTOR_CODE_MAVEN_DIAGNOSTIC}"
     makevn_print_doctor_suggestions
     makevn_print_doctor_java_error
     return 0
@@ -143,7 +144,9 @@ print_doctor() {
   makevn_print_item "Test profile" "${MAKEVN_DOCTOR_TEST_PROFILE}"
   makevn_print_item "Verify profile" "${MAKEVN_DOCTOR_VERIFY_PROFILE}"
   makevn_print_item "Resolved code Maven" "${MAKEVN_DOCTOR_CODE_MAVEN}"
+  makevn_print_item "Code Maven version" "${MAKEVN_DOCTOR_CODE_MAVEN_DIAGNOSTIC}"
   makevn_print_item "Resolved Karate Maven" "${MAKEVN_DOCTOR_KARATE_MAVEN}"
+  makevn_print_item "Karate Maven version" "${MAKEVN_DOCTOR_KARATE_MAVEN_DIAGNOSTIC}"
   makevn_print_item "Resolved code JAVA_HOME" "${MAKEVN_DOCTOR_CODE_JAVA_HOME}"
   makevn_print_item "Compatible code JAVA_HOMEs" "${MAKEVN_DOCTOR_COMPATIBLE_CODE_JAVA_HOMES}"
   makevn_print_doctor_java_details

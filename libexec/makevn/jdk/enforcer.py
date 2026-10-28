@@ -4,6 +4,7 @@
 This is not an effective-POM evaluator: remote parents and profile activation
 remain Maven's responsibility. Unresolvable local rules fail closed.
 """
+from copy import deepcopy
 import re
 import sys
 import xml.etree.ElementTree as ET
@@ -41,12 +42,12 @@ def expand(value, properties):
     return value.strip()
 
 
-def number(value):
+def number(value, java=True):
     if not re.fullmatch(r"\d+(?:[._]\d+)*(?:-\d+)?", value):
         raise ValueError("unsupported Enforcer version: " + value)
     parts = tuple(map(int, re.split(r"[._-]", value)))
     # Enforcer's special handling of the Java 8 shorthand.
-    return (1, 8) + parts[1:] if parts[0] == 8 else parts
+    return (1, 8) + parts[1:] if java and parts[0] == 8 else parts
 
 
 def compare(left, right):
@@ -56,9 +57,9 @@ def compare(left, right):
     return (left > right) - (left < right)
 
 
-def intervals(value):
+def intervals(value, java=True):
     if not value.startswith(("[", "(")):
-        return [(number(value), True, None, False)]
+        return [(number(value, java), True, None, False)]
     result = []
     remaining = value
     while remaining:
@@ -69,12 +70,12 @@ def intervals(value):
         if "," not in body:
             if start != "[" or end != "]":
                 raise ValueError("invalid exact Enforcer range: " + value)
-            bound = number(body.strip())
+            bound = number(body.strip(), java)
             result.append((bound, True, bound, True))
         else:
             low, high = body.split(",", 1)
-            result.append((number(low.strip()) if low.strip() else None, start == "[",
-                           number(high.strip()) if high.strip() else None, end == "]"))
+            result.append((number(low.strip(), java) if low.strip() else None, start == "[",
+                           number(high.strip(), java) if high.strip() else None, end == "]"))
         remaining = remaining[match.end():].strip()
         if remaining:
             if not remaining.startswith(","):
@@ -85,15 +86,15 @@ def intervals(value):
     return result
 
 
-def accepts(value, version):
+def accepts(value, version, java=True):
     base, separator, build = version.partition("+")
-    actual = number(base)
+    actual = number(base, java)
     if separator:
         build = build.removesuffix("-LTS")
         if not build.isdigit():
             raise ValueError("unsupported JDK build: " + version)
         actual += (0,) * max(0, 3 - len(actual)) + (int(build),)
-    for low, low_closed, high, high_closed in intervals(value):
+    for low, low_closed, high, high_closed in intervals(value, java):
         lower = 1 if low is None else compare(actual, low)
         upper = -1 if high is None else compare(actual, high)
         if (lower > 0 or lower == 0 and low_closed) and (upper < 0 or upper == 0 and high_closed):
@@ -109,58 +110,111 @@ def model_properties(roots):
     return properties
 
 
-def rules(pom, roots=None):
-    roots = models(pom) if roots is None else roots
-    properties = model_properties(roots)
-    result = []
+def merge_execution_configuration(shared, specific):
+    """Merge by element name, with the execution as dominant configuration."""
+    if specific is None:
+        return deepcopy(shared)
+    merged = deepcopy(specific)
+    if shared is None or specific.get("combine.self") == "override":
+        return merged
+    merged.attrib = {**shared.attrib, **specific.attrib}
+    if not (specific.text or "").strip():
+        merged.text = shared.text
+    if merged.get("combine.children") == "append":
+        merged[:] = [deepcopy(child) for child in shared] + list(merged)
+        return merged
+    for inherited in shared:
+        child = specific.find(inherited.tag)
+        if child is None:
+            merged.append(deepcopy(inherited))
+        else:
+            index = list(specific).index(child)
+            merged[index] = merge_execution_configuration(inherited, child)
+    return merged
+
+
+def merge_enforcer_execution(inherited, declared):
+    merged = merge_execution_configuration(inherited, declared)
+    goals = merged.find("goals")
+    if goals is not None:
+        merged.remove(goals)
+    goals = ET.SubElement(merged, "goals")
+    names = [goal.text for execution in (inherited, declared) if execution is not None
+             for goal in execution.findall("goals/goal")]
+    for name in dict.fromkeys(names):
+        ET.SubElement(goals, "goal").text = name
+    return merged
+
+
+def effective_enforcer_configuration(roots):
+    shared = None
+    executions = {}
+    inherited = True
     for root in roots:
+        if not inherited:
+            shared, executions = None, {}
+        executions = {key: execution for key, execution in executions.items()
+                      if execution.findtext("inherited") != "false"}
         for plugin in root.findall("build/plugins/plugin"):
             if plugin.findtext("artifactId") != "maven-enforcer-plugin":
                 continue
             if plugin.findtext("groupId", "org.apache.maven.plugins") != "org.apache.maven.plugins":
                 continue
-            if root is not roots[-1] and plugin.findtext("inherited") == "false":
-                continue
-            shared = plugin.find("configuration")
+            inherited = plugin.findtext("inherited") != "false"
+            shared = merge_execution_configuration(shared, plugin.find("configuration"))
             for execution in plugin.findall("executions/execution"):
-                if execution.findtext("phase") == "none":
-                    continue
-                if "enforce" not in [goal.text for goal in execution.findall("goals/goal")]:
-                    continue
-                if root is not roots[-1] and execution.findtext("inherited") == "false":
-                    continue
-                specific = execution.find("configuration")
-                configurations = [config for config in (shared, specific) if config is not None]
-                java_rules = [rule for config in configurations
-                              for rule in config.findall("rules/requireJavaVersion")]
-                if not java_rules:
-                    continue
-                skip = next((config.findtext("skip") for config in reversed(configurations)
-                             if config.find("skip") is not None), "false")
-                if expand(skip, properties).lower() == "true":
-                    continue
-                for rule in java_rules:
-                    value = expand(rule.findtext("version", ""), properties)
-                    intervals(value)  # Validate before candidate filtering.
-                    result.append(value)
+                key = execution.findtext("id", "default")
+                executions[key] = merge_enforcer_execution(executions.get(key), execution)
+    return shared, list(executions.values())
+
+
+def rules(pom, roots=None, rule_name="requireJavaVersion"):
+    roots = models(pom) if roots is None else roots
+    properties = model_properties(roots)
+    shared, executions = effective_enforcer_configuration(roots)
+    result = []
+    for execution in executions:
+        if execution.findtext("phase") == "none":
+            continue
+        if "enforce" not in [goal.text for goal in execution.findall("goals/goal")]:
+            continue
+        configuration = merge_execution_configuration(shared, execution.find("configuration"))
+        if configuration is None:
+            continue
+        version_rules = configuration.findall("rules/" + rule_name)
+        if not version_rules:
+            continue
+        skip = configuration.findtext("skip", "false")
+        if expand(skip, properties).lower() == "true":
+            continue
+        for rule in version_rules:
+            value = expand(rule.findtext("version", ""), properties)
+            intervals(value, java=rule_name == "requireJavaVersion")
+            result.append(value)
     return list(dict.fromkeys(result))
 
 
-def reactor_rules(pom, ancestors=frozenset()):
+def reactor_rules(pom, ancestors=frozenset(), rule_name="requireJavaVersion", deferred_modules=None):
     pom = pom.resolve()
     if pom in ancestors:
         raise ValueError("cyclic reactor module POM")
     roots = models(pom)
     properties = model_properties(roots)
-    result = rules(pom, roots)
+    result = rules(pom, roots, rule_name)
     for module in roots[-1].findall("modules/module"):
-        name = expand(module.text or "", properties)
+        try:
+            name = expand(module.text or "", properties)
+        except ValueError:
+            if deferred_modules is None:
+                raise
+            deferred_modules.append(module.text or "")
+            continue
         if not name:
             raise ValueError("empty reactor module path")
         candidate = pom.parent / name
         if candidate.is_dir() or candidate.suffix != ".xml":
             candidate /= "pom.xml"
-        result.extend(reactor_rules(candidate, ancestors | {pom}))
+        result.extend(reactor_rules(candidate, ancestors | {pom}, rule_name, deferred_modules))
     return list(dict.fromkeys(result))
 
 

@@ -198,6 +198,7 @@ makevn_run_in_context() {
     makevn_die "Could not resolve ${context} JDK. Run 'makevn doctor' or configure .makevn/config first."
   fi
 
+  makevn_check_maven_command "${maven_base_path}" "${command_cwd}" "${java_home}" "$@" || return $?
   makevn_trace_command exec env JAVA_HOME="${java_home}" "$@"
 
   (

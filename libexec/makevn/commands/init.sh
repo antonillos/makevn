@@ -35,6 +35,8 @@ cmd_init() {
   shift
   cmd_init_parse_options "$@"
 
+  makevn_require_unambiguous_maven_project "${repo_root}"
+
   if [[ -z "$(makevn_detect_maven_base_path "${repo_root}" || true)" ]]; then
     makevn_die "Cannot initialize makevn: no Maven project detected. No local configuration was created or updated."
   fi
