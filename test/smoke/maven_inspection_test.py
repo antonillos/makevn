@@ -22,15 +22,39 @@ project = load("maven_project")
 def pom(rule="[3.9.14,3.10.0)"):
     return """<project xmlns="http://maven.apache.org/POM/4.0.0"><build><plugins>
     <plugin><artifactId>maven-enforcer-plugin</artifactId><executions>
-    <execution><goals><goal>enforce</goal></goals><configuration><rules>
+    <execution><id>versions</id><goals><goal>enforce</goal></goals><configuration><rules>
     <requireMavenVersion><version>""" + rule + """</version></requireMavenVersion>
     </rules></configuration></execution>
-    <execution><goals><goal>enforce</goal></goals><configuration>
+    <execution><id>snapshots</id><goals><goal>enforce</goal></goals><configuration>
     <skip>${skipSnapshots}</skip><rules><requireSnapshotVersion/></rules>
     </configuration></execution></executions></plugin></plugins></build></project>"""
 
 
 class MavenInspectionTests(unittest.TestCase):
+    def test_local_parent_execution_override_accepts_child_maven_version(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "pom.xml").write_text(pom("[3.8,3.9)"))
+            child = root / "child"
+            child.mkdir()
+            (child / "pom.xml").write_text('''<project><parent><relativePath>../pom.xml</relativePath></parent>
+            <build><plugins><plugin><artifactId>maven-enforcer-plugin</artifactId><executions>
+            <execution><id>versions</id><configuration><rules><requireMavenVersion>
+            <version>[3.9,4)</version></requireMavenVersion></rules></configuration></execution>
+            </executions></plugin></plugins></build></project>''')
+            executable = root / "mvn"
+            executable.write_text("#!/bin/sh\necho 'Apache Maven 3.9.10'\n")
+            executable.chmod(0o755)
+            self.assertEqual(inspection.reactor_rules(child / "pom.xml", rule_name="requireMavenVersion"),
+                             ["[3.9,4)"])
+            self.assertIn("compatible", inspection.inspect(str(executable), child, child, "", True))
+            (root / "pom.xml").write_text(pom("[3.8,3.9)").replace("<build>",
+                "<modules><module>child</module></modules><build>", 1))
+            self.assertEqual(inspection.reactor_rules(root / "pom.xml", rule_name="requireMavenVersion"),
+                             ["[3.8,3.9)", "[3.9,4)"])
+            with self.assertRaisesRegex(ValueError, "does not satisfy"):
+                inspection.inspect(str(executable), root, root, "", True)
+
     def test_profile_module_path_is_deferred_without_probing_unconstrained_build(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

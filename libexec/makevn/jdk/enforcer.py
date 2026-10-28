@@ -133,40 +133,64 @@ def merge_execution_configuration(shared, specific):
     return merged
 
 
-def rules(pom, roots=None, rule_name="requireJavaVersion"):
-    roots = models(pom) if roots is None else roots
-    properties = model_properties(roots)
-    result = []
+def merge_enforcer_execution(inherited, declared):
+    merged = merge_execution_configuration(inherited, declared)
+    goals = merged.find("goals")
+    if goals is not None:
+        merged.remove(goals)
+    goals = ET.SubElement(merged, "goals")
+    names = [goal.text for execution in (inherited, declared) if execution is not None
+             for goal in execution.findall("goals/goal")]
+    for name in dict.fromkeys(names):
+        ET.SubElement(goals, "goal").text = name
+    return merged
+
+
+def effective_enforcer_configuration(roots):
+    shared = None
+    executions = {}
+    inherited = True
     for root in roots:
+        if not inherited:
+            shared, executions = None, {}
+        executions = {key: execution for key, execution in executions.items()
+                      if execution.findtext("inherited") != "false"}
         for plugin in root.findall("build/plugins/plugin"):
             if plugin.findtext("artifactId") != "maven-enforcer-plugin":
                 continue
             if plugin.findtext("groupId", "org.apache.maven.plugins") != "org.apache.maven.plugins":
                 continue
-            if root is not roots[-1] and plugin.findtext("inherited") == "false":
-                continue
-            shared = plugin.find("configuration")
+            inherited = plugin.findtext("inherited") != "false"
+            shared = merge_execution_configuration(shared, plugin.find("configuration"))
             for execution in plugin.findall("executions/execution"):
-                if execution.findtext("phase") == "none":
-                    continue
-                if "enforce" not in [goal.text for goal in execution.findall("goals/goal")]:
-                    continue
-                if root is not roots[-1] and execution.findtext("inherited") == "false":
-                    continue
-                specific = execution.find("configuration")
-                configuration = merge_execution_configuration(shared, specific)
-                if configuration is None:
-                    continue
-                version_rules = configuration.findall("rules/" + rule_name)
-                if not version_rules:
-                    continue
-                skip = configuration.findtext("skip", "false")
-                if expand(skip, properties).lower() == "true":
-                    continue
-                for rule in version_rules:
-                    value = expand(rule.findtext("version", ""), properties)
-                    intervals(value, java=rule_name == "requireJavaVersion")
-                    result.append(value)
+                key = execution.findtext("id", "default")
+                executions[key] = merge_enforcer_execution(executions.get(key), execution)
+    return shared, list(executions.values())
+
+
+def rules(pom, roots=None, rule_name="requireJavaVersion"):
+    roots = models(pom) if roots is None else roots
+    properties = model_properties(roots)
+    shared, executions = effective_enforcer_configuration(roots)
+    result = []
+    for execution in executions:
+        if execution.findtext("phase") == "none":
+            continue
+        if "enforce" not in [goal.text for goal in execution.findall("goals/goal")]:
+            continue
+        configuration = merge_execution_configuration(shared, execution.find("configuration"))
+        if configuration is None:
+            continue
+        version_rules = configuration.findall("rules/" + rule_name)
+        if not version_rules:
+            continue
+        skip = configuration.findtext("skip", "false")
+        if expand(skip, properties).lower() == "true":
+            continue
+        for rule in version_rules:
+            value = expand(rule.findtext("version", ""), properties)
+            intervals(value, java=rule_name == "requireJavaVersion")
+            result.append(value)
     return list(dict.fromkeys(result))
 
 

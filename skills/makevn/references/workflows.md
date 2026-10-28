@@ -232,7 +232,12 @@ for code and Karate independently.
 
 Doctor also reports the selected Maven version, its executable and compatibility
 with unconditional local `requireMavenVersion` rules, including reactor modules
-and relative parents. Each execution's configuration is merged with the plugin
+and relative parents. Local parent plugins are merged into the selected project's
+plugin before inspection, matching inherited executions by ID and honoring
+`inherited=false`. Child overrides replace superseded parent settings; distinct
+execution IDs remain independent. Building a parent reactor still checks the
+parent project's own constraints as well as its modules' effective constraints.
+Each execution's configuration is merged with the plugin
 configuration before collecting constraints: execution values override shared
 values, missing fields inherit shared values, and separate executions still
 constrain Maven independently. For wrappers it reads the version from `distributionUrl`
