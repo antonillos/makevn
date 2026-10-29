@@ -230,6 +230,13 @@ Without a Maven pin, the existing root wrapper, context wrapper, then `mvn`
 PATH selection is preserved. Detailed doctor reports the effective executable
 for code and Karate independently.
 
+Maven preflight resolves command-line `-D`/`--define` properties before evaluating
+local Enforcer rules, including reactor modules. These values override POM
+properties; an omitted value means `true`. Doctor has no selected command: an
+unresolved execution skip is reported as command-dependent, without claiming
+compatibility. The actual command still stops if its properties cannot resolve
+that skip. Flags detected for one workflow are not applied to other commands.
+
 Doctor also reports the selected Maven version, its executable and compatibility
 with unconditional local `requireMavenVersion` rules, including reactor modules
 and relative parents. Local parent plugins are merged into the selected project's

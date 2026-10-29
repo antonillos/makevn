@@ -19,6 +19,13 @@ Compose signals establish a Docker prerequisite. A root compose file alone does 
 | Whole project | `makevn verify` | `verify` | Full requested verification results |
 | Changed code | preview then `makevn verify-changes` | `verify_changes_preview`, `verify_changes` | Reviewed scope and fresh Surefire/Failsafe evidence |
 
+MCP `test` accepts explicit Maven user properties through `properties`, for example
+`{"name":"ExampleTest","properties":{"skipEnforceSnapshots":"false"}}`.
+Values must be strings. Use repository intent or user answers to choose values;
+do not infer skip flags from another workflow. This forwards the same properties
+as CLI `test --name ExampleTest -- -DskipEnforceSnapshots=false` and lets the
+Maven preflight inspect them. An unresolved property still blocks execution.
+
 Preview and execution must use the same repository and mode. Focused is the
 default; `--exhaustive` / `focused: false` selects complete owner/dependency suites.
 Exhaustive selected suites still differ from whole-project `verify`. Unknown impact

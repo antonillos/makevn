@@ -9,7 +9,7 @@ import sys
 import xml.etree.ElementTree as ET
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "jdk"))
-from enforcer import accepts, reactor_rules
+from enforcer import UnresolvedSkipError, accepts, reactor_rules
 
 
 def wrapper_version(executable):
@@ -37,10 +37,31 @@ def installed_version(executable, cwd, java_home):
     return match[1]
 
 
-def inspect(executable, base, cwd, java_home, checking=False):
+def command_properties(arguments):
+    properties = {}
+    arguments = iter(arguments)
+    for argument in arguments:
+        if argument == "--":
+            break
+        if argument in ("-D", "--define"):
+            value = next(arguments, "")
+        elif argument.startswith("-D"):
+            value = argument[2:]
+        elif argument.startswith("--define="):
+            value = argument[len("--define="):]
+        else:
+            continue
+        name, separator, value = value.partition("=")
+        if name:
+            properties[name] = value if separator else "true"
+    return properties
+
+
+def inspect(executable, base, cwd, java_home, checking=False, arguments=()):
     deferred_modules = []
     requirements = reactor_rules(Path(base) / "pom.xml", rule_name="requireMavenVersion",
-                                 deferred_modules=deferred_modules)
+                                 deferred_modules=deferred_modules,
+                                 user_properties=command_properties(arguments))
     deferred = ("; unresolved module paths deferred to Maven: " + ", ".join(dict.fromkeys(deferred_modules))
                 if deferred_modules else "")
     if checking and not requirements:
@@ -62,12 +83,19 @@ def inspect(executable, base, cwd, java_home, checking=False):
 
 
 def main(args):
-    mode, executable, base, cwd, java_home = args
+    mode, executable, base, cwd, java_home, *arguments = args
     try:
-        message = inspect(executable, base, cwd, java_home, checking=mode == "check")
+        message = inspect(executable, base, cwd, java_home, checking=mode == "check", arguments=arguments)
         if mode != "check":
             print(message)
         return 0
+    except UnresolvedSkipError as error:
+        if mode != "check":
+            print("Maven version requirements depend on command properties: " + str(error) +
+                  ". Compatibility will be checked with the selected command's properties.")
+            return 0
+        print("Maven version unresolved or incompatible: " + str(error), file=sys.stderr)
+        return 1
     except (ValueError, OSError, ET.ParseError, subprocess.TimeoutExpired) as error:
         print("Maven version unresolved or incompatible: " + str(error),
               file=sys.stderr if mode == "check" else sys.stdout)

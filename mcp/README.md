@@ -546,3 +546,17 @@ Cleanup requires a terminal state and an unlocked lifetime lock. It only removes
 known private execution files; shared repository logs, unknown files, symlinks
 and legacy records without lifetime ownership evidence remain untouched.
 The equivalent CLI is `makevn execution-cleanup [--retention-days DAYS] [--dry-run]`.
+
+### Selected test Maven properties
+
+The `test` tool accepts an optional `properties` object with string values:
+
+```json
+{"name":"test","arguments":{"repo":"/path/to/repo","name":"ExampleTest","properties":{"skipEnforceSnapshots":"false"}}}
+```
+
+Properties are passed as literal `-Dname=value` arguments after the CLI `--`
+separator. The Maven version preflight uses those same values. No properties
+are inferred from another workflow; choose skip values explicitly according to
+repository intent. Empty objects leave the invocation unchanged. Invalid keys
+or non-string values are rejected before execution, including in workflows.

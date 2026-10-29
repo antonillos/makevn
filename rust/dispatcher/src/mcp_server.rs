@@ -353,7 +353,7 @@ const TOOL_SPECS: &[ToolSpec] = &[
     ToolSpec { name: "package", description: "Compile and package without running tests.", command: &["package"], options: &[COMMON_REPO, COMPACT] },
     ToolSpec { name: "build", description: "Full Maven build (compile, test, package).", command: &["build"], options: &[COMMON_REPO, COMPACT] },
     ToolSpec { name: "clean", description: "Clean Maven build output.", command: &["clean"], options: &[COMMON_REPO, CLEAN_GENERATED_CONTRACT_TARGETS, COMPACT] },
-    ToolSpec { name: "test", description: "Run tests with optional name filter. Use fast=true only after a successful compile or test run when sources have not changed.", command: &["test"], options: &[COMMON_REPO, ToolOption { name: "name", ty: "string", description: "Test class name or comma-separated names", required: false }, ToolOption { name: "fast", ty: "boolean", description: "Skip compilation only after a successful compile or test run when sources have not changed. Do not use on the first test run.", required: false }, COMPACT] },
+    ToolSpec { name: "test", description: "Run tests with optional name filter. Use fast=true only after a successful compile or test run when sources have not changed.", command: &["test"], options: &[COMMON_REPO, ToolOption { name: "name", ty: "string", description: "Test class name or comma-separated names", required: false }, ToolOption { name: "fast", ty: "boolean", description: "Skip compilation only after a successful compile or test run when sources have not changed. Do not use on the first test run.", required: false }, ToolOption { name: "properties", ty: "object", description: "Explicit Maven user properties as string values, forwarded as -Dname=value. Do not infer skip values or copy flags from other workflows.", required: false }, COMPACT] },
     ToolSpec { name: "verify_ut", description: "Run unit-test-only verification.", command: &["verify-ut"], options: &[COMMON_REPO, COMPACT] },
     ToolSpec { name: "verify_ut_coverage", description: "Run unit-test-only verification with coverage.", command: &["verify-ut-coverage"], options: &[COMMON_REPO, COMPACT] },
     ToolSpec { name: "verify_it", description: "Run integration-test-only verification.", command: &["verify-it"], options: &[COMMON_REPO, COMPACT] },
@@ -417,6 +417,9 @@ fn tool(spec: &ToolSpec) -> Value {
                 "description": option.description,
             }),
         );
+        if option.name == "properties" {
+            properties[option.name]["additionalProperties"] = json!({"type": "string"});
+        }
         if option.name == "focused" {
             properties[option.name]["default"] = json!(true);
         }
@@ -687,6 +690,9 @@ fn validate_step_arguments(spec: &ToolSpec, arguments: Option<&Value>) -> Result
             return Err(format!("argument '{key}' for {} must be {ty}", spec.name));
         }
     }
+    if let Some(properties) = arguments.get("properties").filter(|_| spec.name == "test") {
+        push_maven_properties(&mut Vec::new(), properties)?;
+    }
     Ok(())
 }
 
@@ -943,6 +949,27 @@ fn push_tool_flags(
         };
 
         push_tool_option(cmd_args, option.name, value)?;
+    }
+    if let Some(value) = args.get("properties").filter(|_| spec.name == "test") {
+        push_maven_properties(cmd_args, value)?;
+    }
+    Ok(())
+}
+
+fn push_maven_properties(cmd_args: &mut Vec<String>, value: &Value) -> Result<(), String> {
+    let properties = value.as_object().ok_or("properties must be an object of strings")?;
+    let mut arguments = Vec::new();
+    for (name, value) in properties {
+        if name.is_empty() || name.contains(['=', '\0']) {
+            return Err("Maven property names must be nonempty and contain neither '=' nor NUL".into());
+        }
+        let value = value.as_str().filter(|value| !value.contains('\0'))
+            .ok_or("Maven property values must be strings without NUL")?;
+        arguments.push(format!("-D{name}={value}"));
+    }
+    if !arguments.is_empty() {
+        cmd_args.push("--".into());
+        cmd_args.extend(arguments);
     }
     Ok(())
 }
