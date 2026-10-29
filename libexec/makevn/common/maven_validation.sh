@@ -25,7 +25,7 @@ makevn_check_maven_command() {
   executable="${1:-}"
   case "${executable##*/}" in
     mvn|mvnw)
-      python3 "${MAKEVN_LIBEXEC_DIR}/common/maven_inspection.py" check "${executable}" "${base}" "${cwd}" "${java_home}"
+      python3 "${MAKEVN_LIBEXEC_DIR}/common/maven_inspection.py" check "${executable}" "${base}" "${cwd}" "${java_home}" "${@:2}"
       ;;
   esac
 }

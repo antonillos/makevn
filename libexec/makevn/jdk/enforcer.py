@@ -11,6 +11,10 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 
 
+class UnresolvedSkipError(ValueError):
+    """An active version rule depends on an unresolved execution skip."""
+
+
 def models(pom, seen=None):
     seen = set() if seen is None else seen
     pom = pom.resolve()
@@ -168,9 +172,9 @@ def effective_enforcer_configuration(roots):
     return shared, list(executions.values())
 
 
-def rules(pom, roots=None, rule_name="requireJavaVersion"):
+def rules(pom, roots=None, rule_name="requireJavaVersion", user_properties=None):
     roots = models(pom) if roots is None else roots
-    properties = model_properties(roots)
+    properties = {**model_properties(roots), **(user_properties or {})}
     shared, executions = effective_enforcer_configuration(roots)
     result = []
     for execution in executions:
@@ -185,7 +189,11 @@ def rules(pom, roots=None, rule_name="requireJavaVersion"):
         if not version_rules:
             continue
         skip = configuration.findtext("skip", "false")
-        if expand(skip, properties).lower() == "true":
+        try:
+            skipped = expand(skip, properties).lower() == "true"
+        except ValueError as error:
+            raise UnresolvedSkipError(str(error)) from error
+        if skipped:
             continue
         for rule in version_rules:
             value = expand(rule.findtext("version", ""), properties)
@@ -194,13 +202,14 @@ def rules(pom, roots=None, rule_name="requireJavaVersion"):
     return list(dict.fromkeys(result))
 
 
-def reactor_rules(pom, ancestors=frozenset(), rule_name="requireJavaVersion", deferred_modules=None):
+def reactor_rules(pom, ancestors=frozenset(), rule_name="requireJavaVersion", deferred_modules=None,
+                  user_properties=None):
     pom = pom.resolve()
     if pom in ancestors:
         raise ValueError("cyclic reactor module POM")
     roots = models(pom)
-    properties = model_properties(roots)
-    result = rules(pom, roots, rule_name)
+    properties = {**model_properties(roots), **(user_properties or {})}
+    result = rules(pom, roots, rule_name, user_properties)
     for module in roots[-1].findall("modules/module"):
         try:
             name = expand(module.text or "", properties)
@@ -214,7 +223,7 @@ def reactor_rules(pom, ancestors=frozenset(), rule_name="requireJavaVersion", de
         candidate = pom.parent / name
         if candidate.is_dir() or candidate.suffix != ".xml":
             candidate /= "pom.xml"
-        result.extend(reactor_rules(candidate, ancestors | {pom}, rule_name, deferred_modules))
+        result.extend(reactor_rules(candidate, ancestors | {pom}, rule_name, deferred_modules, user_properties))
     return list(dict.fromkeys(result))
 
 

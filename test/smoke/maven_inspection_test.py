@@ -1,6 +1,7 @@
 import contextlib
 import importlib.util
 import io
+import subprocess
 from pathlib import Path
 import tempfile
 import unittest
@@ -31,6 +32,71 @@ def pom(rule="[3.9.14,3.10.0)"):
 
 
 class MavenInspectionTests(unittest.TestCase):
+    def test_command_properties_control_version_rule_in_reactor(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "pom.xml").write_text("<project><modules><module>child</module></modules></project>")
+            child = root / "child"
+            child.mkdir()
+            (child / "pom.xml").write_text(pom().replace(
+                "<configuration><rules>",
+                "<configuration><skip>${skipEnforceSnapshots}</skip><rules>", 1))
+            executable = root / "mvn"
+            executable.write_text("#!/bin/sh\necho 'Apache Maven 3.9.9'\n")
+            executable.chmod(0o755)
+            for arguments in (("-DskipEnforceSnapshots",),
+                              ("--define", "skipEnforceSnapshots=true")):
+                self.assertIn("No locally resolved", inspection.inspect(
+                    str(executable), root, root, "", True, arguments))
+            child_pom = child / "pom.xml"
+            original = child_pom.read_text()
+            child_pom.write_text(original.replace("<build>",
+                "<properties><skipEnforceSnapshots>true</skipEnforceSnapshots></properties><build>", 1))
+            with self.assertRaisesRegex(ValueError, "does not satisfy"):
+                inspection.inspect(str(executable), root, root, "", True,
+                                   ("-DskipEnforceSnapshots=false",))
+            child_pom.write_text(original)
+            with self.assertRaisesRegex(ValueError, "unresolved Enforcer property"):
+                inspection.inspect(str(executable), root, root, "", True)
+
+    def test_shell_preflight_forwards_command_properties(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "pom.xml").write_text(pom().replace(
+                "<configuration><rules>",
+                "<configuration><skip>${skipEnforceSnapshots}</skip><rules>", 1))
+            script = r'''source "$1/common/maven_validation.sh"
+MAKEVN_LIBEXEC_DIR="$1"
+makevn_check_maven_command "$2" "$2" "" env EXAMPLE=value mvn verify "$3"
+'''
+            for flag, expected in (("-DskipEnforceSnapshots", 0),
+                                   ("-Dunrelated=true", 1)):
+                result = subprocess.run(["bash", "-c", script, "test",
+                                         str(ROOT / "libexec/makevn"), str(root), flag],
+                                        capture_output=True, text=True, check=False)
+                self.assertEqual(result.returncode, expected, result.stderr)
+
+    def test_doctor_reports_command_dependent_skip_without_claiming_compatibility(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "pom.xml").write_text(pom().replace(
+                "<configuration><rules>",
+                "<configuration><skip>${skipEnforceSnapshots}</skip><rules>", 1))
+            output = io.StringIO()
+            with contextlib.redirect_stdout(output):
+                self.assertEqual(inspection.main([
+                    "describe", "missing-maven", str(root), str(root), ""]), 0)
+            self.assertIn("depend on command properties", output.getvalue())
+            self.assertIn("skipEnforceSnapshots", output.getvalue())
+            with self.assertRaisesRegex(ValueError, "unresolved Enforcer property"):
+                inspection.inspect("missing-maven", root, root, "", True)
+
+    def test_command_property_forms_and_precedence(self):
+        self.assertEqual(inspection.command_properties([
+            "verify", "-Dskip", "-D", "range=[3.9,4)", "--define=skip=false",
+            "--define", "empty=", "--", "-Dignored=true"]),
+            {"skip": "false", "range": "[3.9,4)", "empty": ""})
+
     def test_local_parent_execution_override_accepts_child_maven_version(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
