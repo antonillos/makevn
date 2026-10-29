@@ -1255,3 +1255,42 @@ fn missing_required_jdk_is_diagnostic_success_with_blocking_guidance() {
     assert_eq!(response["isError"], false);
     assert_eq!(response["structuredContent"]["exitCode"], 0);
 }
+
+#[test]
+fn selected_test_properties_are_typed_and_forwarded_after_options() {
+    let spec = TOOL_SPECS.iter().find(|spec| spec.name == "test").unwrap();
+    let schema = super::tool(spec);
+    assert_eq!(schema["inputSchema"]["properties"]["properties"]["additionalProperties"],
+               json!({"type": "string"}));
+    let arguments = json!({"name": "ExampleTest", "properties": {
+        "skipEnforceSnapshots": "false", "message": "literal $(echo unsafe) value"
+    }});
+    let mut command = vec!["test".into()];
+    push_tool_flags(&mut command, spec, arguments.as_object().unwrap()).unwrap();
+    assert_eq!(command, vec!["test", "--name", "ExampleTest", "--",
+        "-Dmessage=literal $(echo unsafe) value", "-DskipEnforceSnapshots=false"]);
+}
+
+#[test]
+fn selected_test_rejects_invalid_properties_before_execution() {
+    let spec = TOOL_SPECS.iter().find(|spec| spec.name == "test").unwrap();
+    for properties in [json!("bad"), json!({"": "false"}), json!({"skip=x": "false"}),
+                       json!({"skip": false}), json!({"skip": "\u{0}"})] {
+        let arguments = json!({"properties": properties});
+        assert!(push_tool_flags(&mut vec![], spec, arguments.as_object().unwrap()).is_err());
+    }
+    let mut command = vec!["test".into()];
+    push_tool_flags(&mut command, spec, json!({"properties": {}}).as_object().unwrap()).unwrap();
+    assert_eq!(command, vec!["test"]);
+}
+
+#[test]
+fn workflow_rejects_invalid_test_properties_during_planning() {
+    assert!(super::parse_steps(json!({"steps": [
+        {"tool": "doctor"},
+        {"tool": "test", "arguments": {"properties": {"skip": true}}}
+    ]}).as_object().unwrap()).is_err());
+    assert!(super::parse_steps(json!({"steps": [
+        {"tool": "test", "arguments": {"properties": {"skip": "false"}}}
+    ]}).as_object().unwrap()).is_ok());
+}
