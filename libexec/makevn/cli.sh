@@ -27,15 +27,15 @@ Usage:
   makevn [--repo PATH] validate [-- EXTRA_MAVEN_ARGS...]
   makevn [--repo PATH] package [-- EXTRA_MAVEN_ARGS...]
   makevn [--repo PATH] build [-- EXTRA_MAVEN_ARGS...]
-  makevn [--repo PATH] clean [-- EXTRA_MAVEN_ARGS...]
-  makevn [--repo PATH] test [--name TEST]... [--fast] [--clean-generated-contract-targets] [-- EXTRA_MAVEN_ARGS...]
-  makevn [--repo PATH] verify-ut [--clean-generated-contract-targets] [-- EXTRA_MAVEN_ARGS...]
-  makevn [--repo PATH] verify-ut-coverage [--clean-generated-contract-targets] [-- EXTRA_MAVEN_ARGS...]
-  makevn [--repo PATH] verify-it [--clean-generated-contract-targets] [-- EXTRA_MAVEN_ARGS...]
-  makevn [--repo PATH] verify-it-coverage [--clean-generated-contract-targets] [-- EXTRA_MAVEN_ARGS...]
-  makevn [--repo PATH] verify [--clean-generated-contract-targets] [-- EXTRA_MAVEN_ARGS...]
+  makevn [--repo PATH] clean [--clean-generated-contract-targets] [-- EXTRA_MAVEN_ARGS...]
+  makevn [--repo PATH] test [--name TEST]... [--fast] [-- EXTRA_MAVEN_ARGS...]
+  makevn [--repo PATH] verify-ut [-- EXTRA_MAVEN_ARGS...]
+  makevn [--repo PATH] verify-ut-coverage [-- EXTRA_MAVEN_ARGS...]
+  makevn [--repo PATH] verify-it [-- EXTRA_MAVEN_ARGS...]
+  makevn [--repo PATH] verify-it-coverage [-- EXTRA_MAVEN_ARGS...]
+  makevn [--repo PATH] verify [-- EXTRA_MAVEN_ARGS...]
   makevn [--repo PATH] verify-changes-preview [--focused|--exhaustive]
-  makevn [--repo PATH] verify-changes [--focused|--exhaustive] [--clean-generated-contract-targets] [-- EXTRA_MAVEN_ARGS...]
+  makevn [--repo PATH] verify-changes [--focused|--exhaustive] [-- EXTRA_MAVEN_ARGS...]
   makevn [--repo PATH] coverage [--threshold PCT]
   makevn [--repo PATH] coverage-changes [--threshold PCT] [--overall-threshold PCT] [--verbose]
   makevn [--repo PATH] crap [--jacoco-xml PATH] [--threshold SCORE] [--max-warnings COUNT]
@@ -78,11 +78,13 @@ Examples:
   makevn test --name UserRepositoryTest,OrderRepositoryTest
   makevn test --name UserRepositoryTest --name OrderRepositoryTest
   makevn test --fast --name UserRepositoryTest
-  makevn test --clean-generated-contract-targets --name UserRepositoryTest
+  makevn clean --clean-generated-contract-targets
+  makevn test --name UserRepositoryTest
   makevn verify-ut
   makevn verify-ut-coverage
   makevn verify-it
-  makevn verify --clean-generated-contract-targets
+  makevn clean --clean-generated-contract-targets
+  makevn verify
   makevn coverage
   makevn verify-changes-preview
   makevn verify-changes
@@ -273,11 +275,16 @@ esac
 
 REPO_ROOT="$(makevn_resolve_repo_root "${REPO_CANDIDATE}")"
 
-# Consume --clean-generated-contract-targets flag across all commands
+# Generated-source recovery is an explicit clean operation.
 _consumed_args=()
 while [[ $# -gt 0 ]]; do
   case "$1" in
+    --)
+      _consumed_args+=("$@")
+      break
+      ;;
     --clean-generated-contract-targets)
+      [[ "${COMMAND}" == clean ]] || makevn_die "--clean-generated-contract-targets is only supported by clean; run makevn clean --clean-generated-contract-targets, then retry ${COMMAND}"
       MAKEVN_CLEAN_GENERATED_CONTRACT_TARGETS=true
       shift
       ;;

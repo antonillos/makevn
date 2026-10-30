@@ -112,3 +112,15 @@ fn help_detection_preserves_normal_commands_and_global_options() {
     print_mcp_help();
     print_help(false);
 }
+
+#[test]
+fn generated_source_cleanup_is_advertised_only_for_clean() {
+    for command in COMMANDS {
+        let output = render_command(command, false).unwrap();
+        assert_eq!(
+            output.contains("--clean-generated-contract-targets"),
+            *command == "clean",
+            "{command}"
+        );
+    }
+}

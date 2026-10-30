@@ -942,6 +942,7 @@ test_mcp_tool_listing() {
   python3 "${ROOT_DIR}/test/smoke/docker_lifecycle_test.py" "${prefix}/bin/makevn" "${prefix}/bin/makevn-mcp"
   python3 "${ROOT_DIR}/test/smoke/doctor_reset_test.py" "${prefix}/bin/makevn"
   python3 -m unittest discover -s "${ROOT_DIR}/test/smoke" -p demo_mcp_test.py
+  python3 "${ROOT_DIR}/test/smoke/generated_contract_mcp_test.py" "${prefix}/bin/makevn-mcp"
   python3 "${ROOT_DIR}/test/smoke/structured_mcp_test.py" "${prefix}/bin/makevn-mcp"
   python3 "${ROOT_DIR}/test/smoke/execution_mcp_test.py" "${prefix}/bin/makevn-mcp"
 }

@@ -560,3 +560,13 @@ separator. The Maven version preflight uses those same values. No properties
 are inferred from another workflow; choose skip values explicitly according to
 repository intent. Empty objects leave the invocation unchanged. Invalid keys
 or non-string values are rejected before execution, including in workflows.
+
+### Stale generated-source recovery
+
+For diagnosed stale generated-source compilation failures, call `clean` with
+`{"repo":"/path/to/repo","clean-generated-contract-targets":true}`. This runs
+Maven clean and then removes detected generated output. Only `clean` exposes this
+option; do not pass it to `test` or verification tools. Inspect `untrustedData`
+and `logPaths` if cleanup fails. After success, retry the original test or
+verification with the same scope and Maven properties, without `fast`. Cleanup
+success does not establish test success.
