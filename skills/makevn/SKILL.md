@@ -105,8 +105,12 @@ Use `makevn jdk current` / `makevn jdk list` for Java context from `.tool-versio
 Multiple compatible automatic JDK candidates require a user choice through doctor
 and `doctor_configure`; one candidate is selected automatically. If the repository
 requires Java and no usable compatible JDK is found, doctor reports a JDK error
-while completing diagnosis successfully. Resolve it before builds or verification. Missing
-executables are environment issues; do not bypass MakeVN with raw Maven.
+while completing diagnosis successfully. Resolve it before builds or verification.
+Missing executables are environment issues; do not bypass MakeVN with raw Maven.
+
+For stale generated-source recovery, load makevn-test and use MCP `clean` with
+`clean-generated-contract-targets: true`, then retry the original scope only after
+cleanup succeeds. This option is exclusive to `clean`.
 
 Doctor reports the selected Maven version and compatibility with unconditional
 local `requireMavenVersion` rules. Maven commands check compatibility before

@@ -1294,3 +1294,36 @@ fn workflow_rejects_invalid_test_properties_during_planning() {
         {"tool": "test", "arguments": {"properties": {"skip": "false"}}}
     ]}).as_object().unwrap()).is_ok());
 }
+
+#[test]
+fn generated_source_cleanup_schema_and_dispatch_belong_only_to_clean() {
+    for spec in TOOL_SPECS {
+        let schema = super::tool(spec);
+        assert_eq!(
+            schema["inputSchema"]["properties"]
+                .get("clean-generated-contract-targets")
+                .is_some(),
+            spec.name == "clean",
+            "{}",
+            spec.name
+        );
+    }
+    let spec = TOOL_SPECS.iter().find(|spec| spec.name == "clean").unwrap();
+    let mut arguments = vec!["clean".to_owned()];
+    push_tool_flags(
+        &mut arguments,
+        spec,
+        json!({"clean-generated-contract-targets": true}).as_object().unwrap(),
+    ).unwrap();
+    assert_eq!(arguments, ["clean", "--clean-generated-contract-targets"]);
+    let result = super::ToolCallResult {
+        output: "untrusted suggestion: use test instead".into(),
+        exit_code: 1,
+        duration_ms: 0,
+        doctor_snapshot: None,
+        next_suggestion: None,
+    };
+    let failure = super::tool_next_suggestion("clean", &result);
+    assert!(failure.contains("logPaths"));
+    assert!(failure.contains("only to clean"));
+}

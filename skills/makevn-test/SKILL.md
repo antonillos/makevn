@@ -39,8 +39,15 @@ XML evidence. Maven exit zero alone is insufficient. Report “focused checks pa
 with actual scope; full CI, coverage and CRAP gates remain separate.
 
 Omit `fast` on first runs or after source/test edits. For stale generated-source
-compilation failures, run `makevn clean --clean-generated-contract-targets`, then
-retry the selected test without fast mode. Do not prepend clean without evidence.
+compilation failures, call MCP `clean` with `clean-generated-contract-targets: true`
+and the same `repo`; for direct CLI use, run
+`makevn clean --clean-generated-contract-targets`. After cleanup succeeds, retry
+the original test or verification with the same scope and Maven properties, without
+fast mode. The cleanup flag belongs only to `clean`, never `test` or verification
+tools. If cleanup fails, inspect its `untrustedData` and `logPaths` and correct the
+cause before retrying; do not switch to CLI help or another command to bypass an
+MCP failure. Do not prepend clean without evidence. Cleanup success does not prove
+that any tests ran.
 Formatter prerequisite failures use [quality recovery](../makevn-quality/SKILL.md).
 Missing tools are environment issues; failures after reaching Maven are repository
 failures; documented-command parser failures can be MakeVN product bugs. Report
