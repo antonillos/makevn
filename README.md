@@ -8,6 +8,9 @@
   <img src="https://img.shields.io/badge/Docker_Compose-supported-2496ed" alt="Docker Compose supported" />
   <img src="https://img.shields.io/badge/Testcontainers-supported-2496ed" alt="Testcontainers supported" />
   <img src="https://img.shields.io/badge/Karate-supported-16a34a" alt="Karate supported" />
+</p>
+
+<p align="center">
   <img src="https://img.shields.io/badge/agent-ready-2dd4bf" alt="Agent ready" />
   <a href="mcp/">
     <img src="https://img.shields.io/badge/MCP-server-7c3aed" alt="MCP Server" />
