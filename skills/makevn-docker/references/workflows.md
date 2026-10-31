@@ -53,9 +53,12 @@ from context storage. The engine probe is bounded and checks the same endpoint
 Java receives. A successful probe proves engine access, not image availability,
 client API compatibility, container readiness or passing tests.
 
-On failure inspect the test tool's diagnostics and logs. Runtime-specific socket
-mount or host-address overrides remain user configuration; do not guess them or
-disable Ryuk. Report unsupported diagnosis rather than using Docker directly.
+On failure inspect the test tool's diagnostics and logs. A reported client/minimum
+API mismatch means the engine responded: inspect project client dependencies and
+API settings rather than starting Compose or diagnosing an absent engine.
+Runtime-specific socket mount or host-address overrides remain user configuration;
+do not guess them or disable Ryuk. Report unsupported diagnosis rather than using
+Docker directly.
 `docker_ps` now propagates engine-query errors; an empty successful listing still
 does not establish Testcontainers connectivity.
 

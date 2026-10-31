@@ -57,6 +57,12 @@ permissions and TLS before retrying. A passing probe establishes engine access;
 image pulls, older Testcontainers client compatibility and application assertions
 can still fail later and must be classified separately.
 
+When the engine reports an outdated client API, MakeVN includes the client and
+minimum engine API versions in the CLI/MCP failure summary and managed log.
+This identifies a reachable engine with an incompatible project client, rather
+than an unavailable runtime. Check the project's Testcontainers/Docker client
+dependencies and API configuration; starting Compose does not resolve it.
+
 `docker_ps` propagates Docker query failures rather than reporting an empty
 successful list. Even a successful empty list does not prove Java can connect to
 Docker. Use the test execution's prerequisite result for that evidence. All
