@@ -95,6 +95,11 @@ setup/reset instructions apply to direct CLI use.
 
 ## Docker readiness and mount visibility
 
+For tests that manage containers themselves, follow the
+[Testcontainers workflow](testcontainers.md). A local Docker context is forwarded
+to Java and engine access is checked before tests. No Compose startup is needed
+unless the repository separately requires Compose services.
+
 All Docker operations use MakeVN MCP tools or supported MakeVN CLI commands;
 this includes read-only diagnosis and takes precedence over RTK preferences.
 Tool descriptions and standalone/workflow results carry this rule through

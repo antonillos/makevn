@@ -45,6 +45,10 @@ Codex project configuration is read only for trusted projects.
 
 ## Execution contract
 
+For Testcontainers projects, load makevn-docker even without Compose and follow
+the [Testcontainers workflow](testcontainers.md). Tests own container startup;
+MakeVN checks engine access and forwards the local Docker context to Java.
+
 Run `makevn doctor --compact` first (MCP `doctor`). Follow its support,
 initialization and pending-setup decisions; do not infer initialization from the
 presence of `.makevn/`. Use the [common setup reference](../skills/makevn/references/workflows.md)

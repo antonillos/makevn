@@ -15,6 +15,15 @@ Never fall back to Docker/Compose commands, RTK wrappers, scripts, SDKs or APIs.
 If MakeVN lacks the operation, report the missing capability and stop that action.
 Unknown Compose/worktree ownership is not permission to reset or delete data.
 
+For Testcontainers repositories, distinguish the Docker engine from Compose
+services. With no Compose stack, do not call `docker_up` or invent a Compose file:
+the tests create their own containers. MakeVN checks engine access before test
+execution and forwards a local Unix Docker context as `DOCKER_HOST` to Java when
+that variable is unset. Explicit Docker and Testcontainers environment settings
+are preserved. Engine/context failures block tests and require environment
+diagnosis; `docker_up` does not start the Docker engine. See the reference for
+remote/TLS and runtime-specific limits.
+
 | Goal | CLI | MCP |
 | --- | --- | --- |
 | Boot readiness | `makevn docker-ps-required --compose boot --wait-seconds 30` | `docker_ps_required` with `compose: "boot"`, `wait-seconds: 30` |

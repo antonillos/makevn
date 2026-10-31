@@ -8,8 +8,13 @@ description: >-
 
 Load [makevn](../makevn/SKILL.md) first if not already read; finish doctor/setup.
 Read [workflow details](references/workflows.md) before selecting scope.
-Load [makevn-docker](../makevn-docker/SKILL.md) only if doctor/config/profile/test
-Compose signals establish a Docker prerequisite. A root compose file alone does not.
+Load [makevn-docker](../makevn-docker/SKILL.md) when doctor/config/profile/test
+signals establish a Docker prerequisite. A root compose file alone does not.
+Testcontainers dependencies also establish an engine prerequisite: load
+makevn-docker for that workflow even without Compose. Tests may use Surefire;
+do not infer Failsafe ownership from `@Testcontainers` or Spring annotations.
+MakeVN checks the engine and forwards a local Docker context before test execution;
+without Compose the tests own container startup, so no `docker_up` is needed.
 
 | Goal | CLI | MCP | Evidence |
 | --- | --- | --- | --- |

@@ -2756,6 +2756,15 @@ EOF
 #!/usr/bin/env bash
 set -euo pipefail
 printf 'docker %s\n' "$*" >> .docker.log
+case "$1 ${2:-}" in
+  'context show') printf 'testcontainers-fixture\n'; exit 0 ;;
+  'context inspect') printf 'unix:///tmp/makevn-fixture.sock\n'; exit 0 ;;
+  'info --format')
+    [[ "${DOCKER_HOST:-}" == unix:///tmp/makevn-fixture.sock ]]
+    printf '28\n'
+    exit 0
+    ;;
+esac
 if [[ "$1" == "compose" && "${2:-}" == "version" ]]; then
   exit 0
 fi
@@ -2789,7 +2798,7 @@ MAKEVN_KARATE_TOOL_VERSIONS=""
 MAKEVN_RUN_CMD=""
 EOF
 
-  PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" verify-it >/dev/null
+  DOCKER_HOST= DOCKER_CONTEXT=testcontainers-fixture PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" verify-it >/dev/null
 
   assert_matches "${repo}/.mvnw.log" '^ARGS=-f .*/pom\.xml -B -nsu verify -Djacoco\.skip=false -Dcoverage\.profile=true -DskipUTs -Dskip\.unit\.tests=true -DfailIfNoTests=false -Dmaven\.test\.failure\.ignore=false -Dmaven\.build\.cache\.enabled=false$'
   assert_contains "${repo}/.mvnw.log" "JAVA_HOME=${java_home}"
@@ -4883,6 +4892,10 @@ main() {
   python3 "${ROOT_DIR}/test/smoke/docker_resources_pty_test.py" "${ROOT_DIR}/target/release/makevn"
   bash "${ROOT_DIR}/test/smoke/docker_resource_scope_test.sh"
   bash "${ROOT_DIR}/test/smoke/docker_runtime_hint_test.sh"
+  python3 "${ROOT_DIR}/test/smoke/docker_api_diagnostics_test.py"
+  bash "${ROOT_DIR}/test/smoke/docker_api_diagnostics_test.sh"
+  bash "${ROOT_DIR}/test/smoke/testcontainers_test.sh"
+  python3 "${ROOT_DIR}/test/smoke/testcontainers_test.py"
   bash "${ROOT_DIR}/test/smoke/karate_readiness_test.sh"
   bash "${ROOT_DIR}/test/smoke/karate_phase_records_test.sh"
   python3 "${ROOT_DIR}/test/smoke/karate_profiles_test.py"

@@ -63,6 +63,9 @@ and ask only new or changed decisions.
 Setup ready does not prove JDK, build, Docker or test readiness. Saving answers
 starts neither containers nor tests. Explain the user's decisions, not this
 internal sequence.
+Testcontainers needs a reachable Docker engine even without Compose. Load
+makevn-docker before testing such a repository; `LOCAL_CONTAINERS` is a project
+preference, not engine startup or proof of readiness.
 
 | Intent | Load next |
 | --- | --- |

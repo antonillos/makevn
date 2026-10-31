@@ -55,6 +55,20 @@ makevn_report_docker_runtime_failure() {
   return 0
 }
 
+makevn_report_docker_api_failure() {
+  local logfile="$1" diagnostic=""
+  diagnostic="$(python3 "${MAKEVN_LIBEXEC_DIR}/docker/diagnostics.py" "${logfile}" 2>/dev/null)" || return 0
+  [[ -n "${diagnostic}" ]] || return 0
+  printf '%s\n' "${diagnostic}" >> "${logfile}" || true
+  if [[ -n "${MAKEVN_BACKEND_DETAIL_OUT:-}" ]]; then
+    printf '%s\n' "${diagnostic}" >> "${MAKEVN_BACKEND_DETAIL_OUT}" || true
+  fi
+  if ! makevn_frontend_owns_loader && ! makevn_compact_output_enabled; then
+    printf '%s\n' "${diagnostic}" >&2
+  fi
+  return 0
+}
+
 makevn_metadata_escape_value() {
   local value="$1"
   value="${value//$'\n'/ }"
@@ -283,6 +297,9 @@ makevn_run_logged_in_context() {
   fi
 
   makevn_check_maven_command "${maven_base_path}" "${command_cwd}" "${java_home}" "$@" || return $?
+  if makevn_testcontainers_command "${maven_base_path}" "${command_key}"; then
+    set -- python3 "${MAKEVN_LIBEXEC_DIR}/docker/testcontainers.py" "$@"
+  fi
 
   logs_dir="$(makevn_logs_dir "${repo_root}")"
   logfile="${logs_dir}/${log_name}.log"
@@ -326,6 +343,7 @@ makevn_run_logged_in_context() {
     if [[ ${exit_code} -eq 0 ]]; then
       printf '%s %s\n' "$(makevn_accent '[ok]')" "$(makevn_accent "${duration_display}")"
     else
+      makevn_report_docker_api_failure "${logfile}"
       if makevn_compact_output_enabled; then
         makevn_print_failure_excerpt "${logfile}"
       fi
@@ -388,6 +406,7 @@ makevn_run_logged_in_context() {
       return 130
     fi
 
+    [[ ${exit_code} -eq 0 ]] || makevn_report_docker_api_failure "${logfile}"
     return ${exit_code}
   fi
 
@@ -419,6 +438,7 @@ makevn_run_logged_in_context() {
     return 0
   fi
 
+  makevn_report_docker_api_failure "${logfile}"
   printf '\r\033[2K%s %s\n' "$(makevn_warn 'fail')" "$(makevn_warn "exit ${exit_code} after ${duration_display}; check the log for details")"
   return ${exit_code}
 }
@@ -583,6 +603,14 @@ makevn_run_logged() {
   makevn_report_docker_runtime_failure "${command_key}" "${logfile}"
   printf '\r\033[2K%s %s\n' "$(makevn_warn 'fail')" "$(makevn_warn "exit ${exit_code} after ${duration_display}; check the log for details")"
   return ${exit_code}
+}
+
+makevn_testcontainers_command() {
+  case "$2" in
+    test|verify|verify-ut|verify-ut-coverage|verify-it|verify-it-coverage|verify-changes|pr-verify) ;;
+    *) return 1 ;;
+  esac
+  makevn_detect_testcontainers_from_repo "$1"
 }
 
 # Only Docker-dependent test execution is guarded; ordinary builds are unaffected.

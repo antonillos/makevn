@@ -5,24 +5,29 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/Java-Maven-orange" alt="Java Maven" />
-  <img src="https://img.shields.io/badge/Docker-supported-2496ed" alt="Docker supported" />
-  <img src="https://img.shields.io/badge/Karate-supported-16a34a" alt="Karate supported" />
-  <img src="https://img.shields.io/badge/agent-ready-2dd4bf" alt="Agent ready" />
   <a href="mcp/">
     <img src="https://img.shields.io/badge/MCP-server-7c3aed" alt="MCP Server" />
-  </a>
-  <a href="LICENSE">
-    <img src="https://img.shields.io/badge/license-MIT-lightgrey" alt="MIT License" />
   </a>
   <a href="https://github.com/antonillos/makevn/actions/workflows/verify.yml">
     <img src="https://img.shields.io/endpoint?url=https%3A%2F%2Fantonillos.github.io%2Fmakevn%2Fcrap-badge.json" alt="CRAP warnings" />
   </a>
+  <a href="LICENSE">
+    <img src="https://img.shields.io/badge/license-MIT-lightgrey" alt="MIT License" />
+  </a>
+</p>
+
+<p align="center">
+  <img src="https://img.shields.io/badge/agent-ready-2dd4bf" alt="Agent ready" />
+  <img src="https://img.shields.io/badge/Docker_Compose-supported-2496ed" alt="Docker Compose supported" />
+  <img src="https://img.shields.io/badge/Testcontainers-supported-2496ed" alt="Testcontainers supported" />
+  <img src="https://img.shields.io/badge/Karate-supported-16a34a" alt="Karate supported" />
 </p>
 
 <p align="center"><strong>Run Java/Maven builds, tests, apps, Docker services, coverage, and E2E workflows with one CLI.</strong></p>
 
-`makevn` detects the repository's Java, Maven, Docker, Karate, and coverage setup
-so developers and AI agents can run the right workflow from the terminal.
+`makevn` detects the repository's Java, Maven, Docker Compose, Testcontainers,
+Karate, and coverage setup so developers and AI agents can run the right workflow
+from the terminal.
 
 ## See it in action
 
@@ -146,6 +151,22 @@ makevn --repo "/path/to/java-repo" verify-changes-preview
 makevn --repo "/path/to/java-repo" verify-changes
 ```
 
+## Docker Compose and Testcontainers
+
+Both container workflows are supported through the CLI and MCP:
+
+- **Docker Compose:** start project services, check readiness before tests, and
+  stop services while preserving volumes with `docker-up`, `docker-ps-required`
+  and `docker-down`.
+- **Testcontainers:** run tests that create their own containers. MakeVN checks
+  engine access and forwards a local Unix Docker context to Java when
+  `DOCKER_HOST` is unset, preserving explicit Docker and Testcontainers settings.
+
+Both require a running Docker-compatible engine. Compose services use
+`docker-up`; Testcontainers manages container startup from the tests themselves.
+See [Testcontainers setup and troubleshooting](docs/testcontainers.md) and the
+[container workflow guide](skills/makevn-docker/references/workflows.md).
+
 ## Commands
 
 | Goal | Command |
@@ -214,6 +235,7 @@ There is no automatic migration or cleanup of old Make integrations.
 - [CLI contract](docs/cli-contract.md)
 - [Backend contract](docs/backend-contract.md)
 - [Integration](docs/integration.md)
+- [Testcontainers](docs/testcontainers.md)
 - [Distribution](docs/distribution.md)
 - [Internal CRAP ratchet](tools/crap/README.md)
 
