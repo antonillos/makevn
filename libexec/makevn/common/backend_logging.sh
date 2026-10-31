@@ -283,6 +283,9 @@ makevn_run_logged_in_context() {
   fi
 
   makevn_check_maven_command "${maven_base_path}" "${command_cwd}" "${java_home}" "$@" || return $?
+  if makevn_testcontainers_command "${maven_base_path}" "${command_key}"; then
+    set -- python3 "${MAKEVN_LIBEXEC_DIR}/docker/testcontainers.py" "$@"
+  fi
 
   logs_dir="$(makevn_logs_dir "${repo_root}")"
   logfile="${logs_dir}/${log_name}.log"
@@ -583,6 +586,14 @@ makevn_run_logged() {
   makevn_report_docker_runtime_failure "${command_key}" "${logfile}"
   printf '\r\033[2K%s %s\n' "$(makevn_warn 'fail')" "$(makevn_warn "exit ${exit_code} after ${duration_display}; check the log for details")"
   return ${exit_code}
+}
+
+makevn_testcontainers_command() {
+  case "$2" in
+    test|verify|verify-ut|verify-ut-coverage|verify-it|verify-it-coverage|verify-changes) ;;
+    *) return 1 ;;
+  esac
+  makevn_detect_testcontainers_from_repo "$1"
 }
 
 # Only Docker-dependent test execution is guarded; ordinary builds are unaffected.

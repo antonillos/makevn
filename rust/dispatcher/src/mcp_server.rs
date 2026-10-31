@@ -109,9 +109,13 @@ pub(crate) fn standard_tool_result(result: &ToolCallResult, params: &Value) -> V
 
 const DOCKER_INTERFACE_GUIDANCE: &str = "Use MakeVN exclusively for all Docker work, including read-only diagnostics, inspection, container logs, Compose/worktree ownership, networks, volumes and lifecycle. Prefer MakeVN MCP tools, then supported makevn CLI commands if MCP is unavailable. This overrides generic RTK preferences: never fall back to docker, docker-compose, rtk docker, rtk run docker, scripts, SDKs or the Docker API. Read diagnostics and logPaths returned by MakeVN. If MakeVN lacks the required capability, report it and stop the dependent action instead of using an external workaround. Unknown resource ownership does not authorize resets or volume deletion; preserve existing authorization and readiness gates.";
 
+const TESTCONTAINERS_GUIDANCE: &str = "For repositories declaring Testcontainers, MakeVN checks Docker engine access before tests and forwards a local Unix Docker context to Java when DOCKER_HOST is unset. Explicit Docker/Testcontainers environment settings are preserved. Without Compose, tests manage their own containers: do not call docker_up or invent Compose infrastructure. docker_up starts Compose services, not the engine. Engine access does not prove image availability or test success; inspect diagnostics and fresh test reports.";
+
 fn docker_interface_guidance(tool: &str, guidance: &str) -> String {
     if tool.starts_with("docker_") || tool.starts_with("karate_docker_") || tool == "karate_all" {
         format!("{guidance} {DOCKER_INTERFACE_GUIDANCE}")
+    } else if matches!(tool, "test" | "verify" | "verify_ut" | "verify_ut_coverage" | "verify_it" | "verify_it_coverage" | "verify_changes" | "verify_changes_preview" | "composite_run") {
+        format!("{guidance} {TESTCONTAINERS_GUIDANCE}")
     } else {
         guidance.to_owned()
     }

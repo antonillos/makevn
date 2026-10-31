@@ -20,6 +20,7 @@ if [[ -z "${docker_compose}" ]]; then
 fi
 
 if [[ "${show_all_containers}" == "true" || -z "${services}" ]]; then
+  container_ids="$(docker ps -aq)" || exit $?
   printf '%-28s %-12s %-12s %-12s\n' 'NAME' 'STATE' 'HEALTH' 'CONTAINER'
   printf '%-28s %-12s %-12s %-12s\n' '----' '-----' '------' '---------'
   while IFS= read -r cid; do
@@ -28,7 +29,7 @@ if [[ "${show_all_containers}" == "true" || -z "${services}" ]]; then
     state="$(docker inspect -f '{{.State.Status}}' "${cid}" 2>/dev/null || printf 'unknown')"
     health="$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "${cid}" 2>/dev/null || printf 'unknown')"
     printf '%-28s %-12s %-12s %-12s\n' "${name}" "${state}" "${health}" "${cid:0:12}"
-  done <<< "$(docker ps -aq)"
+  done <<< "${container_ids}"
   exit 0
 fi
 

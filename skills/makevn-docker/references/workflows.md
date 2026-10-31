@@ -29,6 +29,36 @@ make docker-stats
 make docker-ps-required
 ```
 
+### Testcontainers without Compose
+
+An `org.testcontainers` declaration in the repository POMs identifies a
+Testcontainers prerequisite. The test commands check the engine inside their
+managed execution, including `verify-ut`: Testcontainers tests can run in
+Surefire and need not be named `*IT`. Compilation and packaging alone do not
+require this check. Detection is conservative at repository scope; a selected
+pure unit test in such a repository can still require the engine.
+
+Without Compose, execute the authorized tests directly through MCP after setup.
+Do not call `docker_up` or `docker_ps_required`: those commands manage/check
+Compose services, while Testcontainers creates and cleans up its own containers.
+When the repository also requires Compose, retain the usual Compose readiness
+gate in addition to the Testcontainers engine check.
+
+MakeVN preserves explicit `DOCKER_HOST`, TLS and `TESTCONTAINERS_*` settings.
+Without `DOCKER_HOST`, it resolves the selected Docker CLI context and forwards
+a local Unix endpoint to Java. It does not change the active context, create
+socket symlinks, start a runtime or provision helper containers. Remote contexts
+require explicit `DOCKER_HOST` and any TLS settings; credentials are not copied
+from context storage. The engine probe is bounded and checks the same endpoint
+Java receives. A successful probe proves engine access, not image availability,
+client API compatibility, container readiness or passing tests.
+
+On failure inspect the test tool's diagnostics and logs. Runtime-specific socket
+mount or host-address overrides remain user configuration; do not guess them or
+disable Ryuk. Report unsupported diagnosis rather than using Docker directly.
+`docker_ps` now propagates engine-query errors; an empty successful listing still
+does not establish Testcontainers connectivity.
+
 ### Docker prerequisite
 
 When doctor/configuration or the approved workflow requires boot containers:
