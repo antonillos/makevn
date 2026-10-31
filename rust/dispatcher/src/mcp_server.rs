@@ -114,7 +114,7 @@ const TESTCONTAINERS_GUIDANCE: &str = "For repositories declaring Testcontainers
 fn docker_interface_guidance(tool: &str, guidance: &str) -> String {
     if tool.starts_with("docker_") || tool.starts_with("karate_docker_") || tool == "karate_all" {
         format!("{guidance} {DOCKER_INTERFACE_GUIDANCE}")
-    } else if matches!(tool, "test" | "verify" | "verify_ut" | "verify_ut_coverage" | "verify_it" | "verify_it_coverage" | "verify_changes" | "verify_changes_preview" | "composite_run") {
+    } else if matches!(tool, "test" | "verify" | "verify_ut" | "verify_ut_coverage" | "verify_it" | "verify_it_coverage" | "verify_changes" | "verify_changes_preview" | "pr_verify" | "composite_run") {
         format!("{guidance} {TESTCONTAINERS_GUIDANCE}")
     } else {
         guidance.to_owned()

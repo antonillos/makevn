@@ -1330,7 +1330,7 @@ fn generated_source_cleanup_schema_and_dispatch_belong_only_to_clean() {
 
 #[test]
 fn testcontainers_guidance_distinguishes_engine_from_compose() {
-    for tool in ["test", "verify", "verify_ut", "verify_ut_coverage", "verify_it", "verify_it_coverage", "verify_changes", "verify_changes_preview", "composite_run"] {
+    for tool in ["test", "verify", "verify_ut", "verify_ut_coverage", "verify_it", "verify_it_coverage", "verify_changes", "verify_changes_preview", "pr_verify", "composite_run"] {
         let guidance = super::docker_interface_guidance(tool, "Existing guidance.");
         assert!(guidance.starts_with("Existing guidance."));
         assert!(guidance.contains("DOCKER_HOST is unset"));

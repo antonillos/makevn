@@ -590,7 +590,7 @@ makevn_run_logged() {
 
 makevn_testcontainers_command() {
   case "$2" in
-    test|verify|verify-ut|verify-ut-coverage|verify-it|verify-it-coverage|verify-changes) ;;
+    test|verify|verify-ut|verify-ut-coverage|verify-it|verify-it-coverage|verify-changes|pr-verify) ;;
     *) return 1 ;;
   esac
   makevn_detect_testcontainers_from_repo "$1"

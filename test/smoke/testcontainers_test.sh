@@ -6,7 +6,7 @@ TMP="$(mktemp -d)"
 trap 'rm -rf "${TMP}"' EXIT
 mkdir -p "${TMP}/module"
 printf '<project><dependencies><dependency><groupId>org.testcontainers</groupId></dependency></dependencies></project>\n' > "${TMP}/module/pom.xml"
-for command in test verify verify-ut verify-ut-coverage verify-it verify-it-coverage verify-changes; do
+for command in test verify verify-ut verify-ut-coverage verify-it verify-it-coverage verify-changes pr-verify; do
   makevn_testcontainers_command "${TMP}" "${command}"
 done
 for command in compile test-compile package clean validate; do
@@ -52,7 +52,8 @@ export PATH="${TMP}/fake-bin:${PATH}"
 unset DOCKER_HOST
 export DOCKER_CONTEXT=local
 makevn_test_process_preflight() { return 0; }
-makevn_effective_java_home() { printf '/usr\n'; }
+mkdir -p "${TMP}/fake-java/bin"
+makevn_effective_java_home() { printf '%s/fake-java\n' "${TMP}"; }
 makevn_check_maven_command() { return 0; }
 MAKEVN_COMPACT_OUTPUT=1 makevn_run_logged_in_context "${TMP}" code "${TMP}" verify verify verify \
   /bin/sh -c 'printf "child host: %s\n" "$DOCKER_HOST"; test -z "${DOCKER_CONTEXT:-}"' > "${TMP}/out"
@@ -98,4 +99,13 @@ for command in cmd_verify_ut cmd_verify_ut_coverage; do
     grep -q 'Tests were not started' "${TMP}/out"
   done
 done
+cmd_pr_verify "${TMP}" > "${TMP}/out"
+grep -q 'unit child host: unix:///tmp/testcontainers.sock' "${TMP}/.makevn/logs/pr-verify.log"
+grep -qx clean "${TMP}/unit-arguments"
+rm "${TMP}/unit-tests-started"
+if FAKE_ENGINE=stopped cmd_pr_verify "${TMP}" > "${TMP}/out" 2>&1; then
+  exit 1
+fi
+[[ ! -e "${TMP}/unit-tests-started" ]]
+grep -q 'Tests were not started' "${TMP}/out"
 printf 'Testcontainers command routing and Docker error tests passed\n'
