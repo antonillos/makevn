@@ -8,19 +8,19 @@
   <a href="mcp/">
     <img src="https://img.shields.io/badge/MCP-server-7c3aed" alt="MCP Server" />
   </a>
-  <img src="https://img.shields.io/badge/agent-ready-2dd4bf" alt="Agent ready" />
-</p>
-
-<p align="center">
-  <img src="https://img.shields.io/badge/Docker_Compose-supported-2496ed" alt="Docker Compose supported" />
-  <img src="https://img.shields.io/badge/Testcontainers-supported-2496ed" alt="Testcontainers supported" />
-  <img src="https://img.shields.io/badge/Karate-supported-16a34a" alt="Karate supported" />
   <a href="https://github.com/antonillos/makevn/actions/workflows/verify.yml">
     <img src="https://img.shields.io/endpoint?url=https%3A%2F%2Fantonillos.github.io%2Fmakevn%2Fcrap-badge.json" alt="CRAP warnings" />
   </a>
   <a href="LICENSE">
     <img src="https://img.shields.io/badge/license-MIT-lightgrey" alt="MIT License" />
   </a>
+</p>
+
+<p align="center">
+  <img src="https://img.shields.io/badge/agent-ready-2dd4bf" alt="Agent ready" />
+  <img src="https://img.shields.io/badge/Docker_Compose-supported-2496ed" alt="Docker Compose supported" />
+  <img src="https://img.shields.io/badge/Testcontainers-supported-2496ed" alt="Testcontainers supported" />
+  <img src="https://img.shields.io/badge/Karate-supported-16a34a" alt="Karate supported" />
 </p>
 
 <p align="center"><strong>Run Java/Maven builds, tests, apps, Docker services, coverage, and E2E workflows with one CLI.</strong></p>
