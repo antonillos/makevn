@@ -64,4 +64,38 @@ fi
 [[ ! -e "${TMP}/tests-started" ]]
 grep -q 'Testcontainers Docker prerequisite failed' "${TMP}/.makevn/logs/verify.log"
 grep -q 'Tests were not started' "${TMP}/out"
+
+# Unit command entry points must preserve the routing key through goal execution.
+source "${ROOT_DIR}/libexec/makevn/commands/maven.sh"
+makevn_load_profile() { return 0; }
+makevn_maven_executable() { printf '%s/fake-bin/maven\n' "$1"; }
+cat > "${TMP}/fake-bin/maven" <<'MAVEN'
+#!/usr/bin/env bash
+set -euo pipefail
+[[ "${DOCKER_HOST:-}" == unix:///tmp/testcontainers.sock ]]
+[[ -z "${DOCKER_CONTEXT:-}" ]]
+printf 'unit child host: %s\n' "${DOCKER_HOST}"
+printf '%s\n' "$@" > unit-arguments
+mkdir -p target/site/jacoco
+printf '<report/>\n' > target/site/jacoco/jacoco.xml
+touch unit-tests-started
+MAVEN
+chmod +x "${TMP}/fake-bin/maven"
+for command in cmd_verify_ut cmd_verify_ut_coverage; do
+  for coverage_flags in '' '-Pcoverage'; do
+    MAKEVN_PROFILE_COVERAGE_CLI_FLAGS="${coverage_flags}"
+    "${command}" "${TMP}" > "${TMP}/out"
+    grep -q 'unit child host: unix:///tmp/testcontainers.sock' "${TMP}/.makevn/logs/verify-ut.log"
+    grep -qx -- '-DskipITs' "${TMP}/unit-arguments"
+    if [[ -n "${coverage_flags}" ]]; then
+      grep -qx -- '-Pcoverage' "${TMP}/unit-arguments"
+    fi
+    rm "${TMP}/unit-tests-started"
+    if FAKE_ENGINE=stopped "${command}" "${TMP}" > "${TMP}/out" 2>&1; then
+      exit 1
+    fi
+    [[ ! -e "${TMP}/unit-tests-started" ]]
+    grep -q 'Tests were not started' "${TMP}/out"
+  done
+done
 printf 'Testcontainers command routing and Docker error tests passed\n'
