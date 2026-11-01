@@ -10,17 +10,8 @@ makevn_resolve_docker_compose_command() {
   fi
 }
 
-makevn_collect_compose_args() {
-  local compose_file="$1"
-  local compose_override_file="$2"
-
-  printf '%s\n' "-f"
-  printf '%s\n' "${compose_file}"
-  if [[ -f "${compose_override_file}" ]]; then
-    printf '%s\n' "-f"
-    printf '%s\n' "${compose_override_file}"
-  fi
-}
+# shellcheck source=../docker/compose_args.sh
+source "$(dirname "${BASH_SOURCE[0]}")/../docker/compose_args.sh"
 
 # Optional frontend-only side channel; telemetry must never block the command.
 makevn_publish_compose_resources() {

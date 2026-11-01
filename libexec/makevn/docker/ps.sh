@@ -1,5 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
+# shellcheck source=compose_args.sh
+source "$(dirname "${BASH_SOURCE[0]}")/compose_args.sh"
+selected_args=()
+if [[ -n "${MAKEVN_EXECUTION_COMPOSE_FILE:-}" ]]; then
+  [[ "${MAKEVN_EXECUTION_COMPOSE_FILE}" != none ]] || { printf 'ERR: Compose is disabled\n' >&2; exit 1; }
+  while IFS= read -r arg; do
+    selected_args+=("${arg}")
+  done < <(makevn_collect_compose_args "${MAKEVN_EXECUTION_COMPOSE_FILE}" "$(dirname "${MAKEVN_EXECUTION_COMPOSE_FILE}")/docker-compose.override.yml")
+fi
 
 compose_args="${COMPOSE_ARGS:-}"
 services="${SERVICES:-}"
@@ -20,7 +29,11 @@ if [[ -z "${docker_compose}" ]]; then
 fi
 
 if [[ "${show_all_containers}" == "true" || -z "${services}" ]]; then
-  container_ids="$(docker ps -aq)" || exit $?
+  if [[ -n "${MAKEVN_EXECUTION_COMPOSE_FILE:-}" ]]; then
+    container_ids="$(${docker_compose} "${selected_args[@]}" ps -aq)" || exit $?
+  else
+    container_ids="$(docker ps -aq)" || exit $?
+  fi
   printf '%-28s %-12s %-12s %-12s\n' 'NAME' 'STATE' 'HEALTH' 'CONTAINER'
   printf '%-28s %-12s %-12s %-12s\n' '----' '-----' '------' '---------'
   while IFS= read -r cid; do
@@ -33,6 +46,14 @@ if [[ "${show_all_containers}" == "true" || -z "${services}" ]]; then
   exit 0
 fi
 
+selected_service_id() {
+  if [[ ${#selected_args[@]} -gt 0 ]]; then
+    ${docker_compose} "${selected_args[@]}" ps -q "$1"
+  else
+    ${docker_compose} ${compose_args} ps -q "$1"
+  fi
+}
+
 has_errors=false
 declare -a rows=()
 declare -a diagnostics=()
@@ -40,7 +61,7 @@ diagnostic_file="$(mktemp)"
 trap 'rm -f "${diagnostic_file}"' EXIT
 
 for service in ${services}; do
-  if ! cid="$(${docker_compose} ${compose_args} ps -q "${service}" 2> "${diagnostic_file}")"; then
+  if ! cid="$(selected_service_id "${service}" 2> "${diagnostic_file}")"; then
     diagnostics+=("$(cat "${diagnostic_file}")")
     cid=""
   fi

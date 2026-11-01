@@ -80,7 +80,7 @@ with tempfile.TemporaryDirectory(prefix="makevn-doctor-chat-") as directory:
     added.parent.mkdir()
     added.write_text("services: {}\n")
     stale = configure(repo, doctor, {"boot_compose": available["boot_compose"]["options"][0]}, error=True)
-    assert len(questions(stale)["boot_compose"]["options"]) == 3
+    assert len(questions(stale)["boot_compose"]["options"]) == 4
     assert config.read_bytes() == before
     doctor = stale
     partial = configure(repo, doctor, {"local_containers": False})

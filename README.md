@@ -322,3 +322,17 @@ this skill, run `makevn agent upgrade --scope global` (or register Codex with
 Confirm `makevn-product-test` appears in its skills catalog, then explicitly invoke
 `$makevn-product-test` in a new session and provide the clone directory or a prior
 campaign report. Registration alone does not prove the client loaded the skill.
+
+For a single verification, `makevn verify --compose-file /absolute/compose.yaml`
+(or `--compose-file none`) overrides the saved boot Compose without changing
+configuration or starting services. `verify-it` and `verify-it-coverage` also
+support this option. MCP uses the string argument `"compose-file"`; composite
+steps pass it inside `arguments`. Keep it before `--` (Maven arguments).
+An explicit file requires its services to pass readiness before Maven runs.
+
+The same `--compose-file /absolute/compose.yaml` override is available on all
+`docker-*` and `karate-docker-*` CLI commands and their MCP tools. Pass the same
+file to startup, readiness, verification and cleanup; selection alone does not
+start services or authorize a destructive reset. `--compose boot|karate` still
+selects the readiness kind; `--compose-file` supplies its file. A per-execution
+override wins over saved `none` and is never persisted.

@@ -106,6 +106,10 @@ makevn_load_config() {
     # shellcheck source=/dev/null
     source "${config_path}"
   fi
+  if [[ -n "${MAKEVN_EXECUTION_COMPOSE_FILE:-}" ]]; then
+    MAKEVN_COMPOSE_FILE="${MAKEVN_EXECUTION_COMPOSE_FILE}"
+    MAKEVN_E2E_COMPOSE_FILE="${MAKEVN_EXECUTION_COMPOSE_FILE}"
+  fi
   if [[ -n "${caller_trace_output}" ]]; then
     export MAKEVN_TRACE_OUTPUT="${caller_trace_output}"
   fi

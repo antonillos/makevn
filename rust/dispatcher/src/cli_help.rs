@@ -44,7 +44,7 @@ pub(super) fn command_help(
         "docker-reset" => Some(("makevn [--repo PATH] docker-reset [--tail]", "Delete the selected boot Compose volumes and restart its services. Requires explicit reset authorization; never prunes global volumes.", &["--tail  Start in interactive log tail mode"])),
         "docker-ps" => tail_command_help("docker-ps", "List boot Docker containers."),
         "docker-stats" => tail_command_help("docker-stats", "Show Docker CPU and memory stats."),
-        "docker-ps-required" => Some(("makevn [--repo PATH] docker-ps-required [--tail] [--compose boot|karate] [--wait-seconds N]", "Validate required Docker services are running and healthy.", &["--tail          Start in interactive log tail mode", "--compose       Compose profile: boot or karate", "--wait-seconds  Seconds to wait for services"])),
+        "docker-ps-required" => Some(("makevn [--repo PATH] docker-ps-required [--tail] [--compose boot|karate] [--wait-seconds N]", "Validate required Docker services are running and healthy.", &["--tail          Start in interactive log tail mode", "--compose       Compose profile: boot or karate", "--compose-file PATH|none  Override Compose for this execution only", "--wait-seconds  Seconds to wait for services"])),
         "karate-docker-up" => tail_command_help("karate-docker-up", "Start Karate E2E Docker services while preserving volumes."),
         "karate-docker-down" => tail_command_help("karate-docker-down", "Stop Karate E2E Docker services while preserving volumes."),
         "karate-docker-reset" => Some(("makevn [--repo PATH] karate-docker-reset [--tail]", "Delete the selected Karate E2E Compose volumes and restart its services. Requires explicit reset authorization; never prunes global volumes.", &["--tail  Start in interactive log tail mode"])),
@@ -87,6 +87,14 @@ pub(super) fn maven_command_help(
         "--compact  Use compact non-interactive output",
         "--          Forward remaining arguments to Maven",
     ];
+    if matches!(command, "verify" | "verify-it" | "verify-it-coverage") {
+        return Some((usage, description, &[
+            "--compose-file PATH|none  Override boot Compose for this execution only",
+            "--tail  Start in interactive log tail mode",
+            "--compact  Use compact non-interactive output",
+            "--  Forward remaining arguments to Maven",
+        ]));
+    }
     if clean_contract {
         let options: &[&str] = &[
             "--tail                              Start in interactive log tail mode",
@@ -116,7 +124,7 @@ pub(super) fn tail_command_help(
     Some((
         usage,
         description,
-        &["--tail  Start in interactive log tail mode"],
+        &["--tail  Start in interactive log tail mode", "--compose-file PATH|none  Override Compose for this execution only"],
     ))
 }
 

@@ -341,7 +341,7 @@ fn tool_option_dispatch_preserves_type_filtering_and_command_errors() {
         super::push_tool_option(&mut output, name, &json!("8")).unwrap();
         assert!(output.is_empty());
     }
-    for name in ["base", "compose", "jacoco-xml", "module", "name", "tag"] {
+    for name in ["base", "compose", "compose-file", "jacoco-xml", "module", "name", "tag"] {
         super::push_tool_option(&mut output, name, &json!("value")).unwrap();
         assert_eq!(output, vec![format!("--{name}"), "value".to_owned()]);
         output.clear();

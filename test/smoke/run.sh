@@ -584,7 +584,7 @@ while True:
         if not chunk:
             break
         output.extend(chunk)
-        if not sent_choice and b'Enter number [1-2]:' in output:
+        if not sent_choice and b'Enter number [0-2] or p:' in output:
             os.write(fd, b'1\n')
             sent_choice = True
 
@@ -4990,6 +4990,8 @@ python3 "${ROOT_DIR}/test/smoke/test_processes_test.py"
 python3 "${ROOT_DIR}/test/smoke/bind_mounts_test.py"
 bash "${ROOT_DIR}/test/smoke/doctor_pending_profiles_test.sh"
 bash "${ROOT_DIR}/test/smoke/doctor_setup_fallback_test.sh"
+bash "${ROOT_DIR}/test/smoke/compose_none_test.sh"
+bash "${ROOT_DIR}/test/smoke/compose_diagnostics_test.sh"
 bash "${ROOT_DIR}/test/smoke/init_presentation_test.sh"
 python3 "${ROOT_DIR}/test/smoke/question_style_test.py"
 python3 "${ROOT_DIR}/test/smoke/install_build_test.py"
