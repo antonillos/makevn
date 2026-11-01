@@ -34,6 +34,14 @@ test_doctor_http_server_signals() (
     printf '<project><profiles><profile><activation><activeByDefault>true</activeByDefault></activation>%s</profile></profiles></project>\n' "${dependencies}" >"${repo}/pom.xml"
     ! makevn_detect_app_http_signal "${repo}" || fail "default profile non-application dependency requires HTTP health"
   done
+  printf '<project/>' >"${repo}/pom.xml"
+  mkdir -p "${repo}/src/test/resources/fixture" "${repo}/module"
+  printf '<project><dependencies><dependency><artifactId>spring-boot-starter-web</artifactId></dependency></dependencies></project>' >"${repo}/src/test/resources/fixture/pom.xml"
+  printf '<project><dependencies><dependency><artifactId>spring-boot-starter-actuator</artifactId></dependency></dependencies></project>' >"${repo}/module/pom.xml"
+  ! makevn_detect_app_http_signal "${repo}" || fail "undeclared fixture or module detected"
+  printf '<project><modules><module>module</module></modules></project>' >"${repo}/pom.xml"
+  makevn_detect_app_http_signal "${repo}" || fail "declared module not detected"
+  makevn_detect_spring_boot_actuator_from_repo "${repo}" || fail "declared actuator not detected"
   ! makevn_detect_app_http_signal "" || fail "missing Maven root must not require HTTP health"
 )
 
@@ -43,9 +51,9 @@ test_doctor_managed_and_test_dependencies_do_not_require_http_health() {
   local dependencies
   mkdir -p "${repo}"
   for dependencies in \
-    '<dependencyManagement><dependencies><dependency><artifactId>spring-boot-starter-web</artifactId></dependency></dependencies></dependencyManagement>' \
-    '<dependencies><dependency><artifactId>spring-boot-starter-web</artifactId><scope>test</scope></dependency></dependencies>' \
-    '<build><plugins><plugin><dependencies><dependency><artifactId>spring-boot-starter-web</artifactId></dependency></dependencies></plugin></plugins></build>'; do
+    '<dependencyManagement><dependencies><dependency><artifactId>spring-boot-starter-actuator</artifactId></dependency></dependencies></dependencyManagement>' \
+    '<dependencies><dependency><artifactId>spring-boot-starter-actuator</artifactId><scope>test</scope></dependency></dependencies>' \
+    '<build><plugins><plugin><dependencies><dependency><artifactId>spring-boot-starter-actuator</artifactId></dependency></dependencies></plugin></plugins></build>'; do
     printf '<project xmlns="http://maven.apache.org/POM/4.0.0"><modelVersion>4.0.0</modelVersion><groupId>example</groupId><artifactId>library</artifactId><version>1</version>%s</project>\n' "${dependencies}" >"${repo}/pom.xml"
     "${CLI}" --repo "${repo}" init --force >/dev/null
     bash "${ROOT_DIR}/libexec/makevn/backend.sh" doctor --repo "${repo}" --format json >"${output}"
