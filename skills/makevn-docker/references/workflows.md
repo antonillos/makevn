@@ -56,8 +56,16 @@ client API compatibility, container readiness or passing tests.
 On failure inspect the test tool's diagnostics and logs. A reported client/minimum
 API mismatch means the engine responded: inspect project client dependencies and
 API settings rather than starting Compose or diagnosing an absent engine.
-Runtime-specific socket mount or host-address overrides remain user configuration;
-do not guess them or disable Ryuk. Report unsupported diagnosis rather than using
+For local `$HOME/.colima/<profile>/docker.sock` endpoints, MakeVN supplies
+`TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE=/var/run/docker.sock` to the test child
+when unset. This distinguishes Java's macOS connection socket from the socket
+Ryuk mounts inside the Colima VM. Explicit overrides, even empty ones, are
+preserved. Context names alone do not trigger this default. Other socket layouts
+and host-address overrides remain user configuration; do not guess them or
+disable Ryuk. A socket-mount error can prevent Docker-dependent tests from
+running even after the engine probe passes. Check fresh reports: a suite using
+`disabledWithoutDocker` may be skipped while Maven exits zero. Report that suite
+as unverified, not passing. Report unsupported diagnosis rather than using
 Docker directly.
 `docker_ps` now propagates engine-query errors; an empty successful listing still
 does not establish Testcontainers connectivity.

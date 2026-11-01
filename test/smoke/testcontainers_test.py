@@ -17,6 +17,36 @@ spec.loader.exec_module(runtime)
 
 
 class TestcontainersTests(unittest.TestCase):
+    def test_colima_context_uses_vm_socket_without_changing_host_endpoint(self):
+        for profile in ("default", "work"):
+            host = f"unix:///Users/test/.colima/{profile}/docker.sock"
+            environment = {"HOME": "/Users/test", "DOCKER_CONTEXT": "custom-name"}
+            with self.subTest(profile=profile), patch.object(runtime, "docker_output", side_effect=[host, "28"]):
+                result = runtime.test_environment(environment)
+            self.assertEqual(result["DOCKER_HOST"], host)
+            self.assertEqual(result["TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE"], "/var/run/docker.sock")
+            self.assertNotIn("TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE", environment)
+
+    def test_explicit_colima_host_preserves_user_overrides(self):
+        environment = {"HOME": "/Users/test", "DOCKER_HOST": "unix:///Users/test/.colima/default/docker.sock"}
+        with patch.object(runtime, "docker_output", return_value="28"):
+            self.assertEqual(runtime.test_environment(environment)["TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE"],
+                             "/var/run/docker.sock")
+            for override in ("/custom/docker.sock", ""):
+                environment["TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE"] = override
+                environment["TESTCONTAINERS_HOST_OVERRIDE"] = "custom-host"
+                result = runtime.test_environment(environment)
+                self.assertEqual(result["TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE"], override)
+                self.assertEqual(result["TESTCONTAINERS_HOST_OVERRIDE"], "custom-host")
+
+    def test_non_colima_endpoints_do_not_get_socket_override(self):
+        for host in ("unix:///tmp/docker.sock", "unix:///Users/other/.colima/default/docker.sock",
+                     "unix:///Users/test/.colima/default/nested/docker.sock",
+                     "unix:///Users/test/.colima/../docker.sock", "tcp://engine:2376"):
+            with self.subTest(host=host), patch.object(runtime, "docker_output", return_value="28"):
+                result = runtime.test_environment({"HOME": "/Users/test", "DOCKER_HOST": host})
+                self.assertNotIn("TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE", result)
+
     def test_local_context_is_forwarded_without_changing_parent(self):
         environment = {"DOCKER_CONTEXT": "local", "TESTCONTAINERS_HOST_OVERRIDE": "host"}
         with patch.object(runtime, "docker_output", side_effect=["unix:///tmp/runtime.sock", "28"]) as run:

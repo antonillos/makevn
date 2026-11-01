@@ -44,8 +44,17 @@ Remote contexts are not automatically translated: configure explicit
 credentials. It does not translate `~/.testcontainers.properties`, custom
 provider strategies or cloud configuration into Docker CLI credentials; the
 engine prerequisite expects the documented environment/context configuration.
-Runtime-specific `TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE` and
-`TESTCONTAINERS_HOST_OVERRIDE` remain explicit user choices. MakeVN does not
+For a local Unix endpoint at `$HOME/.colima/<profile>/docker.sock`, MakeVN sets
+`TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE=/var/run/docker.sock` in the test child
+only, unless that variable is already present (including an explicitly empty
+value). Java still connects using the macOS socket in `DOCKER_HOST`; Ryuk mounts
+the socket inside the Colima VM. Named profiles are supported; a context name
+alone does not identify Colima. Other endpoint layouts are not inferred.
+This follows the [official Colima setup](https://java.testcontainers.org/supported_docker_environment/#colima).
+
+For other runtimes, `TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE` remains an explicit
+user choice. `TESTCONTAINERS_HOST_OVERRIDE` is always user configuration; some
+Colima networking setups require it separately. MakeVN does not
 disable Ryuk, create symlinks, start runtimes or change VM sharing settings.
 
 ## Failure diagnosis
