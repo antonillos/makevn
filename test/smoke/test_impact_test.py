@@ -130,6 +130,66 @@ class TestImpactTests(unittest.TestCase):
         (self.repo / 'src/test/java/example/NewTest.java').write_text('class NewTest {}')
         self.assertIsNone(self.plan()[0])
 
+    def test_serialized_settings_overrides_cannot_seed_or_reuse_impact_evidence(self):
+        profile = self.repo / '.makevn/profile.env'
+        variants = [
+            'MAKEVN_PROFILE_VERIFY_CLI_FLAGS="-s /tmp/settings.xml"',
+            r'MAKEVN_PROFILE_VERIFY_CLI_FLAGS=-s\ /tmp/settings.xml',
+            'MAKEVN_PROFILE_VERIFY_CLI_FLAGS="-Dlabel=#literal -s /tmp/settings.xml"',
+            r'MAKEVN_PROFILE_VERIFY_CLI_FLAGS=-Dlabel=#literal\ -s\ /tmp/settings.xml',
+            "MAKEVN_PROFILE_VERIFY_CLI_FLAGS='-Dlabel=\" -s /tmp/settings.xml\"'",
+            'MAKEVN_PROFILE_MAVEN_CLI_FLAGS="-gs /tmp/settings.xml"',
+            r'MAKEVN_PROFILE_VERIFY_CLI_FLAGS=-gs\ /tmp/settings.xml',
+            'MAKEVN_PROFILE_VERIFY_CLI_FLAGS="-s/tmp/settings.xml"',
+            'MAKEVN_PROFILE_VERIFY_CLI_FLAGS="--settings=/tmp/settings.xml"',
+            'MAKEVN_PROFILE_VERIFY_CLI_FLAGS="--global-settings /tmp/settings.xml"',
+            'MAKEVN_PROFILE_VERIFY_PROP_FLAGS="-Dmaven.repo.local=/tmp/repository"',
+        ]
+        for serialized in variants:
+            with self.subTest(serialized=serialized):
+                profile.write_text(serialized + '\n')
+                self.value['inputs'] = impact.inputs(self.repo, self.repo)
+                self.write_map()
+                with self.assertRaisesRegex(ValueError, 'custom Maven settings'):
+                    impact.validate_layout(self.repo)
+                selected, diagnostic = self.plan()
+                self.assertIsNone(selected)
+                self.assertIn('custom Maven settings', diagnostic)
+
+    def test_generated_profile_cannot_hide_external_settings_changes(self):
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.xml') as settings:
+            flags = '-s ' + settings.name
+            generated = subprocess.check_output(
+                ['bash', '-c', 'printf "MAKEVN_PROFILE_VERIFY_CLI_FLAGS=%q\\n" "$1"', 'profile', flags], text=True)
+            (self.repo / '.makevn/profile.env').write_text(generated)
+            self.value['inputs'] = impact.inputs(self.repo, self.repo)
+            self.write_map()
+            for content in ['<settings/>', '<settings><activeProfiles><activeProfile>other</activeProfile></activeProfiles></settings>']:
+                settings.seek(0)
+                settings.truncate()
+                settings.write(content)
+                settings.flush()
+                selected, diagnostic = self.plan()
+                self.assertIsNone(selected)
+                self.assertIn('custom Maven settings', diagnostic)
+
+    def test_ordinary_serialized_flags_remain_eligible_and_other_sources_are_checked(self):
+        (self.repo / '.makevn/profile.env').write_text(
+            'MAKEVN_PROFILE_MAVEN_CLI_FLAGS=-B\\ -nsu\nMAKEVN_PROFILE_VERIFY_CLI_FLAGS="-Ptest -Dexample=true"\n')
+        self.value['inputs'] = impact.inputs(self.repo, self.repo)
+        self.write_map()
+        self.assertIsNotNone(self.plan()[0])
+        maven_config = self.repo / '.mvn/maven.config'
+        maven_config.parent.mkdir()
+        maven_config.write_text('-s\n/tmp/settings.xml\n')
+        with self.assertRaisesRegex(ValueError, 'custom Maven settings'):
+            impact.validate_layout(self.repo)
+        maven_config.unlink()
+        for variable, flags in [('MAVEN_ARGS', '-gs /tmp/settings.xml'), ('MAVEN_OPTS', '-Dmaven.repo.local=/tmp/repository')]:
+            with self.subTest(variable=variable), patch.dict(os.environ, {variable: flags}):
+                with self.assertRaisesRegex(ValueError, 'custom Maven settings'):
+                    impact.validate_layout(self.repo)
+
     def test_pending_altered_missing_and_empty_evidence_fall_back(self):
         path = impact.state(self.repo) / 'map.json'
         path.write_text('{"status":"pending"}')

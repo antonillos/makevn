@@ -5,6 +5,7 @@ import json
 import os
 from pathlib import Path
 import re
+import shlex
 import subprocess
 import sys
 import tempfile
@@ -167,14 +168,43 @@ def owned_archive(base, jar):
     return resources
 
 
+def maven_flag_tokens(base):
+    values = [os.environ.get('MAVEN_OPTS', ''), os.environ.get('MAVEN_ARGS', '')]
+    maven_config = base / '.mvn/maven.config'
+    if maven_config.is_file():
+        values.append(maven_config.read_text())
+    for path in [base / '.makevn/config', base / '.makevn/profile.env']:
+        if not path.is_file():
+            continue
+        for line in path.read_text().splitlines():
+            if line.lstrip().startswith('#'):
+                continue
+            # Decode shell quoting/%q without sourcing repository-controlled files.
+            for token in shlex.split(line):
+                if token.startswith('#'):
+                    break
+                name, separator, value = token.partition('=')
+                if separator and (name.endswith(('_CLI_FLAGS', '_PROP_FLAGS')) or
+                                  name in {'MAVEN_ARGS', 'MAVEN_OPTS'}):
+                    values.append(value)
+    tokens = []
+    for value in values:
+        if '$' in value or '`' in value:
+            raise ValueError('cannot statically decode dynamic Maven flag values')
+        # MakeVN's read -ra does not interpret embedded quotes. Keep both views
+        # because direct Maven environment/config values can also be shell-quoted.
+        tokens.extend(value.split())
+        tokens.extend(shlex.split(value))
+    return tokens
+
+
 def validate_layout(base):
     from changes_scope import declared_modules, parse
     if declared_modules(base, parse((base / 'pom.xml').read_text())) != set():
         raise ValueError('reactor consumer evidence is unavailable; complete owner suites retained')
-    config = '\n'.join(path.read_text() for path in [base / '.mvn/maven.config', base / '.makevn/config',
-                                                    base / '.makevn/profile.env'] if path.is_file())
-    config += ' ' + os.environ.get('MAVEN_OPTS', '') + ' ' + os.environ.get('MAVEN_ARGS', '')
-    if re.search(r'maven\.repo\.local|--(?:global-)?settings|(?:^|\s)-(?:s|gs)(?:\s|=)', config):
+    flags = maven_flag_tokens(base)
+    if any('maven.repo.local' in flag or flag.startswith(('-s', '-gs', '--settings', '--global-settings'))
+           for flag in flags):
         raise ValueError('custom Maven settings/repository evidence is unsupported')
     for name in ['generated-sources', 'generated-test-sources']:
         if any((base / 'target' / name).rglob('*.java')):
