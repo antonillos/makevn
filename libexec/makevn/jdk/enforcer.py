@@ -1,14 +1,18 @@
 #!/usr/bin/env python3
 """Read unconditional local Enforcer Java rules without invoking Maven.
 
-This is not an effective-POM evaluator: remote parents and profile activation
-remain Maven's responsibility. Unresolvable local rules fail closed.
+This is not an effective-POM evaluator: profile activation remains Maven's
+responsibility. Published parent properties are resolved only when needed by
+a local rule. Unresolvable rules fail closed.
 """
 from copy import deepcopy
 import re
 import sys
 import xml.etree.ElementTree as ET
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from parent_properties import inherited_properties
 
 
 class UnresolvedSkipError(ValueError):
@@ -175,6 +179,14 @@ def effective_enforcer_configuration(roots):
 def rules(pom, roots=None, rule_name="requireJavaVersion", user_properties=None):
     roots = models(pom) if roots is None else roots
     properties = {**model_properties(roots), **(user_properties or {})}
+    def resolve(value):
+        try:
+            return expand(value, properties)
+        except ValueError:
+            inherited = inherited_properties(roots[0])
+            properties.update({**inherited, **properties})
+            return expand(value, properties)
+
     shared, executions = effective_enforcer_configuration(roots)
     result = []
     for execution in executions:
@@ -190,13 +202,13 @@ def rules(pom, roots=None, rule_name="requireJavaVersion", user_properties=None)
             continue
         skip = configuration.findtext("skip", "false")
         try:
-            skipped = expand(skip, properties).lower() == "true"
+            skipped = resolve(skip).lower() == "true"
         except ValueError as error:
             raise UnresolvedSkipError(str(error)) from error
         if skipped:
             continue
         for rule in version_rules:
-            value = expand(rule.findtext("version", ""), properties)
+            value = resolve(rule.findtext("version", ""))
             intervals(value, java=rule_name == "requireJavaVersion")
             result.append(value)
     return list(dict.fromkeys(result))

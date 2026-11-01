@@ -4908,6 +4908,7 @@ main() {
   bash "${ROOT_DIR}/test/smoke/jdk_discovery_test.sh"
   bash "${ROOT_DIR}/test/smoke/jdk_brew_test.sh"
   python3 "${ROOT_DIR}/test/smoke/enforcer_test.py"
+  python3 "${ROOT_DIR}/test/smoke/parent_properties_test.py"
   bash "${ROOT_DIR}/test/smoke/jdk_enforcer_test.sh"
   bash "${ROOT_DIR}/test/smoke/formatting_test.sh"
   bash "${ROOT_DIR}/test/smoke/formatting_recovery_test.sh"
