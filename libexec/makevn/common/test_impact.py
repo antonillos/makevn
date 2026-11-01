@@ -10,8 +10,9 @@ import sys
 import tempfile
 import urllib.parse
 import xml.etree.ElementTree as ET
+import zipfile
 
-VERSION = 2
+VERSION = 3
 DYNAMIC = {'forName', 'loadClass', 'getDeclaredMethod', 'getDeclaredMethods',
            'getDeclaredConstructor', 'getDeclaredConstructors', 'getMethod', 'getMethods',
            'getConstructor', 'getConstructors', 'ServiceLoader', 'MethodHandle',
@@ -132,6 +133,30 @@ def bytecode(base):
     return result
 
 
+def owned_archive(base, jar):
+    """Validate rebuilt classes separately from stable archive resources."""
+    resources, seen = {}, set()
+    try:
+        with zipfile.ZipFile(jar) as archive:
+            for item in archive.infolist():
+                if item.is_dir():
+                    continue
+                path = Path(item.filename)
+                if path.is_absolute() or '..' in path.parts or item.filename in seen:
+                    raise ValueError('nonstandard project archive entries')
+                seen.add(item.filename)
+                sha = hashlib.sha256(archive.read(item)).hexdigest()
+                if item.filename.endswith('.class'):
+                    compiled = base / 'target/classes' / path
+                    if not compiled.is_file() or digest(compiled) != sha:
+                        raise ValueError('project archive differs from prepared class bytecode')
+                else:
+                    resources[item.filename] = sha
+    except zipfile.BadZipFile as error:
+        raise ValueError('invalid project archive') from error
+    return resources
+
+
 def validate_layout(base):
     from changes_scope import declared_modules, parse
     if declared_modules(base, parse((base / 'pom.xml').read_text())) != set():
@@ -189,7 +214,7 @@ def begin(repo, base, java, stamp):
     value = {'version': VERSION, 'status': 'pending', 'base': str(base),
              'head': subprocess.check_output(['git', '-C', str(repo), 'rev-parse', 'HEAD']).decode().strip(),
              'inputs': inputs(repo, base), 'context': context(java), 'facts': source_facts,
-             'bytecode': compiled, 'tests': tests, 'records': {}, 'jars': {}}
+             'bytecode': compiled, 'tests': tests, 'records': {}, 'jars': {}, 'owned_jars': {}}
     save(directory / 'capture.json', value)
     print('\n'.join(tests))
 
@@ -212,6 +237,13 @@ def record(repo, base, name, traces):
         if source.startswith('file:'):
             jar = Path(urllib.parse.unquote(urllib.parse.urlparse(source).path))
             if jar.suffix == '.jar' and jar.is_file():
+                if jar.is_relative_to(base / 'target'):
+                    resources = owned_archive(base, jar)
+                    previous = value.setdefault('owned_jars', {}).get(str(jar), resources)
+                    if resources != previous:
+                        raise ValueError('project archive resources changed between test executions')
+                    value['owned_jars'][str(jar)] = resources
+                    continue
                 if str(jar) in value['jars'] and value['jars'][str(jar)] != digest(jar):
                     raise ValueError('dependency changed between isolated test executions')
                 value['jars'][str(jar)] = digest(jar)
@@ -263,6 +295,9 @@ def validate_bytecode(base, value, paths):
         if sha != value['bytecode'][path] and not any(path == prefix + '.class' or
                                                      path.startswith(prefix + '$') for prefix in prefixes):
             raise ValueError('unclassified compiled bytecode changed: ' + path)
+    for path, resources in value.get('owned_jars', {}).items():
+        if owned_archive(base, Path(path)) != resources:
+            raise ValueError('project archive resources changed')
     models = repository_models()
     previous = value.get('models', {})
     metadata = lambda items: {key for key in items if Path(key).name.startswith('maven-metadata')}

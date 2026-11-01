@@ -50,6 +50,8 @@ class reject narrowing; local class-loading evidence cannot bound those effects.
 The baseline stores the Git revision, source/config/resource inventory, compiled
 class hashes, resolved dependency JAR hashes, cached Maven model inventory and JDK
 identity. Environment fingerprints are hashed without persisting secret values.
+Rebuilt project JARs are validated against prepared class bytecode and stable
+archive resources; changing ZIP timestamps alone does not invalidate the map.
 Only compatible method-body changes and explicitly selected changed test classes
 can reuse a map. Java declaration/import/initializer changes, new/deleted classes,
 test helpers, generated sources, resources, POMs, dependency/configuration/JDK

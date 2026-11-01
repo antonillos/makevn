@@ -10,6 +10,7 @@ import shutil
 import sys
 import tempfile
 import unittest
+import zipfile
 from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -197,6 +198,24 @@ class TestImpactTests(unittest.TestCase):
         self.assertIsNone(self.plan()[0])
         generated.unlink()
         (self.repo / 'target/classes/example/Owner$New.class').write_bytes(b'new')
+        self.assertIsNone(self.plan()[0])
+
+    def test_rebuilt_project_archive_reuses_map_but_rejects_resource_or_bytecode_drift(self):
+        jar = self.repo / 'target/project.jar'
+        def package(resource=b'stable', compiled=b'Owner'):
+            with zipfile.ZipFile(jar, 'w') as archive:
+                archive.writestr('example/Owner.class', compiled)
+                archive.writestr('settings.properties', resource)
+        package()
+        self.value['owned_jars'] = {str(jar): impact.owned_archive(self.repo, jar)}
+        self.write_map()
+        compiled = self.repo / 'target/classes/example/Owner.class'
+        compiled.write_bytes(b'new method body')
+        package(compiled=b'new method body')
+        self.assertIsNotNone(self.plan()[0])
+        package(resource=b'changed', compiled=b'new method body')
+        self.assertIsNone(self.plan()[0])
+        package(compiled=b'stale class')
         self.assertIsNone(self.plan()[0])
 
 
