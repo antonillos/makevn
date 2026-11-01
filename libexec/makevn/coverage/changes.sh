@@ -546,7 +546,7 @@ def parse_changed_file(file_path):
     if marker not in file_path:
         return None
     package_and_class = file_path.split(marker, 1)[1]
-    package_path, class_name = package_and_class.rsplit("/", 1)
+    package_path, _, class_name = package_and_class.rpartition("/")
     return package_path.replace("/", "."), class_name.removesuffix(".java")
 
 
