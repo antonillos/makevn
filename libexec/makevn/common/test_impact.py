@@ -18,7 +18,10 @@ DYNAMIC = {'forName', 'loadClass', 'getDeclaredMethod', 'getDeclaredMethods',
            'MethodHandles', 'invoke', 'invokeExact', 'ClassLoader', 'getField', 'getDeclaredField',
            'getFields', 'getDeclaredFields', 'getDeclaredClasses', 'newProxyInstance',
            'getResource', 'getResourceAsStream', 'Files', 'FileInputStream', 'FileReader',
-           'ProcessBuilder', 'Runtime', 'exec'}
+           'RandomAccessFile', 'FileChannel', 'ProcessBuilder', 'Runtime', 'exec'}
+UNSAFE_CHANGE = {'System', 'setDefault', 'setProperty', 'clearProperty', 'setProperties',
+                 'setOut', 'setErr', 'setSecurityManager', 'FileWriter', 'FileOutputStream',
+                 'Socket', 'URLConnection'}
 
 
 def digest(path):
@@ -65,8 +68,9 @@ def context(java):
     release = java.resolve().parent.parent / 'release'
     settings = Path(os.environ.get('MAVEN_CONFIG', str(Path.home() / '.m2'))) / 'settings.xml'
     environment = {name: value for name, value in os.environ.items()
-                   if not name.startswith(('MAKEVN_', 'BASH_FUNC_', 'RTK_')) and
-                   name not in {'_', 'SHLVL', 'PWD', 'OLDPWD', 'CODEX_TOOL_CALL_ID'}}
+                   if not name.startswith(('MAKEVN_', 'BASH_FUNC_', 'BASHCOV_', 'RTK_')) and
+                   name not in {'_', 'SHLVL', 'PWD', 'OLDPWD', 'CODEX_TOOL_CALL_ID',
+                                'SHELLOPTS', 'BASHOPTS', 'BASH_XTRACEFD'}}
     return {'java': str(java.resolve()), 'release': digest(release),
             'settings': digest(settings) if settings.is_file() else '',
             'environment': {name: hashlib.sha256(value.encode()).hexdigest()
@@ -225,12 +229,24 @@ def finish(repo, base, java):
     value = json.loads((state(repo) / 'capture.json').read_text())
     if set(value['records']) != set(value['tests']):
         raise ValueError('incomplete isolated test capture')
-    if value['inputs'] != inputs(repo, base) or value['context'] != context(java):
-        raise ValueError('source/config/JDK changed during test capture')
+    if value['inputs'] != inputs(repo, base):
+        raise ValueError('source/config changed during test capture')
+    current_context = context(java)
+    if value['context'] != current_context:
+        raise ValueError('JDK/environment changed during test capture: ' +
+                         ', '.join(changed_context(value['context'], current_context)))
     value['status'] = 'success'
     value['models'] = repository_models()
     value['seal'] = hashlib.sha256(json.dumps(value, sort_keys=True).encode()).hexdigest()
     save(state(repo) / 'map.json', value)
+
+
+def changed_context(before, after):
+    fields = [key for key in after if before.get(key) != after[key]]
+    if fields == ['environment'] and isinstance(before['environment'], dict):
+        previous, current = before['environment'], after['environment']
+        return sorted(key for key in previous.keys() | current.keys() if previous.get(key) != current.get(key))
+    return fields
 
 
 def validate_bytecode(base, value, paths):
@@ -271,11 +287,8 @@ def narrow(repo, base, owner, paths, changed_tests):
         java = Path(os.environ.get('MAKEVN_TEST_IMPACT_JAVA', 'java'))
         current_context = context(java)
         if value['context'] != current_context:
-            fields = [key for key in current_context if value['context'].get(key) != current_context[key]]
-            if fields == ['environment'] and isinstance(value['context']['environment'], dict):
-                before, after = value['context']['environment'], current_context['environment']
-                fields = sorted(key for key in before.keys() | after.keys() if before.get(key) != after.get(key))
-            raise ValueError('JDK or execution environment changed: ' + ', '.join(fields))
+            raise ValueError('JDK or execution environment changed: ' +
+                             ', '.join(changed_context(value['context'], current_context)))
         if value['base'] != str(base):
             raise ValueError('evidence belongs to another Maven checkout')
         if value['head'] != subprocess.check_output(['git', '-C', str(repo), 'rev-parse', 'HEAD']).decode().strip():
@@ -304,8 +317,8 @@ def narrow(repo, base, owner, paths, changed_tests):
             if relative.startswith('src/main/java/'):
                 if parsed[relative]['shape'] != value['facts'][relative]['shape']:
                     raise ValueError('production declaration, import or initializer changed')
-                if DYNAMIC.intersection(parsed[relative]['names']):
-                    raise ValueError('changed production class has unresolved dynamic behavior')
+                if (DYNAMIC | UNSAFE_CHANGE).intersection(parsed[relative]['names']):
+                    raise ValueError('changed production class has unresolved dynamic/global-state/I/O behavior')
                 changed.add(parsed[relative]['class'])
         validate_bytecode(base, value, [(repo / path).relative_to(base).as_posix() for path in allowed])
         for path, sha in value['jars'].items():

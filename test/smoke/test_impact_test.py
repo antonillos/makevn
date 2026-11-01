@@ -81,10 +81,12 @@ class TestImpactTests(unittest.TestCase):
         self.assertEqual(selected, set(self.value['tests']))
 
     def test_unknown_dynamic_changed_class_falls_back(self):
-        self.facts[self.source]['names'] = ['ServiceLoader']
-        selected, diagnostic = self.plan()
-        self.assertIsNone(selected)
-        self.assertIn('dynamic', diagnostic)
+        for name in ['ServiceLoader', 'System', 'FileWriter', 'RandomAccessFile']:
+            with self.subTest(name=name):
+                self.facts[self.source]['names'] = [name]
+                selected, diagnostic = self.plan()
+                self.assertIsNone(selected)
+                self.assertIn('dynamic', diagnostic)
 
     def test_declaration_changes_and_missing_direct_coverage_fall_back(self):
         self.facts[self.source]['shape'] = 'different declaration'
@@ -242,9 +244,11 @@ class ContextTests(unittest.TestCase):
             java.touch()
             (root / 'jdk/release').write_text('fixture')
             with patch.object(impact.Path, 'home', return_value=root), patch.dict(
-                    impact.os.environ, {'CODEX_TOOL_CALL_ID': 'one', 'TOKEN': 'private fixture'}, clear=True):
+                    impact.os.environ, {'CODEX_TOOL_CALL_ID': 'one', 'TOKEN': 'private fixture',
+                                        'SHELLOPTS': 'errexit:nounset'}, clear=True):
                 before = impact.context(java)
                 impact.os.environ['CODEX_TOOL_CALL_ID'] = 'two'
+                impact.os.environ['SHELLOPTS'] = 'nounset'
                 self.assertEqual(before, impact.context(java))
                 self.assertNotIn('private fixture', json.dumps(before))
                 impact.os.environ['TOKEN'] = 'changed fixture'

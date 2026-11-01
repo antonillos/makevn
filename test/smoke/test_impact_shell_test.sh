@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+export SHELLOPTS
 ROOT="$(CDPATH= cd -- "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 SCRIPT_DIR="${ROOT}/libexec/makevn"
 source "${SCRIPT_DIR}/common.sh"

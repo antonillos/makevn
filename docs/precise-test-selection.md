@@ -44,7 +44,8 @@ all matching simple type names, retaining collisions rather than resolving them
 optimistically. Transitive consumers and explicitly changed tests are included.
 Sources using recognized reflection/service-loading APIs are potential consumers;
 their callers/tests are retained even without a direct static edge. Dynamic
-behavior in a changed production class rejects narrowing.
+behavior or recognized process-wide state/I/O effects in a changed production
+class reject narrowing; local class-loading evidence cannot bound those effects.
 
 The baseline stores the Git revision, source/config/resource inventory, compiled
 class hashes, resolved dependency JAR hashes, cached Maven model inventory and JDK
