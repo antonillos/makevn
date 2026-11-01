@@ -90,6 +90,22 @@ class ScopedTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'incomplete'):
             scoped.load(self.repo, self.state)
 
+    def test_root_module_changed_class_is_snapshotted(self):
+        source = 'src/main/java/example/Root.java'
+        source_path = self.repo / source
+        source_path.parent.mkdir(parents=True)
+        source_path.write_text('class Root {}')
+        compiled = self.repo / 'target/classes/example/Root.class'
+        compiled.parent.mkdir(parents=True)
+        compiled.write_bytes(b'root bytecode')
+        scoped.prepare(self.repo, self.state, self.repo, ['.'], [source])
+        data = self.repo / 'target/jacoco.exec'
+        data.write_bytes(b'fresh coverage')
+        scoped.finish(self.repo, self.state)
+        manifest = scoped.load(self.repo, self.state)
+        self.assertEqual(manifest['class_owners'], {'example/Root': '.'})
+        self.assertEqual((Path(manifest['classes']) / 'example/Root.class').read_bytes(), b'root bytecode')
+
     def test_source_and_snapshot_changes_reject_stale_evidence(self):
         manifest = self.ready()
         path = self.repo / self.source
