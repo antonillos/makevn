@@ -185,7 +185,11 @@ def load(repo, state):
     if comparison_head != manifest['comparison_head']:
         raise ValueError('Comparison base changed; rerun verify-changes')
     if manifest['status'] != 'success':
-        raise ValueError('Focused coverage is incomplete; rerun verify-changes')
+        raise ValueError('Focused coverage is incomplete: the last verification did not complete successfully '
+                         '(failed, interrupted or still running). No valid focused evidence is available. '
+                         'Inspect ' + str(repo / '.makevn/logs/verify-changes-*.log') +
+                         ' and selected modules\' target/surefire-reports or target/failsafe-reports; '
+                         'resolve the cause before rerunning verify-changes')
     inputs = {}
     if manifest['fingerprint'] != fingerprint(repo, Path(manifest['base']), inputs):
         paths = ', '.join(changed_inputs(manifest, inputs)[:20])

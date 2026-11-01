@@ -10,6 +10,10 @@ trap 'rm -rf "${tmp}"' EXIT
 MAKEVN_VERIFY_CHANGES_MAVEN_BASE_PATH="${tmp}"
 MAKEVN_VERIFY_CHANGES_MODULE_SELECTION=boot,client
 MAKEVN_VERIFY_CHANGES_FOCUSED_PLAN=$'boot\texample.OwnersIT\nclient\t*'
+plan_output="$(makevn_print_focused_changes_plan)"
+[[ "${plan_output}" == *'module-scoped: production changes select the entire owner module suite'* ]]
+[[ "${plan_output}" == *'single-module project'* ]]
+[[ "${plan_output}" == *'verify client: entire module suite'* ]]
 verify_args=(mvn)
 cli_flags=(-nsu)
 prop_flags=(-Djacoco.skip=false)
