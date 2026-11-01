@@ -77,8 +77,8 @@ def collect_questions(arguments):
         ("boot_compose", "boot tests", boot), ("e2e_compose", "Karate E2E", e2e)
     ]:
         if candidates:
-            questions.append(question(identifier, f"Which Docker Compose file should {label} use?",
-                                      "choice", candidates.splitlines()))
+            questions.append(question(identifier, f"Which Docker Compose file should {label} use? Select a candidate, none, or an absolute path to an existing file.",
+                                      "choice", candidates.splitlines() + ["none"]))
     if local_pending == "true":
         questions.append(question("local_containers", "Use LOCAL_CONTAINERS=TRUE by default for tests?",
                                   "boolean", [True, False]))
@@ -114,7 +114,10 @@ def answer_updates(setup, answers):
         else:
             if not isinstance(value, str) or "\0" in value or "\n" in value or "\r" in value:
                 raise ValueError(f"{identifier} requires a single-line string answer.")
-            if item["type"] == "choice" and value not in item["options"]:
+            if identifier in ("boot_compose", "e2e_compose") and value not in item["options"]:
+                if not Path(value).is_absolute() or not Path(value).is_file():
+                    raise ValueError(f"{identifier} requires an absolute path to an existing Compose file or none.")
+            elif item["type"] == "choice" and value not in item["options"]:
                 raise ValueError(f"{identifier} must select a currently available option.")
             if identifier == "app_health_url" and not valid_health_url(value):
                 raise ValueError("Use an HTTP(S) health URL without whitespace.")

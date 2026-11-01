@@ -39,6 +39,16 @@ while [[ $# -gt 0 ]]; do
       REPO_ROOT="$2"
       shift 2
       ;;
+    --compose-file)
+      backend_require_value "--compose-file" "${2:-}"
+      case "${COMMAND}" in
+        verify|verify-it|verify-it-coverage|docker-*|karate-docker-*) ;;
+        *) makevn_die "--compose-file is unavailable for ${COMMAND}" ;;
+      esac
+      [[ "$2" == none || ( "$2" == /* && -f "$2" ) ]] || makevn_die "--compose-file requires an absolute existing file path or none"
+      export MAKEVN_EXECUTION_COMPOSE_FILE="$2"
+      shift 2
+      ;;
     --format)
       backend_require_value "--format" "${2:-}"
       FORMAT="$2"

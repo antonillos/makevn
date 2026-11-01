@@ -919,6 +919,7 @@ makevn_boot_compose_file_path() {
   local f
 
   makevn_load_config "${repo_root}"
+  [[ "${MAKEVN_COMPOSE_FILE:-}" != none ]] || return 1
   if [[ -n "${MAKEVN_COMPOSE_FILE:-}" && -f "${MAKEVN_COMPOSE_FILE}" ]]; then
     printf '%s\n' "${MAKEVN_COMPOSE_FILE}"
     return 0
@@ -948,6 +949,10 @@ makevn_boot_compose_resolution_error() {
   local f=""
 
   makevn_load_config "${repo_root}"
+  if [[ "${MAKEVN_COMPOSE_FILE:-}" == none ]]; then
+    printf '%s\n' "Boot Docker Compose is disabled (MAKEVN_COMPOSE_FILE=none)."
+    return 0
+  fi
   if [[ -n "${MAKEVN_COMPOSE_FILE:-}" && ! -f "${MAKEVN_COMPOSE_FILE}" ]]; then
     printf '%s\n' "Configured MAKEVN_COMPOSE_FILE does not exist: ${MAKEVN_COMPOSE_FILE}"
     return 0
@@ -999,6 +1004,7 @@ makevn_karate_compose_file_path() {
   local f
 
   makevn_load_config "${repo_root}"
+  [[ "${MAKEVN_E2E_COMPOSE_FILE:-}" != none ]] || return 1
   if [[ -n "${MAKEVN_E2E_COMPOSE_FILE:-}" && -f "${MAKEVN_E2E_COMPOSE_FILE}" ]]; then
     printf '%s\n' "${MAKEVN_E2E_COMPOSE_FILE}"
     return 0

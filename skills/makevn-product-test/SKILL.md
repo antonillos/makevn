@@ -125,3 +125,18 @@ operations. Preserve clones and evidence unless their removal is authorized.
 Report cleanup failures. A new session should read the report, confirm the active
 MakeVN/server version and current execution/resource state, then resume the next
 action without repeating completed work or trusting stale reports.
+
+### Disabling Compose discovery
+
+Compose answers also accept an absolute path to an existing file outside the
+detected candidates (CLI option `p`). Paths containing spaces are supported.
+Compose setup choices include the literal `none` for both `boot_compose` and
+`e2e_compose`. Select it when discovered files are examples or test data rather
+than required services. CLI doctor offers `0: None`; MCP doctor_configure accepts
+`"none"`. The persisted `MAKEVN_COMPOSE_FILE=none` or
+`MAKEVN_E2E_COMPOSE_FILE=none` overrides automatic discovery, including after
+profile refresh. Boot verification then has no Compose readiness prerequisite;
+Testcontainers engine requirements still apply. Explicit Compose lifecycle and
+readiness commands require an actual selected file and cannot use `none`.
+To change a saved selection, use interactive `makevn doctor --reset-config`
+(which resets other preferences too), then answer setup again. Reset is CLI-only.

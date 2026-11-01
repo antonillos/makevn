@@ -171,7 +171,7 @@ Submit user-provided or previously user-authorized answers with `doctor_configur
 in the same repository. Pass `setupToken` and an `answers` object keyed by question
 id: `boot_compose`, `e2e_compose`, `local_containers` (boolean), `app_health_url`,
 `karate_app_profiles`, and `code_java_home`. The JDK answer must be an exact offered
-installation path. Compose answers use the exact offered path; Spring
+installation path. Compose answers use an offered path, an absolute path to an existing file, or `none`; Spring
 profiles use literal comma-separated names. The tool validates the whole batch
 before atomically updating `.makevn/config`, preserves unrelated settings and
 returns a fresh diagnosis on success. Partial answers are accepted; omitted
@@ -334,3 +334,32 @@ remote repositories, global/alternate settings and Maven profile activation are
 not evaluated by this metadata resolver. Missing, cyclic or unresolvable parent
 metadata blocks selection; report a parent-resolution failure rather than
 assuming another JDK is needed. Do not change the fixture POM or bypass Enforcer.
+
+### Disabling Compose discovery
+
+Compose answers also accept an absolute path to an existing file outside the
+detected candidates (CLI option `p`). Paths containing spaces are supported.
+Compose setup choices include the literal `none` for both `boot_compose` and
+`e2e_compose`. Select it when discovered files are examples or test data rather
+than required services. CLI doctor offers `0: None`; MCP doctor_configure accepts
+`"none"`. The persisted `MAKEVN_COMPOSE_FILE=none` or
+`MAKEVN_E2E_COMPOSE_FILE=none` overrides automatic discovery, including after
+profile refresh. Boot verification then has no Compose readiness prerequisite;
+Testcontainers engine requirements still apply. Explicit Compose lifecycle and
+readiness commands require an actual selected file and cannot use `none`.
+To change a saved selection, use interactive `makevn doctor --reset-config`
+(which resets other preferences too), then answer setup again. Reset is CLI-only.
+
+For a single verification, `makevn verify --compose-file /absolute/compose.yaml`
+(or `--compose-file none`) overrides the saved boot Compose without changing
+configuration or starting services. `verify-it` and `verify-it-coverage` also
+support this option. MCP uses the string argument `"compose-file"`; composite
+steps pass it inside `arguments`. Keep it before `--` (Maven arguments).
+An explicit file requires its services to pass readiness before Maven runs.
+
+The same `--compose-file /absolute/compose.yaml` override is available on all
+`docker-*` and `karate-docker-*` CLI commands and their MCP tools. Pass the same
+file to startup, readiness, verification and cleanup; selection alone does not
+start services or authorize a destructive reset. `--compose boot|karate` still
+selects the readiness kind; `--compose-file` supplies its file. A per-execution
+override wins over saved `none` and is never persisted.

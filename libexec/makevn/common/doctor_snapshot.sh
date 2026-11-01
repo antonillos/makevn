@@ -261,7 +261,9 @@ makevn_collect_doctor_snapshot() {
   # Resolve compose file: config > profile > auto-detect > interactive prompt
   makevn_doctor_progress "Resolving Docker compose files"
   makevn_load_config "${repo_root}"
-  if [[ -n "${MAKEVN_COMPOSE_FILE:-}" && -f "${MAKEVN_COMPOSE_FILE}" ]]; then
+  if [[ "${MAKEVN_COMPOSE_FILE:-}" == none ]]; then
+    compose_file="none"
+  elif [[ -n "${MAKEVN_COMPOSE_FILE:-}" && -f "${MAKEVN_COMPOSE_FILE}" ]]; then
     compose_file="${MAKEVN_COMPOSE_FILE}"
   elif [[ -n "${MAKEVN_DETECTED_COMPOSE_FILE:-}" ]]; then
     compose_file="${MAKEVN_DETECTED_COMPOSE_FILE}"
@@ -289,14 +291,25 @@ makevn_collect_doctor_snapshot() {
         done
         local _choice=""
         while true; do
-          printf 'Enter number [1-%d]: ' "${#_found[@]}" >&2
+          printf '  [0] None\n  [p] Specify an absolute Compose file path\nEnter number [0-%d] or p: ' "${#_found[@]}" >&2
           makevn_read_choice_into _choice
-          if [[ "${_choice}" =~ ^[0-9]+$ ]] && (( _choice >= 1 && _choice <= ${#_found[@]} )); then
+          if [[ "${_choice}" == p ]]; then
+            printf 'Absolute Compose file path: ' >&2
+            makevn_read_choice_into _choice
+            [[ "${_choice}" == /* && -f "${_choice}" ]] && break
+          fi
+          if [[ "${_choice}" =~ ^[0-9]+$ ]] && (( _choice >= 0 && _choice <= ${#_found[@]} )); then
             break
           fi
           printf '%s\n' "$(makevn_warn "Invalid selection. Try again.")" >&2
         done
-        compose_file="${_found[$((_choice - 1))]}"
+        if [[ "${_choice}" == /* ]]; then
+          compose_file="${_choice}"
+        elif [[ "${_choice}" == 0 ]]; then
+          compose_file=none
+        else
+          compose_file="${_found[$((_choice - 1))]}"
+        fi
         prompted_interactively="yes"
         # Ensure config exists before persisting
         if [[ ! -f "$(makevn_config_path "${repo_root}")" ]]; then
@@ -313,7 +326,9 @@ makevn_collect_doctor_snapshot() {
   fi
 
   # Resolve e2e compose file: config > profile > auto-detect > interactive prompt
-  if [[ -n "${MAKEVN_E2E_COMPOSE_FILE:-}" && -f "${MAKEVN_E2E_COMPOSE_FILE}" ]]; then
+  if [[ "${MAKEVN_E2E_COMPOSE_FILE:-}" == none ]]; then
+    e2e_compose_file="none"
+  elif [[ -n "${MAKEVN_E2E_COMPOSE_FILE:-}" && -f "${MAKEVN_E2E_COMPOSE_FILE}" ]]; then
     e2e_compose_file="${MAKEVN_E2E_COMPOSE_FILE}"
   elif [[ -n "${MAKEVN_DETECTED_E2E_COMPOSE_FILE:-}" ]]; then
     e2e_compose_file="${MAKEVN_DETECTED_E2E_COMPOSE_FILE}"
@@ -339,14 +354,25 @@ makevn_collect_doctor_snapshot() {
         done
         local _echoice=""
         while true; do
-          printf 'Enter number [1-%d]: ' "${#_e2e_found[@]}" >&2
+          printf '  [0] None\n  [p] Specify an absolute Compose file path\nEnter number [0-%d] or p: ' "${#_e2e_found[@]}" >&2
           makevn_read_choice_into _echoice
-          if [[ "${_echoice}" =~ ^[0-9]+$ ]] && (( _echoice >= 1 && _echoice <= ${#_e2e_found[@]} )); then
+          if [[ "${_echoice}" == p ]]; then
+            printf 'Absolute Compose file path: ' >&2
+            makevn_read_choice_into _echoice
+            [[ "${_echoice}" == /* && -f "${_echoice}" ]] && break
+          fi
+          if [[ "${_echoice}" =~ ^[0-9]+$ ]] && (( _echoice >= 0 && _echoice <= ${#_e2e_found[@]} )); then
             break
           fi
           printf '%s\n' "$(makevn_warn "Invalid selection. Try again.")" >&2
         done
-        e2e_compose_file="${_e2e_found[$((_echoice - 1))]}"
+        if [[ "${_echoice}" == /* ]]; then
+          e2e_compose_file="${_echoice}"
+        elif [[ "${_echoice}" == 0 ]]; then
+          e2e_compose_file=none
+        else
+          e2e_compose_file="${_e2e_found[$((_echoice - 1))]}"
+        fi
         prompted_interactively="yes"
         if [[ ! -f "$(makevn_config_path "${repo_root}")" ]]; then
           mkdir -p "$(makevn_state_dir "${repo_root}")"

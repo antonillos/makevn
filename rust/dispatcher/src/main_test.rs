@@ -247,6 +247,8 @@ fn maven_passthrough_accepts_option_values_and_separator() {
     assert!(validate_maven_passthrough_args(
         &command,
         &[
+            OsString::from("--compose-file"),
+            OsString::from("none"),
             OsString::from("--tail"),
             OsString::from("-f"),
             OsString::from("pom.xml"),

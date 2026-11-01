@@ -30,7 +30,7 @@ pub(crate) fn setup_schema() -> Value {
 pub(crate) fn answers_schema() -> Value {
     json!({"type": "object", "minProperties": 1, "additionalProperties": false,
         "properties": {
-            "boot_compose": {"type": "string"}, "e2e_compose": {"type": "string"},
+            "boot_compose": {"type": "string", "description": "Detected candidate, absolute existing file path, or none"}, "e2e_compose": {"type": "string", "description": "Detected candidate, absolute existing file path, or none"},
             "local_containers": {"type": "boolean"}, "app_health_url": {"type": "string"},
             "karate_app_profiles": {"type": "string"},
             "code_java_home": {"type": "string"}

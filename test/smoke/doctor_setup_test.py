@@ -35,6 +35,24 @@ def configure_in_process(repo, snapshot, answers, started, replacing, release, r
 
 
 class DoctorSetupTests(unittest.TestCase):
+    def test_custom_compose_path(self):
+        custom = self.repo / "custom compose.yaml"
+        custom.write_text("services: {}\n")
+        self.assertEqual({"MAKEVN_COMPOSE_FILE": str(custom)},
+                         setup.answer_updates(self.details, {"boot_compose": str(custom)}))
+        with self.assertRaises(ValueError):
+            setup.answer_updates(self.details, {"boot_compose": str(custom) + ".missing"})
+
+    def test_compose_none_is_an_explicit_choice(self):
+        for identifier in ("boot_compose", "e2e_compose"):
+            details = setup.collect_questions([str(self.repo), "/boot.yml", "/e2e.yml",
+                                               "", "", "false", "false", "false"])
+            item = next(q for q in details["questions"] if q["id"] == identifier)
+            self.assertIn("none", item["options"])
+            self.assertEqual({setup.SETTINGS[identifier]: "none"},
+                             setup.answer_updates(details, {identifier: "none"}))
+
+
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
