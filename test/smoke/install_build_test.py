@@ -49,13 +49,14 @@ done
     assert result.returncode == 0, result.stderr
     assert calls.read_text().splitlines() == ["build"]
     assert "fresh binary" in (prefix / "bin/makevn").read_text()
-    for name in ["makevn", "makevn-test", "makevn-docker", "makevn-karate", "makevn-quality"]:
+    for name in ["makevn", "makevn-test", "makevn-docker", "makevn-karate", "makevn-quality", "makevn-product-test"]:
         assert (prefix / f"share/makevn/skills/{name}/SKILL.md").is_file()
-        assert (prefix / f"share/makevn/skills/{name}/references/workflows.md").is_file()
+        reference = "report.md" if name == "makevn-product-test" else "workflows.md"
+        assert (prefix / f"share/makevn/skills/{name}/references/{reference}").is_file()
     custom_skill = Path(tmp) / "custom-skills/custom-base"
     assert run("--no-build", SKILL_DIR=str(custom_skill)).returncode == 0
     assert (custom_skill / "SKILL.md").is_file()
-    for name in ["makevn-test", "makevn-docker", "makevn-karate", "makevn-quality"]:
+    for name in ["makevn-test", "makevn-docker", "makevn-karate", "makevn-quality", "makevn-product-test"]:
         assert (custom_skill.parent / name / "SKILL.md").is_file()
     installed = (prefix / "bin/makevn").read_bytes()
     version = (fixture / "target/makevn-version.env").read_bytes()

@@ -273,7 +273,7 @@ relative to the target repository, not the MCP server's working directory.
 ## Agent skills and workflows
 
 See the [workflow map](docs/workflow-guidance.md) for what MakeVN does, workflow selection,
-CLI/MCP equivalents and evidence. Product installation ships five portable skills;
+CLI/MCP equivalents and evidence. Product installation ships six portable skills;
 register MCP and skills with `makevn agent install opencode --scope global` or
 `makevn agent install codex --scope global`. Run `makevn agent upgrade` after
 upgrading MakeVN, reload the client and check discovery separately from loading. See the
@@ -306,3 +306,14 @@ COMMANDS (root) or SUBCOMMANDS (nested) in that order when applicable, with alig
 descriptions. Terminal
 output uses lilac commands, green flags and gray placeholders; redirected output,
 `NO_COLOR` and `MAKEVN_AGENT_OUTPUT=1` use plain text.
+
+## Product testing with real repositories
+
+Use the [makevn-product-test skill](skills/makevn-product-test/SKILL.md) to validate
+MakeVN against GitHub Maven repositories through MCP, classify failures and
+retest fixes with reproducible evidence. After installing a version that includes
+this skill, run `makevn agent upgrade --scope global` (or register Codex with
+`makevn agent install codex --scope global`) and restart/reload your client.
+Confirm `makevn-product-test` appears in its skills catalog, then explicitly invoke
+`$makevn-product-test` in a new session and provide the clone directory or a prior
+campaign report. Registration alone does not prove the client loaded the skill.

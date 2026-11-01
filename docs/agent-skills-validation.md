@@ -6,9 +6,9 @@ client version, scope and exact outcome. Do not label disk checks as model tests
 
 ## Four independent checks
 
-1. Distribution: all five skills and references are installed; local links resolve.
+1. Distribution: all six skills and references are installed; local links resolve.
 2. Discovery: `agent status` reports current registration, then the client catalog
-   lists all five names/descriptions without duplicates or errors.
+   lists all six names/descriptions without duplicates or errors.
 3. Explicit loading: ask the client to load each named skill, without running its
    workflow. Confirm the client's skill invocation or file-read event and contents.
 4. Implicit selection: use the requests below in fresh sessions without naming a
@@ -70,3 +70,8 @@ and improve descriptions or recipes without claiming deterministic activation.
   hypothetical decisions. No Maven/Docker workflows or file edits were performed.
   These are observed examples with the clients' default models, not a guarantee
   of implicit selection or execution correctness on arbitrary repositories.
+
+Product testing: explicitly load makevn-product-test in a fresh session. Ask to
+validate MakeVN against a GitHub Maven clone. Confirm it loads the base and
+required specialties, follows MCP setup, distinguishes skipped tests from executed
+coverage, and leaves a report that another session can resume.

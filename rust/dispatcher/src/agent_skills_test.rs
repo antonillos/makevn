@@ -2,7 +2,23 @@ use super::*;
 use crate::agent_test_fixture::Fixture;
 
 #[test]
-fn manages_five_skills_and_reports_missing_current_outdated_modified() {
+fn upgrades_existing_five_skill_registration_with_product_testing() {
+    let fixture = Fixture::new();
+    let source = fixture.bundle();
+    let target = fixture.0.join("skills");
+    let mut original = inventory(&source, true).unwrap();
+    original.retain(|name, _| !name.starts_with("makevn-product-test/"));
+    agent_transaction::apply(build_changes(&target, Inventory::new(), original, "1").unwrap())
+        .unwrap();
+    assert!(!target.join("makevn-product-test/SKILL.md").exists());
+    assert!(status(&source, &target, "1").starts_with("outdated"));
+    agent_transaction::apply(prepare(&source, &target, "2").unwrap()).unwrap();
+    assert!(target.join("makevn-product-test/SKILL.md").is_file());
+    assert!(status(&source, &target, "2").starts_with("current"));
+}
+
+#[test]
+fn manages_six_skills_and_reports_missing_current_outdated_modified() {
     let fixture = Fixture::new();
     let source = fixture.bundle();
     let target = fixture.0.join("skills");

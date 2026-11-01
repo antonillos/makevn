@@ -45,7 +45,7 @@ editing. See each [skill and its bundled recipes](agents.md) for owned policy.
 
 ```mermaid
 flowchart TD
-    INSTALL[Install product: distribute five skills] --> SETUP[Agent setup: register MCP and skills]
+    INSTALL[Install product: distribute six skills] --> SETUP[Agent setup: register MCP and skills]
     SETUP --> RELOAD[Reload client]
     RELOAD --> CATALOG[Check available skill metadata]
     CATALOG --> LOAD[Explicitly load skill]
