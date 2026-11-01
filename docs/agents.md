@@ -15,6 +15,7 @@ each specialty owns its workflow details and bundled references:
 | Compose, readiness and authorized container operations | [makevn-docker](../skills/makevn-docker/SKILL.md) |
 | Application lifecycle and Karate E2E | [makevn-karate](../skills/makevn-karate/SKILL.md) |
 | Formatting, coverage, CRAP and mutation | [makevn-quality](../skills/makevn-quality/SKILL.md) |
+| Validate MakeVN against real GitHub repositories | [makevn-product-test](../skills/makevn-product-test/SKILL.md) |
 
 ## Register and confirm discovery
 
@@ -25,7 +26,7 @@ makevn agent install codex --scope project
 makevn agent status codex --scope project
 ```
 
-Both setup commands register MCP and the same five portable skills. Global skills
+Both setup commands register MCP and the same six portable skills. Global skills
 are in `~/.agents/skills/`; project skills are in `.agents/skills/`. Without scope,
 OpenCode retains interactive selection when local configurations exist; Codex uses
 global scope. Status always requires scope and never writes files. See the

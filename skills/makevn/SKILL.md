@@ -74,6 +74,9 @@ preference, not engine startup or proof of readiness.
 | Managed application E2E or an externally managed application | [makevn-karate](../makevn-karate/SKILL.md) |
 | Format, Checkstyle, coverage, CRAP or mutation | [makevn-quality](../makevn-quality/SKILL.md) |
 
+For product validation against real repositories, load
+[makevn-product-test](../makevn-product-test/SKILL.md).
+
 ## Common policy
 
 Prefer MakeVN MCP tools, then supported MakeVN CLI commands. Never substitute raw
@@ -155,7 +158,7 @@ than switching to CLI reset.
 ## Product installation and agent registration
 
 Prefer Homebrew, then asdf, then the release installer. Build from sources only
-when developing MakeVN itself. Installations distribute all five skills.
+when developing MakeVN itself. Installations distribute all six skills.
 
 ```bash
 makevn agent install opencode --scope global

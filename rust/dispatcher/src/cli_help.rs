@@ -2,7 +2,7 @@ pub(super) fn command_help(
     command: &str,
 ) -> Option<(&'static str, &'static str, &'static [&'static str])> {
     match command {
-        "agent install" => Some(("makevn agent install <opencode|codex> [--scope global|project]", "Register MCP and five workflow skills for an agent client.", &["--scope global|project  Select configuration and skills scope"])),
+        "agent install" => Some(("makevn agent install <opencode|codex> [--scope global|project]", "Register MCP and six workflow skills for an agent client.", &["--scope global|project  Select configuration and skills scope"])),
         "agent status" => Some(("makevn agent status <opencode|codex> --scope global|project", "Inspect agent registration without changes.", &["--scope global|project  Required configuration and skills scope"])),
         "agent upgrade" => Some(("makevn agent upgrade [--scope global|project]", "Upgrade existing MCP and workflow skill integration, preferring project scope.", &["--scope global|project  Override detected scope"])),
         "profile refresh" => Some(("makevn [--repo PATH] profile refresh", "Refresh detected repository profile information.", &[])),
@@ -11,7 +11,7 @@ pub(super) fn command_help(
         "crap install-analyzer" => Some(("makevn [--repo PATH] crap install-analyzer", "Download and verify the pinned crap4java release.", &[])),
         "execution-cleanup" => Some(("makevn execution-cleanup [--retention-days DAYS] [--dry-run]", "Remove expired execution records and owned logs. Outputs JSON counts and candidate paths.", &["--retention-days DAYS  Retention period (MAKEVN_RETENTION_DAYS or 3 days)", "--dry-run  List candidates without deleting files"])),
         "help" => Some(("makevn help", "Print the full makevn help.", &[])),
-        "agent" => Some(("makevn agent <install|status> <opencode|codex> [--scope global|project] | makevn agent upgrade [--scope global|project]", "Register MCP and five workflow skills, upgrade the existing integration (project before global), or inspect registration without changes. Installation does not prove a running client loaded a skill.", &["--scope global|project  Select configuration and skills scope; status requires it."])),
+        "agent" => Some(("makevn agent <install|status> <opencode|codex> [--scope global|project] | makevn agent upgrade [--scope global|project]", "Register MCP and six workflow skills, upgrade the existing integration (project before global), or inspect registration without changes. Installation does not prove a running client loaded a skill.", &["--scope global|project  Select configuration and skills scope; status requires it."])),
         "doctor" => Some(("makevn [--repo PATH] doctor [--compact] [--reset-config]", "Inspect repository setup and makevn configuration.", &["--compact  Print brief, noninteractive setup advice", "--reset-config  Back up settings and ask setup questions again (interactive CLI only)"])),
         "init" => Some(("makevn [--repo PATH] init [--dry-run] [--force]", "Initialize .makevn configuration for the repository.", &["--dry-run  Show what would change without writing files", "--force    Refresh existing generated files"])),
         "uninstall" => Some(("makevn [--repo PATH] uninstall [--dry-run]", "Remove makevn local repository state.", &["--dry-run  Show what would be removed"])),

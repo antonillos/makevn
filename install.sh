@@ -87,7 +87,7 @@ cp -R "${SCRIPT_DIR}/libexec/makevn/crap" "${LIBEXEC_DIR}/crap"
 cp -R "${SCRIPT_DIR}/libexec/makevn/docker" "${LIBEXEC_DIR}/docker"
 cp -R "${SCRIPT_DIR}/libexec/makevn/jdk" "${LIBEXEC_DIR}/jdk"
 cp -R "${SCRIPT_DIR}/libexec/makevn/compat" "${LIBEXEC_DIR}/compat"
-for skill in makevn makevn-test makevn-docker makevn-karate makevn-quality; do
+for skill in makevn makevn-test makevn-docker makevn-karate makevn-quality makevn-product-test; do
   destination="${SHARE_DIR}/skills/${skill}"
   mkdir -p "${destination}"
   cp -R "${SCRIPT_DIR}/skills/${skill}/." "${destination}/"

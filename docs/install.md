@@ -109,7 +109,7 @@ By default this installs into `~/.local`:
 - `~/.local/bin/makevn-mcp`
 - `~/.local/libexec/makevn/`
 - `~/.local/share/makevn/`
-- `~/.local/share/makevn/skills/{makevn,makevn-test,makevn-docker,makevn-karate,makevn-quality}/`
+- `~/.local/share/makevn/skills/{makevn,makevn-test,makevn-docker,makevn-karate,makevn-quality,makevn-product-test}/`
 
 If `~/.local/bin` is not in your `PATH`, add it first.
 
@@ -154,7 +154,7 @@ For the current target behavior and packaging assumptions, see:
 ## Agent skills and workflows
 
 See the [workflow map](workflow-guidance.md) for what MakeVN does, workflow selection,
-CLI/MCP equivalents and evidence. Product installation ships five portable skills;
+CLI/MCP equivalents and evidence. Product installation ships six portable skills;
 register MCP and skills with `makevn agent install opencode --scope global` or
 `makevn agent install codex --scope global`. Run `makevn agent upgrade` after
 upgrading MakeVN, reload the client and check discovery separately from loading. See the

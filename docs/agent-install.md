@@ -95,7 +95,7 @@ command -v makevn-mcp
 
 ## OpenCode
 
-Register MCP and all five skills:
+Register MCP and all six skills:
 
 ```bash
 makevn agent install opencode --scope global
@@ -210,7 +210,7 @@ When using MCP tools directly, call the `makevn_doctor` tool first.
 ## Skill registration contract
 
 `makevn agent install <opencode|codex> [--scope global|project]` registers MCP and
-`makevn`, `makevn-test`, `makevn-docker`, `makevn-karate`, `makevn-quality` together.
+`makevn`, `makevn-test`, `makevn-docker`, `makevn-karate`, `makevn-quality`, `makevn-product-test` together.
 Product installation distributes resources but does not edit client configuration.
 Run `makevn agent upgrade` after a product upgrade. `makevn uninstall` removes repository
 integration only; it does not unregister skills or uninstall the product.
@@ -253,7 +253,7 @@ Status prints distributed-resource and destination paths, skill registration
 (absent/current/outdated/conflict), and MCP configuration status. A completed
 status command is a diagnostic, not proof of healthy configuration or client loading.
 After setup restart/reload the client, inspect its skills catalog and explicitly
-load all five skills. Then evaluate representative workflow requests using the
+load all six skills. Then evaluate representative workflow requests using the
 [client validation checklist](agent-skills-validation.md). A model can choose not
 to load an available skill; installation cannot guarantee implicit selection.
 

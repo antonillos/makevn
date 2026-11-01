@@ -881,10 +881,13 @@ test_installer() {
   assert_file_exists "${prefix}/libexec/makevn/crap/jacoco_html.py"
   assert_file_exists "${prefix}/libexec/makevn/compat/verify_changes.sh"
   assert_not_exists "${prefix}/share/makevn/makevn.mk"
-  for skill in makevn makevn-test makevn-docker makevn-karate makevn-quality; do
+  for skill in makevn makevn-test makevn-docker makevn-karate makevn-quality makevn-product-test; do
     assert_file_exists "${prefix}/share/makevn/skills/${skill}/SKILL.md"
+  done
+  for skill in makevn makevn-test makevn-docker makevn-karate makevn-quality; do
     assert_file_exists "${prefix}/share/makevn/skills/${skill}/references/workflows.md"
   done
+  assert_file_exists "${prefix}/share/makevn/skills/makevn-product-test/references/report.md"
   "${prefix}/bin/makevn" --help >/dev/null
 }
 
@@ -904,7 +907,7 @@ test_runtime_archive_includes_crap_reporter() {
     || fail "runtime archive should include CRAP reporter"
   tar -tzf "${archive}" | grep -Fx 'makevn-0.0.0-smoke/libexec/makevn/crap/jacoco_html.py' >/dev/null \
     || fail "runtime archive should include the JaCoCo HTML adapter"
-  for skill in makevn makevn-test makevn-docker makevn-karate makevn-quality; do
+  for skill in makevn makevn-test makevn-docker makevn-karate makevn-quality makevn-product-test; do
     tar -tzf "${archive}" | grep -Fx "makevn-0.0.0-smoke/share/makevn/skills/${skill}/SKILL.md" >/dev/null \
       || fail "runtime archive should include ${skill}"
   done

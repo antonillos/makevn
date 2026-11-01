@@ -6,7 +6,7 @@ import tempfile
 import unittest
 
 ROOT = Path(__file__).resolve().parents[2]
-NAMES = ('makevn', 'makevn-test', 'makevn-docker', 'makevn-karate', 'makevn-quality')
+NAMES = ('makevn', 'makevn-test', 'makevn-docker', 'makevn-karate', 'makevn-quality', 'makevn-product-test')
 
 
 class SkillBundleTest(unittest.TestCase):
