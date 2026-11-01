@@ -212,7 +212,8 @@ fn tail_command_help_covers_all_interactive_commands() {
         let (usage, description, options) = tail_command_help(command, "description").unwrap();
         assert!(usage.contains(command));
         assert_eq!(description, "description");
-        assert_eq!(options.len(), 1);
+        assert_eq!(options.len(), 2);
+        assert!(options.iter().any(|option| option.starts_with("--compose-file")));
     }
     assert!(tail_command_help("verify", "description").is_none());
     for command in ["docker-reset", "karate-docker-reset"] {
@@ -2013,7 +2014,9 @@ fn maven_usage_lookup_keeps_all_supported_commands_and_options() {
             super::maven_command_help(command, "description", false).unwrap();
         assert!(usage.contains(&format!(" {command} [--tail]")));
         assert_eq!(description, "description");
-        assert_eq!(options.len(), 3);
+        let supports_compose = matches!(command, "verify" | "verify-it" | "verify-it-coverage");
+        assert_eq!(options.len(), if supports_compose { 4 } else { 3 });
+        assert_eq!(options.iter().any(|option| option.starts_with("--compose-file")), supports_compose);
         assert_eq!(
             super::maven_command_help(command, "description", true)
                 .unwrap()
