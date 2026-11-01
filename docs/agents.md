@@ -77,6 +77,10 @@ fresh selected-test evidence. Report focused success with scope; it does not
 replace full CI/coverage/CRAP. Follow the test skill for exhaustive planning outcomes
 and the quality skill for valid `not applicable` metrics.
 
+Doctor requests an HTTP health URL when it detects an HTTP server dependency
+or a health endpoint. A console `main` or executable JAR alone does not require
+an HTTP endpoint; runnable detection remains available for application commands.
+
 ## Developing MakeVN itself
 
 This Rust/Bash repository is the product implementation, not a Maven adoption

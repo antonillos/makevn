@@ -8,9 +8,47 @@ doctor_health_pty() {
 doctor_health_fixture() {
   local repo="$1"
   mkdir -p "${repo}/src/main/java/com/example"
-  printf '<project><modelVersion>4.0.0</modelVersion><groupId>com.example</groupId><artifactId>app</artifactId><version>1</version></project>\n' >"${repo}/pom.xml"
+  printf '<project><modelVersion>4.0.0</modelVersion><groupId>com.example</groupId><artifactId>app</artifactId><version>1</version><dependencies><dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-web</artifactId></dependency></dependencies></project>\n' >"${repo}/pom.xml"
   printf 'public class Application { public static void main(String[] args) {} }\n' >"${repo}/src/main/java/com/example/Application.java"
   "${CLI}" --repo "${repo}" init >/dev/null
+}
+
+test_doctor_http_server_signals() (
+  source "${ROOT_DIR}/libexec/makevn/common.sh"
+  local repo="${TMP_ROOT}/doctor-http-signals"
+  local artifact
+  mkdir -p "${repo}"
+  for artifact in spring-boot-starter-web spring-boot-starter-webflux spring-boot-starter-actuator quarkus-rest quarkus-rest-jackson quarkus-resteasy-reactive micronaut-http-server-netty; do
+    printf '<project><dependencies><dependency><artifactId>%s</artifactId></dependency></dependencies></project>\n' "${artifact}" >"${repo}/pom.xml"
+    makevn_detect_app_http_signal "${repo}" || fail "HTTP server dependency not recognized: ${artifact}"
+  done
+  for artifact in spring-boot-starter-batch quarkus-rest-client quarkus-rest-client-jackson micronaut-http-client; do
+    printf '<project><dependencies><dependency><artifactId>%s</artifactId></dependency></dependencies></project>\n' "${artifact}" >"${repo}/pom.xml"
+    ! makevn_detect_app_http_signal "${repo}" || fail "non-server dependency requires HTTP health: ${artifact}"
+  done
+  ! makevn_detect_app_http_signal "" || fail "missing Maven root must not require HTTP health"
+)
+
+test_doctor_console_main_does_not_require_http_health() {
+  local repo="${TMP_ROOT}/doctor-console-main"
+  local output="${TMP_ROOT}/doctor-console-main.json"
+  mkdir -p "${repo}/src/main/java"
+  printf '<project><modelVersion>4.0.0</modelVersion><groupId>example</groupId><artifactId>library</artifactId><version>1</version></project>\n' >"${repo}/pom.xml"
+  printf 'public class Console { public static void main(String[] args) { System.out.println("diagnostics"); } }\n' >"${repo}/src/main/java/Console.java"
+  "${CLI}" --repo "${repo}" init >/dev/null
+  bash "${ROOT_DIR}/libexec/makevn/backend.sh" doctor --repo "${repo}" --format json >"${output}"
+  python3 - "${output}" <<'PYTEST'
+import json
+import sys
+with open(sys.argv[1]) as stream:
+    data = json.load(stream)
+assert data["repository_analysis"]["application_runnable"] == "yes", data
+assert "app_health_url" not in {item["id"] for item in data["interactive_setup"]["questions"]}, data
+assert "HTTP readiness" not in data["suggested_next_step"]["note"], data
+PYTEST
+  doctor_health_pty "${repo}" "${output}" '[]'
+  assert_not_contains "${output}" 'Health URL ['
+  assert_not_contains "${repo}/.makevn/config" 'MAKEVN_APP_HEALTH_URL='
 }
 
 test_doctor_does_not_invent_health_check() {
@@ -196,6 +234,8 @@ if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
   fail() { printf 'FAIL: %s\n' "$*" >&2; exit 1; }
   assert_contains() { grep -Fq -- "$2" "$1" || fail "missing $2 in $1"; }
   assert_not_contains() { ! grep -Fq -- "$2" "$1" || fail "unexpected $2 in $1"; }
+  test_doctor_http_server_signals
+  test_doctor_console_main_does_not_require_http_health
   test_doctor_does_not_invent_health_check
   test_doctor_detects_actuator_health_check
   test_doctor_missing_health_prompt

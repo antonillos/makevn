@@ -97,14 +97,14 @@ makevn_doctor_progress() {
 # Updates the caller-local detected_app_health_url without affecting other prompts.
 makevn_resolve_doctor_app_health_url() {
   local repo_root="$1"
-  local app_runnable="$2"
+  local app_http="$2"
 
   makevn_load_config "${repo_root}"
   if [[ -n "${MAKEVN_APP_HEALTH_URL:-}" ]]; then
     detected_app_health_url="${MAKEVN_APP_HEALTH_URL} (from config)"
     return 0
   fi
-  [[ "${app_runnable}" == "yes" ]] || return 0
+  [[ "${app_http}" == "yes" ]] || return 0
   [[ -f "$(makevn_config_path "${repo_root}")" && -t 0 && -t 2 && "${MAKEVN_COMPACT_OUTPUT:-}" != "1" ]] || return 0
   makevn_prompt_doctor_app_health_url "${repo_root}"
 }
@@ -197,6 +197,7 @@ makevn_collect_doctor_snapshot() {
   local code_java_version=""
   local code_tool_versions_java_version=""
   local app_runnable="no"
+  local app_http="no"
   local code_java_home=""
   local code_exact_java_home=""
   local code_java_home_recommendation=""
@@ -474,7 +475,10 @@ makevn_collect_doctor_snapshot() {
   fi
   [[ -n "${MAKEVN_RUN_CMD:-}" ]] && run_configured="yes"
 
-  makevn_resolve_doctor_app_health_url "${repo_root}" "${app_runnable}"
+  if [[ -n "${detected_app_health_url}" ]] || makevn_detect_app_http_signal "${maven_base_path}"; then
+    app_http="yes"
+  fi
+  makevn_resolve_doctor_app_health_url "${repo_root}" "${app_http}"
   makevn_doctor_karate_profiles "${repo_root}" "${app_runnable}"
 
   if [[ -n "${MAKEVN_MIN_COVERAGE_THRESHOLD:-}" ]]; then
@@ -509,6 +513,7 @@ makevn_collect_doctor_snapshot() {
   MAKEVN_DOCTOR_CODE_TOOL_VERSIONS="${code_tool_versions:-unresolved}"
   MAKEVN_DOCTOR_CODE_JAVA_VERSION="${code_java_version:-unresolved}"
   MAKEVN_DOCTOR_APP_RUNNABLE="${app_runnable:-no}"
+  MAKEVN_DOCTOR_APP_HTTP="${app_http}"
   MAKEVN_DOCTOR_KARATE_TOOL_VERSIONS="${karate_tool_versions:-unresolved}"
   MAKEVN_DOCTOR_DETECTED_WORKFLOW_FILES="${detected_workflow_files:-none}"
   MAKEVN_DOCTOR_DETECTED_MAVEN_CLI_FLAGS="${detected_maven_cli_flags:-none}"
@@ -582,7 +587,7 @@ makevn_collect_doctor_snapshot() {
       MAKEVN_DOCTOR_SUGGESTED_OPTIONAL=""
       ;;
   esac
-  if [[ "${app_runnable}" == "yes" && -z "${detected_app_health_url}" ]]; then
+  if [[ "${app_http}" == "yes" && -z "${detected_app_health_url}" ]]; then
     MAKEVN_DOCTOR_SUGGESTED_NOTE="Application HTTP readiness is not configured. Configure MAKEVN_APP_HEALTH_URL by answering app_health_url through MCP doctor_configure or interactive makevn doctor after initialization. karate-all requires this URL."
   fi
   MAKEVN_DOCTOR_BIND_MOUNTS='{"status":"unavailable","checks":[]}'
@@ -625,7 +630,7 @@ makevn_doctor_interactive_setup_status() {
   case "${MAKEVN_DOCTOR_COMPOSE_FILE} ${MAKEVN_DOCTOR_E2E_COMPOSE_FILE}" in
     *ambiguous*) MAKEVN_DOCTOR_INTERACTIVE_REQUIRED=true ;;
   esac
-  if [[ "${MAKEVN_DOCTOR_APP_RUNNABLE}" == yes && -z "${MAKEVN_APP_HEALTH_URL:-}" ]]; then
+  if [[ "${MAKEVN_DOCTOR_APP_HTTP}" == yes && -z "${MAKEVN_APP_HEALTH_URL:-}" ]]; then
     MAKEVN_DOCTOR_HEALTH_PENDING=true
     MAKEVN_DOCTOR_INTERACTIVE_REQUIRED=true
   fi

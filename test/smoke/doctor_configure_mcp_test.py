@@ -35,7 +35,8 @@ with tempfile.TemporaryDirectory(prefix="makevn-doctor-chat-") as directory:
     (repo / "pom.xml").write_text('<project><modelVersion>4.0.0</modelVersion><groupId>x</groupId>'
                                   '<artifactId>app</artifactId><version>1</version><dependencies><dependency>'
                                   '<groupId>org.testcontainers</groupId><artifactId>testcontainers</artifactId>'
-                                  '<version>1</version></dependency></dependencies></project>')
+                                  '<version>1</version></dependency><dependency><groupId>org.springframework.boot</groupId>'
+                                  '<artifactId>spring-boot-starter-web</artifactId></dependency></dependencies></project>')
     source = repo / "src/main/java/Application.java"
     source.parent.mkdir(parents=True)
     source.write_text("public class Application { public static void main(String[] args) {} }")
@@ -152,5 +153,22 @@ with tempfile.TemporaryDirectory(prefix="makevn-doctor-jdk-") as directory:
         assert missing["exitCode"] == 0, missing
         assert "no usable JDK" in missing["nextSuggestion"], missing
         assert "No usable JDK" in missing["untrustedData"]["output"], missing
+
+with tempfile.TemporaryDirectory(prefix="makevn-doctor-console-") as directory:
+    repo = Path(directory)
+    (repo / "pom.xml").write_text('<project><modelVersion>4.0.0</modelVersion><groupId>x</groupId>'
+                                  '<artifactId>library</artifactId><version>1</version></project>')
+    source = repo / "src/main/java/Console.java"
+    source.parent.mkdir(parents=True)
+    source.write_text('public class Console { public static void main(String[] args) { System.out.println("info"); } }')
+    call(repo, "init")
+    doctor = call(repo, "doctor")
+    assert "app_health_url" not in questions(doctor), doctor
+    assert "HTTP readiness" not in doctor["untrustedData"]["output"], doctor
+    config = repo / ".makevn/config"
+    config.write_text(config.read_text() + '\nMAKEVN_APP_HEALTH_URL="http://localhost:18080/custom"\n')
+    configured = call(repo, "doctor")
+    assert "app_health_url" not in questions(configured), configured
+    assert 'MAKEVN_APP_HEALTH_URL="http://localhost:18080/custom"' in config.read_text()
 
 print("Doctor chat configuration MCP tests passed")
