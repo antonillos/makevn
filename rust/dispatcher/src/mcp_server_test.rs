@@ -955,9 +955,19 @@ fn focused_changes_option_is_exposed_in_both_tools() {
     for name in ["verify_changes", "verify_changes_preview"] {
         let spec = super::TOOL_SPECS.iter().find(|spec| spec.name == name).unwrap();
         assert!(spec.options.iter().any(|option| option.name == "focused"));
+        assert!(spec.options.iter().any(|option| option.name == "record-test-impact"));
         assert!(spec.description.contains("focused"));
         assert!(spec.description.contains("gate"));
     }
+}
+
+#[test]
+fn test_impact_capture_flag_is_forwarded_without_changing_focused_mode() {
+    let mut args = Vec::new();
+    super::push_tool_option(&mut args, "record-test-impact", &json!(true)).unwrap();
+    assert_eq!(args, ["--record-test-impact"]);
+    assert!(super::validate_workflow_step(&json!({"tool":"verify_changes", "arguments":{
+        "focused":true, "record-test-impact":true}})).is_ok());
 }
 
 #[test]

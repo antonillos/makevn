@@ -325,7 +325,7 @@ makevn_collect_verify_changes_scope() {
 
   MAKEVN_VERIFY_CHANGES_TEST_LIST=''
   if [[ -n "${MAKEVN_VERIFY_CHANGES_TEST_FILES}" ]]; then
-    MAKEVN_VERIFY_CHANGES_TEST_LIST="$(printf '%s\n' "${MAKEVN_VERIFY_CHANGES_TEST_FILES}" | sed "s|^${strip_prefix}||" | sed 's|^.*/src/test/java/||' | sed 's|\.java$||' | tr '/' '.' | paste -sd, -)"
+    MAKEVN_VERIFY_CHANGES_TEST_LIST="$(printf '%s\n' "${MAKEVN_VERIFY_CHANGES_TEST_FILES}" | sed "s|^${strip_prefix}||" | sed 's|^.*src/test/java/||' | sed 's|\.java$||' | tr '/' '.' | paste -sd, -)"
   fi
 }
 
@@ -558,6 +558,10 @@ cmd_verify_changes() {
   # Always re-plan: a preview cache cannot detect content-only local edits.
   makevn_collect_verify_changes_scope "${repo_root}"
   makevn_print_verify_changes_preflight "verify-changes"
+  if [[ "${MAKEVN_TEST_IMPACT_CAPTURE}" == true ]]; then
+    [[ "${MAKEVN_VERIFY_CHANGES_FOCUSED_PLAN}" == $'.\t*' ]] || makevn_die "Test impact capture requires a complete single-module owner suite"
+    rm -f "$(makevn_state_dir "${repo_root}")/test-impact/map.json"
+  fi
 
   if [[ -z "${MAKEVN_VERIFY_CHANGES_MODULE_SELECTION}" && -z "${MAKEVN_VERIFY_CHANGES_TEST_FILES}" ]]; then
     makevn_clear_verify_changes_plan "${repo_root}"

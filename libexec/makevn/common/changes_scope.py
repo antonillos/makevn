@@ -227,7 +227,12 @@ def focused_plan(repo, base, reference, paths):
     for owner in sorted(suites | tests.keys()):
         if not (base / owner / "pom.xml").is_file():
             raise ExhaustiveScopeRequired("No owner POM for " + owner + "; use --exhaustive")
-        records.append(owner + "\t" + ("*" if owner in suites else ",".join(sorted(tests[owner]))))
+        chosen = None
+        if owner in suites and os.environ.get('MAKEVN_TEST_IMPACT_CAPTURE') != 'true':
+            from test_impact import narrow
+            chosen = narrow(repo, base, owner, paths, tests.get(owner, set()))
+        records.append(owner + "\t" + (",".join(sorted(chosen)) if chosen else
+                       "*" if owner in suites else ",".join(sorted(tests[owner]))))
     return "\n".join(records)
 
 

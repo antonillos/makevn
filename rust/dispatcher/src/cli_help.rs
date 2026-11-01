@@ -30,8 +30,8 @@ pub(super) fn command_help(
         "verify-it" => maven_command_help("verify-it", "Run integration-test-only verification.", false),
         "verify-it-coverage" => maven_command_help("verify-it-coverage", "Run integration-test-only verification with coverage.", false),
         "verify" => maven_command_help("verify", "Run full combined verification.", false),
-        "verify-changes-preview" => Some(("makevn [--repo PATH] verify-changes-preview [--focused|--exhaustive]", "Preview changed-code scope without Maven; focused by default. For user-requested faster local feedback, explain --focused limitations and use the same mode in preview and execution. A large preparation reactor does not mean its test suites run.", &["--focused  Preview focused owner suites and selected tests (default)", "--exhaustive  Preview exhaustive changed-code verification"])),
-        "verify-changes" => maven_command_help("verify-changes", "Verify changed-code scope; focused by default, --exhaustive is explicit. --focused prepares dependencies without UT/IT then verifies production owner suites and selected changed tests without -am; not a full integration/coverage gate. Use the same mode as preview and report its scope.", false),
+        "verify-changes-preview" => Some(("makevn [--repo PATH] verify-changes-preview [--focused|--exhaustive] [--record-test-impact]", "Preview changed-code scope without Maven; focused by default. For user-requested faster local feedback, explain --focused limitations and use the same mode in preview and execution. A large preparation reactor does not mean its test suites run.", &["--focused  Preview focused owner suites and selected tests (default)", "--exhaustive  Preview exhaustive changed-code verification", "--record-test-impact  Preview full-suite and isolated per-test capture (expensive, JDK 17+, single module)"])),
+        "verify-changes" => maven_command_help("verify-changes", "Verify changed-code scope; focused by default, --exhaustive is explicit. --focused prepares dependencies without UT/IT then verifies validated evidence-selected tests or complete owner suites with a fallback reason, plus changed tests without -am; not a full integration/coverage gate. Use the same mode as preview and report its scope.", false),
         "coverage" => Some(("makevn [--repo PATH] coverage [--threshold PCT]", "Check the latest aggregate coverage report.", &["--threshold  Required coverage percentage"])),
         "coverage-changes" => Some(("makevn [--repo PATH] coverage-changes [--threshold PCT] [--overall-threshold PCT] [--verbose]", "Check incremental and per-module coverage.", &["--threshold          Per-module coverage percentage", "--overall-threshold  Overall coverage percentage", "--verbose            Print detailed coverage output"])),
         "crap" => Some(("makevn [--repo PATH] crap [install-analyzer] [--jacoco-xml PATH] [--threshold SCORE] [--max-warnings COUNT]", "Calculate Java CRAP metrics from existing JaCoCo XML coverage.", &["install-analyzer  Download and verify the pinned crap4java release", "--jacoco-xml      Use a specific existing JaCoCo XML report", "--threshold       CRAP score warning threshold (default: 8)", "--max-warnings    Fail when the warning count exceeds this ratchet"])),
@@ -78,7 +78,7 @@ pub(super) fn maven_command_help(
         ("verify-it", "makevn [--repo PATH] [--compact] verify-it [--tail] [-- EXTRA_MAVEN_ARGS...]"),
         ("verify-it-coverage", "makevn [--repo PATH] [--compact] verify-it-coverage [--tail] [-- EXTRA_MAVEN_ARGS...]"),
         ("verify", "makevn [--repo PATH] [--compact] verify [--tail] [-- EXTRA_MAVEN_ARGS...]"),
-        ("verify-changes", "makevn [--repo PATH] [--compact] verify-changes [--tail] [--focused|--exhaustive] [-- EXTRA_MAVEN_ARGS...]"),
+        ("verify-changes", "makevn [--repo PATH] [--compact] verify-changes [--tail] [--focused|--exhaustive] [--record-test-impact] [-- EXTRA_MAVEN_ARGS...]"),
         ("pr-verify", "makevn [--repo PATH] [--compact] pr-verify [--tail] [-- EXTRA_MAVEN_ARGS...]"),
     ];
     let usage = usages.iter().find(|(name, _)| *name == command)?.1;
@@ -322,6 +322,7 @@ fn render_command(command: &str, color: bool) -> Option<String> {
         flags.extend([
             "--focused  Verify owner suites and selected tests (default)",
             "--exhaustive  Run exhaustive changed-code verification",
+            "--record-test-impact  Capture an expensive reusable baseline: full suite plus isolated verification per test class (JDK 17+, single module)",
         ]);
     }
     let children = subcommands(command);

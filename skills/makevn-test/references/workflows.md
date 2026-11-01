@@ -50,7 +50,7 @@ execution; do not preview focused and execute exhaustive mode.
   UT/IT execution disabled, while retaining test compilation/test jars. It updates
   local Maven artifacts. Its `-am install` reactor may still list 34 modules:
   that is not evidence that all their suites ran.
-- Verification runs without `-am`: full production/POM-consumer owner suites,
+- Verification runs without `-am`: validated evidence-selected tests when available, otherwise full production/POM-consumer owner suites,
   selected changed test classes in other owners. A categories change plus a boot
   IT therefore does not require the complete boot suite in this mode.
 - UT and IT selectors are separated; selected tests must have fresh non-skipped
@@ -114,3 +114,17 @@ never infer owners from company/module/schema names or ignore fixtures.
 Impact state is internal only: do not create or maintain root impact overrides.
 Keep required external checks separate; automatic Maven scope does not prove them.
 See Focused impact (see the selection rules above).
+
+### Reusable test impact within one module
+
+Use the selected classes and fallback reason in the preview. Evidence is captured
+only with explicit `--record-test-impact` (MCP `"record-test-impact": true`), passed
+to both preview and verification. This expensive baseline runs a complete suite
+and then isolates every test class, including forks. Do not substitute ordinary
+`test --name` results or aggregate JaCoCo for that map. Narrowing supports standard single-module Java layouts and JDK 17+. Compatible
+method-body changes can reuse a map; new/deleted classes, changed declarations,
+imports/initializers, helpers, configuration, resources, dependencies, generated
+sources and JDK changes retain complete suites. A fresh map includes isolated JVM
+class-load evidence and conservative transitive source consumers; recognized
+dynamic consumers expand selection. Dynamic behavior in the changed class rejects
+narrowing. Maps are disposable managed state; never write them by hand.

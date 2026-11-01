@@ -299,8 +299,11 @@ The preview lists a dependency-preparation phase and the exact per-owner test
 scope. Preparation uses `install -am` with UT/IT execution disabled but test
 compilation retained (test-jar dependencies can be necessary); it updates local
 Maven artifacts so the following phases use this checkout's snapshots.
-Verification then runs **without `-am`**: full suites for production/POM consumer
-owners, selected changed test classes for test-only owners. Test helpers and deleted
+Verification then runs **without `-am`**: validated evidence-selected tests when
+available, otherwise full production/POM consumer owner suites with a fallback
+reason; selected changed test classes for test-only owners. See
+[precise test selection](precise-test-selection.md) for explicit baseline capture,
+compatibility checks, consumer expansion and supported single-module layouts. Test helpers and deleted
 tests expand to the complete owner suite. Unknown/root impact rejects focused
 execution; choose `--exhaustive` to run all selected owner/dependency suites.
 Default invocation is focused. Explicit CLI --exhaustive or MCP focused:false

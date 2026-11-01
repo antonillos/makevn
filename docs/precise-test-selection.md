@@ -1,79 +1,78 @@
 # Precise test selection within a Maven module
 
-Status: proposed; no runtime behavior is implemented by this document.
+Focused verification can reuse an isolated test-to-class map for standard
+single-module Java projects on JDK 17+. Missing or incompatible evidence retains
+the complete owner suite and prints the reason. Reactors and generated Java
+sources currently retain complete owner suites; cross-module narrowing is not
+implemented.
 
-## Problem
+## Capture once, reuse for compatible method-body edits
 
-A production change currently selects the complete owner module suite. In Commons
-Lang, changing `BitField.isSet(int)` therefore selects 98,762 test cases. Named
-tests provide quick feedback but do not publish the focused evidence used by
-coverage-changes and crap-changes.
+```bash
+makevn verify-changes-preview --record-test-impact
+makevn verify-changes --record-test-impact
+# After a compatible production method-body edit:
+makevn verify-changes-preview
+makevn verify-changes coverage-changes crap-changes
+```
 
-## Proposed behavior
+For MCP pass `"record-test-impact": true` in both preview and verification.
+The flag is opt-in because capture first runs the complete owner suite, then
+runs one isolated verification per discovered test class. This is substantially
+more expensive than ordinary focused verification. It needs an actual changed
+production/test input selecting the complete root owner suite. A clean checkout
+with no changed verification inputs does not seed evidence.
 
-Retain focused preview and execution as the public workflow. Narrow an owner
-suite only when MakeVN has a complete, validated test-to-production evidence map.
-Select tests covering changed classes and their known transitive consumers.
-Always include changed tests. Preserve separate Surefire and Failsafe selectors,
-dependency preparation, fresh report checks and coverage snapshot publication.
+Capture requires a successful complete suite with fresh Surefire/Failsafe XML.
+An entirely skipped test class, missing identity, failed test, interrupted run or
+changing source/bytecode prevents publication. Parameterized and nested test
+cases belong to their top-level class. Conventional plugin naming is enforced;
+custom ownership falls back rather than guessing selectors.
 
-For a BitField change, the expected selected tests include BitFieldTest,
-BitFieldLongTest and every other test whose validated evidence reaches BitField
-or a consumer. Never assume that these two named classes are sufficient.
+## Evidence and consumer expansion
 
-## Evidence contract
+The map records the superset of production classes **loaded** in each isolated
+test execution and its child JVMs. JDK unified class-load logging provides this
+without replacing the project's JaCoCo agent or adding a test framework listener.
+A trace must contain the selected test class. Loading is more conservative than
+method execution: merely loading a class can retain a test. Aggregate JaCoCo
+cannot identify test classes and is never accepted as a substitute for this map.
 
-Introduce versioned, disposable internal evidence, produced by an instrumented
-complete owner suite. Record individual test class identities and plugin ownership,
-per-test-class execution coverage, a production dependency graph and the complete
-test inventory. Aggregate JaCoCo XML alone cannot establish test identities.
+Java's compiler parser derives source declaration fingerprints and conservative
+identifier references without executing repository code. Consumer expansion uses
+all matching simple type names, retaining collisions rather than resolving them
+optimistically. Transitive consumers and explicitly changed tests are included.
+Sources using recognized reflection/service-loading APIs are potential consumers;
+their callers/tests are retained even without a direct static edge. Dynamic
+behavior in a changed production class rejects narrowing.
 
-Record the baseline Git revision, production and test source fingerprints, compiled
-class hashes, reactor model, effective test configuration, dependencies, JDK and
-instrumentation versions. Execution must validate compatibility with this baseline;
-an unrecognized difference must invalidate narrowing. Do not trust a user-created
-map merely because it has the right filename or schema version.
+The baseline stores the Git revision, source/config/resource inventory, compiled
+class hashes, resolved dependency JAR hashes, cached Maven model inventory and JDK
+identity. Environment fingerprints are hashed without persisting secret values.
+Only compatible method-body changes and explicitly selected changed test classes
+can reuse a map. Java declaration/import/initializer changes, new/deleted classes,
+test helpers, generated sources, resources, POMs, dependency/configuration/JDK
+changes, missing bytecode or an empty match use the complete suite. Custom Maven
+settings/repository overrides are currently unsupported for narrowing.
 
-Use isolated execution data per test class; concurrent or forked executions must
-not mix identities. Nested and parameterized cases belong to their owning test
-class. A failed, interrupted, empty or skipped baseline cannot establish completeness.
-Cross-module consumers require explicit validated graph edges and test inventories;
-unresolved edges invalidate narrowing for affected owners.
+Evidence lives under `.makevn/test-impact`. Atomic publication and integrity
+checks reject incomplete or altered artifacts. This is disposable local build
+state, not a security boundary against a user able to rewrite the state and its
+checksums. Do not hand-maintain it. A new capture retires the old map before tests.
+Preparation revalidates bytecode before selected tests execute; incompatible
+prepared output stops and requires a new preview, never silently widens execution.
 
-Before narrowing, classify the diff. New/deleted classes, changed public contracts,
-resources, POMs, test helpers, generated sources and changed test configuration use
-complete owner suites until their impact can be proven. New dependency edges and
-dynamic behavior require conservative expansion; reflection, service loading and
-unresolved generated code must not silently disappear from the consumer graph.
+## Coverage and CRAP
 
-## Conservative fallback
+The narrowed run still prepares dependencies without UT/IT, verifies selected
+classes without `-am`, separates Surefire and Failsafe selectors and requires
+fresh non-skipped reports. It publishes the normal fresh UT/IT and changed-class
+bytecode snapshot. Coverage and CRAP reuse that snapshot, never baseline data.
+Full verification and global coverage/CRAP requirements remain separate gates.
 
-Missing, stale, partial, incompatible or ambiguous evidence selects the complete
-owner suite. The preview states the owner and a specific reason, such as missing
-per-test coverage, changed configuration, or unresolved dynamic consumer. A valid
-map with no matching test also falls back; it does not produce an empty success.
-Do not silently widen to other modules or change focused versus exhaustive mode.
-
-The preview lists selected test classes, evidence provenance and fallback reasons.
-Execution recomputes the plan and revalidates evidence. A narrowed successful run
-publishes a fresh focused UT/IT and changed-class bytecode snapshot for both metric
-commands. Global coverage and full CI remain separate gates.
-
-## Implementation and acceptance
-
-1. Add evidence capture and validation independently of selection. Establish the
-   completeness rules with Surefire/Failsafe, forks, parameterized tests and failed
-   or interrupted captures. Do not narrow tests during this stage.
-2. Add dependency and consumer expansion with explicit unknown-edge diagnostics.
-3. Add planner narrowing only when all prerequisites are validated. Cover direct
-   tests, indirect consumers, changed tests and every invalidation/fallback case.
-4. Repeat the Commons Lang fixture on the same revision and JDK. First establish
-   a successful complete baseline; its current timezone test failures prevent that.
-   Inspect preview, actual fresh test reports, changed-class coverage and CRAP
-   from the same successful focused run. Report exact selected classes and counts.
-5. Update CLI/MCP guidance and the test/quality skills together. Require the PR CI
-   CRAP gate before merge.
-
-No test-count reduction or metric correctness claim is established until the
-fixture scenario passes. Test names and source imports alone are insufficient
-evidence for this feature.
+The Commons Lang BitField scenario cannot seed a valid baseline while its full
+suite has timezone failures. In that state the correct result is an explained
+full-suite fallback. A passing synthetic Maven regression covers direct tests,
+transitive consumers, forks, parameterized cases and an unrelated test excluded
+from a subsequent compatible production change. No reduction is claimed for
+Commons Lang without a successful full baseline.
