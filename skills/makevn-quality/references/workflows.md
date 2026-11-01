@@ -1,3 +1,15 @@
+## Checkstyle
+
+Run `makevn checkstyle` (MCP: `checkstyle`) to validate code style.
+`makevn doctor` reports support in text and JSON output; detected support does
+not mean the checks have passed.
+
+MakeVN uses `MAKEVN_CHECKSTYLE_GOAL` from `.makevn/config` when configured,
+otherwise detects `maven-checkstyle-plugin`, then a supported formatter
+validation plugin. Without a configured goal or supported plugin, the command
+reports that Checkstyle is unavailable. Use `--module MODULE` to select a Maven
+module or `--verbose` to enable console diagnostics.
+
 ## Formatting Failure Recovery For AI Agents
 
 A formatter failure during `test` is a build prerequisite failure, not
