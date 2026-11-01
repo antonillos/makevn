@@ -24,6 +24,8 @@ makevn_changes_mode() {
 makevn_print_focused_changes_plan() {
   local owner tests
   makevn_print_item "mode" "focused (not a full integration or global coverage gate)"
+  makevn_print_item "selection" "module-scoped: production changes select the entire owner module suite, not tests by changed Java class"
+  makevn_print_item "scope note" "in a single-module project, an entire module suite is the entire project module suite"
   makevn_print_item "prepare" "${MAKEVN_VERIFY_CHANGES_MODULE_SELECTION} plus dependencies: install without UT/IT; updates local Maven artifacts"
   while IFS=$'\t' read -r owner tests; do
     [[ -n "${owner}" ]] || continue
