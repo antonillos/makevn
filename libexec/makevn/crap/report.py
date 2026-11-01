@@ -97,7 +97,11 @@ def non_executable_sources(paths, repo_root, state, javap):
             continue
         if not single_top_level_type((repo_root / path).read_text()):
             continue
-        stem = path.split('/src/main/java/', 1)[1][:-5]
+        source_path = path.lstrip('/')
+        if source_path.startswith('src/main/java/'):
+            stem = source_path[len('src/main/java/'):-5]
+        else:
+            stem = source_path.split('/src/main/java/', 1)[1][:-5]
         compiled = Path(manifest['classes']) / (stem + '.class')
         if not compiled.is_file():
             continue
