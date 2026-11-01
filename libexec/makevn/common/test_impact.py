@@ -394,7 +394,8 @@ def narrow(repo, base, owner, paths, changed_tests):
                     raise ValueError('production declaration, import or initializer changed')
                 if state_writes_changed(value['facts'][relative], parsed[relative]):
                     raise ValueError('changed method may write shared Java state; test effects cannot be bounded')
-                if (DYNAMIC | UNSAFE_CHANGE).intersection(parsed[relative]['names']):
+                names = set(value['facts'][relative]['names']) | set(parsed[relative]['names'])
+                if (DYNAMIC | UNSAFE_CHANGE).intersection(names):
                     raise ValueError('changed production class has unresolved dynamic/global-state/I/O behavior')
                 changed.add(parsed[relative]['class'])
         validate_bytecode(base, value, [(repo / path).relative_to(base).as_posix() for path in allowed])

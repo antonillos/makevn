@@ -91,6 +91,15 @@ class TestImpactTests(unittest.TestCase):
                 self.assertIsNone(selected)
                 self.assertIn('dynamic', diagnostic)
 
+    def test_removed_global_effect_in_baseline_retains_complete_suite(self):
+        self.value['facts'][self.source]['names'] = ['System', 'clearProperty']
+        self.value['facts'][self.source]['bodies'] = [{'hash': 'clear property', 'writes': False}]
+        self.write_map()
+        self.facts[self.source]['bodies'] = [{'hash': 'no cleanup', 'writes': False}]
+        selected, diagnostic = self.plan()
+        self.assertIsNone(selected)
+        self.assertIn('global-state', diagnostic)
+
     def test_shared_state_writes_do_not_exclude_tests_of_the_written_class(self):
         self.value['records']['example.OwnerTest'] = ['example.Owner', 'example.Other']
         self.write_map()

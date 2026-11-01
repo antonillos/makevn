@@ -45,7 +45,8 @@ optimistically. Transitive consumers and explicitly changed tests are included.
 Sources using recognized reflection/service-loading APIs are potential consumers;
 their callers/tests are retained even without a direct static edge. Dynamic
 behavior or recognized process-wide state/I/O effects in a changed production
-class reject narrowing; local class-loading evidence cannot bound those effects.
+class, including effects removed since the baseline, reject narrowing; local
+class-loading evidence cannot bound those effects.
 Changed method bodies containing assignments, compound assignments or increment/
 decrement operations also retain the complete suite. Without attribution their
 targets cannot be proven local. Both added and removed writes are checked;
