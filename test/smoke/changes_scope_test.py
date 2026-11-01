@@ -97,13 +97,17 @@ fi
             with self.assertRaises(ValueError):
                 scope.focused_plan(repo, repo, "HEAD", ["src/main/java/Owner.java"])
 
-    def test_single_module_root_sources_use_focused_owner_suite(self):
+    def test_single_module_root_changes_select_the_correct_suite(self):
         with tempfile.TemporaryDirectory() as directory:
             repo = pathlib.Path(directory)
             repo.joinpath("pom.xml").write_text("<project/>")
-            for path in ("src/main/java/Owner.java", "src/test/java/OwnerTest.java",
+            for path in ("src/main/java/Owner.java", "src/main/resources/settings.properties",
                          "src/test/resources/input.csv"):
                 self.assertEqual(scope.focused_plan(repo, repo, "HEAD", [path]), ".\t*")
+            test_path = repo / "src/test/java/OwnerTest.java"
+            test_path.parent.mkdir(parents=True)
+            test_path.touch()
+            self.assertEqual(scope.focused_plan(repo, repo, "HEAD", ["src/test/java/OwnerTest.java"]), ".\tOwnerTest")
             with self.assertRaises(ValueError):
                 scope.focused_plan(repo, repo, "HEAD", ["build.sh"])
 
@@ -115,6 +119,8 @@ fi
             base.joinpath("pom.xml").write_text("<project/>")
             self.assertEqual(scope.focused_plan(repo, base, "HEAD", [
                 "code/src/main/java/Owner.java", "code/src/test/java/OwnerTest.java"]), ".\t*")
+            for path in ("code/src/main/resources/settings.properties", "code/src/test/resources/input.csv"):
+                self.assertEqual(scope.focused_plan(repo, base, "HEAD", [path]), ".\t*")
 
     def test_profile_modules_keep_root_sources_exhaustive(self):
         with tempfile.TemporaryDirectory() as directory:
