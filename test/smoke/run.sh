@@ -371,11 +371,48 @@ assert data['command'] == 'doctor', data
 assert data['repository_analysis']['repo_root'] == repo, data
 assert data['repository_analysis']['repository_support_status'] == 'unsupported', data
 assert data['repository_analysis']['current_makevn_status'] == 'not initialized', data
+assert data['repository_analysis']['checkstyle_available'] == 'no', data
 assert 'make_integration_status' not in data['repository_analysis'], data
 assert data['suggested_next_step']['next'] == '', data
 assert data['suggested_next_step']['optional'] == '', data
 assert data['suggested_next_step']['note'] == 'no automatic recommendation: Maven repository signals were not detected', data
 PY
+}
+
+test_doctor_detects_checkstyle_capability() {
+  local repo="${TMP_ROOT}/doctor-checkstyle"
+  local json_file="${TMP_ROOT}/doctor-checkstyle.json"
+  local output=""
+
+  mkdir -p "${repo}"
+  cat > "${repo}/pom.xml" <<'EOF'
+<project>
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>com.example</groupId>
+  <artifactId>checkstyle-sample</artifactId>
+  <version>1.0.0</version>
+  <build>
+    <plugins>
+      <plugin>
+        <artifactId>maven-checkstyle-plugin</artifactId>
+      </plugin>
+    </plugins>
+  </build>
+</project>
+EOF
+
+  bash "${BACKEND}" doctor --repo "${repo}" --format json > "${json_file}"
+  python3 - "${json_file}" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], 'r', encoding='utf-8') as fh:
+    data = json.load(fh)
+assert data['repository_analysis']['checkstyle_available'] == 'yes', data
+PY
+
+  output="$("${CLI}" --repo "${repo}" doctor --compact)"
+  [[ "${output}" == *"Checkstyle support: yes"* ]] || fail "compact doctor should report detected Checkstyle support"
 }
 
 test_doctor_counts_custom_jacoco_xml_path() {
@@ -4781,11 +4818,13 @@ test_crap_install_analyzer_requires_cache_home() {
 }
 
 main() {
+  bash "${ROOT_DIR}/test/repo-sweep/results_test.sh"
   test_unclassified_build_change_requires_explicit_exhaustive
   test_coverage_rejects_old_global_after_scoped_verification
   test_verify_changes_focused_command
   test_doctor_unsupported
   test_backend_doctor_json
+  test_doctor_detects_checkstyle_capability
   test_doctor_counts_custom_jacoco_xml_path
   test_doctor_resolves_java_version_from_pom
   test_doctor_resolves_java_version_from_pom_property_reference

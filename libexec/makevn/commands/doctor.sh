@@ -107,6 +107,7 @@ print_doctor() {
   if [[ "${MAKEVN_COMPACT_OUTPUT:-}" == "1" ]]; then
     makevn_print_item "Current makevn status" "${MAKEVN_DOCTOR_CURRENT_STATUS}"
     makevn_print_item "Repository support status" "${MAKEVN_DOCTOR_REPO_SUPPORT_STATUS}"
+    makevn_print_item "Checkstyle support" "${MAKEVN_DOCTOR_CHECKSTYLE_AVAILABLE:-no}"
     makevn_print_item "Code Maven version" "${MAKEVN_DOCTOR_CODE_MAVEN_DIAGNOSTIC}"
     makevn_print_doctor_suggestions
     makevn_print_doctor_java_error
@@ -156,6 +157,7 @@ print_doctor() {
   makevn_print_item "LOCAL_CONTAINERS default" "${MAKEVN_DOCTOR_LOCAL_CONTAINERS}"
   makevn_print_item "Persisted profile" "${MAKEVN_DOCTOR_PROFILE_STATUS}"
   makevn_print_item "Repository support status" "${MAKEVN_DOCTOR_REPO_SUPPORT_STATUS}"
+  makevn_print_item "Checkstyle support" "${MAKEVN_DOCTOR_CHECKSTYLE_AVAILABLE:-no}"
   makevn_print_item "Mutation testing (PIT)" "${MAKEVN_DOCTOR_MUTATION_AVAILABLE}"
   if [[ "${MAKEVN_DOCTOR_MUTATION_AVAILABLE}" == "yes" && -n "${MAKEVN_DOCTOR_MUTATION_GOAL}" ]]; then
     makevn_print_detail_line "  goal: ${MAKEVN_DOCTOR_MUTATION_GOAL}"
