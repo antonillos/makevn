@@ -4793,6 +4793,7 @@ main() {
   test_doctor_does_not_invent_health_check
   test_doctor_detects_actuator_health_check
   test_doctor_missing_health_prompt
+  test_doctor_managed_and_test_dependencies_do_not_require_http_health
   test_doctor_http_server_signals
   test_doctor_console_main_does_not_require_http_health
   test_doctor_health_skip_and_noninteractive

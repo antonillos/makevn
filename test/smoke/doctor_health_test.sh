@@ -26,8 +26,34 @@ test_doctor_http_server_signals() (
     printf '<project><dependencies><dependency><artifactId>%s</artifactId></dependency></dependencies></project>\n' "${artifact}" >"${repo}/pom.xml"
     ! makevn_detect_app_http_signal "${repo}" || fail "non-server dependency requires HTTP health: ${artifact}"
   done
+  printf '<m:project xmlns:m="http://maven.apache.org/POM/4.0.0"><m:dependencies><m:dependency><m:artifactId> spring-boot-starter-web </m:artifactId><m:scope> runtime </m:scope></m:dependency></m:dependencies></m:project>\n' >"${repo}/pom.xml"
+  makevn_detect_app_http_signal "${repo}" || fail "namespaced runtime dependency not recognized"
   ! makevn_detect_app_http_signal "" || fail "missing Maven root must not require HTTP health"
 )
+
+test_doctor_managed_and_test_dependencies_do_not_require_http_health() {
+  local repo="${TMP_ROOT}/doctor-non-application-dependencies"
+  local output="${TMP_ROOT}/doctor-non-application-dependencies.json"
+  local dependencies
+  mkdir -p "${repo}"
+  for dependencies in \
+    '<dependencyManagement><dependencies><dependency><artifactId>spring-boot-starter-web</artifactId></dependency></dependencies></dependencyManagement>' \
+    '<dependencies><dependency><artifactId>spring-boot-starter-web</artifactId><scope>test</scope></dependency></dependencies>' \
+    '<build><plugins><plugin><dependencies><dependency><artifactId>spring-boot-starter-web</artifactId></dependency></dependencies></plugin></plugins></build>'; do
+    printf '<project xmlns="http://maven.apache.org/POM/4.0.0"><modelVersion>4.0.0</modelVersion><groupId>example</groupId><artifactId>library</artifactId><version>1</version>%s</project>\n' "${dependencies}" >"${repo}/pom.xml"
+    "${CLI}" --repo "${repo}" init --force >/dev/null
+    bash "${ROOT_DIR}/libexec/makevn/backend.sh" doctor --repo "${repo}" --format json >"${output}"
+    python3 - "${output}" <<'PYTEST'
+import json
+import sys
+with open(sys.argv[1]) as stream:
+    data = json.load(stream)
+assert data["repository_analysis"]["application_runnable"] == "no", data
+assert "app_health_url" not in {item["id"] for item in data["interactive_setup"]["questions"]}, data
+assert "HTTP readiness" not in data["suggested_next_step"]["note"], data
+PYTEST
+  done
+}
 
 test_doctor_console_main_does_not_require_http_health() {
   local repo="${TMP_ROOT}/doctor-console-main"
@@ -234,6 +260,7 @@ if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
   fail() { printf 'FAIL: %s\n' "$*" >&2; exit 1; }
   assert_contains() { grep -Fq -- "$2" "$1" || fail "missing $2 in $1"; }
   assert_not_contains() { ! grep -Fq -- "$2" "$1" || fail "unexpected $2 in $1"; }
+  test_doctor_managed_and_test_dependencies_do_not_require_http_health
   test_doctor_http_server_signals
   test_doctor_console_main_does_not_require_http_health
   test_doctor_does_not_invent_health_check

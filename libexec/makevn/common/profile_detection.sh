@@ -886,16 +886,10 @@ makevn_detect_app_runnable() {
 # A Java entry point alone does not establish an HTTP readiness prerequisite.
 makevn_detect_app_http_signal() {
   local maven_base_path="$1"
-  local pom_path=""
 
   [[ -n "${maven_base_path}" ]] || return 1
-  while IFS= read -r pom_path; do
-    if grep -Eq '<artifactId>[[:space:]]*(spring-boot-starter-(web[^<]*|actuator)|quarkus-(rest(-jackson|-jsonb)?|resteasy(-reactive)?(-jackson|-jsonb)?|vertx-http)|micronaut-http-server[^<]*)[[:space:]]*</artifactId>' "${pom_path}"; then
-      return 0
-    fi
-  done < <(find "${maven_base_path}" -name pom.xml -not -path '*/target/*' -not -path '*/node_modules/*' 2>/dev/null | LC_ALL=C sort)
-
-  return 1
+  command -v python3 >/dev/null 2>&1 || return 1
+  python3 "${MAKEVN_LIBEXEC_DIR}/common/http_server.py" "${maven_base_path}"
 }
 
 makevn_find_compose_files() {
