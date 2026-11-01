@@ -19,6 +19,27 @@ scoped = module('scoped_coverage', ROOT / 'libexec/makevn/common/scoped_coverage
 
 @unittest.skipUnless(shutil.which('javac') and shutil.which('javap'), 'JDK required')
 class NonExecutableTests(unittest.TestCase):
+    def test_root_default_package_interface_is_non_executable(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Path(directory)
+            subprocess.run(['git', 'init', '-q', str(repo)], check=True)
+            subprocess.run(['git', '-C', str(repo), '-c', 'user.name=Test', '-c',
+                            'user.email=test@example.com', 'commit', '--allow-empty',
+                            '-qm', 'base'], check=True)
+            source_path = repo / 'src/main/java/Api.java'
+            source_path.parent.mkdir(parents=True)
+            source_path.write_text('public interface Api { void call(); }')
+            target = repo / 'target/classes'
+            target.mkdir(parents=True)
+            subprocess.run(['javac', '-d', str(target), str(source_path)], check=True)
+            path = source_path.relative_to(repo).as_posix()
+            state = repo / '.makevn/focused-coverage'
+            scoped.prepare(repo, state, repo, ['.'], [path])
+            (target.parent / 'jacoco.exec').write_bytes(b'fresh data')
+            scoped.finish(repo, state)
+            self.assertEqual(report.non_executable_sources(
+                [path], repo, str(state), shutil.which('javap')), {path})
+
     def test_interfaces_default_methods_nested_code_and_stale_evidence(self):
         with tempfile.TemporaryDirectory() as directory:
             repo = Path(directory)

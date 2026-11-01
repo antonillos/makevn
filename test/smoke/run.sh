@@ -3688,6 +3688,28 @@ EOF
     || fail "expected coverage-changes output to include overall quality gate"
 }
 
+test_coverage_changes_root_module() {
+  local repo="${TMP_ROOT}/coverage-changes-root" output report
+  report="${repo}/jacoco-report-aggregate/target/site/jacoco-aggregate"
+  mkdir -p "${repo}/src/main/java/com/example" "${report}/com.example"
+  printf '<project/>\n' > "${repo}/pom.xml"
+  printf 'package com.example;\nclass Root {\n  int value() { return 0; }\n}\n' > "${repo}/src/main/java/com/example/Root.java"
+  printf '<span class="fc" id="L3">  int value() { return 1; }</span>\n' > "${report}/com.example/Root.java.html"
+  printf 'GROUP,PACKAGE,CLASS,INSTRUCTION_MISSED,INSTRUCTION_COVERED,BRANCH_MISSED,BRANCH_COVERED,LINE_MISSED,LINE_COVERED,COMPLEXITY_MISSED,COMPLEXITY_COVERED,METHOD_MISSED,METHOD_COVERED\nmakevn,com.example,Root,0,10,0,0,0,1,0,1,0,1\n' > "${report}/jacoco.csv"
+  printf 'class DefaultRoot {\n  int value() { return 0; }\n}\n' > "${repo}/src/main/java/DefaultRoot.java"
+  printf '<span class="fc" id="L2">  int value() { return 1; }</span>\n' > "${report}/DefaultRoot.java.html"
+  printf 'makevn,,DefaultRoot,0,10,0,0,0,1,0,1,0,1\n' >> "${report}/jacoco.csv"
+  printf '<html></html>\n' > "${report}/index.html"
+  git init --initial-branch=main "${repo}" >/dev/null
+  git -C "${repo}" add .
+  git -C "${repo}" -c user.name='Smoke Test' -c user.email='smoke@example.com' commit -m init >/dev/null
+  perl -0pi -e 's/return 0;/return 1;/' "${repo}/src/main/java/com/example/Root.java"
+  perl -0pi -e 's/return 0;/return 1;/' "${repo}/src/main/java/DefaultRoot.java"
+  output="$(${CLI} --repo "${repo}" coverage-changes --threshold 90)"
+  [[ "${output}" == *"✓  changed lines    100.00%  2/2"* ]] || fail "expected coverage for root module changed lines"
+  [[ "${output}" == *"classes 2"* ]] || fail "expected coverage for both packaged and default-package classes"
+}
+
 test_coverage_changes_fails_changed_module_gate() {
   local repo="${TMP_ROOT}/coverage-changes-module-gate"
   local output
@@ -4897,6 +4919,7 @@ main() {
   test_verify_changes_nested_maven_base_strips_git_prefix
   test_coverage_changes_ignores_reverted_first_parent_paths
   test_coverage_changes_command
+  test_coverage_changes_root_module
   test_coverage_changes_fails_changed_module_gate
   test_coverage_changes_fails_empty_jacoco_report
   test_coverage_changes_report_generation_uses_coverage_flags

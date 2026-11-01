@@ -257,10 +257,9 @@ fi
         self.assertIn('additional\t*', self.plan('workspace/src/test/resources/shared/schema.avsc'))
 
     def test_unclassifiable_root_still_rejects_automatic_resource_scope(self):
-        for body in [ '<artifactId>root</artifactId><packaging>jar</packaging>', '<artifactId>root</artifactId><packaging>pom</packaging><profiles><profile><modules><module>adapter</module></modules></profile></profiles>' ]:
-            self.write('pom.xml', body)
-            with self.assertRaises(ValueError):
-                self.plan('workspace/src/test/resources/shared/schema.avsc')
+        self.write('pom.xml', '<artifactId>root</artifactId><packaging>pom</packaging><profiles><profile><modules><module>adapter</module></modules></profile></profiles>')
+        with self.assertRaises(ValueError):
+            self.plan('workspace/src/test/resources/shared/schema.avsc')
 
     def test_root_test_code_cannot_be_skipped_by_automatic_scope(self):
         path = self.base / 'src/test/custom/RootTests.txt'
