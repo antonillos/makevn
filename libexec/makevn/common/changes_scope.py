@@ -193,15 +193,22 @@ def selection(repo, base, reference, paths):
 
 def focused_plan(repo, base, reference, paths):
     """Full suites for production/POM owners, changed tests in other owners."""
-    production = [path for path in paths if "/src/test/java/" not in path]
+    root_pom = base / "pom.xml"
+    root_sources = set()
+    if root_pom.is_file() and declared_modules(base, parse(root_pom.read_text())) == set():
+        root_sources = {path for path in paths if (repo / path).is_relative_to(base)
+                        and (repo / path).relative_to(base).as_posix().startswith("src/")}
+    production = [path for path in paths if "/src/test/java/" not in path and path not in root_sources]
     full = selection(repo, base, reference, production)
     if full == ".":
         blockers = [path for path in production if selection(repo, base, reference, [path]) == "."]
         raise ExhaustiveScopeRequired("Unknown or root-level impact in " + ", ".join(blockers) + "; use --exhaustive")
     suites = set(filter(None, full.split(",")))
+    if root_sources:
+        suites.add(".")
     tests = {}
     for path in paths:
-        if "/src/test/java/" not in path:
+        if path in root_sources or "/src/test/java/" not in path:
             continue
         absolute = repo / path
         if not absolute.is_relative_to(base):

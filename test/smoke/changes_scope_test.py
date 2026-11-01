@@ -97,6 +97,34 @@ fi
             with self.assertRaises(ValueError):
                 scope.focused_plan(repo, repo, "HEAD", ["src/main/java/Owner.java"])
 
+    def test_single_module_root_sources_use_focused_owner_suite(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repo = pathlib.Path(directory)
+            repo.joinpath("pom.xml").write_text("<project/>")
+            for path in ("src/main/java/Owner.java", "src/test/java/OwnerTest.java",
+                         "src/test/resources/input.csv"):
+                self.assertEqual(scope.focused_plan(repo, repo, "HEAD", [path]), ".\t*")
+            with self.assertRaises(ValueError):
+                scope.focused_plan(repo, repo, "HEAD", ["build.sh"])
+
+    def test_nested_single_module_root_sources_use_root_owner(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repo = pathlib.Path(directory)
+            base = repo / "code"
+            base.mkdir()
+            base.joinpath("pom.xml").write_text("<project/>")
+            self.assertEqual(scope.focused_plan(repo, base, "HEAD", [
+                "code/src/main/java/Owner.java", "code/src/test/java/OwnerTest.java"]), ".\t*")
+
+    def test_profile_modules_keep_root_sources_exhaustive(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repo = pathlib.Path(directory)
+            repo.joinpath("pom.xml").write_text(
+                "<project><profiles><profile><modules><module>child</module>"
+                "</modules></profile></profiles></project>")
+            with self.assertRaises(ValueError):
+                scope.focused_plan(repo, repo, "HEAD", ["src/main/java/Owner.java"])
+
     def test_production_and_it_owner_without_aggregator(self):
         with tempfile.TemporaryDirectory() as directory:
             repo = pathlib.Path(directory)
