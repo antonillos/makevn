@@ -237,8 +237,8 @@ if [ "$CURRENT_BRANCH" = "develop" ] || [ "$CURRENT_BRANCH" = "main" ]; then
     echo "ℹ  On base branch, checking for modified files (staged + unstaged, not untracked)..." 1>&2
   fi
   DIFF_NAME_ONLY_LOCAL=$(git diff --name-only HEAD 2>/dev/null || true)
-  CHANGED_PROD_FILES=$(echo "$DIFF_NAME_ONLY_LOCAL" | grep "^${BASE_PATH_PREFIX}" | grep "/src/main/java/" | grep "\\.java$" | sort -u || true)
-  CHANGED_TEST_FILES=$(echo "$DIFF_NAME_ONLY_LOCAL" | grep "^${BASE_PATH_PREFIX}" | grep "/src/test/java/" | grep "\\.java$" | sort -u || true)
+  CHANGED_PROD_FILES=$(echo "$DIFF_NAME_ONLY_LOCAL" | grep "^${BASE_PATH_PREFIX}" | grep -E "(^|/)src/main/java/" | grep "\\.java$" | sort -u || true)
+  CHANGED_TEST_FILES=$(echo "$DIFF_NAME_ONLY_LOCAL" | grep "^${BASE_PATH_PREFIX}" | grep -E "(^|/)src/test/java/" | grep "\\.java$" | sort -u || true)
 else
   if [ "$COVERAGE_VERBOSE" = true ]; then
     echo "ℹ  On feature branch, checking changes vs $BASE_REF + local modifications..." 1>&2
@@ -250,12 +250,12 @@ else
   fi
   DIFF_NAME_ONLY_LOCAL=$(git diff --name-only HEAD 2>/dev/null || true)
 
-  CHANGED_PROD_FILES_BASE=$(echo "$DIFF_NAME_ONLY_BASE" | grep "^${BASE_PATH_PREFIX}" | grep "/src/main/java/" | grep "\\.java$" || true)
-  CHANGED_PROD_FILES_LOCAL=$(echo "$DIFF_NAME_ONLY_LOCAL" | grep "^${BASE_PATH_PREFIX}" | grep "/src/main/java/" | grep "\\.java$" || true)
+  CHANGED_PROD_FILES_BASE=$(echo "$DIFF_NAME_ONLY_BASE" | grep "^${BASE_PATH_PREFIX}" | grep -E "(^|/)src/main/java/" | grep "\\.java$" || true)
+  CHANGED_PROD_FILES_LOCAL=$(echo "$DIFF_NAME_ONLY_LOCAL" | grep "^${BASE_PATH_PREFIX}" | grep -E "(^|/)src/main/java/" | grep "\\.java$" || true)
   CHANGED_PROD_FILES=$( (echo "$CHANGED_PROD_FILES_BASE"; echo "$CHANGED_PROD_FILES_LOCAL") | sort -u | grep -v '^$' || true)
 
-  CHANGED_TEST_FILES_BASE=$(echo "$DIFF_NAME_ONLY_BASE" | grep "^${BASE_PATH_PREFIX}" | grep "/src/test/java/" | grep "\\.java$" || true)
-  CHANGED_TEST_FILES_LOCAL=$(echo "$DIFF_NAME_ONLY_LOCAL" | grep "^${BASE_PATH_PREFIX}" | grep "/src/test/java/" | grep "\\.java$" || true)
+  CHANGED_TEST_FILES_BASE=$(echo "$DIFF_NAME_ONLY_BASE" | grep "^${BASE_PATH_PREFIX}" | grep -E "(^|/)src/test/java/" | grep "\\.java$" || true)
+  CHANGED_TEST_FILES_LOCAL=$(echo "$DIFF_NAME_ONLY_LOCAL" | grep "^${BASE_PATH_PREFIX}" | grep -E "(^|/)src/test/java/" | grep "\\.java$" || true)
   CHANGED_TEST_FILES=$( (echo "$CHANGED_TEST_FILES_BASE"; echo "$CHANGED_TEST_FILES_LOCAL") | sort -u | grep -v '^$' || true)
 fi
 
@@ -270,9 +270,9 @@ if [ -z "$CHANGED_PROD_FILES" ] && [ -z "$CHANGED_TEST_FILES" ]; then
     # Look for test files added in recent commits ONLY if they're ahead of parent branch
     # This ensures we only detect actual new tests in this branch
     if [ "$FIRST_PARENT_ONLY" = true ] || [ "$FIRST_PARENT_ONLY" = 1 ]; then
-      RECENT_TEST_FILES=$(git log --first-parent --oneline "${BASE_REF%...HEAD}"..HEAD --name-only --diff-filter=A -- "$BASE_PATH_TEST_GLOB" 2>/dev/null | grep "/src/test/java/" | sort -u || true)
+      RECENT_TEST_FILES=$(git log --first-parent --oneline "${BASE_REF%...HEAD}"..HEAD --name-only --diff-filter=A -- "$BASE_PATH_TEST_GLOB" 2>/dev/null | grep -E "(^|/)src/test/java/" | sort -u || true)
     else
-      RECENT_TEST_FILES=$(git log --oneline "${BASE_REF%...HEAD}"..HEAD --name-only --diff-filter=A -- "$BASE_PATH_TEST_GLOB" 2>/dev/null | grep "/src/test/java/" | sort -u || true)
+      RECENT_TEST_FILES=$(git log --oneline "${BASE_REF%...HEAD}"..HEAD --name-only --diff-filter=A -- "$BASE_PATH_TEST_GLOB" 2>/dev/null | grep -E "(^|/)src/test/java/" | sort -u || true)
     fi
     if [ -n "$RECENT_TEST_FILES" ]; then
       CHANGED_TEST_FILES="$RECENT_TEST_FILES"
@@ -311,7 +311,7 @@ if [ -n "$CHANGED_TEST_FILES" ]; then
 
       CLASS_NAME=$(basename "$PROD_FILE" .java)
       # Check if this class has a JaCoCo HTML file (meaning it has coverage)
-      PACKAGE_PATH=$(dirname "$PROD_FILE" | sed 's|.*/src/main/java/||')
+      PACKAGE_PATH=$(dirname "$PROD_FILE" | sed -E 's#(^|.*/)src/main/java/##')
       PACKAGE_DOTS=$(echo "$PACKAGE_PATH" | tr '/' '.')
 
       HTML_FILE=$(find "$JACOCO_BASE" -path "*/$PACKAGE_DOTS/$CLASS_NAME.java.html" 2>/dev/null | head -1 || true)
@@ -369,7 +369,7 @@ while IFS= read -r FILE; do
   CLASS_NAME=$(basename "$FILE" .java)
 
   # Extract package path relative to src/main/java
-  PACKAGE_PATH=$(dirname "$FILE" | sed 's|.*/src/main/java/||')
+  PACKAGE_PATH=$(dirname "$FILE" | sed -E 's#(^|.*/)src/main/java/##')
   # Convert to Jacoco's dot notation
   PACKAGE_DOTS=$(echo "$PACKAGE_PATH" | tr '/' '.')
 
@@ -541,6 +541,7 @@ verbose = os.environ.get("COVERAGE_VERBOSE") == "true"
 
 
 def parse_changed_file(file_path):
+    file_path = "/" + file_path.lstrip("/")
     marker = "/src/main/java/"
     if marker not in file_path:
         return None

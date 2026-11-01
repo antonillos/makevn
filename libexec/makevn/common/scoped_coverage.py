@@ -154,7 +154,11 @@ def finish(repo, state):
         path = repo / source
         if not path.is_file():
             continue
-        owner, relative = path.relative_to(base).as_posix().split('/src/main/java/', 1)
+        source_path = path.relative_to(base).as_posix()
+        if source_path.startswith('src/main/java/'):
+            owner, relative = '.', source_path[len('src/main/java/'):]
+        else:
+            owner, relative = source_path.split('/src/main/java/', 1)
         stem = relative[:-5]
         compiled = base / owner / 'target/classes' / (stem + '.class')
         if stem in class_owners:
