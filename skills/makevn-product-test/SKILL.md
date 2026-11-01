@@ -71,9 +71,17 @@ full/destructive profiles require the intended broader scope and lifecycle
 authorization. Installed users without the harness follow this skill directly;
 do not assume a source checkout exists.
 
+Temporary sweep clones do not inherit ignored `.makevn/config` settings. Confirm
+their JDK selection; reuse a previously authorized choice only when still applicable.
+For Checkstyle, consult doctor's explicit support signal and follow makevn-quality;
+availability alone does not validate the check.
+
 ## Assess evidence and reproduce fixes
 
-Inspect structured exit status, diagnostics, logs and fresh test reports. Record
+Inspect structured exit status, diagnostics, logs and fresh test reports. Use
+MCP `exitCode` as the command result; missing or invalid status is a tooling error,
+not an assumed success. Investigate any mismatch between a sweep row and its
+diagnostics before trusting the summary verdict. Record
 tests/scenarios run, failures, errors and skips before a later run overwrites
 reports. A green command with every selected test skipped does not validate the
 scenario. Default verification may exclude integration or browser tests; run a
