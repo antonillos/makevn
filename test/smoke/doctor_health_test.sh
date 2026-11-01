@@ -16,7 +16,7 @@ doctor_health_fixture() {
 test_doctor_http_server_signals() (
   source "${ROOT_DIR}/libexec/makevn/common.sh"
   local repo="${TMP_ROOT}/doctor-http-signals"
-  local artifact
+  local artifact dependencies
   mkdir -p "${repo}"
   for artifact in spring-boot-starter-web spring-boot-starter-webflux spring-boot-starter-actuator quarkus-rest quarkus-rest-jackson quarkus-resteasy-reactive micronaut-http-server-netty; do
     printf '<project><dependencies><dependency><artifactId>%s</artifactId></dependency></dependencies></project>\n' "${artifact}" >"${repo}/pom.xml"
@@ -28,6 +28,12 @@ test_doctor_http_server_signals() (
   done
   printf '<m:project xmlns:m="http://maven.apache.org/POM/4.0.0"><m:dependencies><m:dependency><m:artifactId> spring-boot-starter-web </m:artifactId><m:scope> runtime </m:scope></m:dependency></m:dependencies></m:project>\n' >"${repo}/pom.xml"
   makevn_detect_app_http_signal "${repo}" || fail "namespaced runtime dependency not recognized"
+  for dependencies in \
+    '<dependencyManagement><dependencies><dependency><artifactId>spring-boot-starter-web</artifactId></dependency></dependencies></dependencyManagement>' \
+    '<dependencies><dependency><artifactId>spring-boot-starter-web</artifactId><scope>test</scope></dependency></dependencies>'; do
+    printf '<project><profiles><profile><activation><activeByDefault>true</activeByDefault></activation>%s</profile></profiles></project>\n' "${dependencies}" >"${repo}/pom.xml"
+    ! makevn_detect_app_http_signal "${repo}" || fail "default profile non-application dependency requires HTTP health"
+  done
   ! makevn_detect_app_http_signal "" || fail "missing Maven root must not require HTTP health"
 )
 
@@ -51,6 +57,28 @@ with open(sys.argv[1]) as stream:
 assert data["repository_analysis"]["application_runnable"] == "no", data
 assert "app_health_url" not in {item["id"] for item in data["interactive_setup"]["questions"]}, data
 assert "HTTP readiness" not in data["suggested_next_step"]["note"], data
+PYTEST
+  done
+}
+
+test_doctor_default_profile_requires_http_health() {
+  local repo="${TMP_ROOT}/doctor-default-http-profile"
+  local output="${TMP_ROOT}/doctor-default-http-profile.json"
+  local activation
+  mkdir -p "${repo}/src/main/java"
+  printf 'public class Application { public static void main(String[] args) {} }\n' >"${repo}/src/main/java/Application.java"
+  for activation in false true; do
+    printf '<project xmlns="http://maven.apache.org/POM/4.0.0"><modelVersion>4.0.0</modelVersion><groupId>example</groupId><artifactId>app</artifactId><version>1</version><profiles><profile><id>web</id><activation><activeByDefault>%s</activeByDefault></activation><dependencies><dependency><artifactId>spring-boot-starter-web</artifactId></dependency></dependencies></profile></profiles></project>\n' "${activation}" >"${repo}/pom.xml"
+    "${CLI}" --repo "${repo}" init --force >/dev/null
+    bash "${ROOT_DIR}/libexec/makevn/backend.sh" doctor --repo "${repo}" --format json >"${output}"
+    python3 - "${output}" "${activation}" <<'PYTEST'
+import json
+import sys
+with open(sys.argv[1]) as stream:
+    data = json.load(stream)
+questions = {item["id"] for item in data["interactive_setup"]["questions"]}
+assert data["repository_analysis"]["application_runnable"] == "yes", data
+assert ("app_health_url" in questions) == (sys.argv[2] == "true"), data
 PYTEST
   done
 }
@@ -260,6 +288,7 @@ if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
   fail() { printf 'FAIL: %s\n' "$*" >&2; exit 1; }
   assert_contains() { grep -Fq -- "$2" "$1" || fail "missing $2 in $1"; }
   assert_not_contains() { ! grep -Fq -- "$2" "$1" || fail "unexpected $2 in $1"; }
+  test_doctor_default_profile_requires_http_health
   test_doctor_managed_and_test_dependencies_do_not_require_http_health
   test_doctor_http_server_signals
   test_doctor_console_main_does_not_require_http_health

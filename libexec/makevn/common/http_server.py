@@ -24,7 +24,10 @@ def has_http_server(base):
             root = ET.parse(Path(directory) / "pom.xml").getroot()
         except (ET.ParseError, OSError):
             continue
-        for dependency in root.findall("./{*}dependencies/{*}dependency"):
+        containers = [root] + [profile for profile in root.findall("./{*}profiles/{*}profile")
+                               if profile.findtext("./{*}activation/{*}activeByDefault", "").strip().lower() == "true"]
+        for dependency in (dependency for container in containers
+                           for dependency in container.findall("./{*}dependencies/{*}dependency")):
             scope = dependency.findtext("{*}scope", "compile").strip()
             artifact = dependency.findtext("{*}artifactId", "").strip()
             if scope in {"compile", "runtime", "provided", "system"} and SERVER_ARTIFACT.fullmatch(artifact):

@@ -78,7 +78,8 @@ replace full CI/coverage/CRAP. Follow the test skill for exhaustive planning out
 and the quality skill for valid `not applicable` metrics.
 
 Doctor requests an HTTP health URL when it detects an application HTTP server
-dependency or a health endpoint. Managed-only, plugin and test dependencies do
+dependency (including `activeByDefault` profiles) or a health endpoint.
+Managed-only, plugin and test dependencies do
 not establish an application HTTP server. A console `main` or executable JAR
 alone does not require an HTTP endpoint; runnable detection remains available
 for application commands.
