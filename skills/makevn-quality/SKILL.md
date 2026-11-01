@@ -48,6 +48,8 @@ Inspect `verify_changes_preview` separately. Then reuse the same focused evidenc
 }
 ```
 
+Validated test-impact selection retains the same fresh focused snapshot contract;
+coverage and CRAP share that new run's data, never the baseline capture data.
 Do not prepend clean or rerun tests without a reason. A valid run with no changed
 production classes returns `not applicable` for changed-code metrics with exit zero:
 no global gate was evaluated. Missing/stale evidence for changed classes still fails.

@@ -11,8 +11,7 @@ MAKEVN_VERIFY_CHANGES_MAVEN_BASE_PATH="${tmp}"
 MAKEVN_VERIFY_CHANGES_MODULE_SELECTION=boot,client
 MAKEVN_VERIFY_CHANGES_FOCUSED_PLAN=$'boot\texample.OwnersIT\nclient\t*'
 plan_output="$(makevn_print_focused_changes_plan)"
-[[ "${plan_output}" == *'module-scoped: production changes select the entire owner module suite'* ]]
-[[ "${plan_output}" == *'single-module project'* ]]
+[[ "${plan_output}" == *'validated test-impact evidence'* ]]
 [[ "${plan_output}" == *'verify client: entire module suite'* ]]
 verify_args=(mvn)
 cli_flags=(-nsu)
@@ -60,4 +59,7 @@ makevn_changes_mode --exhaustive
 [[ "${MAKEVN_VERIFY_CHANGES_MODE}" == exhaustive && "${MAKEVN_VERIFY_CHANGES_MODE_ARGS}" == 1 ]]
 makevn_changes_mode
 [[ "${MAKEVN_VERIFY_CHANGES_MODE}" == focused ]]
+makevn_changes_mode --record-test-impact --focused
+[[ "${MAKEVN_TEST_IMPACT_CAPTURE}" == true && "${MAKEVN_VERIFY_CHANGES_MODE_ARGS}" == 2 ]]
+if (makevn_changes_mode --record-test-impact --exhaustive) >/dev/null 2>&1; then exit 1; fi
 printf 'Focused changes phases regression passed\n'

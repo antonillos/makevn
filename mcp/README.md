@@ -599,3 +599,13 @@ file to startup, readiness, verification and cleanup; selection alone does not
 start services or authorize a destructive reset. `--compose boot|karate` still
 selects the readiness kind; `--compose-file` supplies its file. A per-execution
 override wins over saved `none` and is never persisted.
+
+### Test-impact baseline capture
+
+`verify_changes_preview` and `verify_changes` accept `"record-test-impact": true`.
+Use the flag in both operations only when an expensive baseline capture is intended:
+a complete suite followed by one isolated verification per test class. Supported
+standard single-module Java projects on JDK 17+ can reuse compatible evidence on
+later focused runs. Missing/stale evidence retains full owner suites with a reason.
+Fresh UT/IT reports and coverage snapshots are still required. See
+[precise selection](../docs/precise-test-selection.md).

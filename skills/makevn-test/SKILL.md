@@ -37,9 +37,21 @@ Exhaustive selected suites still differ from whole-project `verify`. Unknown imp
 requires another exhaustive preview and explanation; never silently broaden.
 A successful preview runs no tests. Preserve existing authorization when broadening.
 
-Focused selection is by module for production changes, not by changed Java class.
-In a single-module project this executes the entire module suite. Explain this
-explicitly before execution; focused does not promise a small number of tests.
+Production changes use validated isolated test-impact evidence when compatible;
+otherwise the complete owner module suite runs, with a visible fallback reason.
+Inspect the selected test list and evidence provenance; focused does not promise
+few tests. Narrowing currently supports standard single-module Java projects with
+JDK 17+ and conventional Surefire/Failsafe ownership. Reactors retain full suites.
+
+Capturing a baseline is an explicit, expensive operation: use CLI
+`--record-test-impact` or MCP `"record-test-impact": true` in BOTH preview and
+verification. It runs the complete suite, then one isolated verification per test
+class. Do not enable it automatically for a quick test request. Failed, interrupted,
+entirely skipped-class or incomplete capture cannot enable narrowing. Normal
+focused runs reuse compatible evidence; changed declarations, helpers, resources,
+configuration, dependencies, JDK or missing evidence retain complete owner suites.
+Changed method bodies with assignment/update targets that cannot be proven local
+also retain complete suites, including removal of a previously recorded write.
 
 Preparation uses `-am install` with UT/IT execution disabled and retains test
 compilation/test jars. A 34-module reactor does not mean 34 suites ran. Owner
