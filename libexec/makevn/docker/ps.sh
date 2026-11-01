@@ -1,5 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
+# shellcheck source=compose_args.sh
+source "$(dirname "${BASH_SOURCE[0]}")/compose_args.sh"
+selected_args=()
+if [[ -n "${MAKEVN_EXECUTION_COMPOSE_FILE:-}" ]]; then
+  [[ "${MAKEVN_EXECUTION_COMPOSE_FILE}" != none ]] || { printf 'ERR: Compose is disabled\n' >&2; exit 1; }
+  while IFS= read -r arg; do
+    selected_args+=("${arg}")
+  done < <(makevn_collect_compose_args "${MAKEVN_EXECUTION_COMPOSE_FILE}" "$(dirname "${MAKEVN_EXECUTION_COMPOSE_FILE}")/docker-compose.override.yml")
+fi
 
 compose_args="${COMPOSE_ARGS:-}"
 services="${SERVICES:-}"
@@ -21,8 +30,7 @@ fi
 
 if [[ "${show_all_containers}" == "true" || -z "${services}" ]]; then
   if [[ -n "${MAKEVN_EXECUTION_COMPOSE_FILE:-}" ]]; then
-    [[ "${MAKEVN_EXECUTION_COMPOSE_FILE}" != none ]] || { printf 'ERR: Compose is disabled\n' >&2; exit 1; }
-    container_ids="$(${docker_compose} -f "${MAKEVN_EXECUTION_COMPOSE_FILE}" ps -aq)" || exit $?
+    container_ids="$(${docker_compose} "${selected_args[@]}" ps -aq)" || exit $?
   else
     container_ids="$(docker ps -aq)" || exit $?
   fi
@@ -38,13 +46,6 @@ if [[ "${show_all_containers}" == "true" || -z "${services}" ]]; then
   exit 0
 fi
 
-selected_args=()
-if [[ -n "${MAKEVN_EXECUTION_COMPOSE_FILE:-}" ]]; then
-  [[ "${MAKEVN_EXECUTION_COMPOSE_FILE}" != none ]] || { printf 'ERR: Compose is disabled\n' >&2; exit 1; }
-  selected_args=(-f "${MAKEVN_EXECUTION_COMPOSE_FILE}")
-  override="$(dirname "${MAKEVN_EXECUTION_COMPOSE_FILE}")/docker-compose.override.yml"
-  [[ ! -f "${override}" ]] || selected_args+=(-f "${override}")
-fi
 selected_service_id() {
   if [[ ${#selected_args[@]} -gt 0 ]]; then
     ${docker_compose} "${selected_args[@]}" ps -q "$1"
