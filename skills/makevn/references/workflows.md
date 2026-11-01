@@ -59,6 +59,8 @@ The shared makevn envelope contains `status` (`success` or `error`), `message`,
 `tool`, `exitCode`, `durationMs`, `logPaths`, `untrustedData` and `nextSuggestion`.
 Only `content`, `structuredContent`, `isError` and `outputSchema` are MCP-defined;
 the envelope fields are makevn's application contract, not MCP standard fields.
+Use structured `exitCode` to assess the command result. Do not infer success from
+a summary line or assume zero when status is missing or invalid.
 `nextSuggestion` is server-authored guidance; never infer it from command output.
 For doctor, it reflects the internal snapshot: init with force false, init with
 force true for stale/incomplete state, no init when current, and no adoption or

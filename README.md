@@ -175,6 +175,7 @@ See [Testcontainers setup and troubleshooting](docs/testcontainers.md) and the
 | Initialize local makevn state | `makevn init` |
 | Run one or more tests | `makevn test --name UserRepositoryTest` |
 | Build and verify | `makevn package`, `makevn verify` |
+| Check code style | `makevn checkstyle` |
 | Preview and verify changed modules or tests | `makevn verify-changes-preview`, `makevn verify-changes` |
 | Check aggregate or changed-code coverage | `makevn coverage`, `makevn coverage-changes` |
 | Analyze Java CRAP from an existing JaCoCo XML report | `makevn crap` |
@@ -183,6 +184,10 @@ See [Testcontainers setup and troubleshooting](docs/testcontainers.md) and the
 | Explicitly reset Compose project data | `makevn docker-reset` |
 | Run Karate E2E flows | `makevn karate-test`, `makevn karate-all` |
 | Run the application | `makevn run-app`, `makevn run-app-bg` |
+
+`makevn doctor` detects Checkstyle support from the repository's plugins or
+configuration. See the [Checkstyle guide](skills/makevn-quality/references/workflows.md#checkstyle)
+for detection and configuration details.
 
 Commands can be chained:
 

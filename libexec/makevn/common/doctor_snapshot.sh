@@ -208,6 +208,7 @@ makevn_collect_doctor_snapshot() {
   local run_configured="no"
   local current_status="not initialized"
   local repo_support_status=""
+  local checkstyle_available="no"
   local profile_path=""
   local profile_status="not generated"
   local detected_workflow_files=""
@@ -419,6 +420,13 @@ makevn_collect_doctor_snapshot() {
   fi
 
   makevn_load_config "${repo_root}"
+  if [[ -n "${maven_base_path}" ]] && {
+    [[ -n "${MAKEVN_CHECKSTYLE_GOAL:-}" ]] ||
+      [[ -n "$(makevn_detect_checkstyle_plugin_goal "${maven_base_path}" || true)" ]] ||
+      [[ -n "$(makevn_detect_format_plugin_goal "${maven_base_path}" false || true)" ]]
+  }; then
+    checkstyle_available="yes"
+  fi
   if [[ -n "${external_crap_analyzer}" && -f "${external_crap_analyzer}" ]]; then
     crap_analyzer="${external_crap_analyzer} (from environment)"
   elif [[ -n "${MAKEVN_CRAP4JAVA_JAR:-}" && -f "${MAKEVN_CRAP4JAVA_JAR}" ]]; then
@@ -559,6 +567,7 @@ makevn_collect_doctor_snapshot() {
   MAKEVN_DOCTOR_RUN_CONFIGURED="${run_configured}"
   MAKEVN_DOCTOR_PROFILE_STATUS="${profile_status}"
   MAKEVN_DOCTOR_REPO_SUPPORT_STATUS="${repo_support_status}"
+  MAKEVN_DOCTOR_CHECKSTYLE_AVAILABLE="${checkstyle_available}"
   MAKEVN_DOCTOR_COMPOSE_FILE="${compose_file}"
   MAKEVN_DOCTOR_E2E_COMPOSE_FILE="${e2e_compose_file}"
   local_containers_preference="$(makevn_effective_local_containers "${repo_root}" "${verify_it_local_containers_default}")"
@@ -728,6 +737,7 @@ makevn_print_doctor_json() {
   printf '    "local_containers_default": "%s",\n' "$(makevn_json_escape "${MAKEVN_DOCTOR_LOCAL_CONTAINERS}")"
   printf '    "persisted_profile": "%s",\n' "$(makevn_json_escape "${MAKEVN_DOCTOR_PROFILE_STATUS}")"
   printf '    "repository_support_status": "%s",\n' "$(makevn_json_escape "${MAKEVN_DOCTOR_REPO_SUPPORT_STATUS}")"
+  printf '    "checkstyle_available": "%s",\n' "$(makevn_json_escape "${MAKEVN_DOCTOR_CHECKSTYLE_AVAILABLE:-no}")"
   printf '    "mutation_available": "%s",\n' "$(makevn_json_escape "${MAKEVN_DOCTOR_MUTATION_AVAILABLE}")"
   printf '    "mutation_goal": "%s"\n' "$(makevn_json_escape "${MAKEVN_DOCTOR_MUTATION_GOAL}")"
   printf '  },\n'

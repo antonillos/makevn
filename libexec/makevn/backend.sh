@@ -112,6 +112,9 @@ if [[ "${COMPACT_OUTPUT}" == "true" ]]; then
 fi
 
 if [[ "${COMMAND}" == "doctor" && "${FORMAT:-text}" == "json" ]]; then
+  # Doctor capability reporting uses the same plugin detectors as Maven commands.
+  # shellcheck source=/dev/null
+  source "${SCRIPT_DIR}/commands/maven.sh"
   for arg in "${FORWARD_ARGS[@]}"; do
     [[ "${arg}" != --reset-config ]] || makevn_die "doctor --reset-config requires interactive CLI doctor, not JSON output."
   done
