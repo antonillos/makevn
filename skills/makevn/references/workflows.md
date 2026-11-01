@@ -315,3 +315,20 @@ This read-only inspection requires Python 3 and is not a complete Maven
 Maven's responsibility. Unresolved or unsupported detected local rules stop
 automatic selection rather than guessing. Explicit configured JDK paths remain
 user choices and are still checked by Maven Enforcer when Maven executes.
+
+When a detected local rule references a property absent from local POMs, MakeVN
+resolves the published parent property chain using literal parent coordinates.
+It reads `~/.m2/repository` (or `localRepository` from `~/.m2/settings.xml`) first,
+then its metadata cache under `$XDG_CACHE_HOME/makevn/parent-poms` (default
+`~/.cache/makevn/parent-poms`), then HTTPS Maven Central. Each fetch has a five
+second timeout and a 2 MB limit; parent chains are limited to 16 entries. No
+Maven plugins or project code execute. Child and explicit command properties
+retain precedence. Only properties are imported; published parent rules are
+still outside this inspection's scope.
+
+Offline mode or mirrors in the user settings disable direct Central inspection;
+the parent must already exist in the configured local Maven repository. Custom
+remote repositories, global/alternate settings and Maven profile activation are
+not evaluated by this metadata resolver. Missing, cyclic or unresolvable parent
+metadata blocks selection; report a parent-resolution failure rather than
+assuming another JDK is needed. Do not change the fixture POM or bypass Enforcer.

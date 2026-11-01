@@ -132,7 +132,11 @@ independent candidates stop diagnosis/init with an ambiguity error; use an
 isolated checkout of the intended project instead of guessing a candidate.
 
 Automatic JDK selection checks local Enforcer `requireJavaVersion` rules,
-including unconditional reactor modules and local relative parents. Execution
+including unconditional reactor modules and local relative parents. When a local
+rule needs a property inherited from a published parent, MakeVN reads cached
+parent POMs or fetches bounded metadata from Maven Central. See the reference
+for offline and mirrored-repository limits; do not suggest installing another
+JDK when parent metadata could not be resolved. Execution
 `skip` properties matter only when that execution has a Java rule (including
 plugin-level rules). An unresolved skip in a snapshots-only execution must not
 block JDK selection. An unresolved property affecting a Java rule does block it;
