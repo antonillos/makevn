@@ -42,6 +42,12 @@ test_doctor_http_server_signals() (
   printf '<project><modules><module>module</module></modules></project>' >"${repo}/pom.xml"
   makevn_detect_app_http_signal "${repo}" || fail "declared module not detected"
   makevn_detect_spring_boot_actuator_from_repo "${repo}" || fail "declared actuator not detected"
+  mkdir -p "${repo}/child"
+  printf '<project><dependencyManagement><dependencies><dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-web</artifactId><scope>test</scope></dependency></dependencies></dependencyManagement></project>' >"${repo}/pom.xml"
+  printf '<project><parent><relativePath>../pom.xml</relativePath></parent><dependencies><dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-web</artifactId></dependency></dependencies></project>' >"${repo}/child/pom.xml"
+  ! makevn_detect_app_http_signal "${repo}/child" || fail "inherited test scope requires HTTP health"
+  printf '<project><parent><relativePath>../pom.xml</relativePath></parent><dependencies><dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-web</artifactId><scope>runtime</scope></dependency></dependencies></project>' >"${repo}/child/pom.xml"
+  makevn_detect_app_http_signal "${repo}/child" || fail "explicit runtime scope should override managed test scope"
   ! makevn_detect_app_http_signal "" || fail "missing Maven root must not require HTTP health"
 )
 
