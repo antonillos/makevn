@@ -37,6 +37,10 @@ Exhaustive selected suites still differ from whole-project `verify`. Unknown imp
 requires another exhaustive preview and explanation; never silently broaden.
 A successful preview runs no tests. Preserve existing authorization when broadening.
 
+Focused selection is by module for production changes, not by changed Java class.
+In a single-module project this executes the entire module suite. Explain this
+explicitly before execution; focused does not promise a small number of tests.
+
 Preparation uses `-am install` with UT/IT execution disabled and retains test
 compilation/test jars. A 34-module reactor does not mean 34 suites ran. Owner
 verification runs without `-am`, with separate UT/IT selectors and fresh non-skipped

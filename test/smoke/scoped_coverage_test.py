@@ -87,7 +87,7 @@ class ScopedTests(unittest.TestCase):
         self.ut.write_bytes(b'other execution')
         scoped.load(self.repo, self.state)  # Independent snapshot.
         scoped.prepare(self.repo, self.state, self.repo, ['client', 'boot'], [self.source])
-        with self.assertRaisesRegex(ValueError, 'incomplete'):
+        with self.assertRaisesRegex(ValueError, 'last verification did not complete successfully.*verify-changes-\\*.log'):
             scoped.load(self.repo, self.state)
 
     def test_root_module_changed_class_is_snapshotted(self):
