@@ -1,6 +1,7 @@
 """Check the Testcontainers engine and pass a local Docker context to Java."""
 
 import os
+from pathlib import Path, PurePosixPath
 import subprocess
 import sys
 
@@ -31,12 +32,26 @@ def test_environment(environment):
                 "Configure DOCKER_HOST and any required TLS settings for Testcontainers."
             )
         environment["DOCKER_HOST"] = host
+    if "TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE" not in environment and colima_socket(environment):
+        environment["TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE"] = "/var/run/docker.sock"
     # Docker CLI context precedence must not probe a different engine from Java.
     environment.pop("DOCKER_CONTEXT", None)
     version = docker_output(["info", "--format", "{{.ServerVersion}}"], environment)
     if not version:
         raise RuntimeError("Docker returned no server version")
     return environment
+
+
+def colima_socket(environment):
+    host = environment.get("DOCKER_HOST", "")
+    if not host.startswith("unix://"):
+        return False
+    home = PurePosixPath(environment.get("HOME", str(Path.home())))
+    try:
+        relative = PurePosixPath(host[len("unix://"):]).relative_to(home / ".colima")
+    except ValueError:
+        return False
+    return len(relative.parts) == 2 and relative.parts[0] != ".." and relative.parts[1] == "docker.sock"
 
 
 def main():

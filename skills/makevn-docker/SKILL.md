@@ -20,7 +20,10 @@ services. With no Compose stack, do not call `docker_up` or invent a Compose fil
 the tests create their own containers. MakeVN checks engine access before test
 execution and forwards a local Unix Docker context as `DOCKER_HOST` to Java when
 that variable is unset. Explicit Docker and Testcontainers environment settings
-are preserved. Engine/context failures block tests and require environment
+are preserved. For `$HOME/.colima/<profile>/docker.sock` endpoints, MakeVN defaults
+the child-only Ryuk socket override to `/var/run/docker.sock` when unset, while
+preserving the macOS connection endpoint and any explicit override. Host-address
+overrides remain user configuration. Engine/context failures block tests and require environment
 diagnosis; `docker_up` does not start the Docker engine. See the reference for
 remote/TLS and runtime-specific limits.
 
