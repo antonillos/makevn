@@ -2,7 +2,7 @@ pub(super) fn command_help(
     command: &str,
 ) -> Option<(&'static str, &'static str, &'static [&'static str])> {
     match command {
-        "agent install" => Some(("makevn agent install <opencode|codex> [--scope global|project]", "Register MCP and five workflow skills for an agent client.", &["--scope global|project  Select configuration and skills scope"])),
+        "agent install" => Some(("makevn agent install <opencode|codex> [--scope global|project]", "Register MCP and six workflow skills for an agent client.", &["--scope global|project  Select configuration and skills scope"])),
         "agent status" => Some(("makevn agent status <opencode|codex> --scope global|project", "Inspect agent registration without changes.", &["--scope global|project  Required configuration and skills scope"])),
         "agent upgrade" => Some(("makevn agent upgrade [--scope global|project]", "Upgrade existing MCP and workflow skill integration, preferring project scope.", &["--scope global|project  Override detected scope"])),
         "profile refresh" => Some(("makevn [--repo PATH] profile refresh", "Refresh detected repository profile information.", &[])),
@@ -11,7 +11,7 @@ pub(super) fn command_help(
         "crap install-analyzer" => Some(("makevn [--repo PATH] crap install-analyzer", "Download and verify the pinned crap4java release.", &[])),
         "execution-cleanup" => Some(("makevn execution-cleanup [--retention-days DAYS] [--dry-run]", "Remove expired execution records and owned logs. Outputs JSON counts and candidate paths.", &["--retention-days DAYS  Retention period (MAKEVN_RETENTION_DAYS or 3 days)", "--dry-run  List candidates without deleting files"])),
         "help" => Some(("makevn help", "Print the full makevn help.", &[])),
-        "agent" => Some(("makevn agent <install|status> <opencode|codex> [--scope global|project] | makevn agent upgrade [--scope global|project]", "Register MCP and five workflow skills, upgrade the existing integration (project before global), or inspect registration without changes. Installation does not prove a running client loaded a skill.", &["--scope global|project  Select configuration and skills scope; status requires it."])),
+        "agent" => Some(("makevn agent <install|status> <opencode|codex> [--scope global|project] | makevn agent upgrade [--scope global|project]", "Register MCP and six workflow skills, upgrade the existing integration (project before global), or inspect registration without changes. Installation does not prove a running client loaded a skill.", &["--scope global|project  Select configuration and skills scope; status requires it."])),
         "doctor" => Some(("makevn [--repo PATH] doctor [--compact] [--reset-config]", "Inspect repository setup and makevn configuration.", &["--compact  Print brief, noninteractive setup advice", "--reset-config  Back up settings and ask setup questions again (interactive CLI only)"])),
         "init" => Some(("makevn [--repo PATH] init [--dry-run] [--force]", "Initialize .makevn configuration for the repository.", &["--dry-run  Show what would change without writing files", "--force    Refresh existing generated files"])),
         "uninstall" => Some(("makevn [--repo PATH] uninstall [--dry-run]", "Remove makevn local repository state.", &["--dry-run  Show what would be removed"])),
@@ -23,15 +23,15 @@ pub(super) fn command_help(
         "validate" => maven_command_help("validate", "Validate the Maven project model.", false),
         "package" => maven_command_help("package", "Package the project without running tests.", false),
         "build" => maven_command_help("build", "Run the full Maven build.", false),
-        "clean" => maven_command_help("clean", "Clean Maven build output.", false),
-        "test" => Some(("makevn [--repo PATH] [--compact] test [--tail] [--name TEST]... [--fast] [--clean-generated-contract-targets] [-- EXTRA_MAVEN_ARGS...]", "Run tests with optional filtering.", &["--tail                              Start in interactive log tail mode", "--compact                           Use compact non-interactive output", "--name TEST                         Test class name or comma-separated names", "--fast                              Skip compilation when sources have not changed", "--clean-generated-contract-targets  Clean stale generated sources before running"])),
-        "verify-ut" => maven_command_help("verify-ut", "Run unit-test-only verification.", true),
-        "verify-ut-coverage" => maven_command_help("verify-ut-coverage", "Run unit-test-only verification with coverage.", true),
-        "verify-it" => maven_command_help("verify-it", "Run integration-test-only verification.", true),
-        "verify-it-coverage" => maven_command_help("verify-it-coverage", "Run integration-test-only verification with coverage.", true),
-        "verify" => maven_command_help("verify", "Run full combined verification.", true),
+        "clean" => maven_command_help("clean", "Clean Maven build output.", true),
+        "test" => Some(("makevn [--repo PATH] [--compact] test [--tail] [--name TEST]... [--fast] [-- EXTRA_MAVEN_ARGS...]", "Run tests with optional filtering.", &["--tail                              Start in interactive log tail mode", "--compact                           Use compact non-interactive output", "--name TEST                         Test class name or comma-separated names", "--fast                              Skip compilation when sources have not changed"])),
+        "verify-ut" => maven_command_help("verify-ut", "Run unit-test-only verification.", false),
+        "verify-ut-coverage" => maven_command_help("verify-ut-coverage", "Run unit-test-only verification with coverage.", false),
+        "verify-it" => maven_command_help("verify-it", "Run integration-test-only verification.", false),
+        "verify-it-coverage" => maven_command_help("verify-it-coverage", "Run integration-test-only verification with coverage.", false),
+        "verify" => maven_command_help("verify", "Run full combined verification.", false),
         "verify-changes-preview" => Some(("makevn [--repo PATH] verify-changes-preview [--focused|--exhaustive]", "Preview changed-code scope without Maven; focused by default. For user-requested faster local feedback, explain --focused limitations and use the same mode in preview and execution. A large preparation reactor does not mean its test suites run.", &["--focused  Preview focused owner suites and selected tests (default)", "--exhaustive  Preview exhaustive changed-code verification"])),
-        "verify-changes" => maven_command_help("verify-changes", "Verify changed-code scope; focused by default, --exhaustive is explicit. --focused prepares dependencies without UT/IT then verifies production owner suites and selected changed tests without -am; not a full integration/coverage gate. Use the same mode as preview and report its scope.", true),
+        "verify-changes" => maven_command_help("verify-changes", "Verify changed-code scope; focused by default, --exhaustive is explicit. --focused prepares dependencies without UT/IT then verifies production owner suites and selected changed tests without -am; not a full integration/coverage gate. Use the same mode as preview and report its scope.", false),
         "coverage" => Some(("makevn [--repo PATH] coverage [--threshold PCT]", "Check the latest aggregate coverage report.", &["--threshold  Required coverage percentage"])),
         "coverage-changes" => Some(("makevn [--repo PATH] coverage-changes [--threshold PCT] [--overall-threshold PCT] [--verbose]", "Check incremental and per-module coverage.", &["--threshold          Per-module coverage percentage", "--overall-threshold  Overall coverage percentage", "--verbose            Print detailed coverage output"])),
         "crap" => Some(("makevn [--repo PATH] crap [install-analyzer] [--jacoco-xml PATH] [--threshold SCORE] [--max-warnings COUNT]", "Calculate Java CRAP metrics from existing JaCoCo XML coverage.", &["install-analyzer  Download and verify the pinned crap4java release", "--jacoco-xml      Use a specific existing JaCoCo XML report", "--threshold       CRAP score warning threshold (default: 8)", "--max-warnings    Fail when the warning count exceeds this ratchet"])),
@@ -44,7 +44,7 @@ pub(super) fn command_help(
         "docker-reset" => Some(("makevn [--repo PATH] docker-reset [--tail]", "Delete the selected boot Compose volumes and restart its services. Requires explicit reset authorization; never prunes global volumes.", &["--tail  Start in interactive log tail mode"])),
         "docker-ps" => tail_command_help("docker-ps", "List boot Docker containers."),
         "docker-stats" => tail_command_help("docker-stats", "Show Docker CPU and memory stats."),
-        "docker-ps-required" => Some(("makevn [--repo PATH] docker-ps-required [--tail] [--compose boot|karate] [--wait-seconds N]", "Validate required Docker services are running and healthy.", &["--tail          Start in interactive log tail mode", "--compose       Compose profile: boot or karate", "--wait-seconds  Seconds to wait for services"])),
+        "docker-ps-required" => Some(("makevn [--repo PATH] docker-ps-required [--tail] [--compose boot|karate] [--wait-seconds N]", "Validate required Docker services are running and healthy.", &["--tail          Start in interactive log tail mode", "--compose       Compose profile: boot or karate", "--compose-file PATH|none  Override Compose for this execution only", "--wait-seconds  Seconds to wait for services"])),
         "karate-docker-up" => tail_command_help("karate-docker-up", "Start Karate E2E Docker services while preserving volumes."),
         "karate-docker-down" => tail_command_help("karate-docker-down", "Stop Karate E2E Docker services while preserving volumes."),
         "karate-docker-reset" => Some(("makevn [--repo PATH] karate-docker-reset [--tail]", "Delete the selected Karate E2E Compose volumes and restart its services. Requires explicit reset authorization; never prunes global volumes.", &["--tail  Start in interactive log tail mode"])),
@@ -72,13 +72,13 @@ pub(super) fn maven_command_help(
         ("validate", "makevn [--repo PATH] [--compact] validate [--tail] [-- EXTRA_MAVEN_ARGS...]"),
         ("package", "makevn [--repo PATH] [--compact] package [--tail] [-- EXTRA_MAVEN_ARGS...]"),
         ("build", "makevn [--repo PATH] [--compact] build [--tail] [-- EXTRA_MAVEN_ARGS...]"),
-        ("clean", "makevn [--repo PATH] [--compact] clean [--tail] [-- EXTRA_MAVEN_ARGS...]"),
-        ("verify-ut", "makevn [--repo PATH] [--compact] verify-ut [--tail] [--clean-generated-contract-targets] [-- EXTRA_MAVEN_ARGS...]"),
-        ("verify-ut-coverage", "makevn [--repo PATH] [--compact] verify-ut-coverage [--tail] [--clean-generated-contract-targets] [-- EXTRA_MAVEN_ARGS...]"),
-        ("verify-it", "makevn [--repo PATH] [--compact] verify-it [--tail] [--clean-generated-contract-targets] [-- EXTRA_MAVEN_ARGS...]"),
-        ("verify-it-coverage", "makevn [--repo PATH] [--compact] verify-it-coverage [--tail] [--clean-generated-contract-targets] [-- EXTRA_MAVEN_ARGS...]"),
-        ("verify", "makevn [--repo PATH] [--compact] verify [--tail] [--clean-generated-contract-targets] [-- EXTRA_MAVEN_ARGS...]"),
-        ("verify-changes", "makevn [--repo PATH] [--compact] verify-changes [--tail] [--focused|--exhaustive] [--clean-generated-contract-targets] [-- EXTRA_MAVEN_ARGS...]"),
+        ("clean", "makevn [--repo PATH] [--compact] clean [--tail] [--clean-generated-contract-targets] [-- EXTRA_MAVEN_ARGS...]"),
+        ("verify-ut", "makevn [--repo PATH] [--compact] verify-ut [--tail] [-- EXTRA_MAVEN_ARGS...]"),
+        ("verify-ut-coverage", "makevn [--repo PATH] [--compact] verify-ut-coverage [--tail] [-- EXTRA_MAVEN_ARGS...]"),
+        ("verify-it", "makevn [--repo PATH] [--compact] verify-it [--tail] [-- EXTRA_MAVEN_ARGS...]"),
+        ("verify-it-coverage", "makevn [--repo PATH] [--compact] verify-it-coverage [--tail] [-- EXTRA_MAVEN_ARGS...]"),
+        ("verify", "makevn [--repo PATH] [--compact] verify [--tail] [-- EXTRA_MAVEN_ARGS...]"),
+        ("verify-changes", "makevn [--repo PATH] [--compact] verify-changes [--tail] [--focused|--exhaustive] [-- EXTRA_MAVEN_ARGS...]"),
         ("pr-verify", "makevn [--repo PATH] [--compact] pr-verify [--tail] [-- EXTRA_MAVEN_ARGS...]"),
     ];
     let usage = usages.iter().find(|(name, _)| *name == command)?.1;
@@ -87,11 +87,19 @@ pub(super) fn maven_command_help(
         "--compact  Use compact non-interactive output",
         "--          Forward remaining arguments to Maven",
     ];
+    if matches!(command, "verify" | "verify-it" | "verify-it-coverage") {
+        return Some((usage, description, &[
+            "--compose-file PATH|none  Override boot Compose for this execution only",
+            "--tail  Start in interactive log tail mode",
+            "--compact  Use compact non-interactive output",
+            "--  Forward remaining arguments to Maven",
+        ]));
+    }
     if clean_contract {
         let options: &[&str] = &[
             "--tail                              Start in interactive log tail mode",
             "--compact                           Use compact non-interactive output",
-            "--clean-generated-contract-targets  Clean stale generated sources before running",
+            "--clean-generated-contract-targets  Remove stale generated sources after Maven clean",
             "--                                  Forward remaining arguments to Maven",
         ];
         Some((usage, description, options))
@@ -116,7 +124,7 @@ pub(super) fn tail_command_help(
     Some((
         usage,
         description,
-        &["--tail  Start in interactive log tail mode"],
+        &["--tail  Start in interactive log tail mode", "--compose-file PATH|none  Override Compose for this execution only"],
     ))
 }
 

@@ -219,7 +219,7 @@ cmd_verify_ut() {
     read -r -a coverage_prop_flags <<< "${coverage_prop_flags_value}"
   fi
   if [[ ${#cli_flags[@]} -gt 0 ]]; then
-    makevn_run_maven_goal "${repo_root}" verify verify-ut "" \
+    makevn_run_maven_goal "${repo_root}" verify verify-ut verify-ut \
       "${cli_flags[@]}" \
       "${coverage_prop_flags[@]}" \
       -DskipITs \
@@ -227,7 +227,7 @@ cmd_verify_ut() {
       -Dmaven.test.failure.ignore=false \
       "$@"
   else
-    makevn_run_maven_goal "${repo_root}" verify verify-ut "" \
+    makevn_run_maven_goal "${repo_root}" verify verify-ut verify-ut \
       "${coverage_prop_flags[@]}" \
       -DskipITs \
       -DfailIfNoTests=false \

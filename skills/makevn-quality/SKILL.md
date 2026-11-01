@@ -20,6 +20,11 @@ Load [makevn-test](../makevn-test/SKILL.md) for verification and
 | Changed-code coverage / CRAP | `makevn coverage-changes` / `makevn crap-changes` | `coverage_changes` / `crap_changes` | Fresh matching changed-class evidence and gate outcome |
 | Mutation | `makevn mutation` | `mutation` | Supported PIT report and requested result |
 
+For Checkstyle, inspect doctor's `Checkstyle support: yes` signal (CLI JSON:
+`repository_analysis.checkstyle_available` is `yes`). This reports availability;
+run `checkstyle` and inspect its exit status to establish success. See the
+[Checkstyle recipe](references/workflows.md#checkstyle) for detection and configuration.
+
 Use only detected supported plugins or explicitly configured goals; never invent
 goals or bypass validation. If JaCoCo data is missing/empty, configure required
 `MAKEVN_COVERAGE_PROP_FLAGS` in `.makevn/config`, run `makevn profile refresh`, then

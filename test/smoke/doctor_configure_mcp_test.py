@@ -35,7 +35,8 @@ with tempfile.TemporaryDirectory(prefix="makevn-doctor-chat-") as directory:
     (repo / "pom.xml").write_text('<project><modelVersion>4.0.0</modelVersion><groupId>x</groupId>'
                                   '<artifactId>app</artifactId><version>1</version><dependencies><dependency>'
                                   '<groupId>org.testcontainers</groupId><artifactId>testcontainers</artifactId>'
-                                  '<version>1</version></dependency></dependencies></project>')
+                                  '<version>1</version></dependency><dependency><groupId>org.springframework.boot</groupId>'
+                                  '<artifactId>spring-boot-starter-web</artifactId></dependency></dependencies></project>')
     source = repo / "src/main/java/Application.java"
     source.parent.mkdir(parents=True)
     source.write_text("public class Application { public static void main(String[] args) {} }")
@@ -79,7 +80,7 @@ with tempfile.TemporaryDirectory(prefix="makevn-doctor-chat-") as directory:
     added.parent.mkdir()
     added.write_text("services: {}\n")
     stale = configure(repo, doctor, {"boot_compose": available["boot_compose"]["options"][0]}, error=True)
-    assert len(questions(stale)["boot_compose"]["options"]) == 3
+    assert len(questions(stale)["boot_compose"]["options"]) == 4
     assert config.read_bytes() == before
     doctor = stale
     partial = configure(repo, doctor, {"local_containers": False})
@@ -112,5 +113,62 @@ with tempfile.TemporaryDirectory(prefix="makevn-doctor-unsupported-") as directo
     assert questions(doctor) == {}
     configure(repo, doctor, {"local_containers": True}, error=True)
     assert not (repo / ".makevn/config").exists()
+
+with tempfile.TemporaryDirectory(prefix="makevn-doctor-jdk-") as directory:
+    repo = Path(directory) / "repo"
+    repo.mkdir()
+    (repo / "pom.xml").write_text(
+        '<project><build><plugins><plugin><artifactId>maven-enforcer-plugin</artifactId>'
+        '<executions><execution><goals><goal>enforce</goal></goals><configuration><rules>'
+        '<requireJavaVersion><version>[125,127)</version></requireJavaVersion>'
+        '</rules></configuration></execution></executions></plugin></plugins></build></project>')
+    candidates = Path(directory) / "jdks"
+    homes = [candidates / version for version in ("125", "126")]
+    for home in homes:
+        executable = home / "bin/java"
+        executable.parent.mkdir(parents=True)
+        executable.write_text(f'#!/bin/sh\necho \'openjdk version "{home.name}"\' >&2\n')
+        executable.chmod(0o755)
+    with patch.dict(os.environ, {"MAKEVN_JDK_CANDIDATE_BASES": str(candidates), "JAVA_HOME": ""}):
+        call(repo, "doctor")
+        call(repo, "init")
+        doctor = call(repo, "doctor")
+        assert "code_java_home" in questions(doctor), doctor
+        choice = questions(doctor)["code_java_home"]
+        assert set(choice["options"]) == set(map(str, homes)), doctor
+        assert choice["suggestedValue"] == str(homes[0]), choice
+        assert 'openjdk version "125"' in choice["prompt"], choice
+        config = repo / ".makevn/config"
+        before = config.read_bytes()
+        configure(repo, doctor, {"code_java_home": "/not-an-offered-jdk"}, error=True)
+        assert config.read_bytes() == before
+        completed = configure(repo, doctor, {"code_java_home": str(homes[1])})
+        assert completed["interactive_setup"]["required"] is False, completed
+        assert completed["interactive_setup"]["status"] == "ready", completed
+        assert str(homes[1]) in config.read_text()
+        config.write_bytes(before)
+        for home in homes:
+            (home / "bin/java").unlink()
+        missing = call(repo, "doctor")
+        assert missing["exitCode"] == 0, missing
+        assert "no usable JDK" in missing["nextSuggestion"], missing
+        assert "No usable JDK" in missing["untrustedData"]["output"], missing
+
+with tempfile.TemporaryDirectory(prefix="makevn-doctor-console-") as directory:
+    repo = Path(directory)
+    (repo / "pom.xml").write_text('<project><modelVersion>4.0.0</modelVersion><groupId>x</groupId>'
+                                  '<artifactId>library</artifactId><version>1</version></project>')
+    source = repo / "src/main/java/Console.java"
+    source.parent.mkdir(parents=True)
+    source.write_text('public class Console { public static void main(String[] args) { System.out.println("info"); } }')
+    call(repo, "init")
+    doctor = call(repo, "doctor")
+    assert "app_health_url" not in questions(doctor), doctor
+    assert "HTTP readiness" not in doctor["untrustedData"]["output"], doctor
+    config = repo / ".makevn/config"
+    config.write_text(config.read_text() + '\nMAKEVN_APP_HEALTH_URL="http://localhost:18080/custom"\n')
+    configured = call(repo, "doctor")
+    assert "app_health_url" not in questions(configured), configured
+    assert 'MAKEVN_APP_HEALTH_URL="http://localhost:18080/custom"' in config.read_text()
 
 print("Doctor chat configuration MCP tests passed")

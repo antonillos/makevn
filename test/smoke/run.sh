@@ -371,11 +371,48 @@ assert data['command'] == 'doctor', data
 assert data['repository_analysis']['repo_root'] == repo, data
 assert data['repository_analysis']['repository_support_status'] == 'unsupported', data
 assert data['repository_analysis']['current_makevn_status'] == 'not initialized', data
+assert data['repository_analysis']['checkstyle_available'] == 'no', data
 assert 'make_integration_status' not in data['repository_analysis'], data
 assert data['suggested_next_step']['next'] == '', data
 assert data['suggested_next_step']['optional'] == '', data
 assert data['suggested_next_step']['note'] == 'no automatic recommendation: Maven repository signals were not detected', data
 PY
+}
+
+test_doctor_detects_checkstyle_capability() {
+  local repo="${TMP_ROOT}/doctor-checkstyle"
+  local json_file="${TMP_ROOT}/doctor-checkstyle.json"
+  local output=""
+
+  mkdir -p "${repo}"
+  cat > "${repo}/pom.xml" <<'EOF'
+<project>
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>com.example</groupId>
+  <artifactId>checkstyle-sample</artifactId>
+  <version>1.0.0</version>
+  <build>
+    <plugins>
+      <plugin>
+        <artifactId>maven-checkstyle-plugin</artifactId>
+      </plugin>
+    </plugins>
+  </build>
+</project>
+EOF
+
+  bash "${BACKEND}" doctor --repo "${repo}" --format json > "${json_file}"
+  python3 - "${json_file}" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], 'r', encoding='utf-8') as fh:
+    data = json.load(fh)
+assert data['repository_analysis']['checkstyle_available'] == 'yes', data
+PY
+
+  output="$("${CLI}" --repo "${repo}" doctor --compact)"
+  [[ "${output}" == *"Checkstyle support: yes"* ]] || fail "compact doctor should report detected Checkstyle support"
 }
 
 test_doctor_counts_custom_jacoco_xml_path() {
@@ -547,7 +584,7 @@ while True:
         if not chunk:
             break
         output.extend(chunk)
-        if not sent_choice and b'Enter number [1-2]:' in output:
+        if not sent_choice and b'Enter number [0-2] or p:' in output:
             os.write(fd, b'1\n')
             sent_choice = True
 
@@ -677,7 +714,8 @@ EOF
   output="$(JAVA_HOME= MAKEVN_JDK_CANDIDATE_BASES="${fake_home_root}/.sdkman/candidates/java" HOME="${fake_home_root}" ${CLI} --repo "${repo}" doctor)"
 
   [[ "${output}" == *"Code Java version: 6"* ]] || fail "doctor should detect the requested Java version from pom.xml"
-  [[ "${output}" == *"Resolved code JAVA_HOME: ${java17_home}"* ]] || fail "doctor should resolve to the lowest compatible newer JDK when no exact match is installed"
+  [[ "${output}" == *"Setup status: pending"* ]] || fail "doctor should ask the user to choose between compatible JDKs"
+  [[ "${output}" == *"Resolved code JAVA_HOME: unresolved"* ]] || fail "doctor must not silently select a compatible JDK"
 }
 
 test_doctor_reports_compatible_newer_tool_versions_java_home() {
@@ -880,10 +918,13 @@ test_installer() {
   assert_file_exists "${prefix}/libexec/makevn/crap/jacoco_html.py"
   assert_file_exists "${prefix}/libexec/makevn/compat/verify_changes.sh"
   assert_not_exists "${prefix}/share/makevn/makevn.mk"
-  for skill in makevn makevn-test makevn-docker makevn-karate makevn-quality; do
+  for skill in makevn makevn-test makevn-docker makevn-karate makevn-quality makevn-product-test; do
     assert_file_exists "${prefix}/share/makevn/skills/${skill}/SKILL.md"
+  done
+  for skill in makevn makevn-test makevn-docker makevn-karate makevn-quality; do
     assert_file_exists "${prefix}/share/makevn/skills/${skill}/references/workflows.md"
   done
+  assert_file_exists "${prefix}/share/makevn/skills/makevn-product-test/references/report.md"
   "${prefix}/bin/makevn" --help >/dev/null
 }
 
@@ -903,7 +944,7 @@ test_runtime_archive_includes_crap_reporter() {
     || fail "runtime archive should include CRAP reporter"
   tar -tzf "${archive}" | grep -Fx 'makevn-0.0.0-smoke/libexec/makevn/crap/jacoco_html.py' >/dev/null \
     || fail "runtime archive should include the JaCoCo HTML adapter"
-  for skill in makevn makevn-test makevn-docker makevn-karate makevn-quality; do
+  for skill in makevn makevn-test makevn-docker makevn-karate makevn-quality makevn-product-test; do
     tar -tzf "${archive}" | grep -Fx "makevn-0.0.0-smoke/share/makevn/skills/${skill}/SKILL.md" >/dev/null \
       || fail "runtime archive should include ${skill}"
   done
@@ -941,6 +982,7 @@ test_mcp_tool_listing() {
   python3 "${ROOT_DIR}/test/smoke/docker_lifecycle_test.py" "${prefix}/bin/makevn" "${prefix}/bin/makevn-mcp"
   python3 "${ROOT_DIR}/test/smoke/doctor_reset_test.py" "${prefix}/bin/makevn"
   python3 -m unittest discover -s "${ROOT_DIR}/test/smoke" -p demo_mcp_test.py
+  python3 "${ROOT_DIR}/test/smoke/generated_contract_mcp_test.py" "${prefix}/bin/makevn-mcp"
   python3 "${ROOT_DIR}/test/smoke/structured_mcp_test.py" "${prefix}/bin/makevn-mcp"
   python3 "${ROOT_DIR}/test/smoke/execution_mcp_test.py" "${prefix}/bin/makevn-mcp"
 }
@@ -1834,6 +1876,7 @@ server:
 security:
   ignored-paths: /internal/**
 EOF
+  printf '<project/>\n' > "${repo}/code/boot/pom.xml"
   printf '<project/>\n' > "${repo}/e2e/karate/pom.xml"
   printf 'services:\n  db:\n    image: postgres:16\n' > "${repo}/e2e/karate/src/test/resources/compose/docker-compose.yml"
   printf 'services:\n  db:\n    environment:\n      FOO: bar\n' > "${repo}/e2e/karate/src/test/resources/compose/docker-compose.override.yml"
@@ -2753,6 +2796,15 @@ EOF
 #!/usr/bin/env bash
 set -euo pipefail
 printf 'docker %s\n' "$*" >> .docker.log
+case "$1 ${2:-}" in
+  'context show') printf 'testcontainers-fixture\n'; exit 0 ;;
+  'context inspect') printf 'unix:///tmp/makevn-fixture.sock\n'; exit 0 ;;
+  'info --format')
+    [[ "${DOCKER_HOST:-}" == unix:///tmp/makevn-fixture.sock ]]
+    printf '28\n'
+    exit 0
+    ;;
+esac
 if [[ "$1" == "compose" && "${2:-}" == "version" ]]; then
   exit 0
 fi
@@ -2786,7 +2838,7 @@ MAKEVN_KARATE_TOOL_VERSIONS=""
 MAKEVN_RUN_CMD=""
 EOF
 
-  PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" verify-it >/dev/null
+  DOCKER_HOST= DOCKER_CONTEXT=testcontainers-fixture PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" verify-it >/dev/null
 
   assert_matches "${repo}/.mvnw.log" '^ARGS=-f .*/pom\.xml -B -nsu verify -Djacoco\.skip=false -Dcoverage\.profile=true -DskipUTs -Dskip\.unit\.tests=true -DfailIfNoTests=false -Dmaven\.test\.failure\.ignore=false -Dmaven\.build\.cache\.enabled=false$'
   assert_contains "${repo}/.mvnw.log" "JAVA_HOME=${java_home}"
@@ -4766,11 +4818,13 @@ test_crap_install_analyzer_requires_cache_home() {
 }
 
 main() {
+  bash "${ROOT_DIR}/test/repo-sweep/results_test.sh"
   test_unclassified_build_change_requires_explicit_exhaustive
   test_coverage_rejects_old_global_after_scoped_verification
   test_verify_changes_focused_command
   test_doctor_unsupported
   test_backend_doctor_json
+  test_doctor_detects_checkstyle_capability
   test_doctor_counts_custom_jacoco_xml_path
   test_doctor_resolves_java_version_from_pom
   test_doctor_resolves_java_version_from_pom_property_reference
@@ -4778,6 +4832,10 @@ main() {
   test_doctor_does_not_invent_health_check
   test_doctor_detects_actuator_health_check
   test_doctor_missing_health_prompt
+  test_doctor_default_profile_requires_http_health
+  test_doctor_managed_and_test_dependencies_do_not_require_http_health
+  test_doctor_http_server_signals
+  test_doctor_console_main_does_not_require_http_health
   test_doctor_health_skip_and_noninteractive
   test_doctor_health_invalid_and_explicit_url
   test_doctor_health_confirms_suggested_default
@@ -4880,6 +4938,10 @@ main() {
   python3 "${ROOT_DIR}/test/smoke/docker_resources_pty_test.py" "${ROOT_DIR}/target/release/makevn"
   bash "${ROOT_DIR}/test/smoke/docker_resource_scope_test.sh"
   bash "${ROOT_DIR}/test/smoke/docker_runtime_hint_test.sh"
+  python3 "${ROOT_DIR}/test/smoke/docker_api_diagnostics_test.py"
+  bash "${ROOT_DIR}/test/smoke/docker_api_diagnostics_test.sh"
+  bash "${ROOT_DIR}/test/smoke/testcontainers_test.sh"
+  python3 "${ROOT_DIR}/test/smoke/testcontainers_test.py"
   bash "${ROOT_DIR}/test/smoke/karate_readiness_test.sh"
   bash "${ROOT_DIR}/test/smoke/karate_phase_records_test.sh"
   python3 "${ROOT_DIR}/test/smoke/karate_profiles_test.py"
@@ -4887,9 +4949,12 @@ main() {
   bash "${ROOT_DIR}/test/smoke/karate_profiles_doctor_test.sh"
   bash "${ROOT_DIR}/test/smoke/maven_resolution_test.sh"
   bash "${ROOT_DIR}/test/smoke/maven_system_test.sh"
+  python3 "${ROOT_DIR}/test/smoke/maven_inspection_test.py"
+  bash "${ROOT_DIR}/test/smoke/maven_validation_test.sh"
   bash "${ROOT_DIR}/test/smoke/jdk_discovery_test.sh"
   bash "${ROOT_DIR}/test/smoke/jdk_brew_test.sh"
   python3 "${ROOT_DIR}/test/smoke/enforcer_test.py"
+  python3 "${ROOT_DIR}/test/smoke/parent_properties_test.py"
   bash "${ROOT_DIR}/test/smoke/jdk_enforcer_test.sh"
   bash "${ROOT_DIR}/test/smoke/formatting_test.sh"
   bash "${ROOT_DIR}/test/smoke/formatting_recovery_test.sh"
@@ -4925,6 +4990,8 @@ python3 "${ROOT_DIR}/test/smoke/test_processes_test.py"
 python3 "${ROOT_DIR}/test/smoke/bind_mounts_test.py"
 bash "${ROOT_DIR}/test/smoke/doctor_pending_profiles_test.sh"
 bash "${ROOT_DIR}/test/smoke/doctor_setup_fallback_test.sh"
+bash "${ROOT_DIR}/test/smoke/compose_none_test.sh"
+bash "${ROOT_DIR}/test/smoke/compose_diagnostics_test.sh"
 bash "${ROOT_DIR}/test/smoke/init_presentation_test.sh"
 python3 "${ROOT_DIR}/test/smoke/question_style_test.py"
 python3 "${ROOT_DIR}/test/smoke/install_build_test.py"

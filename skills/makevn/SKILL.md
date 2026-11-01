@@ -63,6 +63,9 @@ and ask only new or changed decisions.
 Setup ready does not prove JDK, build, Docker or test readiness. Saving answers
 starts neither containers nor tests. Explain the user's decisions, not this
 internal sequence.
+Testcontainers needs a reachable Docker engine even without Compose. Load
+makevn-docker before testing such a repository; `LOCAL_CONTAINERS` is a project
+preference, not engine startup or proof of readiness.
 
 | Intent | Load next |
 | --- | --- |
@@ -70,6 +73,9 @@ internal sequence.
 | Container prerequisites, readiness, diagnosis or lifecycle | [makevn-docker](../makevn-docker/SKILL.md) |
 | Managed application E2E or an externally managed application | [makevn-karate](../makevn-karate/SKILL.md) |
 | Format, Checkstyle, coverage, CRAP or mutation | [makevn-quality](../makevn-quality/SKILL.md) |
+
+For product validation against real repositories, load
+[makevn-product-test](../makevn-product-test/SKILL.md).
 
 ## Common policy
 
@@ -102,7 +108,44 @@ After doctor/setup, use `makevn compile`, `makevn test-compile`, `makevn package
 `compile`, `test_compile`, `package`, `validate`. Build success proves only that
 requested build phase; it does not establish all tests or quality gates passed.
 Use `makevn jdk current` / `makevn jdk list` for Java context from `.tool-versions`.
+Multiple compatible automatic JDK candidates require a user choice through doctor
+and `doctor_configure`; one candidate is selected automatically. If the repository
+requires Java and no usable compatible JDK is found, doctor reports a JDK error
+while completing diagnosis successfully. Resolve it before builds or verification.
 Missing executables are environment issues; do not bypass MakeVN with raw Maven.
+
+For stale generated-source recovery, load makevn-test and use MCP `clean` with
+`clean-generated-contract-targets: true`, then retry the original scope only after
+cleanup succeeds. This option is exclusive to `clean`.
+
+Doctor reports the selected Maven version and compatibility with unconditional
+local `requireMavenVersion` rules. Maven commands check compatibility before
+running build goals. Explicit pins and wrappers retain precedence; MakeVN does
+not silently substitute another installation. Doctor inspects wrapper declarations
+without executing or downloading the wrapper; runtime checks use its actual
+version. Resolve incompatible or unknown versions before verification when a
+local rule constrains Maven.
+
+Unresolved module paths are reported as an inspection limit and left to Maven;
+checks still enforce constraints from locally resolved modules.
+
+Project discovery prefers the root POM, then `code/pom.xml`, then a unique
+outermost nested POM. Nested modules must not displace their aggregator. Multiple
+independent candidates stop diagnosis/init with an ambiguity error; use an
+isolated checkout of the intended project instead of guessing a candidate.
+
+Automatic JDK selection checks local Enforcer `requireJavaVersion` rules,
+including unconditional reactor modules and local relative parents. When a local
+rule needs a property inherited from a published parent, MakeVN reads cached
+parent POMs or fetches bounded metadata from Maven Central. See the reference
+for offline and mirrored-repository limits; do not suggest installing another
+JDK when parent metadata could not be resolved. Execution
+`skip` properties matter only when that execution has a Java rule (including
+plugin-level rules). An unresolved skip in a snapshots-only execution must not
+block JDK selection. An unresolved property affecting a Java rule does block it;
+do not bypass Enforcer or alter the POM to hide a detection failure. See the
+[JDK selection reference](references/workflows.md#stable-automatic-jdk-selection)
+for supported ranges and effective-POM limitations.
 
 `makevn refresh` is `init --force`: repair stale initialization after an upgrade.
 `makevn profile refresh` re-detects workflows and flags after configuration changes;
@@ -115,7 +158,7 @@ than switching to CLI reset.
 ## Product installation and agent registration
 
 Prefer Homebrew, then asdf, then the release installer. Build from sources only
-when developing MakeVN itself. Installations distribute all five skills.
+when developing MakeVN itself. Installations distribute all six skills.
 
 ```bash
 makevn agent install opencode --scope global
@@ -129,7 +172,25 @@ Global skills live in `~/.agents/skills/`, project skills in `.agents/skills/`.
 Restart/reload the client and check its available skills, then explicitly load
 one. Disk status cannot prove a session discovered or loaded it. Codex project
 configuration requires project trust. Run `makevn agent upgrade` after upgrading
-MakeVN. It updates existing project integration before global integration, including skills, references and registered
-MCP configurations. Use `--scope global|project` only to override detection.
+MakeVN. It updates skills, references and registered MCP configurations. In a
+terminal, multiple choices or linked configurations prompt for a selection,
+showing resolved destinations and preserving links. Noninteractive use selects
+project integration before global integration and rejects linked paths.
+Use `--scope global|project` only to override scope detection.
 Existing foreign skills or local edits block replacement; inspect conflicts rather
 than deleting user content. Agent selection remains model-dependent.
+
+### Disabling Compose discovery
+
+Compose answers also accept an absolute path to an existing file outside the
+detected candidates (CLI option `p`). Paths containing spaces are supported.
+Compose setup choices include the literal `none` for both `boot_compose` and
+`e2e_compose`. Select it when discovered files are examples or test data rather
+than required services. CLI doctor offers `0: None`; MCP doctor_configure accepts
+`"none"`. The persisted `MAKEVN_COMPOSE_FILE=none` or
+`MAKEVN_E2E_COMPOSE_FILE=none` overrides automatic discovery, including after
+profile refresh. Boot verification then has no Compose readiness prerequisite;
+Testcontainers engine requirements still apply. Explicit Compose lifecycle and
+readiness commands require an actual selected file and cannot use `none`.
+To change a saved selection, use interactive `makevn doctor --reset-config`
+(which resets other preferences too), then answer setup again. Reset is CLI-only.

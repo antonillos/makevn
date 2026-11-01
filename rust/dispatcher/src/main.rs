@@ -204,6 +204,7 @@ const COMMAND_SEQUENCE_BREAKERS: &[&str] = &[
     "--threshold",
     "--tag",
     "--compose",
+    "--compose-file",
     "--module",
     "--wait-seconds",
 ];
@@ -750,6 +751,7 @@ fn command_local_option_takes_value(command: &OsString, arg: &OsString) -> bool 
             arg.to_string_lossy().as_ref()
         ),
         ("karate-test" | "karate-all", "--tag")
+            | ("verify" | "verify-it" | "verify-it-coverage", "--compose-file")
     )
 }
 
@@ -908,6 +910,7 @@ fn command_option_takes_value(arg: &OsString) -> bool {
             | "--base"
             | "--tag"
             | "--compose"
+            | "--compose-file"
             | "--module"
     )
 }

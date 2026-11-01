@@ -95,7 +95,7 @@ command -v makevn-mcp
 
 ## OpenCode
 
-Register MCP and all five skills:
+Register MCP and all six skills:
 
 ```bash
 makevn agent install opencode --scope global
@@ -210,7 +210,7 @@ When using MCP tools directly, call the `makevn_doctor` tool first.
 ## Skill registration contract
 
 `makevn agent install <opencode|codex> [--scope global|project]` registers MCP and
-`makevn`, `makevn-test`, `makevn-docker`, `makevn-karate`, `makevn-quality` together.
+`makevn`, `makevn-test`, `makevn-docker`, `makevn-karate`, `makevn-quality`, `makevn-product-test` together.
 Product installation distributes resources but does not edit client configuration.
 Run `makevn agent upgrade` after a product upgrade. `makevn uninstall` removes repository
 integration only; it does not unregister skills or uninstall the product.
@@ -253,7 +253,7 @@ Status prints distributed-resource and destination paths, skill registration
 (absent/current/outdated/conflict), and MCP configuration status. A completed
 status command is a diagnostic, not proof of healthy configuration or client loading.
 After setup restart/reload the client, inspect its skills catalog and explicitly
-load all five skills. Then evaluate representative workflow requests using the
+load all six skills. Then evaluate representative workflow requests using the
 [client validation checklist](agent-skills-validation.md). A model can choose not
 to load an available skill; installation cannot guarantee implicit selection.
 
@@ -266,13 +266,27 @@ agent integration with the resources shipped in the installed version:
 makevn agent upgrade
 ```
 
-The current Git worktree takes precedence when it contains a managed skill
-manifest or a registered MakeVN MCP entry. Otherwise, upgrade falls back to the
+In noninteractive use, the current Git worktree takes precedence when it contains
+a managed skill manifest or a registered MakeVN MCP entry. Otherwise, upgrade falls back to the
 global integration. Repository initialization alone (`.makevn/`) does not establish
 a project agent registration. Running from a repository subdirectory still uses
 the worktree root. No Maven project or doctor initialization is required.
 
-Upgrade refreshes the shared skills and references and all registered Codex and
+In a terminal, upgrade lists the detected project and global integrations when
+there is more than one choice. Choose an individual client configuration or all
+registered configurations in one scope. OpenCode discovery includes `opencode.json`
+and `opencode.jsonc`, both at the worktree root and under `.opencode/`, and in the
+global OpenCode configuration directory. A single unambiguous regular configuration
+needs no prompt.
+
+Linked configurations require an explicit selection in a terminal. The menu shows
+the link and its resolved destination; choosing it updates the destination and
+preserves the link. You can instead select another JSON/JSONC configuration or the
+global integration. An empty answer, end of input or `0` cancels without changes.
+Noninteractive use rejects linked paths and explains how to choose interactively.
+Managed skills still reject symlinks.
+
+Upgrade refreshes the shared skills and references and all selected Codex and
 OpenCode MCP configurations in the selected scope. It does not register clients
 that have no MakeVN entry. A skills-only registration is also supported. If no
 integration exists, run `makevn agent install <opencode|codex>` first.

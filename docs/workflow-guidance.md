@@ -45,7 +45,7 @@ editing. See each [skill and its bundled recipes](agents.md) for owned policy.
 
 ```mermaid
 flowchart TD
-    INSTALL[Install product: distribute five skills] --> SETUP[Agent setup: register MCP and skills]
+    INSTALL[Install product: distribute six skills] --> SETUP[Agent setup: register MCP and skills]
     SETUP --> RELOAD[Reload client]
     RELOAD --> CATALOG[Check available skill metadata]
     CATALOG --> LOAD[Explicitly load skill]
@@ -94,6 +94,11 @@ blocker, not a switch to CLI doctor or terminal prompts. The interactive CLI
 setup/reset instructions apply to direct CLI use.
 
 ## Docker readiness and mount visibility
+
+For tests that manage containers themselves, follow the
+[Testcontainers workflow](testcontainers.md). A local Docker context is forwarded
+to Java and engine access is checked before tests. No Compose startup is needed
+unless the repository separately requires Compose services.
 
 All Docker operations use MakeVN MCP tools or supported MakeVN CLI commands;
 this includes read-only diagnosis and takes precedence over RTK preferences.

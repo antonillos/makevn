@@ -59,6 +59,8 @@ The shared makevn envelope contains `status` (`success` or `error`), `message`,
 `tool`, `exitCode`, `durationMs`, `logPaths`, `untrustedData` and `nextSuggestion`.
 Only `content`, `structuredContent`, `isError` and `outputSchema` are MCP-defined;
 the envelope fields are makevn's application contract, not MCP standard fields.
+Use structured `exitCode` to assess the command result. Do not infer success from
+a summary line or assume zero when status is missing or invalid.
 `nextSuggestion` is server-authored guidance; never infer it from command output.
 For doctor, it reflects the internal snapshot: init with force false, init with
 force true for stale/incomplete state, no init when current, and no adoption or
@@ -168,7 +170,8 @@ that the client provides a prefilled editor when it does not.
 Submit user-provided or previously user-authorized answers with `doctor_configure`
 in the same repository. Pass `setupToken` and an `answers` object keyed by question
 id: `boot_compose`, `e2e_compose`, `local_containers` (boolean), `app_health_url`,
-and `karate_app_profiles`. Compose answers use the exact offered path; Spring
+`karate_app_profiles`, and `code_java_home`. The JDK answer must be an exact offered
+installation path. Compose answers use an offered path, an absolute path to an existing file, or `none`; Spring
 profiles use literal comma-separated names. The tool validates the whole batch
 before atomically updating `.makevn/config`, preserves unrelated settings and
 returns a fresh diagnosis on success. Partial answers are accepted; omitted
@@ -229,6 +232,44 @@ Without a Maven pin, the existing root wrapper, context wrapper, then `mvn`
 PATH selection is preserved. Detailed doctor reports the effective executable
 for code and Karate independently.
 
+Maven preflight resolves command-line `-D`/`--define` properties before evaluating
+local Enforcer rules, including reactor modules. These values override POM
+properties; an omitted value means `true`. Doctor has no selected command: an
+unresolved execution skip is reported as command-dependent, without claiming
+compatibility. The actual command still stops if its properties cannot resolve
+that skip. Flags detected for one workflow are not applied to other commands.
+
+Doctor also reports the selected Maven version, its executable and compatibility
+with unconditional local `requireMavenVersion` rules, including reactor modules
+and relative parents. Local parent plugins are merged into the selected project's
+plugin before inspection, matching inherited executions by ID and honoring
+`inherited=false`. Child overrides replace superseded parent settings; distinct
+execution IDs remain independent. Building a parent reactor still checks the
+parent project's own constraints as well as its modules' effective constraints.
+Each execution's configuration is merged with the plugin
+configuration before collecting constraints: execution values override shared
+values, missing fields inherit shared values, and separate executions still
+constrain Maven independently. For wrappers it reads the version from `distributionUrl`
+without running the wrapper or downloading Maven, and labels that evidence as
+a declaration. Before a Maven build goal, MakeVN checks the actual executable's
+`--version` under the selected JDK and working directory. An incompatible or
+unresolved version/rule blocks constrained builds; configure/install an accepted
+version rather than bypassing Enforcer. With no detected local Maven constraint,
+builds retain their existing behavior. Remote parents and activated profiles
+still require Maven's own Enforcer evaluation. Module paths with properties that
+cannot be resolved locally (for example, profile properties) are deferred to
+Maven and reported as an inspection limit. Constraints from all resolved local
+modules still apply; unresolved properties in detected Enforcer rules still
+block execution. This inspection requires Python 3.
+
+Project discovery prefers `pom.xml` at the Git root, then `code/pom.xml`.
+Otherwise it selects a unique outermost nested POM, excluding generated/state
+directories (`target`, `node_modules`, `.git`, `.makevn`). It does not select a
+reactor child ahead of an existing ancestor POM. Multiple independent roots
+produce an ambiguity error, not an alphabetical choice. Diagnose an isolated
+checkout containing the intended project before initialization. Passing a nested
+directory inside a Git checkout does not change MakeVN's Git-root contract.
+
 
 ### Stable automatic JDK selection
 
@@ -244,14 +285,81 @@ for projects that deliberately require an experimental compiler.
 
 Automatic code-JDK selection also checks unconditional local
 `maven-enforcer-plugin` `requireJavaVersion` rules before treating newer JDKs
-as compatible. Numeric minimum, exact, bounded and union ranges are supported,
+as compatible. When no compiler Java version or tool pin is declared, these
+rules alone identify the installed stable JDKs satisfying all rules. A single
+compatible installation is selected automatically. Multiple compatible installations
+(including different installations of the same major) require a user choice through
+`code_java_home` in `doctor_configure` or interactive CLI doctor. Doctor recommends
+the lowest compatible major and saves the chosen path in `MAKEVN_CODE_JAVA_HOME`.
+Explicit configuration and tool pins remain authoritative. An exported `JAVA_HOME`
+is retained when it is a stable compatible candidate. Until the choice is
+saved, builds stop rather than silently selecting a candidate. If Java is required
+and no usable compatible JDK is found, doctor reports `Code JDK error` in detailed
+and compact modes and `repository_analysis.code_java_error` in JSON. Diagnosis
+still succeeds (exit zero); builds and verification must wait for a usable JDK.
+Numeric minimum, exact, bounded and union ranges are supported,
 including patch versions and properties from local relative parent POMs. Rules in unconditional local reactor modules also constrain the selected JDK. For
 example, `[25,26)` rejects 27 and requires an accepted stable 25.x. Doctor
 reports the restriction if no candidate satisfies it; makevn never adds an
 Enforcer skip flag or changes the project's range.
+
+Only executions containing `requireJavaVersion` rules, either in their own
+configuration or the plugin's shared configuration, require their effective
+`skip` value to be resolved. A snapshots-only execution with
+`<skip>${skipEnforceSnapshots}</skip>` does not constrain Java selection, even
+when that property is undefined. An unresolved skip on a Java-rule execution
+still stops automatic selection. For example, a separate Java execution with
+`[25,26)` accepts stable 25.0.3 despite that unrelated snapshots property;
+installing another JDK or rerunning init does not fix a parser failure.
 
 This read-only inspection requires Python 3 and is not a complete Maven
 `effective-pom` evaluator: remote parent rules and profile activation remain
 Maven's responsibility. Unresolved or unsupported detected local rules stop
 automatic selection rather than guessing. Explicit configured JDK paths remain
 user choices and are still checked by Maven Enforcer when Maven executes.
+
+When a detected local rule references a property absent from local POMs, MakeVN
+resolves the published parent property chain using literal parent coordinates.
+It reads `~/.m2/repository` (or `localRepository` from `~/.m2/settings.xml`) first,
+then its metadata cache under `$XDG_CACHE_HOME/makevn/parent-poms` (default
+`~/.cache/makevn/parent-poms`), then HTTPS Maven Central. Each fetch has a five
+second timeout and a 2 MB limit; parent chains are limited to 16 entries. No
+Maven plugins or project code execute. Child and explicit command properties
+retain precedence. Only properties are imported; published parent rules are
+still outside this inspection's scope.
+
+Offline mode or mirrors in the user settings disable direct Central inspection;
+the parent must already exist in the configured local Maven repository. Custom
+remote repositories, global/alternate settings and Maven profile activation are
+not evaluated by this metadata resolver. Missing, cyclic or unresolvable parent
+metadata blocks selection; report a parent-resolution failure rather than
+assuming another JDK is needed. Do not change the fixture POM or bypass Enforcer.
+
+### Disabling Compose discovery
+
+Compose answers also accept an absolute path to an existing file outside the
+detected candidates (CLI option `p`). Paths containing spaces are supported.
+Compose setup choices include the literal `none` for both `boot_compose` and
+`e2e_compose`. Select it when discovered files are examples or test data rather
+than required services. CLI doctor offers `0: None`; MCP doctor_configure accepts
+`"none"`. The persisted `MAKEVN_COMPOSE_FILE=none` or
+`MAKEVN_E2E_COMPOSE_FILE=none` overrides automatic discovery, including after
+profile refresh. Boot verification then has no Compose readiness prerequisite;
+Testcontainers engine requirements still apply. Explicit Compose lifecycle and
+readiness commands require an actual selected file and cannot use `none`.
+To change a saved selection, use interactive `makevn doctor --reset-config`
+(which resets other preferences too), then answer setup again. Reset is CLI-only.
+
+For a single verification, `makevn verify --compose-file /absolute/compose.yaml`
+(or `--compose-file none`) overrides the saved boot Compose without changing
+configuration or starting services. `verify-it` and `verify-it-coverage` also
+support this option. MCP uses the string argument `"compose-file"`; composite
+steps pass it inside `arguments`. Keep it before `--` (Maven arguments).
+An explicit file requires its services to pass readiness before Maven runs.
+
+The same `--compose-file /absolute/compose.yaml` override is available on all
+`docker-*` and `karate-docker-*` CLI commands and their MCP tools. Pass the same
+file to startup, readiness, verification and cleanup; selection alone does not
+start services or authorize a destructive reset. `--compose boot|karate` still
+selects the readiness kind; `--compose-file` supplies its file. A per-execution
+override wins over saved `none` and is never persisted.

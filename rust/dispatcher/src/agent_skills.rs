@@ -7,12 +7,13 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-pub const NAMES: [&str; 5] = [
+pub const NAMES: [&str; 6] = [
     "makevn",
     "makevn-test",
     "makevn-docker",
     "makevn-karate",
     "makevn-quality",
+    "makevn-product-test",
 ];
 const MANIFEST: &str = ".makevn-skills.json";
 type Inventory = BTreeMap<String, Vec<u8>>;
@@ -213,7 +214,7 @@ fn describe_registration(owner: &Manifest, desired: &Inventory, version: &str) -
     if owner.version != version || owner.files != hashes(desired) {
         return format!("outdated (registered {})", owner.version);
     }
-    "current (five skills; client loading unverified)".into()
+    "current (six skills; client loading unverified)".into()
 }
 
 pub fn source(root: &Path) -> PathBuf {

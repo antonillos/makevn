@@ -168,3 +168,37 @@ fn abandoned_records_are_failed_without_reclaiming_processes() {
         3
     );
 }
+
+#[test]
+fn terminal_records_survive_concurrent_lifetime_release() {
+    for _ in 0..300 {
+        let fixture = Fixture::new();
+        let store = fixture.store();
+        let (mut record, locks) = store.prepare(&fixture.params("doctor")).unwrap();
+        record.state = "cancelling".into();
+        save_record(&fixture.0, &record).unwrap();
+        let reader = fixture.store();
+        let id = record.execution_id.clone();
+        let barrier = std::sync::Arc::new(std::sync::Barrier::new(2));
+        let ready = barrier.clone();
+        let reading = std::thread::spawn(move || {
+            ready.wait();
+            loop {
+                let current = reader.get(&id).unwrap();
+                if current.terminal() {
+                    return current;
+                }
+                std::thread::yield_now();
+            }
+        });
+        barrier.wait();
+        record.state = "cancelled".into();
+        record.exit_code = Some(130);
+        save_record(&fixture.0, &record).unwrap();
+        drop(locks);
+        let observed = reading.join().unwrap();
+        assert_eq!(observed.state, "cancelled");
+        assert_eq!(observed.exit_code, Some(130));
+        assert_eq!(store.get(&record.execution_id).unwrap().state, "cancelled");
+    }
+}

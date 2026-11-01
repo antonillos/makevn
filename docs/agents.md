@@ -15,6 +15,7 @@ each specialty owns its workflow details and bundled references:
 | Compose, readiness and authorized container operations | [makevn-docker](../skills/makevn-docker/SKILL.md) |
 | Application lifecycle and Karate E2E | [makevn-karate](../skills/makevn-karate/SKILL.md) |
 | Formatting, coverage, CRAP and mutation | [makevn-quality](../skills/makevn-quality/SKILL.md) |
+| Validate MakeVN against real GitHub repositories | [makevn-product-test](../skills/makevn-product-test/SKILL.md) |
 
 ## Register and confirm discovery
 
@@ -25,14 +26,17 @@ makevn agent install codex --scope project
 makevn agent status codex --scope project
 ```
 
-Both setup commands register MCP and the same five portable skills. Global skills
+Both setup commands register MCP and the same six portable skills. Global skills
 are in `~/.agents/skills/`; project skills are in `.agents/skills/`. Without scope,
 OpenCode retains interactive selection when local configurations exist; Codex uses
 global scope. Status always requires scope and never writes files. See the
 [registration contract](agent-install.md#skill-registration-contract) for ownership,
 updates, conflicts and backups. Run `makevn agent upgrade` after upgrading MakeVN.
-It updates the existing project integration first, falling back to global scope,
-and detects registered clients without requiring their names.
+It detects registered clients without requiring their names. In a terminal it
+asks which integration to upgrade when there are multiple choices, showing the
+resolved destination of linked configurations before any write. Noninteractive
+use selects project integration first, falling back to global scope, and rejects
+linked paths.
 
 Restart/reload the client. Check its available skills, explicitly load each skill,
 then try representative requests. Installed files, available metadata, loaded
@@ -41,6 +45,10 @@ instructions and correct workflow selection are four distinct checks. Neither
 Codex project configuration is read only for trusted projects.
 
 ## Execution contract
+
+For Testcontainers projects, load makevn-docker even without Compose and follow
+the [Testcontainers workflow](testcontainers.md). Tests own container startup;
+MakeVN checks engine access and forwards the local Docker context to Java.
 
 Run `makevn doctor --compact` first (MCP `doctor`). Follow its support,
 initialization and pending-setup decisions; do not infer initialization from the
@@ -69,6 +77,13 @@ fresh selected-test evidence. Report focused success with scope; it does not
 replace full CI/coverage/CRAP. Follow the test skill for exhaustive planning outcomes
 and the quality skill for valid `not applicable` metrics.
 
+Doctor requests an HTTP health URL when it detects an application HTTP server
+dependency (including `activeByDefault` profiles) or a health endpoint.
+Managed-only, plugin and test dependencies do
+not establish an application HTTP server. A console `main` or executable JAR
+alone does not require an HTTP endpoint; runnable detection remains available
+for application commands.
+
 ## Developing MakeVN itself
 
 This Rust/Bash repository is the product implementation, not a Maven adoption
@@ -76,3 +91,18 @@ fixture. Doctor may correctly report unsupported here. Use its development tests
 and [repo-sweep](repo-sweep.md) against isolated real Maven repository clones.
 Keep fixture failures separate from product defects. Open PRs against `develop`;
 the mandatory Rust/Bash CRAP ratchet is authoritative in CI before merging.
+
+### Disabling Compose discovery
+
+Compose answers also accept an absolute path to an existing file outside the
+detected candidates (CLI option `p`). Paths containing spaces are supported.
+Compose setup choices include the literal `none` for both `boot_compose` and
+`e2e_compose`. Select it when discovered files are examples or test data rather
+than required services. CLI doctor offers `0: None`; MCP doctor_configure accepts
+`"none"`. The persisted `MAKEVN_COMPOSE_FILE=none` or
+`MAKEVN_E2E_COMPOSE_FILE=none` overrides automatic discovery, including after
+profile refresh. Boot verification then has no Compose readiness prerequisite;
+Testcontainers engine requirements still apply. Explicit Compose lifecycle and
+readiness commands require an actual selected file and cannot use `none`.
+To change a saved selection, use interactive `makevn doctor --reset-config`
+(which resets other preferences too), then answer setup again. Reset is CLI-only.

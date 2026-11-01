@@ -597,7 +597,6 @@ makevn_detect_pit_goal() {
 
 makevn_detect_maven_base_path_fresh() {
   local repo_root="$1"
-  local first_pom=""
 
   if [[ -f "${repo_root}/pom.xml" ]]; then
     printf '%s\n' "${repo_root}"
@@ -609,13 +608,7 @@ makevn_detect_maven_base_path_fresh() {
     return 0
   fi
 
-  first_pom="$(find "${repo_root}" -name pom.xml -not -path '*/target/*' -not -path '*/node_modules/*' 2>/dev/null | LC_ALL=C sort | head -n 1 || true)"
-  if [[ -n "${first_pom}" ]]; then
-    printf '%s\n' "$(dirname "${first_pom}")"
-    return 0
-  fi
-
-  return 1
+  python3 "${MAKEVN_LIBEXEC_DIR}/common/maven_project.py" "${repo_root}"
 }
 
 makevn_detect_code_tool_versions_fresh() {
@@ -890,6 +883,15 @@ makevn_detect_app_runnable() {
   return 1
 }
 
+# A Java entry point alone does not establish an HTTP readiness prerequisite.
+makevn_detect_app_http_signal() {
+  local maven_base_path="$1"
+
+  [[ -n "${maven_base_path}" ]] || return 1
+  command -v python3 >/dev/null 2>&1 || return 1
+  python3 "${MAKEVN_LIBEXEC_DIR}/common/http_server.py" "${maven_base_path}"
+}
+
 makevn_find_compose_files() {
   local repo_root="$1"
   find "${repo_root}" \
@@ -917,6 +919,7 @@ makevn_boot_compose_file_path() {
   local f
 
   makevn_load_config "${repo_root}"
+  [[ "${MAKEVN_COMPOSE_FILE:-}" != none ]] || return 1
   if [[ -n "${MAKEVN_COMPOSE_FILE:-}" && -f "${MAKEVN_COMPOSE_FILE}" ]]; then
     printf '%s\n' "${MAKEVN_COMPOSE_FILE}"
     return 0
@@ -946,6 +949,10 @@ makevn_boot_compose_resolution_error() {
   local f=""
 
   makevn_load_config "${repo_root}"
+  if [[ "${MAKEVN_COMPOSE_FILE:-}" == none ]]; then
+    printf '%s\n' "Boot Docker Compose is disabled (MAKEVN_COMPOSE_FILE=none)."
+    return 0
+  fi
   if [[ -n "${MAKEVN_COMPOSE_FILE:-}" && ! -f "${MAKEVN_COMPOSE_FILE}" ]]; then
     printf '%s\n' "Configured MAKEVN_COMPOSE_FILE does not exist: ${MAKEVN_COMPOSE_FILE}"
     return 0
@@ -997,6 +1004,7 @@ makevn_karate_compose_file_path() {
   local f
 
   makevn_load_config "${repo_root}"
+  [[ "${MAKEVN_E2E_COMPOSE_FILE:-}" != none ]] || return 1
   if [[ -n "${MAKEVN_E2E_COMPOSE_FILE:-}" && -f "${MAKEVN_E2E_COMPOSE_FILE}" ]]; then
     printf '%s\n' "${MAKEVN_E2E_COMPOSE_FILE}"
     return 0
@@ -1152,17 +1160,9 @@ makevn_detect_app_health_path() {
 
 makevn_detect_spring_boot_actuator_from_repo() {
   local maven_base_path="$1"
-  local pom_path=""
-
   [[ -n "${maven_base_path}" ]] || return 1
-
-  while IFS= read -r pom_path; do
-    if grep -Eq '<artifactId>[[:space:]]*spring-boot-starter-actuator[[:space:]]*</artifactId>' "${pom_path}"; then
-      return 0
-    fi
-  done < <(find "${maven_base_path}" -name pom.xml -not -path '*/target/*' -not -path '*/node_modules/*' 2>/dev/null | LC_ALL=C sort)
-
-  return 1
+  command -v python3 >/dev/null 2>&1 || return 1
+  python3 "${MAKEVN_LIBEXEC_DIR}/common/http_server.py" "${maven_base_path}" --actuator
 }
 
 makevn_detect_app_health_url() {

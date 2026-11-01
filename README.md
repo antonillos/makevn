@@ -5,24 +5,29 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/Java-Maven-orange" alt="Java Maven" />
-  <img src="https://img.shields.io/badge/Docker-supported-2496ed" alt="Docker supported" />
-  <img src="https://img.shields.io/badge/Karate-supported-16a34a" alt="Karate supported" />
-  <img src="https://img.shields.io/badge/agent-ready-2dd4bf" alt="Agent ready" />
   <a href="mcp/">
     <img src="https://img.shields.io/badge/MCP-server-7c3aed" alt="MCP Server" />
-  </a>
-  <a href="LICENSE">
-    <img src="https://img.shields.io/badge/license-MIT-lightgrey" alt="MIT License" />
   </a>
   <a href="https://github.com/antonillos/makevn/actions/workflows/verify.yml">
     <img src="https://img.shields.io/endpoint?url=https%3A%2F%2Fantonillos.github.io%2Fmakevn%2Fcrap-badge.json" alt="CRAP warnings" />
   </a>
+  <a href="LICENSE">
+    <img src="https://img.shields.io/badge/license-MIT-lightgrey" alt="MIT License" />
+  </a>
+</p>
+
+<p align="center">
+  <img src="https://img.shields.io/badge/agent-ready-2dd4bf" alt="Agent ready" />
+  <img src="https://img.shields.io/badge/Docker_Compose-supported-2496ed" alt="Docker Compose supported" />
+  <img src="https://img.shields.io/badge/Testcontainers-supported-2496ed" alt="Testcontainers supported" />
+  <img src="https://img.shields.io/badge/Karate-supported-16a34a" alt="Karate supported" />
 </p>
 
 <p align="center"><strong>Run Java/Maven builds, tests, apps, Docker services, coverage, and E2E workflows with one CLI.</strong></p>
 
-`makevn` detects the repository's Java, Maven, Docker, Karate, and coverage setup
-so developers and AI agents can run the right workflow from the terminal.
+`makevn` detects the repository's Java, Maven, Docker Compose, Testcontainers,
+Karate, and coverage setup so developers and AI agents can run the right workflow
+from the terminal.
 
 ## See it in action
 
@@ -146,6 +151,22 @@ makevn --repo "/path/to/java-repo" verify-changes-preview
 makevn --repo "/path/to/java-repo" verify-changes
 ```
 
+## Docker Compose and Testcontainers
+
+Both container workflows are supported through the CLI and MCP:
+
+- **Docker Compose:** start project services, check readiness before tests, and
+  stop services while preserving volumes with `docker-up`, `docker-ps-required`
+  and `docker-down`.
+- **Testcontainers:** run tests that create their own containers. MakeVN checks
+  engine access and forwards a local Unix Docker context to Java when
+  `DOCKER_HOST` is unset, preserving explicit Docker and Testcontainers settings.
+
+Both require a running Docker-compatible engine. Compose services use
+`docker-up`; Testcontainers manages container startup from the tests themselves.
+See [Testcontainers setup and troubleshooting](docs/testcontainers.md) and the
+[container workflow guide](skills/makevn-docker/references/workflows.md).
+
 ## Commands
 
 | Goal | Command |
@@ -154,6 +175,7 @@ makevn --repo "/path/to/java-repo" verify-changes
 | Initialize local makevn state | `makevn init` |
 | Run one or more tests | `makevn test --name UserRepositoryTest` |
 | Build and verify | `makevn package`, `makevn verify` |
+| Check code style | `makevn checkstyle` |
 | Preview and verify changed modules or tests | `makevn verify-changes-preview`, `makevn verify-changes` |
 | Check aggregate or changed-code coverage | `makevn coverage`, `makevn coverage-changes` |
 | Analyze Java CRAP from an existing JaCoCo XML report | `makevn crap` |
@@ -162,6 +184,10 @@ makevn --repo "/path/to/java-repo" verify-changes
 | Explicitly reset Compose project data | `makevn docker-reset` |
 | Run Karate E2E flows | `makevn karate-test`, `makevn karate-all` |
 | Run the application | `makevn run-app`, `makevn run-app-bg` |
+
+`makevn doctor` detects Checkstyle support from the repository's plugins or
+configuration. See the [Checkstyle guide](skills/makevn-quality/references/workflows.md#checkstyle)
+for detection and configuration details.
 
 Commands can be chained:
 
@@ -214,6 +240,7 @@ There is no automatic migration or cleanup of old Make integrations.
 - [CLI contract](docs/cli-contract.md)
 - [Backend contract](docs/backend-contract.md)
 - [Integration](docs/integration.md)
+- [Testcontainers](docs/testcontainers.md)
 - [Distribution](docs/distribution.md)
 - [Internal CRAP ratchet](tools/crap/README.md)
 
@@ -251,7 +278,7 @@ relative to the target repository, not the MCP server's working directory.
 ## Agent skills and workflows
 
 See the [workflow map](docs/workflow-guidance.md) for what MakeVN does, workflow selection,
-CLI/MCP equivalents and evidence. Product installation ships five portable skills;
+CLI/MCP equivalents and evidence. Product installation ships six portable skills;
 register MCP and skills with `makevn agent install opencode --scope global` or
 `makevn agent install codex --scope global`. Run `makevn agent upgrade` after
 upgrading MakeVN, reload the client and check discovery separately from loading. See the
@@ -284,3 +311,28 @@ COMMANDS (root) or SUBCOMMANDS (nested) in that order when applicable, with alig
 descriptions. Terminal
 output uses lilac commands, green flags and gray placeholders; redirected output,
 `NO_COLOR` and `MAKEVN_AGENT_OUTPUT=1` use plain text.
+
+## Product testing with real repositories
+
+Use the [makevn-product-test skill](skills/makevn-product-test/SKILL.md) to validate
+MakeVN against GitHub Maven repositories through MCP, classify failures and
+retest fixes with reproducible evidence. After installing a version that includes
+this skill, run `makevn agent upgrade --scope global` (or register Codex with
+`makevn agent install codex --scope global`) and restart/reload your client.
+Confirm `makevn-product-test` appears in its skills catalog, then explicitly invoke
+`$makevn-product-test` in a new session and provide the clone directory or a prior
+campaign report. Registration alone does not prove the client loaded the skill.
+
+For a single verification, `makevn verify --compose-file /absolute/compose.yaml`
+(or `--compose-file none`) overrides the saved boot Compose without changing
+configuration or starting services. `verify-it` and `verify-it-coverage` also
+support this option. MCP uses the string argument `"compose-file"`; composite
+steps pass it inside `arguments`. Keep it before `--` (Maven arguments).
+An explicit file requires its services to pass readiness before Maven runs.
+
+The same `--compose-file /absolute/compose.yaml` override is available on all
+`docker-*` and `karate-docker-*` CLI commands and their MCP tools. Pass the same
+file to startup, readiness, verification and cleanup; selection alone does not
+start services or authorize a destructive reset. `--compose boot|karate` still
+selects the readiness kind; `--compose-file` supplies its file. A per-execution
+override wins over saved `none` and is never persisted.

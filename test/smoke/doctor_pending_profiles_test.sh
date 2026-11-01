@@ -5,6 +5,7 @@ source "${ROOT}/libexec/makevn/common.sh"
 MAKEVN_DOCTOR_COMPOSE_FILE='resolved'
 MAKEVN_DOCTOR_E2E_COMPOSE_FILE='resolved'
 MAKEVN_DOCTOR_APP_RUNNABLE=yes
+MAKEVN_DOCTOR_APP_HTTP=yes
 MAKEVN_APP_HEALTH_URL='http://localhost/health'
 verify_it_local_containers_default=''
 MAKEVN_DOCTOR_KARATE_APP_PROFILES='unresolved (explicit selection required)'

@@ -112,8 +112,10 @@ impl ExecutionStore {
             return Ok(record);
         }
         let _admission = registry_admission(&self.root)?;
+        let active = lifetime_active(&self.root, &record)?;
+        // Completion is persisted before releasing lifetime ownership.
         let mut record = read_record(path)?;
-        if record.terminal() || lifetime_active(&self.root, &record)? {
+        if record.terminal() || active {
             return Ok(record);
         }
         record.state = "failed".into();

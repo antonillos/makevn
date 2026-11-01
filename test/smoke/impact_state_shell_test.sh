@@ -43,6 +43,7 @@ makevn_collect_doctor_snapshot() {
   MAKEVN_DOCTOR_BIND_MOUNTS=unavailable
   MAKEVN_DOCTOR_CURRENT_STATUS=initialized
   MAKEVN_DOCTOR_REPO_SUPPORT_STATUS=supported
+  MAKEVN_DOCTOR_CODE_MAVEN_DIAGNOSTIC='not detected'
 }
 makevn_doctor_progress() { :; }
 makevn_print_doctor_init_recommendation() { :; }

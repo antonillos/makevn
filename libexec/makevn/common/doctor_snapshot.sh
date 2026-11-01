@@ -97,14 +97,14 @@ makevn_doctor_progress() {
 # Updates the caller-local detected_app_health_url without affecting other prompts.
 makevn_resolve_doctor_app_health_url() {
   local repo_root="$1"
-  local app_runnable="$2"
+  local app_http="$2"
 
   makevn_load_config "${repo_root}"
   if [[ -n "${MAKEVN_APP_HEALTH_URL:-}" ]]; then
     detected_app_health_url="${MAKEVN_APP_HEALTH_URL} (from config)"
     return 0
   fi
-  [[ "${app_runnable}" == "yes" ]] || return 0
+  [[ "${app_http}" == "yes" ]] || return 0
   [[ -f "$(makevn_config_path "${repo_root}")" && -t 0 && -t 2 && "${MAKEVN_COMPACT_OUTPUT:-}" != "1" ]] || return 0
   makevn_prompt_doctor_app_health_url "${repo_root}"
 }
@@ -190,12 +190,14 @@ makevn_doctor_initialization_status() {
 
 makevn_collect_doctor_snapshot() {
   local repo_root="$1"
+  makevn_require_unambiguous_maven_project "${repo_root}"
   local maven_base_path=""
   local code_tool_versions=""
   local karate_tool_versions=""
   local code_java_version=""
   local code_tool_versions_java_version=""
   local app_runnable="no"
+  local app_http="no"
   local code_java_home=""
   local code_exact_java_home=""
   local code_java_home_recommendation=""
@@ -206,6 +208,7 @@ makevn_collect_doctor_snapshot() {
   local run_configured="no"
   local current_status="not initialized"
   local repo_support_status=""
+  local checkstyle_available="no"
   local profile_path=""
   local profile_status="not generated"
   local detected_workflow_files=""
@@ -258,7 +261,9 @@ makevn_collect_doctor_snapshot() {
   # Resolve compose file: config > profile > auto-detect > interactive prompt
   makevn_doctor_progress "Resolving Docker compose files"
   makevn_load_config "${repo_root}"
-  if [[ -n "${MAKEVN_COMPOSE_FILE:-}" && -f "${MAKEVN_COMPOSE_FILE}" ]]; then
+  if [[ "${MAKEVN_COMPOSE_FILE:-}" == none ]]; then
+    compose_file="none"
+  elif [[ -n "${MAKEVN_COMPOSE_FILE:-}" && -f "${MAKEVN_COMPOSE_FILE}" ]]; then
     compose_file="${MAKEVN_COMPOSE_FILE}"
   elif [[ -n "${MAKEVN_DETECTED_COMPOSE_FILE:-}" ]]; then
     compose_file="${MAKEVN_DETECTED_COMPOSE_FILE}"
@@ -286,14 +291,25 @@ makevn_collect_doctor_snapshot() {
         done
         local _choice=""
         while true; do
-          printf 'Enter number [1-%d]: ' "${#_found[@]}" >&2
+          printf '  [0] None\n  [p] Specify an absolute Compose file path\nEnter number [0-%d] or p: ' "${#_found[@]}" >&2
           makevn_read_choice_into _choice
-          if [[ "${_choice}" =~ ^[0-9]+$ ]] && (( _choice >= 1 && _choice <= ${#_found[@]} )); then
+          if [[ "${_choice}" == p ]]; then
+            printf 'Absolute Compose file path: ' >&2
+            makevn_read_choice_into _choice
+            [[ "${_choice}" == /* && -f "${_choice}" ]] && break
+          fi
+          if [[ "${_choice}" =~ ^[0-9]+$ ]] && (( _choice >= 0 && _choice <= ${#_found[@]} )); then
             break
           fi
           printf '%s\n' "$(makevn_warn "Invalid selection. Try again.")" >&2
         done
-        compose_file="${_found[$((_choice - 1))]}"
+        if [[ "${_choice}" == /* ]]; then
+          compose_file="${_choice}"
+        elif [[ "${_choice}" == 0 ]]; then
+          compose_file=none
+        else
+          compose_file="${_found[$((_choice - 1))]}"
+        fi
         prompted_interactively="yes"
         # Ensure config exists before persisting
         if [[ ! -f "$(makevn_config_path "${repo_root}")" ]]; then
@@ -310,7 +326,9 @@ makevn_collect_doctor_snapshot() {
   fi
 
   # Resolve e2e compose file: config > profile > auto-detect > interactive prompt
-  if [[ -n "${MAKEVN_E2E_COMPOSE_FILE:-}" && -f "${MAKEVN_E2E_COMPOSE_FILE}" ]]; then
+  if [[ "${MAKEVN_E2E_COMPOSE_FILE:-}" == none ]]; then
+    e2e_compose_file="none"
+  elif [[ -n "${MAKEVN_E2E_COMPOSE_FILE:-}" && -f "${MAKEVN_E2E_COMPOSE_FILE}" ]]; then
     e2e_compose_file="${MAKEVN_E2E_COMPOSE_FILE}"
   elif [[ -n "${MAKEVN_DETECTED_E2E_COMPOSE_FILE:-}" ]]; then
     e2e_compose_file="${MAKEVN_DETECTED_E2E_COMPOSE_FILE}"
@@ -336,14 +354,25 @@ makevn_collect_doctor_snapshot() {
         done
         local _echoice=""
         while true; do
-          printf 'Enter number [1-%d]: ' "${#_e2e_found[@]}" >&2
+          printf '  [0] None\n  [p] Specify an absolute Compose file path\nEnter number [0-%d] or p: ' "${#_e2e_found[@]}" >&2
           makevn_read_choice_into _echoice
-          if [[ "${_echoice}" =~ ^[0-9]+$ ]] && (( _echoice >= 1 && _echoice <= ${#_e2e_found[@]} )); then
+          if [[ "${_echoice}" == p ]]; then
+            printf 'Absolute Compose file path: ' >&2
+            makevn_read_choice_into _echoice
+            [[ "${_echoice}" == /* && -f "${_echoice}" ]] && break
+          fi
+          if [[ "${_echoice}" =~ ^[0-9]+$ ]] && (( _echoice >= 0 && _echoice <= ${#_e2e_found[@]} )); then
             break
           fi
           printf '%s\n' "$(makevn_warn "Invalid selection. Try again.")" >&2
         done
-        e2e_compose_file="${_e2e_found[$((_echoice - 1))]}"
+        if [[ "${_echoice}" == /* ]]; then
+          e2e_compose_file="${_echoice}"
+        elif [[ "${_echoice}" == 0 ]]; then
+          e2e_compose_file=none
+        else
+          e2e_compose_file="${_e2e_found[$((_echoice - 1))]}"
+        fi
         prompted_interactively="yes"
         if [[ ! -f "$(makevn_config_path "${repo_root}")" ]]; then
           mkdir -p "$(makevn_state_dir "${repo_root}")"
@@ -385,7 +414,7 @@ makevn_collect_doctor_snapshot() {
   local MAKEVN_JDK_MAVEN_BASE_PATH="${maven_base_path}"
   export MAKEVN_JDK_MAVEN_BASE_PATH
   makevn_doctor_progress "Resolving Java homes"
-  code_java_home="$(MAKEVN_RESOLVE_COMPATIBLE_JAVA_FIRST=1 makevn_effective_java_home "${repo_root}" code "${maven_base_path}" || true)"
+  code_java_home="$(makevn_effective_java_home "${repo_root}" code "${maven_base_path}" || true)"
   if [[ -n "${code_tool_versions_java_version}" ]]; then
     code_exact_java_home="$(makevn_resolve_java_version_home "${code_tool_versions_java_version}" || true)"
     if [[ -z "${code_exact_java_home}" && -z "${MAKEVN_CODE_JAVA_HOME:-}" ]]; then
@@ -407,6 +436,7 @@ makevn_collect_doctor_snapshot() {
   if [[ -z "${code_java_home}" && -n "${java_enforcer_ranges}" ]]; then
     code_java_home_recommendation="No stable JDK satisfies Maven Enforcer requireJavaVersion: ${java_enforcer_ranges}. Install an accepted stable JDK; do not bypass Enforcer."
   fi
+  makevn_doctor_java_selection "${repo_root}" "${maven_base_path}" "${code_java_version}" "${code_tool_versions}"
   karate_java_home="$(makevn_effective_java_home "${repo_root}" karate "${maven_base_path}" || true)"
   repo_support_status="$(makevn_repository_support_status "${repo_root}")"
   if [[ -n "${maven_base_path}" ]]; then
@@ -416,6 +446,13 @@ makevn_collect_doctor_snapshot() {
   fi
 
   makevn_load_config "${repo_root}"
+  if [[ -n "${maven_base_path}" ]] && {
+    [[ -n "${MAKEVN_CHECKSTYLE_GOAL:-}" ]] ||
+      [[ -n "$(makevn_detect_checkstyle_plugin_goal "${maven_base_path}" || true)" ]] ||
+      [[ -n "$(makevn_detect_format_plugin_goal "${maven_base_path}" false || true)" ]]
+  }; then
+    checkstyle_available="yes"
+  fi
   if [[ -n "${external_crap_analyzer}" && -f "${external_crap_analyzer}" ]]; then
     crap_analyzer="${external_crap_analyzer} (from environment)"
   elif [[ -n "${MAKEVN_CRAP4JAVA_JAR:-}" && -f "${MAKEVN_CRAP4JAVA_JAR}" ]]; then
@@ -472,7 +509,10 @@ makevn_collect_doctor_snapshot() {
   fi
   [[ -n "${MAKEVN_RUN_CMD:-}" ]] && run_configured="yes"
 
-  makevn_resolve_doctor_app_health_url "${repo_root}" "${app_runnable}"
+  if [[ -n "${detected_app_health_url}" ]] || makevn_detect_app_http_signal "${maven_base_path}"; then
+    app_http="yes"
+  fi
+  makevn_resolve_doctor_app_health_url "${repo_root}" "${app_http}"
   makevn_doctor_karate_profiles "${repo_root}" "${app_runnable}"
 
   if [[ -n "${MAKEVN_MIN_COVERAGE_THRESHOLD:-}" ]]; then
@@ -507,6 +547,7 @@ makevn_collect_doctor_snapshot() {
   MAKEVN_DOCTOR_CODE_TOOL_VERSIONS="${code_tool_versions:-unresolved}"
   MAKEVN_DOCTOR_CODE_JAVA_VERSION="${code_java_version:-unresolved}"
   MAKEVN_DOCTOR_APP_RUNNABLE="${app_runnable:-no}"
+  MAKEVN_DOCTOR_APP_HTTP="${app_http}"
   MAKEVN_DOCTOR_KARATE_TOOL_VERSIONS="${karate_tool_versions:-unresolved}"
   MAKEVN_DOCTOR_DETECTED_WORKFLOW_FILES="${detected_workflow_files:-none}"
   MAKEVN_DOCTOR_DETECTED_MAVEN_CLI_FLAGS="${detected_maven_cli_flags:-none}"
@@ -534,11 +575,14 @@ makevn_collect_doctor_snapshot() {
   MAKEVN_DOCTOR_TEST_PROFILE="${test_profile}"
   MAKEVN_DOCTOR_VERIFY_PROFILE="${verify_profile}"
   MAKEVN_DOCTOR_CODE_MAVEN="$(makevn_maven_executable "${repo_root}" "${maven_base_path}" 2>/dev/null || printf unresolved)"
+  MAKEVN_DOCTOR_CODE_MAVEN_DIAGNOSTIC="$(makevn_maven_diagnostic "${repo_root}" "${maven_base_path}" "${MAKEVN_DOCTOR_CODE_MAVEN}" "${code_java_home}")"
   local karate_base_path=""
   karate_base_path="$(makevn_detect_karate_base_path "${repo_root}" || true)"
   MAKEVN_DOCTOR_KARATE_MAVEN="not detected"
+  MAKEVN_DOCTOR_KARATE_MAVEN_DIAGNOSTIC="not detected"
   if [[ -n "${karate_base_path}" ]]; then
     MAKEVN_DOCTOR_KARATE_MAVEN="$(makevn_maven_executable "${repo_root}" "${karate_base_path}" karate 2>/dev/null || printf unresolved)"
+    MAKEVN_DOCTOR_KARATE_MAVEN_DIAGNOSTIC="$(makevn_maven_diagnostic "${repo_root}" "${karate_base_path}" "${MAKEVN_DOCTOR_KARATE_MAVEN}" "${karate_java_home}")"
   fi
   MAKEVN_DOCTOR_CODE_JAVA_HOME="${code_java_home:-unresolved}"
   MAKEVN_DOCTOR_COMPATIBLE_CODE_JAVA_HOMES="${compatible_code_java_homes:-none}"
@@ -549,6 +593,7 @@ makevn_collect_doctor_snapshot() {
   MAKEVN_DOCTOR_RUN_CONFIGURED="${run_configured}"
   MAKEVN_DOCTOR_PROFILE_STATUS="${profile_status}"
   MAKEVN_DOCTOR_REPO_SUPPORT_STATUS="${repo_support_status}"
+  MAKEVN_DOCTOR_CHECKSTYLE_AVAILABLE="${checkstyle_available}"
   MAKEVN_DOCTOR_COMPOSE_FILE="${compose_file}"
   MAKEVN_DOCTOR_E2E_COMPOSE_FILE="${e2e_compose_file}"
   local_containers_preference="$(makevn_effective_local_containers "${repo_root}" "${verify_it_local_containers_default}")"
@@ -577,7 +622,7 @@ makevn_collect_doctor_snapshot() {
       MAKEVN_DOCTOR_SUGGESTED_OPTIONAL=""
       ;;
   esac
-  if [[ "${app_runnable}" == "yes" && -z "${detected_app_health_url}" ]]; then
+  if [[ "${app_http}" == "yes" && -z "${detected_app_health_url}" ]]; then
     MAKEVN_DOCTOR_SUGGESTED_NOTE="Application HTTP readiness is not configured. Configure MAKEVN_APP_HEALTH_URL by answering app_health_url through MCP doctor_configure or interactive makevn doctor after initialization. karate-all requires this URL."
   fi
   MAKEVN_DOCTOR_BIND_MOUNTS='{"status":"unavailable","checks":[]}'
@@ -611,6 +656,7 @@ makevn_doctor_interactive_setup_status() {
   MAKEVN_DOCTOR_HEALTH_PENDING=false
   MAKEVN_DOCTOR_LOCAL_PENDING=false
   MAKEVN_DOCTOR_PROFILES_PENDING=false
+  [[ -z "${MAKEVN_DOCTOR_JAVA_CANDIDATES:-}" ]] || MAKEVN_DOCTOR_INTERACTIVE_REQUIRED=true
   [[ "${MAKEVN_DOCTOR_REPO_SUPPORT_STATUS:-supported}" != unsupported ]] || return 0
   if [[ "${MAKEVN_DOCTOR_KARATE_APP_PROFILES:-}" == 'unresolved (explicit selection required)' && -z "${SPRING_PROFILES_ACTIVE+x}" && -z "${MAKEVN_KARATE_APP_PROFILES:-}" ]]; then
     MAKEVN_DOCTOR_INTERACTIVE_REQUIRED=true
@@ -619,7 +665,7 @@ makevn_doctor_interactive_setup_status() {
   case "${MAKEVN_DOCTOR_COMPOSE_FILE} ${MAKEVN_DOCTOR_E2E_COMPOSE_FILE}" in
     *ambiguous*) MAKEVN_DOCTOR_INTERACTIVE_REQUIRED=true ;;
   esac
-  if [[ "${MAKEVN_DOCTOR_APP_RUNNABLE}" == yes && -z "${MAKEVN_APP_HEALTH_URL:-}" ]]; then
+  if [[ "${MAKEVN_DOCTOR_APP_HTTP}" == yes && -z "${MAKEVN_APP_HEALTH_URL:-}" ]]; then
     MAKEVN_DOCTOR_HEALTH_PENDING=true
     MAKEVN_DOCTOR_INTERACTIVE_REQUIRED=true
   fi
@@ -643,7 +689,7 @@ makevn_doctor_collect_setup() {
     fi
   fi
   local details
-  details="$(python3 "${MAKEVN_LIBEXEC_DIR}/common/doctor_setup.py" questions "${repo_root}" "${boot}" "${e2e}" "${health}" "${MAKEVN_DOCTOR_KARATE_APP_PROFILES_CANDIDATES}" "${MAKEVN_DOCTOR_LOCAL_PENDING}" "${MAKEVN_DOCTOR_HEALTH_PENDING}" "${MAKEVN_DOCTOR_PROFILES_PENDING}")"
+  details="$(python3 "${MAKEVN_LIBEXEC_DIR}/common/doctor_setup.py" questions "${repo_root}" "${boot}" "${e2e}" "${health}" "${MAKEVN_DOCTOR_KARATE_APP_PROFILES_CANDIDATES}" "${MAKEVN_DOCTOR_LOCAL_PENDING}" "${MAKEVN_DOCTOR_HEALTH_PENDING}" "${MAKEVN_DOCTOR_PROFILES_PENDING}" "${MAKEVN_DOCTOR_JAVA_CANDIDATES:-}" "${MAKEVN_DOCTOR_JAVA_RECOMMENDED:-}" "${MAKEVN_DOCTOR_JAVA_DETAILS:-}")"
   details="${details#\{}"
   MAKEVN_DOCTOR_SETUP_DETAILS="${details%\}}"
 }
@@ -680,6 +726,7 @@ makevn_print_doctor_json() {
   printf '    "existing_makevn": "%s",\n' "$(makevn_json_escape "${MAKEVN_DOCTOR_EXISTING_STATE_DIR}")"
   printf '    "current_makevn_status": "%s",\n' "$(makevn_json_escape "${MAKEVN_DOCTOR_CURRENT_STATUS}")"
   printf '    "code_tool_versions": "%s",\n' "$(makevn_json_escape "${MAKEVN_DOCTOR_CODE_TOOL_VERSIONS}")"
+  printf '    "code_java_error": "%s",\n' "$(makevn_json_escape "${MAKEVN_DOCTOR_JAVA_ERROR:-}")"
   printf '    "code_java_version": "%s",\n' "$(makevn_json_escape "${MAKEVN_DOCTOR_CODE_JAVA_VERSION}")"
   printf '    "application_runnable": "%s",\n' "$(makevn_json_escape "${MAKEVN_DOCTOR_APP_RUNNABLE}")"
   printf '    "karate_tool_versions": "%s",\n' "$(makevn_json_escape "${MAKEVN_DOCTOR_KARATE_TOOL_VERSIONS}")"
@@ -703,7 +750,9 @@ makevn_print_doctor_json() {
   printf '    "test_profile": "%s",\n' "$(makevn_json_escape "${MAKEVN_DOCTOR_TEST_PROFILE}")"
   printf '    "verify_profile": "%s",\n' "$(makevn_json_escape "${MAKEVN_DOCTOR_VERIFY_PROFILE}")"
   printf '    "resolved_code_maven": "%s",\n' "$(makevn_json_escape "${MAKEVN_DOCTOR_CODE_MAVEN}")"
+  printf '    "code_maven_diagnostic": "%s",\n' "$(makevn_json_escape "${MAKEVN_DOCTOR_CODE_MAVEN_DIAGNOSTIC}")"
   printf '    "resolved_karate_maven": "%s",\n' "$(makevn_json_escape "${MAKEVN_DOCTOR_KARATE_MAVEN}")"
+  printf '    "karate_maven_diagnostic": "%s",\n' "$(makevn_json_escape "${MAKEVN_DOCTOR_KARATE_MAVEN_DIAGNOSTIC}")"
   printf '    "resolved_code_java_home": "%s",\n' "$(makevn_json_escape "${MAKEVN_DOCTOR_CODE_JAVA_HOME}")"
   printf '    "compatible_code_java_homes": "%s",\n' "$(makevn_json_escape "${MAKEVN_DOCTOR_COMPATIBLE_CODE_JAVA_HOMES}")"
   printf '    "code_java_home_recommendation": "%s",\n' "$(makevn_json_escape "${MAKEVN_DOCTOR_CODE_JAVA_HOME_RECOMMENDATION}")"
@@ -714,6 +763,7 @@ makevn_print_doctor_json() {
   printf '    "local_containers_default": "%s",\n' "$(makevn_json_escape "${MAKEVN_DOCTOR_LOCAL_CONTAINERS}")"
   printf '    "persisted_profile": "%s",\n' "$(makevn_json_escape "${MAKEVN_DOCTOR_PROFILE_STATUS}")"
   printf '    "repository_support_status": "%s",\n' "$(makevn_json_escape "${MAKEVN_DOCTOR_REPO_SUPPORT_STATUS}")"
+  printf '    "checkstyle_available": "%s",\n' "$(makevn_json_escape "${MAKEVN_DOCTOR_CHECKSTYLE_AVAILABLE:-no}")"
   printf '    "mutation_available": "%s",\n' "$(makevn_json_escape "${MAKEVN_DOCTOR_MUTATION_AVAILABLE}")"
   printf '    "mutation_goal": "%s"\n' "$(makevn_json_escape "${MAKEVN_DOCTOR_MUTATION_GOAL}")"
   printf '  },\n'

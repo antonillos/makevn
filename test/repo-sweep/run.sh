@@ -2,6 +2,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(CDPATH= cd -- "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+source "${ROOT_DIR}/test/repo-sweep/results.sh"
 DEFAULT_TARGET_ROOT="${PWD}"
 DEFAULT_TMP_BASE="${TMPDIR:-/tmp}"
 SWEEP_PROFILE="${MAKEVN_REPO_SWEEP_PROFILE:-quick}"
@@ -189,17 +190,6 @@ record() {
     "${note}" >> "${RESULTS_TSV}"
 }
 
-extract_exit_code() {
-  local output="$1"
-
-  if [[ "${output}" =~ exit[[:space:]]code[[:space:]](-?[0-9]+)$ ]]; then
-    printf '%s\n' "${BASH_REMATCH[1]}"
-    return 0
-  fi
-
-  printf '0\n'
-}
-
 summarize_output() {
   local output="$1"
   local first_line=""
@@ -302,6 +292,7 @@ try:
 except Exception:
     head = 'nogit'
 sha = hashlib.sha256()
+sha.update(b'repo-sweep-doctor-v2\0')
 sha.update(str(repo).encode())
 sha.update(b'\0')
 sha.update(head.encode())
@@ -354,7 +345,7 @@ doctor_indicates() {
       [[ "${doctor_output}" == *"MAKEVN_FORMAT_CHECK_GOAL"* || "${doctor_output}" == *"spotless"* || "${doctor_output}" == *"formatter"* ]]
       ;;
     checkstyle)
-      [[ "${doctor_output}" == *"checkstyle"* || "${doctor_output}" == *"MAKEVN_CHECKSTYLE_GOAL"* ]]
+      [[ "${doctor_output}" == *"Checkstyle support: yes"* ]]
       ;;
     docker_ps_required|docker_up|docker_down)
       [[ "${doctor_output}" != *"Docker compose file: not found"* && "${doctor_output}" != *"Docker compose file: ambiguous"* ]]
@@ -557,7 +548,10 @@ run_tool() {
     return 1
   fi
 
-  exit_code="$(extract_exit_code "${output}")"
+  if ! exit_code="$(extract_exit_code "${output}")"; then
+    record "${repo_name}" "${workspace}" "${command_name}" transport_fail tooling_error "missing or invalid MCP exit status"
+    return 1
+  fi
   note="$(summarize_output "${output}")"
   if [[ "${exit_code}" != "0" ]]; then
     status="fail"

@@ -422,7 +422,11 @@ that the client provides a prefilled editor when it does not.
 Submit user-provided or previously user-authorized answers with `doctor_configure`
 in the same repository. Pass `setupToken` and an `answers` object keyed by question
 id: `boot_compose`, `e2e_compose`, `local_containers` (boolean), `app_health_url`,
-and `karate_app_profiles`. Compose answers use the exact offered path; Spring
+`karate_app_profiles`, and `code_java_home`. JDK answers select an exact offered
+installation path and persist `MAKEVN_CODE_JAVA_HOME`; multiple compatible
+automatic candidates remain pending until the user chooses. A required but missing
+compatible JDK is reported as a diagnostic error while doctor itself succeeds;
+its next suggestion blocks builds and verification until Java is resolved. Compose answers use an offered path, an absolute path to an existing file, or `none`; Spring
 profiles use literal comma-separated names. The tool validates the whole batch
 before atomically updating `.makevn/config`, preserves unrelated settings and
 returns a fresh diagnosis on success. Partial answers are accepted; omitted
@@ -542,3 +546,56 @@ Cleanup requires a terminal state and an unlocked lifetime lock. It only removes
 known private execution files; shared repository logs, unknown files, symlinks
 and legacy records without lifetime ownership evidence remain untouched.
 The equivalent CLI is `makevn execution-cleanup [--retention-days DAYS] [--dry-run]`.
+
+### Selected test Maven properties
+
+The `test` tool accepts an optional `properties` object with string values:
+
+```json
+{"name":"test","arguments":{"repo":"/path/to/repo","name":"ExampleTest","properties":{"skipEnforceSnapshots":"false"}}}
+```
+
+Properties are passed as literal `-Dname=value` arguments after the CLI `--`
+separator. The Maven version preflight uses those same values. No properties
+are inferred from another workflow; choose skip values explicitly according to
+repository intent. Empty objects leave the invocation unchanged. Invalid keys
+or non-string values are rejected before execution, including in workflows.
+
+### Stale generated-source recovery
+
+For diagnosed stale generated-source compilation failures, call `clean` with
+`{"repo":"/path/to/repo","clean-generated-contract-targets":true}`. This runs
+Maven clean and then removes detected generated output. Only `clean` exposes this
+option; do not pass it to `test` or verification tools. Inspect `untrustedData`
+and `logPaths` if cleanup fails. After success, retry the original test or
+verification with the same scope and Maven properties, without `fast`. Cleanup
+success does not establish test success.
+
+### Disabling Compose discovery
+
+Compose answers also accept an absolute path to an existing file outside the
+detected candidates (CLI option `p`). Paths containing spaces are supported.
+Compose setup choices include the literal `none` for both `boot_compose` and
+`e2e_compose`. Select it when discovered files are examples or test data rather
+than required services. CLI doctor offers `0: None`; MCP doctor_configure accepts
+`"none"`. The persisted `MAKEVN_COMPOSE_FILE=none` or
+`MAKEVN_E2E_COMPOSE_FILE=none` overrides automatic discovery, including after
+profile refresh. Boot verification then has no Compose readiness prerequisite;
+Testcontainers engine requirements still apply. Explicit Compose lifecycle and
+readiness commands require an actual selected file and cannot use `none`.
+To change a saved selection, use interactive `makevn doctor --reset-config`
+(which resets other preferences too), then answer setup again. Reset is CLI-only.
+
+For a single verification, `makevn verify --compose-file /absolute/compose.yaml`
+(or `--compose-file none`) overrides the saved boot Compose without changing
+configuration or starting services. `verify-it` and `verify-it-coverage` also
+support this option. MCP uses the string argument `"compose-file"`; composite
+steps pass it inside `arguments`. Keep it before `--` (Maven arguments).
+An explicit file requires its services to pass readiness before Maven runs.
+
+The same `--compose-file /absolute/compose.yaml` override is available on all
+`docker-*` and `karate-docker-*` CLI commands and their MCP tools. Pass the same
+file to startup, readiness, verification and cleanup; selection alone does not
+start services or authorize a destructive reset. `--compose boot|karate` still
+selects the readiness kind; `--compose-file` supplies its file. A per-execution
+override wins over saved `none` and is never persisted.

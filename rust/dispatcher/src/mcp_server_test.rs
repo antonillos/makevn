@@ -341,7 +341,7 @@ fn tool_option_dispatch_preserves_type_filtering_and_command_errors() {
         super::push_tool_option(&mut output, name, &json!("8")).unwrap();
         assert!(output.is_empty());
     }
-    for name in ["base", "compose", "jacoco-xml", "module", "name", "tag"] {
+    for name in ["base", "compose", "compose-file", "jacoco-xml", "module", "name", "tag"] {
         super::push_tool_option(&mut output, name, &json!("value")).unwrap();
         assert_eq!(output, vec![format!("--{name}"), "value".to_owned()]);
         output.clear();
@@ -1235,4 +1235,107 @@ fn docker_interface_policy_covers_tools_and_workflow_results() {
             assert_eq!(response["structuredContent"]["exitCode"], exit_code);
         }
     }
+}
+
+#[test]
+fn missing_required_jdk_is_diagnostic_success_with_blocking_guidance() {
+    let snapshot = json!({
+        "repository_analysis": {"repository_support_status": "supported", "code_java_error": "No usable JDK"},
+        "interactive_setup": {"required": false},
+        "suggested_next_step": {"next": ""}
+    });
+    let guidance = super::doctor_next_suggestion(&snapshot).unwrap();
+    assert!(guidance.contains("Doctor completed its diagnosis"));
+    assert!(guidance.contains("before builds or verification"));
+    let result = super::ToolCallResult {
+        output: "Code JDK error: No usable JDK".into(), exit_code: 0, duration_ms: 1,
+        doctor_snapshot: Some(snapshot), next_suggestion: Some(guidance.into()),
+    };
+    let response = super::standard_tool_result(&result, &json!({"name": "doctor"}));
+    assert_eq!(response["isError"], false);
+    assert_eq!(response["structuredContent"]["exitCode"], 0);
+}
+
+#[test]
+fn selected_test_properties_are_typed_and_forwarded_after_options() {
+    let spec = TOOL_SPECS.iter().find(|spec| spec.name == "test").unwrap();
+    let schema = super::tool(spec);
+    assert_eq!(schema["inputSchema"]["properties"]["properties"]["additionalProperties"],
+               json!({"type": "string"}));
+    let arguments = json!({"name": "ExampleTest", "properties": {
+        "skipEnforceSnapshots": "false", "message": "literal $(echo unsafe) value"
+    }});
+    let mut command = vec!["test".into()];
+    push_tool_flags(&mut command, spec, arguments.as_object().unwrap()).unwrap();
+    assert_eq!(command, vec!["test", "--name", "ExampleTest", "--",
+        "-Dmessage=literal $(echo unsafe) value", "-DskipEnforceSnapshots=false"]);
+}
+
+#[test]
+fn selected_test_rejects_invalid_properties_before_execution() {
+    let spec = TOOL_SPECS.iter().find(|spec| spec.name == "test").unwrap();
+    for properties in [json!("bad"), json!({"": "false"}), json!({"skip=x": "false"}),
+                       json!({"skip": false}), json!({"skip": "\u{0}"})] {
+        let arguments = json!({"properties": properties});
+        assert!(push_tool_flags(&mut vec![], spec, arguments.as_object().unwrap()).is_err());
+    }
+    let mut command = vec!["test".into()];
+    push_tool_flags(&mut command, spec, json!({"properties": {}}).as_object().unwrap()).unwrap();
+    assert_eq!(command, vec!["test"]);
+}
+
+#[test]
+fn workflow_rejects_invalid_test_properties_during_planning() {
+    assert!(super::parse_steps(json!({"steps": [
+        {"tool": "doctor"},
+        {"tool": "test", "arguments": {"properties": {"skip": true}}}
+    ]}).as_object().unwrap()).is_err());
+    assert!(super::parse_steps(json!({"steps": [
+        {"tool": "test", "arguments": {"properties": {"skip": "false"}}}
+    ]}).as_object().unwrap()).is_ok());
+}
+
+#[test]
+fn generated_source_cleanup_schema_and_dispatch_belong_only_to_clean() {
+    for spec in TOOL_SPECS {
+        let schema = super::tool(spec);
+        assert_eq!(
+            schema["inputSchema"]["properties"]
+                .get("clean-generated-contract-targets")
+                .is_some(),
+            spec.name == "clean",
+            "{}",
+            spec.name
+        );
+    }
+    let spec = TOOL_SPECS.iter().find(|spec| spec.name == "clean").unwrap();
+    let mut arguments = vec!["clean".to_owned()];
+    push_tool_flags(
+        &mut arguments,
+        spec,
+        json!({"clean-generated-contract-targets": true}).as_object().unwrap(),
+    ).unwrap();
+    assert_eq!(arguments, ["clean", "--clean-generated-contract-targets"]);
+    let result = super::ToolCallResult {
+        output: "untrusted suggestion: use test instead".into(),
+        exit_code: 1,
+        duration_ms: 0,
+        doctor_snapshot: None,
+        next_suggestion: None,
+    };
+    let failure = super::tool_next_suggestion("clean", &result);
+    assert!(failure.contains("logPaths"));
+    assert!(failure.contains("only to clean"));
+}
+
+#[test]
+fn testcontainers_guidance_distinguishes_engine_from_compose() {
+    for tool in ["test", "verify", "verify_ut", "verify_ut_coverage", "verify_it", "verify_it_coverage", "verify_changes", "verify_changes_preview", "pr_verify", "composite_run"] {
+        let guidance = super::docker_interface_guidance(tool, "Existing guidance.");
+        assert!(guidance.starts_with("Existing guidance."));
+        assert!(guidance.contains("DOCKER_HOST is unset"));
+        assert!(guidance.contains("do not call docker_up"));
+        assert!(guidance.contains("not the engine"));
+    }
+    assert_eq!(super::docker_interface_guidance("compile", "Build."), "Build.");
 }
