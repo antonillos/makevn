@@ -3,6 +3,7 @@ import contextlib
 import hashlib
 import io
 import json
+import os
 from pathlib import Path
 import subprocess
 import shutil
@@ -159,7 +160,8 @@ class TestImpactTests(unittest.TestCase):
             impact.report_inventory(self.repo, stamp)
         report.write_text('<testsuite><testcase classname="example.OwnerTest"/></testsuite>')
         self.assertEqual(impact.report_inventory(self.repo, stamp), ['example.OwnerTest'])
-        stamp.touch()
+        stale_after = report.stat().st_mtime_ns + 1_000_000_000
+        os.utime(stamp, ns=(stale_after, stale_after))
         with self.assertRaisesRegex(ValueError, 'no fresh'):
             impact.report_inventory(self.repo, stamp)
 
