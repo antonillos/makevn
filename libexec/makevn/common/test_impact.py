@@ -12,7 +12,7 @@ import urllib.parse
 import xml.etree.ElementTree as ET
 import zipfile
 
-VERSION = 3
+VERSION = 4
 DYNAMIC = {'forName', 'loadClass', 'getDeclaredMethod', 'getDeclaredMethods',
            'getDeclaredConstructor', 'getDeclaredConstructors', 'getMethod', 'getMethods',
            'getConstructor', 'getConstructors', 'ServiceLoader', 'MethodHandle',
@@ -115,14 +115,24 @@ def facts(base, java):
         raise ValueError('Java source parsing requires a compatible JDK 17+; ' + result.stderr[-600:])
     parsed = {}
     for line in result.stdout.splitlines():
-        encoded, shape, identifiers = line.split('\t')
+        encoded, shape, identifiers, bodies = line.split('\t')
         path = Path(base64.b64decode(encoded).decode()).relative_to(base).as_posix()
         prefix = 'src/main/java/' if path.startswith('src/main/java/') else 'src/test/java/'
         parsed[path] = {'shape': shape, 'names': identifiers.split(','),
-                        'class': path[len(prefix):-5].replace('/', '.')}
+                        'class': path[len(prefix):-5].replace('/', '.'),
+                        'bodies': [{'hash': body.split(':')[0], 'writes': body.split(':')[1] == 'true'}
+                                   for body in bodies.split(',') if body]}
     if len(parsed) != len(paths):
         raise ValueError('incomplete Java source inventory')
     return parsed
+
+
+def state_writes_changed(before, after):
+    if 'bodies' not in before or 'bodies' not in after or len(before['bodies']) != len(after['bodies']):
+        return True
+    # Without attribution, assignment targets may be shared even when unqualified.
+    return any(left['hash'] != right['hash'] and (left['writes'] or right['writes'])
+               for left, right in zip(before['bodies'], after['bodies']))
 
 
 def bytecode(base):
@@ -352,6 +362,8 @@ def narrow(repo, base, owner, paths, changed_tests):
             if relative.startswith('src/main/java/'):
                 if parsed[relative]['shape'] != value['facts'][relative]['shape']:
                     raise ValueError('production declaration, import or initializer changed')
+                if state_writes_changed(value['facts'][relative], parsed[relative]):
+                    raise ValueError('changed method may write shared Java state; test effects cannot be bounded')
                 if (DYNAMIC | UNSAFE_CHANGE).intersection(parsed[relative]['names']):
                     raise ValueError('changed production class has unresolved dynamic/global-state/I/O behavior')
                 changed.add(parsed[relative]['class'])

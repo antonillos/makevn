@@ -4,6 +4,7 @@ import hashlib
 import io
 import json
 import os
+import re
 from pathlib import Path
 import subprocess
 import shutil
@@ -38,7 +39,8 @@ class TestImpactTests(unittest.TestCase):
             target = self.repo / path
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_text('class ' + name + ' {}')
-            self.facts[path] = {'class': 'example.' + name, 'shape': 'same', 'names': names}
+            self.facts[path] = {'class': 'example.' + name, 'shape': 'same', 'names': names,
+                                'bodies': [{'hash': 'baseline', 'writes': False}]}
             compiled = self.repo / ('target/test-classes/' if name.endswith('Test') else 'target/classes/') / ('example/' + name + '.class')
             compiled.parent.mkdir(parents=True, exist_ok=True)
             compiled.write_bytes(name.encode())
@@ -88,6 +90,26 @@ class TestImpactTests(unittest.TestCase):
                 selected, diagnostic = self.plan()
                 self.assertIsNone(selected)
                 self.assertIn('dynamic', diagnostic)
+
+    def test_shared_state_writes_do_not_exclude_tests_of_the_written_class(self):
+        self.value['records']['example.OwnerTest'] = ['example.Owner', 'example.Other']
+        self.write_map()
+        self.facts[self.source]['names'] = ['Other']
+        self.facts[self.source]['bodies'] = [{'hash': 'Other.flag = -1', 'writes': True}]
+        selected, diagnostic = self.plan()
+        self.assertIsNone(selected)
+        self.assertIn('shared Java state', diagnostic)
+
+    def test_unchanged_constructor_writes_do_not_disable_method_body_selection(self):
+        self.value['facts'][self.source]['bodies'] = [
+            {'hash': 'constructor', 'writes': True}, {'hash': 'old body', 'writes': False}]
+        self.write_map()
+        self.facts[self.source]['bodies'] = [
+            {'hash': 'constructor', 'writes': True}, {'hash': 'new body', 'writes': False}]
+        self.assertIsNotNone(self.plan()[0])
+        self.value['facts'][self.source]['bodies'][1]['writes'] = True
+        self.write_map()
+        self.assertIsNone(self.plan()[0])
 
     def test_declaration_changes_and_missing_direct_coverage_fall_back(self):
         self.facts[self.source]['shape'] = 'different declaration'
@@ -220,19 +242,24 @@ class TestImpactTests(unittest.TestCase):
 
 
 class JavaSourceFactsTests(unittest.TestCase):
-    def test_parser_distinguishes_method_bodies_from_contracts_and_initializers(self):
+    def java(self):
         java = shutil.which('java')
         if java is None:
             self.skipTest('Java unavailable')
+        result = subprocess.run([java, '--version'], capture_output=True, text=True)
+        version = re.search(r'(?:openjdk|java) (\d+)', result.stdout)
+        if not version or int(version[1]) < 17:
+            self.skipTest('JDK 17+ unavailable')
+        return Path(java)
+
+    def test_parser_distinguishes_method_bodies_from_contracts_and_initializers(self):
+        java = self.java()
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             source = root / 'src/main/java/Owner.java'
             source.parent.mkdir(parents=True)
             source.write_text('class Owner { int value = 1; int read() { return value; } }')
-            try:
-                before = impact.facts(root, Path(java))
-            except ValueError as error:
-                self.skipTest('JDK 17+ unavailable: ' + str(error))
+            before = impact.facts(root, java)
             source.write_text('class Owner { int value = 1; int read() { int copy = value; return copy; } }')
             body = impact.facts(root, Path(java))
             self.assertEqual(before['src/main/java/Owner.java']['shape'], body['src/main/java/Owner.java']['shape'])
@@ -242,6 +269,26 @@ class JavaSourceFactsTests(unittest.TestCase):
             source.write_text('class Owner { int value = 1; long read() { return value; } }')
             self.assertNotEqual(before['src/main/java/Owner.java']['shape'],
                                 impact.facts(root, Path(java))['src/main/java/Owner.java']['shape'])
+
+    def test_parser_detects_field_array_compound_and_unary_writes_in_changed_methods(self):
+        java = self.java()
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / 'src/main/java/Owner.java'
+            source.parent.mkdir(parents=True)
+            prefix = 'class Owner { int value; Owner() { this.value = 1; } int read() { '
+            source.write_text(prefix + 'return value; } }')
+            before = impact.facts(root, java)['src/main/java/Owner.java']
+            self.assertTrue(before['bodies'][0]['writes'])
+            source.write_text(prefix + 'final int copy = value; return copy; } }')
+            self.assertFalse(impact.state_writes_changed(before, impact.facts(root, java)['src/main/java/Owner.java']))
+            for statement in ['Other.flag = -1;', 'Other.flag += 1;', 'Other.flag++;',
+                              '--Other.flag;', 'Other.flags[0] = -1;', 'value = 2;']:
+                with self.subTest(statement=statement):
+                    source.write_text(prefix + statement + ' return value; } }')
+                    after = impact.facts(root, java)['src/main/java/Owner.java']
+                    self.assertTrue(impact.state_writes_changed(before, after))
+                    self.assertTrue(impact.state_writes_changed(after, before))
 
 
 class ContextTests(unittest.TestCase):

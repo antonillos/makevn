@@ -46,6 +46,10 @@ Sources using recognized reflection/service-loading APIs are potential consumers
 their callers/tests are retained even without a direct static edge. Dynamic
 behavior or recognized process-wide state/I/O effects in a changed production
 class reject narrowing; local class-loading evidence cannot bound those effects.
+Changed method bodies containing assignments, compound assignments or increment/
+decrement operations also retain the complete suite. Without attribution their
+targets cannot be proven local. Both added and removed writes are checked;
+unchanged constructors and other unchanged methods do not disable selection.
 
 The baseline stores the Git revision, source/config/resource inventory, compiled
 class hashes, resolved dependency JAR hashes, cached Maven model inventory and JDK

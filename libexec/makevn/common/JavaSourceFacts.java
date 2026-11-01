@@ -1,6 +1,9 @@
+import com.sun.source.tree.AssignmentTree;
+import com.sun.source.tree.CompoundAssignmentTree;
 import com.sun.source.tree.IdentifierTree;
 import com.sun.source.tree.MemberSelectTree;
 import com.sun.source.tree.MethodTree;
+import com.sun.source.tree.UnaryTree;
 import com.sun.source.util.JavacTask;
 import com.sun.source.util.TreeScanner;
 import com.sun.source.util.Trees;
@@ -33,12 +36,19 @@ public final class JavaSourceFacts {
             for (final var unit : units) {
                 final var source = unit.getSourceFile().getCharContent(true).toString();
                 final var ranges = new ArrayList<long[]>();
+                final var bodies = new ArrayList<String>();
+                final var sha256 = MessageDigest.getInstance("SHA-256");
                 new TreeScanner<Void, Void>() {
                     @Override
                     public Void visitMethod(final MethodTree tree, final Void unused) {
                         if (tree.getBody() != null) {
                             ranges.add(new long[]{positions.getStartPosition(unit, tree.getBody()),
                                     positions.getEndPosition(unit, tree.getBody())});
+                            final var hash = sha256.digest(tree.getBody().toString().getBytes(StandardCharsets.UTF_8));
+                            bodies.add(HexFormat.of().formatHex(hash) + ":"
+                                    + Boolean.TRUE.equals(new StateWrites().scan(tree.getBody(), null)));
+                        } else {
+                            bodies.add("-:false");
                         }
                         return null;
                     }
@@ -65,15 +75,40 @@ public final class JavaSourceFacts {
                     }
                     shape.replace((int) range[0], (int) range[1], "{}");
                 }
-                final var digest = MessageDigest.getInstance("SHA-256")
-                        .digest(shape.toString().getBytes(StandardCharsets.UTF_8));
+                final var digest = sha256.digest(shape.toString().getBytes(StandardCharsets.UTF_8));
                 final var path = Path.of(unit.getSourceFile().toUri()).toString();
                 System.out.println(Base64.getEncoder().encodeToString(path.getBytes(StandardCharsets.UTF_8))
-                        + "\t" + HexFormat.of().formatHex(digest) + "\t" + String.join(",", names));
+                        + "\t" + HexFormat.of().formatHex(digest) + "\t" + String.join(",", names)
+                        + "\t" + String.join(",", bodies));
             }
         }
         if (diagnostics.getDiagnostics().stream().anyMatch(item -> item.getKind() == Diagnostic.Kind.ERROR)) {
             throw new IllegalArgumentException("Cannot derive impact from invalid Java syntax");
+        }
+    }
+
+    private static final class StateWrites extends TreeScanner<Boolean, Void> {
+        @Override
+        public Boolean reduce(final Boolean left, final Boolean right) {
+            return Boolean.TRUE.equals(left) || Boolean.TRUE.equals(right);
+        }
+
+        @Override
+        public Boolean visitAssignment(final AssignmentTree tree, final Void unused) {
+            return true;
+        }
+
+        @Override
+        public Boolean visitCompoundAssignment(final CompoundAssignmentTree tree, final Void unused) {
+            return true;
+        }
+
+        @Override
+        public Boolean visitUnary(final UnaryTree tree, final Void unused) {
+            return switch (tree.getKind()) {
+                case PREFIX_INCREMENT, PREFIX_DECREMENT, POSTFIX_INCREMENT, POSTFIX_DECREMENT -> true;
+                default -> super.visitUnary(tree, unused);
+            };
         }
     }
 }

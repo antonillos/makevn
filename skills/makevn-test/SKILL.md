@@ -50,6 +50,8 @@ class. Do not enable it automatically for a quick test request. Failed, interrup
 entirely skipped-class or incomplete capture cannot enable narrowing. Normal
 focused runs reuse compatible evidence; changed declarations, helpers, resources,
 configuration, dependencies, JDK or missing evidence retain complete owner suites.
+Changed method bodies with assignment/update targets that cannot be proven local
+also retain complete suites, including removal of a previously recorded write.
 
 Preparation uses `-am install` with UT/IT execution disabled and retains test
 compilation/test jars. A 34-module reactor does not mean 34 suites ran. Owner
