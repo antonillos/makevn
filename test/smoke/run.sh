@@ -883,8 +883,11 @@ test_installer() {
   assert_not_exists "${prefix}/share/makevn/makevn.mk"
   for skill in makevn makevn-test makevn-docker makevn-karate makevn-quality makevn-product-test; do
     assert_file_exists "${prefix}/share/makevn/skills/${skill}/SKILL.md"
+  done
+  for skill in makevn makevn-test makevn-docker makevn-karate makevn-quality; do
     assert_file_exists "${prefix}/share/makevn/skills/${skill}/references/workflows.md"
   done
+  assert_file_exists "${prefix}/share/makevn/skills/makevn-product-test/references/report.md"
   "${prefix}/bin/makevn" --help >/dev/null
 }
 
