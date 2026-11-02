@@ -377,7 +377,10 @@ def record(repo, base, name, traces):
     value['records'][name] = sorted(loaded & known)
     if value['inputs'] != inputs(repo, base) or value['bytecode'] != bytecode(base):
         raise ValueError('source/config/bytecode changed during test capture')
-    value['models'] = repository_models()
+    models = repository_models()
+    if any(models.get(path) != sha for path, sha in value['models'].items()):
+        raise ValueError('cached Maven model changed during capture')
+    value['models'] = models
     sealed_save(path, value)
 
 

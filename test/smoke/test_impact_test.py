@@ -307,6 +307,19 @@ class TestImpactTests(unittest.TestCase):
         jar.write_bytes(b'new')
         self.assertIsNone(self.plan()[0])
 
+    def test_changed_cached_model_cannot_be_hidden_by_recording_another_class(self):
+        self.checkpoint()
+        path = impact.state(self.repo) / 'capture.json'
+        value = impact.sealed_load(path)
+        value['models'] = {'parent.pom': 'baseline'}
+        impact.sealed_save(path, value)
+        trace = impact.state(self.repo) / 'traces'
+        trace.mkdir()
+        (trace / '1.log').write_text('[0.1s][info][class,load] example.OtherTest source: file:/fixture/test-classes/\n')
+        with self.assertRaisesRegex(ValueError, 'model changed'):
+            impact.record(self.repo, self.repo, 'example.OtherTest', trace)
+        self.assertNotIn('example.OtherTest', impact.sealed_load(path)['records'])
+
     def test_isolated_trace_requires_the_selected_test_jvm(self):
         value = dict(self.value)
         value['records'] = {}
