@@ -74,8 +74,19 @@ def verify(binary):
             assert any('[✓] test-impact-init' in line for line in screen.lines())
             assert any('prepare dependencies' in line for line in screen.lines())
             assert any('example.OwnerTest' in line for line in screen.lines())
-            _, status = os.waitpid(pid, 0)
-            assert os.waitstatus_to_exitcode(status) == 0
+            deadline = time.monotonic() + 5
+            while True:
+                finished, status = os.waitpid(pid, os.WNOHANG)
+                if finished:
+                    assert os.waitstatus_to_exitcode(status) == 0
+                    break
+                if time.monotonic() > deadline:
+                    raise AssertionError('Frontend did not exit after final summary')
+                if select.select([fd], [], [], 0.05)[0]:
+                    try:
+                        os.read(fd, 65536)
+                    except OSError:
+                        pass
         finally:
             os.close(fd)
             try:
