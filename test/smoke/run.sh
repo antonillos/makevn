@@ -3421,9 +3421,9 @@ EOF
 test_verify_changes_focused_command() {
   local repo="${TMP_ROOT}/verify-changes-focused" java_home output
   mkdir -p "${repo}/client/src/main/java/example" "${repo}/boot/src/test/java/example"
-  printf '<project><modules><module>client</module><module>boot</module></modules></project>\n' > "${repo}/pom.xml"
-  printf '<project/>\n' > "${repo}/client/pom.xml"
-  printf '<project/>\n' > "${repo}/boot/pom.xml"
+  printf '<project><groupId>example</groupId><artifactId>root</artifactId><version>1</version><packaging>pom</packaging><modules><module>client</module><module>boot</module></modules></project>\n' > "${repo}/pom.xml"
+  printf '<project><parent><groupId>example</groupId><artifactId>root</artifactId><version>1</version></parent><artifactId>client</artifactId></project>\n' > "${repo}/client/pom.xml"
+  printf '<project><parent><groupId>example</groupId><artifactId>root</artifactId><version>1</version></parent><artifactId>boot</artifactId></project>\n' > "${repo}/boot/pom.xml"
   printf 'class Owner {}\n' > "${repo}/client/src/main/java/example/Owner.java"
   printf 'class OwnersIT {}\n' > "${repo}/boot/src/test/java/example/OwnersIT.java"
   git init --initial-branch=main "${repo}" >/dev/null
