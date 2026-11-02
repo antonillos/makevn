@@ -234,10 +234,9 @@ for code and Karate independently.
 
 Maven preflight resolves command-line `-D`/`--define` properties before evaluating
 local Enforcer rules, including reactor modules. These values override POM
-properties; an omitted value means `true`. Doctor has no selected command: an
-unresolved execution skip is reported as command-dependent, without claiming
-compatibility. The actual command still stops if its properties cannot resolve
-that skip. Flags detected for one workflow are not applied to other commands.
+properties; an omitted value means `true`. If an execution skip cannot be
+resolved, its version constraint is retained conservatively. Flags detected for
+one workflow are not applied to other commands.
 
 Doctor also reports the selected Maven version, its executable and compatibility
 with unconditional local `requireMavenVersion` rules, including reactor modules
@@ -304,11 +303,11 @@ reports the restriction if no candidate satisfies it; makevn never adds an
 Enforcer skip flag or changes the project's range.
 
 Only executions containing `requireJavaVersion` rules, either in their own
-configuration or the plugin's shared configuration, require their effective
-`skip` value to be resolved. A snapshots-only execution with
+configuration or the plugin's shared configuration, constrain Java selection.
+A snapshots-only execution with
 `<skip>${skipEnforceSnapshots}</skip>` does not constrain Java selection, even
 when that property is undefined. An unresolved skip on a Java-rule execution
-still stops automatic selection. For example, a separate Java execution with
+retains its version constraint. For example, a separate Java execution with
 `[25,26)` accepts stable 25.0.3 despite that unrelated snapshots property;
 installing another JDK or rerunning init does not fix a parser failure.
 

@@ -142,7 +142,8 @@ for offline and mirrored-repository limits; do not suggest installing another
 JDK when parent metadata could not be resolved. Execution
 `skip` properties matter only when that execution has a Java rule (including
 plugin-level rules). An unresolved skip in a snapshots-only execution must not
-block JDK selection. An unresolved property affecting a Java rule does block it;
+block JDK selection. An unresolved skip retains the Java version constraint;
+an unresolved version property blocks selection;
 do not bypass Enforcer or alter the POM to hide a detection failure. See the
 [JDK selection reference](references/workflows.md#stable-automatic-jdk-selection)
 for supported ranges and effective-POM limitations.

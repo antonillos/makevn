@@ -9,7 +9,7 @@ import sys
 import xml.etree.ElementTree as ET
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "jdk"))
-from enforcer import UnresolvedSkipError, accepts, reactor_rules
+from enforcer import accepts, reactor_rules
 
 
 def wrapper_version(executable):
@@ -89,13 +89,6 @@ def main(args):
         if mode != "check":
             print(message)
         return 0
-    except UnresolvedSkipError as error:
-        if mode != "check":
-            print("Maven version requirements depend on command properties: " + str(error) +
-                  ". Compatibility will be checked with the selected command's properties.")
-            return 0
-        print("Maven version unresolved or incompatible: " + str(error), file=sys.stderr)
-        return 1
     except (ValueError, OSError, ET.ParseError, subprocess.TimeoutExpired) as error:
         print("Maven version unresolved or incompatible: " + str(error),
               file=sys.stderr if mode == "check" else sys.stdout)

@@ -56,8 +56,10 @@ class MavenInspectionTests(unittest.TestCase):
                 inspection.inspect(str(executable), root, root, "", True,
                                    ("-DskipEnforceSnapshots=false",))
             child_pom.write_text(original)
-            with self.assertRaisesRegex(ValueError, "unresolved Enforcer property"):
+            with self.assertRaisesRegex(ValueError, "does not satisfy"):
                 inspection.inspect(str(executable), root, root, "", True)
+            executable.write_text("#!/bin/sh\necho 'Apache Maven 3.9.14'\n")
+            self.assertIn("compatible", inspection.inspect(str(executable), root, root, "", True))
 
     def test_shell_preflight_forwards_command_properties(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -76,7 +78,7 @@ makevn_check_maven_command "$2" "$2" "" env EXAMPLE=value mvn verify "$3"
                                         capture_output=True, text=True, check=False)
                 self.assertEqual(result.returncode, expected, result.stderr)
 
-    def test_doctor_reports_command_dependent_skip_without_claiming_compatibility(self):
+    def test_doctor_reports_unavailable_maven_with_unresolved_skip(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             (root / "pom.xml").write_text(pom().replace(
@@ -85,10 +87,9 @@ makevn_check_maven_command "$2" "$2" "" env EXAMPLE=value mvn verify "$3"
             output = io.StringIO()
             with contextlib.redirect_stdout(output):
                 self.assertEqual(inspection.main([
-                    "describe", "missing-maven", str(root), str(root), ""]), 0)
-            self.assertIn("depend on command properties", output.getvalue())
-            self.assertIn("skipEnforceSnapshots", output.getvalue())
-            with self.assertRaisesRegex(ValueError, "unresolved Enforcer property"):
+                    "describe", "missing-maven", str(root), str(root), ""]), 1)
+            self.assertIn("Maven version unresolved or incompatible", output.getvalue())
+            with self.assertRaises(OSError):
                 inspection.inspect("missing-maven", root, root, "", True)
 
     def test_command_property_forms_and_precedence(self):
