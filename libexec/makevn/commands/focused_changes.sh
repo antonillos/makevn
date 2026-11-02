@@ -41,7 +41,7 @@ makevn_print_focused_changes_plan() {
   local owner tests
   makevn_print_item "mode" "focused (not a full integration or global coverage gate)"
   makevn_print_deferred_global_coverage
-  makevn_print_item "selection" "validated test-impact evidence when available; otherwise complete owner module suites with fallback reasons"
+  makevn_print_item "selection" "static dependencies enriched by real executions; complete owner suites when impact is uncertain"
   if [[ "${MAKEVN_TEST_IMPACT_CAPTURE:-false}" == true ]]; then
     makevn_print_item "test impact capture" "complete suite followed by isolated per-test-class verification; JDK 17+ and standard single-module Java layout required"
   fi
@@ -84,7 +84,7 @@ makevn_run_focused_changes() (
     MAKEVN_FOCUSED_PHASE_INDEX=$((MAKEVN_FOCUSED_PHASE_INDEX + 1))
     makevn_verify_focused_owner "${repo_root}" "${owner}" "${tests}" "${base_args[@]}" || return $?
   done <<< "${MAKEVN_VERIFY_CHANGES_FOCUSED_PLAN}"
-  makevn_capture_test_impact "${repo_root}" "${capture_stamp}" "${base_args[@]}"
+  makevn_finish_test_impact_capture "${repo_root}" "${capture_stamp}" "${base_args[@]}"
 )
 
 makevn_verify_focused_owner() {
@@ -97,7 +97,7 @@ makevn_verify_focused_owner() {
   if [[ "${tests}" != '*' ]]; then
     MAKEVN_FOCUSED_SELECTED_TESTS="${tests}"
   fi
-  if makevn_focused_changes_phase "${repo_root}" "verify ${owner} (${tests})" "$@" -pl "${owner}" verify -DskipTests=false -DskipUTs=false -DskipITs=false ${MAKEVN_FOCUSED_SELECTION[@]+"${MAKEVN_FOCUSED_SELECTION[@]}"}; then rc=0; else rc=$?; fi
+  if makevn_focused_changes_phase "${repo_root}" "verify ${owner} (${tests})" "$@" -pl "${owner}" "${MAKEVN_TEST_IMPACT_REPLAY_GOAL:-verify}" -DskipTests=false -DskipUTs=false -DskipITs=false ${MAKEVN_FOCUSED_SELECTION[@]+"${MAKEVN_FOCUSED_SELECTION[@]}"}; then rc=0; else rc=$?; fi
   rm -f "${stamp}"
   return "${rc}"
 }

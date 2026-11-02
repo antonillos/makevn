@@ -11,7 +11,7 @@ MAKEVN_VERIFY_CHANGES_MAVEN_BASE_PATH="${tmp}"
 MAKEVN_VERIFY_CHANGES_MODULE_SELECTION=boot,client
 MAKEVN_VERIFY_CHANGES_FOCUSED_PLAN=$'boot\texample.OwnersIT\nclient\t*'
 plan_output="$(makevn_print_focused_changes_plan)"
-[[ "${plan_output}" == *'validated test-impact evidence'* ]]
+[[ "${plan_output}" == *'static dependencies enriched by real executions'* ]]
 [[ "${plan_output}" == *'verify client: entire module suite'* ]]
 verify_args=(mvn)
 cli_flags=(-nsu)

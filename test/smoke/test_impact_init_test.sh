@@ -19,6 +19,11 @@ python3() {
     touch "${tmp}/locked"
     return 0
   fi
+  if [[ "$1" == */progressive_impact.py ]]; then
+    [[ "$2" == preview || "$2" == init ]]
+    printf '%s\n' "$2" > "${tmp}/static-mode"
+    return "${STATIC_STATUS:-0}"
+  fi
   [[ "$2" == status || "$2" == retire ]]
   return "${STATUS:-2}"
 }
@@ -32,11 +37,14 @@ cmd_test_impact "${tmp}" init
 [[ ! -e "${tmp}/verified" ]]
 STATUS=2
 cmd_test_impact "${tmp}" init
+[[ ! -e "${tmp}/verified" && "$(cat "${tmp}/static-mode")" == init ]]
+cmd_test_impact "${tmp}" init --isolated
 [[ -e "${tmp}/verified" ]]
-STATUS=1
+STATIC_STATUS=1
 if cmd_test_impact "${tmp}" init; then exit 1; fi
 if cmd_test_impact "${tmp}" preview extra; then exit 1; fi
 STATUS=0
+STATIC_STATUS=0
 MAKEVN_VERIFY_CHANGES_MAVEN_BASE_PATH="${tmp}"
 makevn_retire_test_impact "${tmp}"
 makevn_test_impact_scope

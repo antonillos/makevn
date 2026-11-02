@@ -117,10 +117,10 @@ def facts(base, java):
         raise ValueError('Java source parsing requires a compatible JDK 17+; ' + result.stderr[-600:])
     parsed = {}
     for line in result.stdout.splitlines():
-        encoded, shape, identifiers, bodies = line.split('\t')
+        encoded, shape, identifiers, bodies, declared = line.split('\t')
         path = Path(base64.b64decode(encoded).decode()).relative_to(base).as_posix()
         prefix = 'src/main/java/' if path.startswith('src/main/java/') else 'src/test/java/'
-        parsed[path] = {'shape': shape, 'names': identifiers.split(','),
+        parsed[path] = {'shape': shape, 'names': identifiers.split(','), 'declared': declared.split(','),
                         'class': path[len(prefix):-5].replace('/', '.'),
                         'bodies': [{'hash': body.split(':')[0], 'writes': body.split(':')[1] == 'true'}
                                    for body in bodies.split(',') if body]}
@@ -419,6 +419,8 @@ def finish(repo, base, java):
         raise ValueError('incomplete isolated test capture')
     value['status'] = 'success'
     sealed_save(state(repo) / 'map.json', value)
+    from progressive_impact import absorb_isolated
+    absorb_isolated(repo, base, java, value)
     print('Test impact: published complete map (' + str(len(value['tests'])) + ' test classes)', file=sys.stderr)
 
 
@@ -563,13 +565,8 @@ if __name__ == '__main__':
             record(repo, base, args[0], Path(args[1]))
         elif command == 'finish':
             finish(repo, base, Path(args[0]))
-        elif command == 'validate-prepared':
-            value = json.loads((state(repo) / 'map.json').read_text())
-            paths = [(repo / path).relative_to(base).as_posix() for path in sys.stdin.read().splitlines() if path]
-            validate_bytecode(base, value, paths)
         else:
             raise ValueError('unknown test impact operation')
     except (OSError, ValueError, KeyError, ET.ParseError, subprocess.SubprocessError) as error:
-        prefix = 'Prepared test impact is incompatible; preview again: ' if command == 'validate-prepared' else 'Cannot capture test impact: '
-        print(prefix + str(error), file=sys.stderr)
+        print('Cannot capture test impact: ' + str(error), file=sys.stderr)
         sys.exit(1)

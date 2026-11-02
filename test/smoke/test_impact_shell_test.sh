@@ -43,6 +43,7 @@ makevn_effective_java_home() { printf '%s\n' "${fixture_java_home}"; }
 makevn_verify_focused_owner() {
   [[ "${FAIL_CLASS:-false}" != true ]] || return 7
   printf '%s\n' "$3" >> "${tmp}/.makevn/isolated-calls"
+  printf '%s\n' "${MAKEVN_TEST_IMPACT_REPLAY_GOAL}" >> "${tmp}/.makevn/replay-goals"
   local options="$5" name="$3" traces
   traces="${options##*file=}"
   traces="${traces%%/%p.log*}"
@@ -75,6 +76,7 @@ if makevn_capture_test_impact "${tmp}" "${stamp}"; then exit 1; fi
 FAIL_CLASS=false
 makevn_capture_test_impact "${tmp}" "${stamp}"
 [[ "$(wc -l < "${tmp}/.makevn/isolated-calls" | tr -d ' ')" == 3 ]]
+[[ "$(sort -u "${tmp}/.makevn/replay-goals")" == test ]]
 MAKEVN_TEST_IMPACT_CAPTURE=false
 makevn_capture_test_impact "${tmp}" "${stamp}"
 

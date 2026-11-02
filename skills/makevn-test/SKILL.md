@@ -37,38 +37,27 @@ Exhaustive selected suites still differ from whole-project `verify`. Unknown imp
 requires another exhaustive preview and explanation; never silently broaden.
 A successful preview runs no tests. Preserve existing authorization when broadening.
 
-Production changes use validated isolated test-impact evidence when compatible;
-otherwise the complete owner module suite runs, with a visible fallback reason.
-Inspect the selected test list and evidence provenance; focused does not promise
-few tests. Narrowing currently supports standard single-module Java projects with
-JDK 17+ and conventional Surefire/Failsafe ownership. Reactors retain full suites.
+Production changes start with conservative static dependency selection. Standard
+single-module Java projects on JDK 17+ are supported; unknown impact retains complete
+owner suites. Static selection does not require a prior test run or compiled code.
+Inspect selected classes and fallback reasons; focused does not promise few tests.
 
-Initialize project-wide impact evidence explicitly after doctor/setup, including
-on a clean checkout: CLI `test-impact-preview` then `test-impact-init`, or MCP
-`test_impact_preview` then `test_impact_init`. This is expensive: a complete suite
-followed by isolated verification per test class. Do not capture automatically for
-a quick test request. Preview runs no tests and cost remains provisional until
-fresh complete-suite reports establish the inventory. A compatible complete map
-makes initialization a no-op. Incomplete captures resume completed sealed records
-only in an identical context; initialization reruns the complete suite before
-missing class replays. Changed inputs, bytecode, JDK, environment or dependencies
-restart capture with a reason. Failed classes remain missing and partial
-checkpoints never enable narrowing.
-Skipped-only classes are recorded separately and always included in focused
-verification, with fresh reports required; activation must pass. They contribute
-no class-loading evidence. A baseline must contain at least one active class.
-Concurrent captures in one checkout
-are rejected; retain logs/checkpoints when diagnosing failures.
+After doctor/setup, `test-impact-preview` is read-only and `test-impact-init` writes
+a static map without Maven/tests/containers. Normal selected tests and complete
+verification runs add dependencies observed in successful fresh reports and JVM
+traces without reruns. Shared executions contribute conservative loaded-class
+supersets, not precise per-test attribution. Observations only add edges; missing
+observations never remove static dependencies. Changed context, declarations,
+resources or dependencies invalidate observations. Maps are managed state.
 
-For changed-code recording, pass `--record-test-impact` or MCP
-`"record-test-impact": true` in BOTH preview and verification. It uses the same
-checkpoint store and completes missing compatible records, with the complete-suite
-prerequisite. Changed-code recording still requires changed inputs selecting the
-complete root owner suite; use initialization for a clean checkout. Ordinary
-focused verification reuses compatible published maps without capture. Changed
-declarations/helpers/resources/configuration/dependencies/JDK or missing evidence
-retain complete owner suites. Potential shared-state writes, dynamic behavior and
-global effects in either baseline or changed source retain complete suites.
+Use `test-impact-init --isolated` (MCP `isolated: true`) only when explicitly asked
+for expensive isolated evidence. It runs a complete suite, then missing active
+classes. Unit replays use `test` to avoid repeated packaging; integration replays
+retain `verify`. Compatible sealed checkpoints resume. Changed-code recording
+still uses `--record-test-impact` in BOTH preview and verification. Failed/skipped
+cases supply no edges. Optional classes remain selected with fresh reports required;
+activation must pass. Full/CI coverage and CRAP gates remain separate.
+
 Repository-wide Maven coverage rules remain enforced by default and during
 impact capture. They can reject a partial verification despite passing tests.
 For explicitly authorized local changed-code feedback, inspect another preview

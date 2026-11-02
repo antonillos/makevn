@@ -229,8 +229,8 @@ def focused_plan(repo, base, reference, paths):
             raise ExhaustiveScopeRequired("No owner POM for " + owner + "; use --exhaustive")
         chosen = None
         if owner in suites and os.environ.get('MAKEVN_TEST_IMPACT_CAPTURE') != 'true':
-            from test_impact import narrow
-            chosen = narrow(repo, base, owner, paths, tests.get(owner, set()))
+            from progressive_impact import narrow
+            chosen = narrow(repo, base, owner, paths, tests.get(owner, set()), reference)
         records.append(owner + "\t" + (",".join(sorted(chosen)) if chosen else
                        "*" if owner in suites else ",".join(sorted(tests[owner]))))
     return "\n".join(records)

@@ -1,4 +1,5 @@
 import com.sun.source.tree.AssignmentTree;
+import com.sun.source.tree.ClassTree;
 import com.sun.source.tree.CompoundAssignmentTree;
 import com.sun.source.tree.IdentifierTree;
 import com.sun.source.tree.MemberSelectTree;
@@ -54,7 +55,14 @@ public final class JavaSourceFacts {
                     }
                 }.scan(unit, null);
                 final var names = new TreeSet<String>();
+                final var declared = new TreeSet<String>();
                 new TreeScanner<Void, Void>() {
+                    @Override
+                    public Void visitClass(final ClassTree tree, final Void unused) {
+                        declared.add(tree.getSimpleName().toString());
+                        return super.visitClass(tree, unused);
+                    }
+
                     @Override
                     public Void visitIdentifier(final IdentifierTree tree, final Void unused) {
                         names.add(tree.getName().toString());
@@ -79,7 +87,7 @@ public final class JavaSourceFacts {
                 final var path = Path.of(unit.getSourceFile().toUri()).toString();
                 System.out.println(Base64.getEncoder().encodeToString(path.getBytes(StandardCharsets.UTF_8))
                         + "\t" + HexFormat.of().formatHex(digest) + "\t" + String.join(",", names)
-                        + "\t" + String.join(",", bodies));
+                        + "\t" + String.join(",", bodies) + "\t" + String.join(",", declared));
             }
         }
         if (diagnostics.getDiagnostics().stream().anyMatch(item -> item.getKind() == Diagnostic.Kind.ERROR)) {
