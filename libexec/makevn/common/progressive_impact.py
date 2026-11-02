@@ -13,6 +13,7 @@ import xml.etree.ElementTree as ET
 
 import test_impact as impact
 import reactor_test_impact as reactor
+from test_inventory import validate as validate_test_inventory
 
 KIND = 'progressive-v1'
 CONDITIONAL = {'Disabled', 'EnabledOnOs', 'DisabledOnOs', 'EnabledOnJre', 'DisabledOnJre',
@@ -54,17 +55,6 @@ def tests(parsed):
             and (item.get('name', item['class']).rsplit('.', 1)[-1].startswith(('IT', 'Test')) or
                  item['class'].endswith(('Test', 'Tests', 'IT', 'ITCase', 'TestCase')) or
                  {'Test', 'ParameterizedTest', 'RepeatedTest', 'TestFactory', 'TestTemplate'}.intersection(item['names']))}
-
-
-def validate_test_inventory(base):
-    from changes_scope import parse
-    root = parse((base / 'pom.xml').read_text())
-    for plugin in root.findall('.//plugin'):
-        if plugin.findtext('artifactId') not in {'maven-surefire-plugin', 'maven-failsafe-plugin'}:
-            continue
-        if any(plugin.find('.//' + tag) is not None
-               for tag in ['includes', 'excludes', 'includesFile', 'excludesFile']):
-            raise ValueError('configured test inventory is unknown; complete owner suite required')
 
 
 def constraints(value):
@@ -159,6 +149,7 @@ def consumers(parsed, changed):
 
 
 def narrow(repo, base, owner, paths, changed_tests, reference, cache=None):
+    collect_fallbacks = cache is not None
     try:
         if cache is None:
             cache = {}
@@ -168,8 +159,7 @@ def narrow(repo, base, owner, paths, changed_tests, reference, cache=None):
         current = cache['current']
         if owner not in (current['modules'] or ['.']):
             raise ValueError('unknown reactor owner')
-        for module in current['modules'] or ['.']:
-            validate_test_inventory(base / module)
+        validate_test_inventory(base, owner)
         allowed = {source for source in paths if source.endswith('.java') and
                    ('/src/main/java/' in '/' + source or '/src/test/java/' in '/' + source)}
         from changes_scope import non_verification_path
@@ -232,8 +222,16 @@ def narrow(repo, base, owner, paths, changed_tests, reference, cache=None):
               ' classes selected for ' + owner, file=sys.stderr)
         return selected
     except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError, ET.ParseError) as error:
-        print('Test impact: complete suite; ' + str(error), file=sys.stderr)
+        if collect_fallbacks:
+            cache.setdefault('fallbacks', {}).setdefault(str(error), set()).add(owner)
+        else:
+            print('Test impact: complete suite; ' + str(error), file=sys.stderr)
         return None
+
+
+def report_fallbacks(cache):
+    for reason, owners in sorted(cache.get('fallbacks', {}).items()):
+        print('Test impact: complete suites for ' + ', '.join(sorted(owners)) + '; ' + reason, file=sys.stderr)
 
 def enrich(repo, base, java, before, stamp, traces):
     after = snapshot(repo, base, java)

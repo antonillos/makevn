@@ -247,7 +247,44 @@ with (root / '.makevn/calls').open('a') as calls:
         self.write(self.source, self.original)
         self.commit()
         self.edit()
-        self.assertEqual(self.plan(), 'app\t*\ncore\t*\nservice\t*')
+        self.assertEqual(self.plan(), 'app\texample.FeatureTest\ncore\texample.FeatureTest\nservice\t*')
+
+    def add_filter(self, owner):
+        pom = self.repo / owner / 'pom.xml'
+        pom.write_text(pom.read_text().replace('</project>', '<build><plugins><plugin>'
+                       '<artifactId>maven-surefire-plugin</artifactId><configuration><excludes>'
+                       '<exclude>**/*SlowTest.java</exclude></excludes></configuration></plugin></plugins></build></project>'))
+
+    def test_unrelated_module_filters_do_not_block_selection(self):
+        self.add_filter('unrelated')
+        self.commit()
+        self.edit()
+        self.assertEqual(self.plan(), 'app\texample.FeatureTest\ncore\texample.FeatureTest\nservice\texample.FeatureTest')
+
+    def test_module_filters_affect_only_their_owner_and_real_children(self):
+        self.add_filter('core')
+        pom = self.repo / 'service/pom.xml'
+        pom.write_text(pom.read_text().replace('<artifactId>root</artifactId>', '<artifactId>core</artifactId>')
+                       .replace('</parent>', '<relativePath>../core/pom.xml</relativePath></parent>'))
+        self.commit()
+        self.edit()
+        output = io.StringIO()
+        with contextlib.redirect_stderr(output):
+            plan = changes_scope.focused_plan(self.repo, self.repo, 'HEAD', [self.source])
+        self.assertEqual(plan, 'app\texample.FeatureTest\ncore\t*\nservice\t*')
+        self.assertEqual(output.getvalue().count('configured test inventory'), 1)
+        self.assertIn('complete suites for core, service;', output.getvalue())
+
+    def test_shared_parent_filter_has_one_grouped_fallback(self):
+        self.add_filter('.')
+        self.commit()
+        self.edit()
+        output = io.StringIO()
+        with contextlib.redirect_stderr(output):
+            plan = changes_scope.focused_plan(self.repo, self.repo, 'HEAD', [self.source])
+        self.assertEqual(plan, 'app\t*\ncore\t*\nservice\t*')
+        self.assertEqual(output.getvalue().count('configured test inventory'), 1)
+        self.assertIn('complete suites for app, core, service;', output.getvalue())
 
 
 if __name__ == '__main__':

@@ -33,6 +33,11 @@ including removed references, rather than assuming the edited graph is complete.
 The static inventory includes Surefire's `Test*`, `*Test`, `*Tests`, and `*TestCase`
 conventions, including annotation-free JUnit 3 classes. Configured Surefire/Failsafe
 class includes/excludes or filter files retain the complete owner suite.
+Filter validation follows the selected owner's Maven parent chain, not sibling
+modules or unrelated aggregators. Published parents are inspected only from the
+local Maven cache; missing or unresolved parent models retain the complete suite
+without downloading POMs or running Maven. Each planning pass reports identical
+fallback reasons once, listing all affected owners together.
 
 Static selection follows source references transitively, retains simple-name
 collisions and nested/secondary type aliases, and conservatively connects related
