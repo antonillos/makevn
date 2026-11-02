@@ -38,8 +38,12 @@ requires another exhaustive preview and explanation; never silently broaden.
 A successful preview runs no tests. Preserve existing authorization when broadening.
 
 Production changes start with conservative static dependency selection. Standard
-single-module Java projects on JDK 17+ are supported; unknown impact retains complete
+single-module and literal local reactor Java projects on JDK 17+ are supported; unknown impact retains complete
 owner suites. Static selection does not require a prior test run or compiled code.
+Reactor plans include transitive module consumers. Class identities and fresh
+runtime evidence are scoped to each module; explicit isolated capture remains
+single-module only. Profile-dependent membership and unresolved models retain
+complete suites or require exhaustive verification.
 Inspect selected classes and fallback reasons; focused does not promise few tests.
 
 After doctor/setup, `test-impact-preview` is read-only and `test-impact-init` writes

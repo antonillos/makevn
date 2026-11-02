@@ -124,6 +124,13 @@ Normal selected tests and complete suites add runtime dependencies from successf
 fresh reports and JVM traces. Shared executions supply loaded-class supersets;
 never claim per-test attribution from aggregate traces or JaCoCo. Missing evidence
 cannot remove static edges. Unknown effects retain complete suites.
+Literal local reactors use module-qualified class identities and include downstream
+consumer owners before selecting tests. Dependency preparation installs all planned
+owners and their upstream dependencies once. Normal executions collect each
+module's fresh reports; duplicate class names do not merge report ownership.
+Profile-defined membership, custom source layouts and unresolved Maven models
+remain unsupported for class narrowing. Explicit isolated capture remains limited
+to single-module projects.
 
 Explicit `test_impact_init` with `isolated: true` (CLI `--isolated`) retains the
 expensive full-suite plus isolated-class workflow. Unit replays use Maven's test

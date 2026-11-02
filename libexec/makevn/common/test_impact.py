@@ -99,9 +99,10 @@ def model_digest(path):
     return hashlib.sha256(ET.tostring(root)).hexdigest()
 
 
-def facts(base, java):
-    paths = sorted([*(base / 'src/main/java').rglob('*.java'),
-                    *(base / 'src/test/java').rglob('*.java')])
+def facts(base, java, paths=None):
+    if paths is None:
+        paths = sorted([*(base / 'src/main/java').rglob('*.java'),
+                        *(base / 'src/test/java').rglob('*.java')])
     if not paths:
         raise ValueError('no standard Java sources')
     for path in paths:
@@ -119,9 +120,9 @@ def facts(base, java):
     for line in result.stdout.splitlines():
         encoded, shape, identifiers, bodies, declared = line.split('\t')
         path = Path(base64.b64decode(encoded).decode()).relative_to(base).as_posix()
-        prefix = 'src/main/java/' if path.startswith('src/main/java/') else 'src/test/java/'
+        prefix = 'src/main/java/' if '/src/main/java/' in '/' + path else 'src/test/java/'
         parsed[path] = {'shape': shape, 'names': identifiers.split(','), 'declared': declared.split(','),
-                        'class': path[len(prefix):-5].replace('/', '.'),
+                        'class': path.split(prefix, 1)[1][:-5].replace('/', '.'),
                         'bodies': [{'hash': body.split(':')[0], 'writes': body.split(':')[1] == 'true'}
                                    for body in bodies.split(',') if body]}
     if len(parsed) != len(paths):

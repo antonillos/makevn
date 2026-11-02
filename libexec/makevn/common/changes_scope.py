@@ -7,7 +7,7 @@ import os
 import tempfile
 import xml.etree.ElementTree as ET
 
-from reactor_impact import ExhaustiveScopeRequired, automatic_resource_rules, leaf_bump_owners, shared_resource_owners
+from reactor_impact import ExhaustiveScopeRequired, automatic_resource_rules, leaf_bump_owners, shared_resource_owners, reactor_consumers
 
 
 def parse(text):
@@ -223,14 +223,26 @@ def focused_plan(repo, base, reference, paths):
             suites.add(owner)  # Helpers/deletions require the owner's entire suite.
         else:
             tests.setdefault(owner, set()).add(name[:-5].replace("/", "."))
-    records = []
+    reactor = declared_modules(base, parse(root_pom.read_text())) if root_pom.is_file() else set()
+    source_owners = {(repo / path).relative_to(base).as_posix().split('/src/', 1)[0]
+                     for path in paths if path and not non_verification_path(path)
+                     and (repo / path).is_relative_to(base)
+                     and '/src/' in (repo / path).relative_to(base).as_posix()}
+    if reactor and source_owners and reactor - suites:
+        try:
+            for owner in source_owners:
+                consumers = reactor_consumers(base, reactor, owner, parse)
+                suites.update(consumers - {owner})
+        except (OSError, ValueError, ET.ParseError) as error:
+            raise ExhaustiveScopeRequired('Unresolved reactor consumers: ' + str(error) + '; use --exhaustive') from error
+    records, impact_cache = [], {}
     for owner in sorted(suites | tests.keys()):
         if not (base / owner / "pom.xml").is_file():
             raise ExhaustiveScopeRequired("No owner POM for " + owner + "; use --exhaustive")
         chosen = None
         if owner in suites and os.environ.get('MAKEVN_TEST_IMPACT_CAPTURE') != 'true':
             from progressive_impact import narrow
-            chosen = narrow(repo, base, owner, paths, tests.get(owner, set()), reference)
+            chosen = narrow(repo, base, owner, paths, tests.get(owner, set()), reference, impact_cache)
         records.append(owner + "\t" + (",".join(sorted(chosen)) if chosen else
                        "*" if owner in suites else ",".join(sorted(tests[owner]))))
     return "\n".join(records)

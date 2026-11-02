@@ -12,6 +12,7 @@ import urllib.parse
 import xml.etree.ElementTree as ET
 
 import test_impact as impact
+import reactor_test_impact as reactor
 
 KIND = 'progressive-v1'
 CONDITIONAL = {'Disabled', 'EnabledOnOs', 'DisabledOnOs', 'EnabledOnJre', 'DisabledOnJre',
@@ -35,16 +36,22 @@ def environment(java):
 
 
 def snapshot(repo, base, java):
-    impact.validate_layout(base)
-    return {'version': impact.VERSION, 'kind': KIND, 'repo': str(repo), 'base': str(base),
+    owners = reactor.modules(base)
+    if owners:
+        reactor.validate(base, owners)
+    else:
+        impact.validate_layout(base)
+    return {'version': impact.VERSION, 'kind': reactor.KIND if owners else KIND,
+            'modules': owners, 'repo': str(repo), 'base': str(base),
             'head': subprocess.check_output(['git', '-C', str(repo), 'rev-parse', 'HEAD'], stderr=subprocess.DEVNULL).decode().strip(),
-            'inputs': impact.inputs(repo, base), 'context': environment(java),
-            'facts': impact.facts(base, java), 'observations': {}, 'skipped': {}, 'jars': {}}
+            'inputs': reactor.inputs(repo, base, owners), 'context': environment(java),
+            'facts': reactor.facts(base, owners, java) if owners else impact.facts(base, java),
+            'observations': {}, 'skipped': {}, 'jars': {}}
 
 
 def tests(parsed):
-    return {item['class'] for source, item in parsed.items() if source.startswith('src/test/java/')
-            and (item['class'].rsplit('.', 1)[-1].startswith(('IT', 'Test')) or
+    return {item['class'] for source, item in parsed.items() if reactor.is_source(source, 'test')
+            and (item.get('name', item['class']).rsplit('.', 1)[-1].startswith(('IT', 'Test')) or
                  item['class'].endswith(('Test', 'Tests', 'IT', 'ITCase', 'TestCase')) or
                  {'Test', 'ParameterizedTest', 'RepeatedTest', 'TestFactory', 'TestTemplate'}.intersection(item['names']))}
 
@@ -63,14 +70,15 @@ def validate_test_inventory(base):
 def constraints(value):
     sources = {(Path(value['base']) / source).relative_to(value['repo']).as_posix()
                for source in value['facts']}
-    return {key: value[key] for key in ['base', 'head', 'context']} | {
+    return {key: value[key] for key in ['base', 'head', 'context', 'kind']} | {
+        'modules': value.get('modules', []),
         'inputs': {key: sha for key, sha in value['inputs'].items() if key not in sources},
         'shapes': {key: item['shape'] for key, item in value['facts'].items()}}
 
 
 def load(repo):
     value = impact.sealed_load(path(repo))
-    if value.get('kind') != KIND:
+    if value.get('kind') not in {KIND, reactor.KIND}:
         raise ValueError('unknown progressive map format')
     return value
 
@@ -116,7 +124,8 @@ def baseline(repo, base, java, parsed, paths, reference):
             target = root / relative
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_bytes(content)
-        previous.update(impact.facts(root, java))
+        owners = sorted({item['owner'] for item in parsed.values() if 'owner' in item})
+        previous.update(reactor.facts(root, owners, java) if owners else impact.facts(root, java))
     return previous
 
 
@@ -126,7 +135,7 @@ def consumers(parsed, changed):
     for source, item in parsed.items():
         for alias in item.get('declared', [item['class'].rsplit('.', 1)[-1]]):
             aliases[alias].add(item['class'])
-        if source.startswith('src/main/java/'):
+        if reactor.is_source(source, 'main'):
             production.add(item['class'])
     seeds = set(changed)
     for item in parsed.values():
@@ -149,13 +158,18 @@ def consumers(parsed, changed):
     return affected
 
 
-def narrow(repo, base, owner, paths, changed_tests, reference):
+def narrow(repo, base, owner, paths, changed_tests, reference, cache=None):
     try:
-        if owner != '.':
-            raise ValueError('reactor selection retains complete owner suites')
-        validate_test_inventory(base)
+        if cache is None:
+            cache = {}
         java = Path(os.environ.get('MAKEVN_TEST_IMPACT_JAVA', 'java'))
-        current = snapshot(repo, base, java)
+        if 'current' not in cache:
+            cache['current'] = snapshot(repo, base, java)
+        current = cache['current']
+        if owner not in (current['modules'] or ['.']):
+            raise ValueError('unknown reactor owner')
+        for module in current['modules'] or ['.']:
+            validate_test_inventory(base / module)
         allowed = {source for source in paths if source.endswith('.java') and
                    ('/src/main/java/' in '/' + source or '/src/test/java/' in '/' + source)}
         from changes_scope import non_verification_path
@@ -174,7 +188,9 @@ def narrow(repo, base, owner, paths, changed_tests, reference):
                               if stored['inputs'].get(key) != current['inputs'].get(key)}
             if changed_inputs - allowed:
                 raise ValueError('configuration/resources or unclassified inputs changed')
-        previous = baseline(repo, base, java, current['facts'], allowed, reference)
+        if 'previous' not in cache:
+            cache['previous'] = baseline(repo, base, java, current['facts'], allowed, reference)
+        previous = cache['previous']
         changed = set()
         parsed = {key: dict(item) for key, item in current['facts'].items()}
         for source in allowed:
@@ -182,8 +198,8 @@ def narrow(repo, base, owner, paths, changed_tests, reference):
             before, after = previous[relative], parsed[relative]
             if before['shape'] != after['shape']:
                 raise ValueError('declarations/imports/helpers changed')
-            if relative.startswith('src/test/java/'):
-                if after['class'] not in changed_tests:
+            if reactor.is_source(relative, 'test'):
+                if after['class'] not in tests(current['facts']):
                     raise ValueError('test helper changed')
             else:
                 if impact.state_writes_changed(before, after):
@@ -193,7 +209,7 @@ def narrow(repo, base, owner, paths, changed_tests, reference):
                 changed.add(after['class'])
             parsed[relative]['names'] = sorted(set(before['names']) | set(after['names']))
         affected = consumers(parsed, changed)
-        selected = set(changed_tests) | (affected & tests(parsed))
+        selected = {reactor.identity(current, owner, name) for name in changed_tests} | (affected & tests(parsed))
         observations, skipped = {}, set()
         try:
             stored = load(repo)
@@ -204,13 +220,15 @@ def narrow(repo, base, owner, paths, changed_tests, reference):
             pass
         selected.update(skipped)
         selected.update(name for name, loaded in observations.items() if affected.intersection(loaded))
-        if (impact.state(repo) / 'map.json').exists():
+        if current['kind'] == KIND and (impact.state(repo) / 'map.json').exists():
             with contextlib.redirect_stderr(io.StringIO()):
                 selected.update(impact.narrow(repo, base, owner, paths, changed_tests) or set())
+        selected = reactor.local_names(current, selected, owner)
         if not selected:
             raise ValueError('no statically known tests; complete suite retained')
         print('Test impact: static dependencies plus additive runtime observations; ' +
-              str(len(selected)) + '/' + str(len(tests(parsed))) + ' classes selected', file=sys.stderr)
+              str(len(selected)) + '/' + str(len(reactor.local_names(current, tests(parsed), owner))) +
+              ' classes selected for ' + owner, file=sys.stderr)
         return selected
     except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError, ET.ParseError) as error:
         print('Test impact: complete suite; ' + str(error), file=sys.stderr)
@@ -221,18 +239,19 @@ def enrich(repo, base, java, before, stamp, traces):
     if before['inputs'] != after['inputs'] or constraints(before) != constraints(after):
         raise ValueError('inputs changed during execution; runtime observations discarded')
     active, skipped = set(), {}
-    for plugin in ['surefire-reports', 'failsafe-reports']:
-        for report in (base / 'target' / plugin).glob('TEST-*.xml'):
-            if report.stat().st_mtime_ns < stamp.stat().st_mtime_ns:
-                continue
-            for case in ET.parse(report).getroot().iter('testcase'):
-                if case.find('failure') is not None or case.find('error') is not None:
-                    raise ValueError('failed reports cannot enrich the map')
-                name = case.get('classname', '').split('$')[0]
-                if case.find('skipped') is None:
-                    active.add(name)
-                else:
-                    skipped[name] = case.find('skipped').get('message', 'no reason reported')
+    for owner in after['modules'] or ['.']:
+        for plugin in ['surefire-reports', 'failsafe-reports']:
+            for report in (base / owner / 'target' / plugin).glob('TEST-*.xml'):
+                if report.stat().st_mtime_ns < stamp.stat().st_mtime_ns:
+                    continue
+                for case in ET.parse(report).getroot().iter('testcase'):
+                    if case.find('failure') is not None or case.find('error') is not None:
+                        raise ValueError('failed reports cannot enrich the map')
+                    name = reactor.identity(after, owner, case.get('classname', '').split('$')[0])
+                    if case.find('skipped') is None:
+                        active.add(name)
+                    else:
+                        skipped[name] = case.find('skipped').get('message', 'no reason reported')
     loaded, jars = set(), {}
     for trace in traces.glob('*.log'):
         for line in trace.read_text(errors='replace').splitlines():
@@ -244,10 +263,12 @@ def enrich(repo, base, java, before, stamp, traces):
                 jar = Path(urllib.parse.unquote(urllib.parse.urlparse(match[2]).path))
                 if jar.suffix == '.jar' and jar.is_file() and not jar.is_relative_to(base / 'target'):
                     jars[str(jar)] = impact.digest(jar)
+    loaded = {item['class'] for item in after['facts'].values()
+              if item.get('name', item['class']) in loaded}
     active &= loaded & tests(after['facts'])
     if not active and not skipped:
         return
-    production = {item['class'] for source, item in after['facts'].items() if source.startswith('src/main/java/')}
+    production = {item['class'] for source, item in after['facts'].items() if reactor.is_source(source, 'main')}
     dependencies = loaded & production
     with locked(repo):
         try:

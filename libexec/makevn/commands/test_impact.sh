@@ -38,7 +38,7 @@ makevn_finish_test_impact_capture() {
 }
 
 makevn_validate_prepared_impact() {
-  [[ "${MAKEVN_VERIFY_CHANGES_FOCUSED_PLAN}" != *$'\t*'* && -n "${MAKEVN_VERIFY_CHANGES_SRC_FILES:-}" ]] || return 0
+  [[ "${MAKEVN_VERIFY_CHANGES_FOCUSED_PLAN}" == *$'\t'[!*]* && -n "${MAKEVN_VERIFY_CHANGES_SRC_FILES:-}" ]] || return 0
   local java_home prepared
   java_home="$(makevn_effective_java_home "$1" code "${MAKEVN_VERIFY_CHANGES_MAVEN_BASE_PATH}")" || return $?
   prepared="$(printf '%s\n%s\n' "${MAKEVN_VERIFY_CHANGES_SRC_FILES}" "${MAKEVN_VERIFY_CHANGES_TEST_FILES:-}" | MAKEVN_TEST_IMPACT_JAVA="${java_home}/bin/java" python3 "${SCRIPT_DIR}/common/changes_scope.py" "$1" "${MAKEVN_VERIFY_CHANGES_MAVEN_BASE_PATH}" "${MAKEVN_VERIFY_CHANGES_PARENT_SPEC}" --focused-plan)" || return $?

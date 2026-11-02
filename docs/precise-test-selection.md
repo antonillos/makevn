@@ -1,10 +1,10 @@
-# Progressive test selection within a Maven module
+# Progressive test selection in Maven projects
 
 Focused verification starts with conservative static Java dependencies. Standard
-single-module Java layouts and JDK 17+ are supported. Reactors, generated Java,
+single-module and literal local reactor Java layouts on JDK 17+ are supported. Generated Java,
 unknown build/resource impact and unresolved dependencies retain complete suites.
-See the [reactor implementation proposal](multimodule-test-impact-plan.md) for
-the remaining work required to narrow test classes across modules.
+See the [reactor implementation notes](multimodule-test-impact-plan.md) for
+module identity, consumer selection and supported-layout limits.
 
 ## Start without running tests
 
