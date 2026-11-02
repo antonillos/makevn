@@ -21,6 +21,10 @@ only to parse Java syntax. Focused planning also works without initialization an
 never writes a map. It compares changed sources with the Git comparison baseline,
 including removed references, rather than assuming the edited graph is complete.
 
+The static inventory includes Surefire's `Test*`, `*Test`, `*Tests`, and `*TestCase`
+conventions, including annotation-free JUnit 3 classes. Configured Surefire/Failsafe
+class includes/excludes or filter files retain the complete owner suite.
+
 Static selection follows source references transitively, retains simple-name
 collisions and nested/secondary type aliases, and conservatively connects related
 production types in both directions to account for interface/base-type dispatch.

@@ -96,6 +96,44 @@ class ProgressiveImpactTests(unittest.TestCase):
             self.assertEqual(focused_plan(self.repo, self.repo, 'HEAD', [self.source]),
                              '.\texample.ConsumerTest,example.OwnerTest')
 
+    def add_junit3_test(self, name='TestOwner'):
+        source = self.repo / ('src/test/java/example/' + name + '.java')
+        source.write_text('package example; import junit.framework.TestCase; class ' + name +
+                          ' extends TestCase { public void testValue() { assertEquals(1, new Owner().value()); } }')
+        subprocess.run(['git', '-C', str(self.repo), 'add', str(source.relative_to(self.repo)), 'pom.xml'], check=True)
+        subprocess.run(['git', '-C', str(self.repo), '-c', 'user.name=Test', '-c', 'user.email=test@example.org',
+                        'commit', '--no-gpg-sign', '-qm', 'JUnit 3 fixture'], check=True)
+
+    def test_junit3_test_prefix_is_selected_without_annotations(self):
+        self.add_junit3_test()
+        self.initialize()
+        self.edit()
+        self.assertEqual(self.plan(), {'example.OwnerTest', 'example.ConsumerTest', 'example.TestOwner'})
+
+    def test_junit3_test_prefix_contributes_runtime_observations(self):
+        self.add_junit3_test()
+        before = self.initialize()
+        traces, stamp = self.execution(before, ('TestOwner',), ('Owner',))
+        progressive.enrich(self.repo, self.repo, self.java, before, stamp, traces)
+        self.assertEqual(progressive.load(self.repo)['observations'], {'example.TestOwner': ['example.Owner']})
+
+    def test_custom_test_class_filters_retain_complete_suite(self):
+        for artifact in ['maven-surefire-plugin', 'maven-failsafe-plugin']:
+            for tag in ['includes', 'excludes', 'includesFile', 'excludesFile']:
+                with self.subTest(plugin=artifact, filter=tag):
+                    content = {'includes': '<include>**/*Checks.java</include>',
+                               'excludes': '<exclude>**/*OtherTest.java</exclude>'}.get(tag, 'test-class-patterns.txt')
+                    (self.repo / 'test-class-patterns.txt').write_text('**/*Checks.java\n')
+                    (self.repo / 'pom.xml').write_text(
+                        '<project><build><plugins><plugin><artifactId>' + artifact +
+                        '</artifactId><configuration><' + tag + '>' + content + '</' + tag +
+                        '></configuration></plugin></plugins></build></project>')
+                    self.add_junit3_test('OwnerChecks')
+                    self.initialize()
+                    self.edit()
+                    self.assertIsNone(self.plan())
+                    (self.repo / self.source).write_text(self.files[self.source])
+
     def test_observation_adds_dependencies_and_never_replaces_static_edges(self):
         before = self.initialize()
         traces, stamp = self.execution(before)
