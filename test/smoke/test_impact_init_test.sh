@@ -50,4 +50,13 @@ unset MAKEVN_TEST_IMPACT_LOCK_HELD
 rm "${tmp}/locked"
 makevn_dispatch_verify_changes "${tmp}" --record-test-impact
 [[ -e "${tmp}/locked" ]]
+git -C "${tmp}" init -q
+git -C "${tmp}" -c user.name=Test -c user.email=test@example.test commit --allow-empty --no-gpg-sign -qm fixture
+makevn_maven_executable() { printf '/fixture/maven\n'; }
+makevn_effective_local_containers() { printf '\n'; }
+MAKEVN_TEST_IMPACT_INITIALIZE=true
+makevn_collect_verify_changes_scope "${tmp}"
+[[ "${MAKEVN_VERIFY_CHANGES_FOCUSED_PLAN}" == $'.\t*' ]]
+[[ -z "${MAKEVN_VERIFY_CHANGES_SRC_FILES}${MAKEVN_VERIFY_CHANGES_TEST_FILES}" ]]
+
 printf 'Test impact initialization command contract passed\n'
