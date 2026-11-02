@@ -62,17 +62,21 @@ if __name__ == "__main__":
                 except (OSError, ValueError, KeyError, TypeError):
                     pass
             from progressive_impact import load, CONDITIONAL
+            from reactor_test_impact import is_source
             try:
                 value = load(repo)
-                if pathlib.Path(value['base']).resolve() == pathlib.Path(sys.argv[1]).resolve():
+                module = pathlib.Path(sys.argv[1]).resolve()
+                if module.is_relative_to(pathlib.Path(value['base']).resolve()):
                     unchanged = {item['class'] for source, item in value['facts'].items()
-                                 if source.startswith('src/test/java/') and
+                                 if is_source(source, 'test') and
+                                 (pathlib.Path(value['base']) / item.get('owner', '.')).resolve() == module and
                                  (pathlib.Path(value['base']) / source).is_file() and
                                  value['inputs'].get((pathlib.Path(value['base']) / source).relative_to(repo).as_posix()) ==
                                  digest(pathlib.Path(value['base']) / source)}
-                    optional.update(set(value.get('skipped', {})) & unchanged)
-                    optional.update(item['class'] for item in value['facts'].values()
-                                    if item['class'] in unchanged and CONDITIONAL.intersection(item['names']))
+                    eligible = (set(value.get('skipped', {})) & unchanged) | {
+                        item['class'] for item in value['facts'].values()
+                        if item['class'] in unchanged and CONDITIONAL.intersection(item['names'])}
+                    optional.update(name.split('::', 1)[-1] for name in eligible)
             except (OSError, ValueError, KeyError, TypeError):
                 pass
         missing = missing_tests(pathlib.Path(sys.argv[1]), sys.argv[2].split(","), pathlib.Path(sys.argv[3]), optional)

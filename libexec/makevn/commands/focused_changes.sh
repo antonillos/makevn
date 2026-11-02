@@ -14,6 +14,9 @@ makevn_collect_focused_plan() {
     return 0
   fi
   [[ "${rc}" == 0 ]] || makevn_die "Focused planning did not produce a safe plan; inspect diagnostics before verification."
+  if [[ -n "${MAKEVN_VERIFY_CHANGES_FOCUSED_PLAN}" ]]; then
+    MAKEVN_VERIFY_CHANGES_MODULE_SELECTION="$(printf '%s\n' "${MAKEVN_VERIFY_CHANGES_FOCUSED_PLAN}" | cut -f1 | paste -sd, -)"
+  fi
 }
 
 makevn_changes_mode() {

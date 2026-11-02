@@ -609,9 +609,12 @@ fresh successful reports and JVM traces, without reruns. Shared JVM executions
 contribute conservative loaded-class supersets; observations never delete static
 edges. Unknown impact retains complete owner suites. See
 [precise selection](../docs/precise-test-selection.md).
+Literal local reactors include transitive consumer modules and scope class
+identities, reports and observations by module. Profile-dependent reactor
+membership, custom Java layouts and unresolved models retain conservative scope.
 
 `test_impact_init` accepts `isolated: true` for explicit expensive full-suite and
-isolated-class capture, including clean checkouts. Required container readiness
+isolated-class capture for single-module projects, including clean checkouts. Required container readiness
 applies to this execution. Unit replays avoid packaging via the test phase;
 integration replays retain verify. Compatible sealed checkpoints resume. Changed
 verification still accepts `record-test-impact: true` in BOTH preview and execution.

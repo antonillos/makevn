@@ -1,62 +1,66 @@
-# Proposed progressive impact support for Maven reactors
+# Progressive test impact in Maven reactors
 
-Status: design only. Reactor verification currently selects modules and runs
-complete owner suites. Automatic static initialization does not enable test-class
-narrowing in a reactor.
+Static initialization and normal runtime enrichment support literal local Maven
+reactors with standard Java source layouts on JDK 17+. Explicit isolated capture
+remains single-module only.
 
-## Existing components
+## Selection and state
 
-- `changes_scope.declared_modules` resolves literal unconditional modules.
-- `reactor_impact.reactor_consumers` computes reverse dependency closure, including
-  inherited/profile dependencies, local plugins and parent relationships. Unknown
-  coordinates remain a reason to retain broad verification.
-- `changes_scope.focused_plan` already emits one owner/test selection per module.
-- `progressive_impact.narrow` explicitly rejects reactor owners, and
-  `test_impact.validate_layout` rejects aggregator layouts. The runtime observer
-  consequently passes reactor executions through without learning observations.
+The map uses `progressive-reactor-v1`, with module-relative source paths and
+`module::fully.qualified.Class` identities. Source-free aggregators contribute
+Maven relationships but no test candidates. All Java sources are parsed in one
+JVM invocation per snapshot; focused owners share the current and comparison
+snapshots rather than reparsing the reactor for each owner.
 
-Removing these guards alone would be unsafe: root-relative source paths,
-unqualified class identities and one module's report directory are assumptions
-throughout the current map format and observation pipeline.
+`reactor_impact.reactor_consumers` expands changed Java owners to their transitive
+consumers before narrowing tests. Its closure includes local inherited and profile
+dependencies, plugins and parent relationships. Source reference aliases retain
+all matching classes conservatively, including duplicate simple names and
+interface/base-type connections. Ambiguity can therefore select extra tests;
+absence of a static match retains the complete consumer suite.
 
-## Suggested implementation sequence
+Focused preparation installs every planned owner and required upstream outputs
+once without tests. Verification then runs each owner without `-am`. The plan is
+rechecked after preparation, including mixed selected/full owner suites, so newly
+generated sources cannot silently invalidate a selected scope. Normal verification
+still retains the Maven verify lifecycle and its existing quality gates.
 
-1. Introduce a versioned reactor map with module-relative source paths and
-   `(module, fully qualified class)` identities. Parse Java once per supported
-   module and preserve the current single-module behavior. Aggregators without
-   sources contribute Maven relationships, not candidate tests.
-2. Use the existing consumer closure to choose eligible owners before narrowing
-   test classes. Resolve source references only through visible module
-   dependencies. Retain every matching candidate for ambiguous names and keep
-   complete consumer suites when ownership or dependency resolution is uncertain.
-3. Feed owner-specific selections into the existing focused plan. Preparation
-   must build required upstream outputs once; tests must not rebuild package or
-   Shade artifacts for every selected class. Revalidate generated-source and
-   input changes after preparation.
-4. Collect fresh reports and loaded-class traces for each module during normal
-   executions. Attribute observations by module and class origin. When a shared
-   JVM prevents precise attribution, retain execution-wide additive supersets;
-   never infer that an unobserved dependency is absent.
-5. Invalidate observations when reactor membership, Maven coordinates, parent
-   configuration, Java context, source declarations or dependency artifacts
-   change. Merge compatible observations under the existing atomic lock model.
+## Runtime observations
 
-## Required verification before enabling narrowing
+Fresh successful Surefire/Failsafe reports establish module-specific test
+identities. Loaded-class traces contribute execution-wide production dependency
+supersets, never precise attribution for individual tests. A raw loaded class
+name matching several reactor classes conservatively contributes all matching
+identities. A report from another module cannot establish that a selected test
+ran or make its skipped result optional.
 
-- Chain `core -> service -> app`: a core method edit includes downstream tests;
-  an unrelated module stays outside the plan only with proven ownership.
-- Duplicate class names, nested classes, shared test fixtures and test JARs do
-  not collapse module identities or lose consumers.
-- Inherited dependencies and profiles either produce a conservative closure or
-  visibly retain complete suites. Unknown settings, generated sources, unresolved
-  coordinates and custom test filters retain the existing fallback.
-- Reports from stale executions, another module, skipped tests or failed suites
-  cannot establish successful runtime evidence for the selected owner.
-- Init and preview execute no Maven goals or tests. Runtime learning never
-  replays tests. Repeated initialization preserves compatible observations.
-- Validate on isolated real reactor fixtures, including Petclinic Microservices
-  and Karate, then require the PR smoke and CRAP gates before merging.
+Observations only add selection edges. They are merged atomically under the
+existing lock. Reactor membership, coordinates/configuration, source declarations,
+Java context, ignored runtime resources and dependency artifact changes invalidate
+incompatible evidence. Ordinary method-body edits preserve compatible observations.
+Init/preview run no Maven or tests, and learning never replays an execution.
 
-The first release should support literal local reactors with standard source
-layouts. Extending Maven model resolution and supporting generated Java should
-remain separate work; neither is required to make this initial scope useful.
+## Conservative limits
+
+Profile-defined or unresolved module membership, ambiguous Maven coordinates,
+custom Java source/output roots, additional-source goals, generated Java and
+custom settings/repository inputs cannot establish a usable static reactor map.
+Unknown test filters, declarations, resources and shared/global state changes
+retain complete suites. Unknown owner/consumer scope requires exhaustive preview
+rather than silently omitting verification. Maven-root consumers still require
+exhaustive verification.
+
+## Verification
+
+The reactor regression suite covers `core -> service -> app`, an independent
+module, duplicate test names, test fixtures, runtime enrichment, optional/failed
+reports, configuration drift, custom filters and profile membership. Existing
+single-module, isolated-capture and reactor-scoping regressions remain applicable.
+
+An isolated Petclinic Microservices clone (8 modules, 62 sources, 8 test classes)
+initialized its static map in approximately 0.76 s on JDK 25. Focused verification
+then executed one selected test and enriched its module-qualified observation.
+A clean Karate clone correctly retained full consumer suites because it declares
+additional Java source roots. See the [validation report](test-impact-reactor-validation.md)
+for revisions, evidence and timing limits. CI smoke and the CRAP ratchet remain
+required before merge.
