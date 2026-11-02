@@ -112,7 +112,7 @@ makevn_effective_java_home() {
 
   if [[ -n "${tool_versions_file}" ]]; then
     makevn_resolve_tool_versions_home "${tool_versions_file}"
-    return 0
+    return $?
   fi
 
   if [[ -n "${MAKEVN_JAVA_HOME:-}" ]]; then

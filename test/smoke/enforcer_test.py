@@ -125,8 +125,13 @@ class EnforcerTests(unittest.TestCase):
             self.assertTrue(enforcer.accepts(enforcer.rules(pom)[0], "25.0.3"))
             pom.write_text(plugin.replace("<configuration><rules>",
                                           "<configuration><skip>${skipJava}</skip><rules>", 1))
-            with self.assertRaisesRegex(ValueError, "unresolved Enforcer property: .*skipJava"):
-                enforcer.rules(pom)
+            self.assertEqual(enforcer.rules(pom), ["[25,26)"])
+            pom.write_text(plugin.replace("<configuration><rules>",
+                "<configuration><skip>${skipEnforceSnapshots}</skip><rules>", 1)
+                .replace("</rules></configuration></execution>",
+                "</rules><rules><requireSnapshotVersion/></rules></configuration></execution>", 1))
+            self.assertEqual(enforcer.rules(pom), ["[25,26)"])
+            self.assertFalse(enforcer.accepts(enforcer.rules(pom)[0], "27.0.1"))
 
     def test_ranges(self):
         cases = [
