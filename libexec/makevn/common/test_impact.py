@@ -256,6 +256,8 @@ def sealed_save(path, value):
 
 def sealed_load(path):
     value = json.loads(path.read_text())
+    if value == {'version': VERSION, 'status': 'pending'}:
+        raise ValueError('previous capture did not complete; complete suite will run again')
     seal = value.pop('seal', '')
     if value.get('version') != VERSION or seal != hashlib.sha256(json.dumps(value, sort_keys=True).encode()).hexdigest():
         raise ValueError('incomplete or altered capture evidence')

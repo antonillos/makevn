@@ -93,6 +93,18 @@ class TestImpactTests(unittest.TestCase):
         self.assertIn('no previous map', output.getvalue())
         self.assertNotIn('cannot reuse', output.getvalue())
 
+    def test_pending_map_reports_previous_incomplete_capture(self):
+        impact.save(impact.state(self.repo) / 'map.json',
+                    {'version': impact.VERSION, 'status': 'pending'})
+        with contextlib.redirect_stdout(io.StringIO()) as output:
+            self.assertFalse(impact.capture_status(self.repo, self.repo, Path('java')))
+        self.assertIn('previous capture did not complete', output.getvalue())
+        self.assertNotIn('altered', output.getvalue())
+        with contextlib.redirect_stderr(io.StringIO()) as output:
+            impact.retire_capture(self.repo, self.repo, Path('java'))
+        self.assertIn('previous capture did not complete', output.getvalue())
+        self.assertNotIn('altered', output.getvalue())
+
     def checkpoint(self):
         value = dict(self.value)
         value['status'] = 'pending'
