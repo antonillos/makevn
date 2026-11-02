@@ -104,3 +104,29 @@ full-suite fallback. A passing synthetic Maven regression covers direct tests,
 transitive consumers, forks, parameterized cases and an unrelated test excluded
 from a subsequent compatible production change. No reduction is claimed for
 Commons Lang without a successful full baseline.
+
+## Partial verification with a global JaCoCo rule
+
+By default, focused verification preserves Maven verify gates. A partial suite
+may pass all selected tests and then fail a global coverage threshold, as observed
+on Commons CSV. For an explicit local changed-code workflow, use:
+
+```bash
+makevn verify-changes-preview --defer-global-coverage
+makevn verify-changes --defer-global-coverage
+makevn coverage-changes
+makevn crap-changes
+```
+
+MCP uses `defer-global-coverage: true` in both preview and execution. The opt-in
+flag sets `jacoco.haltOnFailure=false` and `commons.jacoco.haltOnFailure=false`
+for preparation/verification. JaCoCo agents still record fresh data and its check
+still prints rule violations. Test failures and other Maven verification gates
+still fail. No POM or threshold is changed. Arbitrary coverage plugins and literal
+haltOnFailure configurations are not overridden and can still reject the run.
+
+The preview states that global coverage failure is deferred and that full
+verify/CI remains required. The subsequent coverage/CRAP commands evaluate the
+changed-code snapshot, not a global gate. This flag defaults to false and is
+rejected with exhaustive mode or record-test-impact; map initialization retains
+its original complete-suite prerequisites.

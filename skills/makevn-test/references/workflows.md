@@ -140,3 +140,23 @@ successful complete suite; changes invalidate reuse with diagnostics.
 `verify_changes` with `record-test-impact: true` shares this checkpoint store.
 Do not disable project coverage gates to make isolated captures pass. A partial
 map is not eligible for narrowed verification and is not coverage/CRAP evidence.
+
+### Partial suites and global coverage gates
+
+A selected-suite `verify-changes` still executes Maven verify and can fail its
+project-wide JaCoCo threshold after all selected tests pass. Default behavior
+preserves that failure. For explicitly authorized local changed-code feedback:
+
+```bash
+makevn verify-changes-preview --defer-global-coverage
+makevn verify-changes --defer-global-coverage
+makevn coverage-changes
+makevn crap-changes
+```
+
+MCP uses `defer-global-coverage: true` in both preview and verification, then the
+usual fail-fast composite. This defers only property-based standard/Apache Commons
+JaCoCo failure, keeping instrumentation, warnings, tests and other gates. Custom
+literal configurations can still reject the run. Do not use the flag for
+exhaustive verification or impact capture. Full verify/CI coverage is a separate
+required result. Report the scope and deferral explicitly.

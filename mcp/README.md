@@ -621,3 +621,15 @@ coverage gates. `verify_changes` with `record-test-impact: true` shares the stor
 Normal verification never initiates capture automatically. Partial or incompatible
 evidence cannot enable narrowing. Initialization does not supply fresh coverage
 for a later code change.
+
+### Explicit focused JaCoCo deferral
+
+`verify_changes_preview` and `verify_changes` accept the boolean
+`defer-global-coverage` (default false). Use true in BOTH only for explicitly
+authorized local changed-code feedback, followed by coverage_changes/crap_changes
+in a fail-fast composite. It sets the standard and Apache Commons JaCoCo
+halt-on-failure properties false while retaining instrumentation, warnings, tests
+and other Maven gates. Literal/custom configurations may still fail. It is
+rejected with focused=false or record-test-impact=true and is not exposed on
+verify or test_impact_init. A successful local run does not establish global
+coverage; complete verification and CI remain required.

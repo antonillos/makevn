@@ -387,7 +387,7 @@ cmd_verify_changes_preview() {
   shift
   makevn_changes_mode "$@"
   shift "${MAKEVN_VERIFY_CHANGES_MODE_ARGS}"
-  [[ $# -eq 0 ]] || makevn_die "Usage: verify-changes-preview [--focused|--exhaustive]"
+  [[ $# -eq 0 ]] || makevn_die "Usage: verify-changes-preview [--focused|--exhaustive] [--record-test-impact] [--defer-global-coverage]"
 
   if ! makevn_frontend_owns_loader; then
     print_command_intro "${repo_root}" verify-changes-preview

@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 
 source "${SCRIPT_DIR}/commands/test_impact.sh"
+source "${SCRIPT_DIR}/commands/focused_coverage_gate.sh"
 
 makevn_collect_focused_plan() {
   local changed_paths="$1" git_root="$2" comparison_base="$3" purpose="$4" rc=0
@@ -19,9 +20,11 @@ makevn_changes_mode() {
   MAKEVN_VERIFY_CHANGES_MODE=focused
   MAKEVN_VERIFY_CHANGES_MODE_ARGS=0
   export MAKEVN_TEST_IMPACT_CAPTURE=false
+  MAKEVN_DEFER_GLOBAL_COVERAGE=false
   while [[ $# -gt 0 ]]; do
     case "$1" in
       --record-test-impact) MAKEVN_TEST_IMPACT_CAPTURE=true ;;
+      --defer-global-coverage) MAKEVN_DEFER_GLOBAL_COVERAGE=true ;;
       --focused|--exhaustive)
       MAKEVN_VERIFY_CHANGES_MODE="${1#--}"
       ;;
@@ -31,11 +34,13 @@ makevn_changes_mode() {
     shift
   done
   [[ "${MAKEVN_TEST_IMPACT_CAPTURE}" != true || "${MAKEVN_VERIFY_CHANGES_MODE}" == focused ]] || makevn_die "--record-test-impact requires focused mode"
+  makevn_validate_deferred_global_coverage
 }
 
 makevn_print_focused_changes_plan() {
   local owner tests
   makevn_print_item "mode" "focused (not a full integration or global coverage gate)"
+  makevn_print_deferred_global_coverage
   makevn_print_item "selection" "validated test-impact evidence when available; otherwise complete owner module suites with fallback reasons"
   if [[ "${MAKEVN_TEST_IMPACT_CAPTURE:-false}" == true ]]; then
     makevn_print_item "test impact capture" "complete suite followed by isolated per-test-class verification; JDK 17+ and standard single-module Java layout required"
@@ -64,7 +69,8 @@ makevn_focused_changes_phase() (
 makevn_run_focused_changes() (
   local repo_root="$1" owner tests
   local MAKEVN_FOCUSED_PHASE_INDEX=1
-  local -a base_args=("${verify_args[@]}" ${cli_flags[@]+"${cli_flags[@]}"} -f "${MAKEVN_VERIFY_CHANGES_MAVEN_BASE_PATH}/pom.xml" ${prop_flags[@]+"${prop_flags[@]}"} -Dmaven.build.cache.enabled=false -Dmaven.test.failure.ignore=false)
+  makevn_focused_coverage_gate_flags
+  local -a base_args=("${verify_args[@]}" ${cli_flags[@]+"${cli_flags[@]}"} -f "${MAKEVN_VERIFY_CHANGES_MAVEN_BASE_PATH}/pom.xml" ${prop_flags[@]+"${prop_flags[@]}"} -Dmaven.build.cache.enabled=false -Dmaven.test.failure.ignore=false ${MAKEVN_FOCUSED_COVERAGE_GATE_FLAGS[@]+"${MAKEVN_FOCUSED_COVERAGE_GATE_FLAGS[@]}"})
   # Install is necessary: verification without -am must consume this checkout's
   # freshly built dependencies, not older snapshots from another worktree.
   makevn_focused_changes_phase "${repo_root}" "prepare dependencies (no tests)" "${base_args[@]}" -pl "${MAKEVN_VERIFY_CHANGES_MODULE_SELECTION}" -am install -DskipTests=true -DskipUTs=true -DskipITs=true || return $?

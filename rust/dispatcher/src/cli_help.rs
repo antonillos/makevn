@@ -32,7 +32,7 @@ pub(super) fn command_help(
         "verify" => maven_command_help("verify", "Run full combined verification.", false),
         "test-impact-preview" => Some(("makevn [--repo PATH] test-impact-preview", "Inspect project-wide capture compatibility and provisional cost without running tests.", &[])),
         "test-impact-init" => Some(("makevn [--repo PATH] test-impact-init", "Initialize or resume isolated impact evidence on a clean checkout; expensive complete suite plus missing class replays. A compatible complete map is a no-op.", &[])),
-        "verify-changes-preview" => Some(("makevn [--repo PATH] verify-changes-preview [--focused|--exhaustive] [--record-test-impact]", "Preview changed-code scope without Maven; focused by default. For user-requested faster local feedback, explain --focused limitations and use the same mode in preview and execution. A large preparation reactor does not mean its test suites run.", &["--focused  Preview focused owner suites and selected tests (default)", "--exhaustive  Preview exhaustive changed-code verification", "--record-test-impact  Preview full-suite and isolated per-test capture (expensive, JDK 17+, single module)"])),
+        "verify-changes-preview" => Some(("makevn [--repo PATH] verify-changes-preview [--focused|--exhaustive] [--record-test-impact] [--defer-global-coverage]", "Preview changed-code scope without Maven; focused by default. For user-requested faster local feedback, explain --focused limitations and use the same mode in preview and execution. A large preparation reactor does not mean its test suites run.", &["--focused  Preview focused owner suites and selected tests (default)", "--exhaustive  Preview exhaustive changed-code verification", "--defer-global-coverage  Explicitly defer property-based JaCoCo failures; changed-code metrics and full CI gates remain separate", "--record-test-impact  Preview full-suite and isolated per-test capture (expensive, JDK 17+, single module)"])),
         "verify-changes" => maven_command_help("verify-changes", "Verify changed-code scope; focused by default, --exhaustive is explicit. --focused prepares dependencies without UT/IT then verifies validated evidence-selected tests or complete owner suites with a fallback reason, plus changed tests without -am; not a full integration/coverage gate. Use the same mode as preview and report its scope.", false),
         "coverage" => Some(("makevn [--repo PATH] coverage [--threshold PCT]", "Check the latest aggregate coverage report.", &["--threshold  Required coverage percentage"])),
         "coverage-changes" => Some(("makevn [--repo PATH] coverage-changes [--threshold PCT] [--overall-threshold PCT] [--verbose]", "Check incremental and per-module coverage.", &["--threshold          Per-module coverage percentage", "--overall-threshold  Overall coverage percentage", "--verbose            Print detailed coverage output"])),
@@ -80,7 +80,7 @@ pub(super) fn maven_command_help(
         ("verify-it", "makevn [--repo PATH] [--compact] verify-it [--tail] [-- EXTRA_MAVEN_ARGS...]"),
         ("verify-it-coverage", "makevn [--repo PATH] [--compact] verify-it-coverage [--tail] [-- EXTRA_MAVEN_ARGS...]"),
         ("verify", "makevn [--repo PATH] [--compact] verify [--tail] [-- EXTRA_MAVEN_ARGS...]"),
-        ("verify-changes", "makevn [--repo PATH] [--compact] verify-changes [--tail] [--focused|--exhaustive] [--record-test-impact] [-- EXTRA_MAVEN_ARGS...]"),
+        ("verify-changes", "makevn [--repo PATH] [--compact] verify-changes [--tail] [--focused|--exhaustive] [--record-test-impact] [--defer-global-coverage] [-- EXTRA_MAVEN_ARGS...]"),
         ("pr-verify", "makevn [--repo PATH] [--compact] pr-verify [--tail] [-- EXTRA_MAVEN_ARGS...]"),
     ];
     let usage = usages.iter().find(|(name, _)| *name == command)?.1;
@@ -326,6 +326,7 @@ fn render_command(command: &str, color: bool) -> Option<String> {
         flags.extend([
             "--focused  Verify owner suites and selected tests (default)",
             "--exhaustive  Run exhaustive changed-code verification",
+            "--defer-global-coverage  Explicitly defer property-based JaCoCo failures, retaining instrumentation and warnings; requires focused mode without capture",
             "--record-test-impact  Capture an expensive reusable baseline: full suite plus isolated verification per test class (JDK 17+, single module)",
         ]);
     }

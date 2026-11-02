@@ -65,8 +65,16 @@ focused verification reuses compatible published maps without capture. Changed
 declarations/helpers/resources/configuration/dependencies/JDK or missing evidence
 retain complete owner suites. Potential shared-state writes, dynamic behavior and
 global effects in either baseline or changed source retain complete suites.
-Repository-wide Maven coverage rules are never disabled; they can prevent
-isolated replay even if the selected tests pass.
+Repository-wide Maven coverage rules remain enforced by default and during
+impact capture. They can reject a partial verification despite passing tests.
+For explicitly authorized local changed-code feedback, inspect another preview
+with `defer-global-coverage: true`, then use the same flag in `verify_changes`.
+CLI uses `--defer-global-coverage` in both commands. This defers failure through
+JaCoCo's standard/Apache Commons halt-on-failure properties, preserving agents,
+rule warnings and other Maven gates. Custom literal/plugin configurations may
+still fail. Never enable it automatically, combine it with exhaustive/capture, or
+claim global coverage passed. After success, run coverage_changes and crap_changes;
+full verify/CI coverage remains required.
 
 Preparation uses `-am install` with UT/IT execution disabled and retains test
 compilation/test jars. A 34-module reactor does not mean 34 suites ran. Owner

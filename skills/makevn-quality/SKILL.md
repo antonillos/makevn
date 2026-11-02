@@ -61,3 +61,16 @@ Rust/Bash CRAP ratchet is authoritative in PR CI and must pass before merge.
 later edit. After capture, preview and run verification for the actual change
 before coverage/CRAP. Project-wide JaCoCo gates can reject isolated capture;
 report the gate and stop rather than disabling it.
+
+### Explicit local deferral of global JaCoCo failure
+
+When the user authorizes changed-code feedback separately from full coverage,
+preview and execute verify_changes with `defer-global-coverage: true` (CLI
+`--defer-global-coverage`). The flag is opt-in, focused-only and forbidden for
+impact capture. It sets only `jacoco.haltOnFailure=false` and
+`commons.jacoco.haltOnFailure=false`; agents and warnings stay enabled. It does
+not defer arbitrary coverage/check plugins or literal configuration. Tests and
+other Maven failures still stop the fail-fast workflow. Run coverage_changes and
+crap_changes from the fresh successful snapshot and report the actual incremental
+gates. Retain the separate complete-suite/global coverage requirement; a local
+success is not global approval. Never change POM rules or enable this implicitly.
