@@ -16,8 +16,7 @@ def run(repo, base, java, arguments):
         return subprocess.call(arguments)
     try:
         before = progressive.initialize(repo, base, java)
-    except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError, ET.ParseError) as error:
-        print('Test impact observation unavailable: ' + str(error), file=sys.stderr)
+    except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError, ET.ParseError):
         return subprocess.call(arguments)
     with tempfile.TemporaryDirectory(prefix='makevn-impact-observe-') as folder:
         traces = Path(folder)

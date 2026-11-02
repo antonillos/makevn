@@ -246,6 +246,18 @@ folder = os.environ['JAVA_TOOL_OPTIONS'].split('file=')[1].split('/%p.log')[0]
         self.assertEqual(progressive.load(self.repo)['observations'],
                          {'example.OwnerTest': ['example.Owner'], 'example.OtherTest': ['example.Other']})
 
+    def test_unavailable_observer_preserves_original_failure_log_exactly(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            (root / 'pom.xml').write_text('<project/>')
+            result = subprocess.run(
+                [sys.executable, str(Path(observer.__file__)), folder, folder, str(self.java),
+                 sys.executable, '-c', 'import sys; print("original failure", file=sys.stderr); sys.exit(7)'],
+                capture_output=True, text=True)
+        self.assertEqual(result.returncode, 7)
+        self.assertEqual(result.stdout, '')
+        self.assertEqual(result.stderr, 'original failure\n')
+
     def test_observer_preserves_failure_and_does_not_enrich(self):
         result = observer.run(self.repo, self.repo, self.java, [sys.executable, '-c', 'raise SystemExit(7)'])
         self.assertEqual(result, 7)

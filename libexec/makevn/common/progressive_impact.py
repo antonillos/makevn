@@ -37,7 +37,7 @@ def environment(java):
 def snapshot(repo, base, java):
     impact.validate_layout(base)
     return {'version': impact.VERSION, 'kind': KIND, 'repo': str(repo), 'base': str(base),
-            'head': subprocess.check_output(['git', '-C', str(repo), 'rev-parse', 'HEAD']).decode().strip(),
+            'head': subprocess.check_output(['git', '-C', str(repo), 'rev-parse', 'HEAD'], stderr=subprocess.DEVNULL).decode().strip(),
             'inputs': impact.inputs(repo, base), 'context': environment(java),
             'facts': impact.facts(base, java), 'observations': {}, 'skipped': {}, 'jars': {}}
 
