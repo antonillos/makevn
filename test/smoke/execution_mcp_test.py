@@ -281,7 +281,12 @@ def completion_and_forcing(session, quick, forced):
     elapsed = time.monotonic() - start
     assert 4.5 <= elapsed < 8, elapsed
     session.receive(request)
-    assert session.call("execution_status", executionId="../private")["isError"] is True
+    invalid_status = session.call("execution_status", executionId="../private")
+    assert invalid_status["isError"] is True
+    assert invalid_status["structuredContent"]["untrustedData"]["output"] == "invalid executionId"
+    guidance = invalid_status["structuredContent"]["nextSuggestion"]
+    assert "execution_list" in guidance and "includeFinished: true" in guidance
+    assert "do not rerun it" in guidance
     assert session.call("execution_status")["isError"] is True
     assert session.call("execution_list", includeFinished="yes")["isError"] is True
     assert session.call("execution_list", unknown=True)["isError"] is True

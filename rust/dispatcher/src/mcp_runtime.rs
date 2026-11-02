@@ -445,7 +445,7 @@ fn validate_control_arguments(params: &Value) -> Result<(), String> {
 pub fn control_tools() -> Vec<Value> {
     [("execution_cleanup", "Remove terminal executions and their private logs older than retentionDays (default MAKEVN_RETENTION_DAYS or 3). dryRun previews candidates without deleting."),
      ("execution_list", "List active MakeVN executions across local MCP sessions. includeFinished also returns preserved terminal executions."),
-     ("execution_status", "Inspect one execution, including its owning session, repository, PR, state and logs."),
+     ("execution_status", "Inspect one execution, including its owning session, repository, PR, state and logs. Pass the 32-character hexadecimal executionId from a MakeVN result or execution_list."),
      ("execution_cancel", "Cancel only an execution owned by this MCP session. Idempotent for stopped executions; cleanup uses five seconds of grace and two seconds of confirmation.")]
         .into_iter().map(|(name, description)| control_tool(name, description)).collect()
 }

@@ -8,6 +8,15 @@ use std::process;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 #[test]
+fn invalid_execution_status_explains_how_to_find_the_id() {
+    let result = super::ToolCallResult::failure("invalid executionId".into());
+    let suggestion = super::tool_next_suggestion("execution_status", &result);
+    assert!(suggestion.contains("execution_list"));
+    assert!(suggestion.contains("includeFinished: true"));
+    assert!(suggestion.contains("do not rerun it"));
+}
+
+#[test]
 fn resolves_sibling_makevn_or_current_binary() {
     let dir = std::env::temp_dir().join(format!("makevn-mcp-bin-test-{}", process::id()));
     fs::create_dir_all(&dir).unwrap();

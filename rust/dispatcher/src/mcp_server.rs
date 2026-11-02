@@ -122,6 +122,7 @@ fn docker_interface_guidance(tool: &str, guidance: &str) -> String {
 }
 
 const TOOL_GUIDANCE: &[(&str, bool, &str)] = &[
+    ("execution_status", false, "Use the executionId returned by the original MakeVN tool result, not its request ID or a log path. It must be 32 hexadecimal characters. If the ID is unavailable, call execution_list with includeFinished: true and select the matching execution before retrying status. An invalid ID does not indicate that the original execution failed; do not rerun it solely for this lookup error."),
     ("coverage_changes", true, "Inspect the reported outcome: not applicable means there are no changed production classes to measure, not that global coverage passed. JaCoCo data may still exist. Do not repeat tests for this outcome; preserve required global coverage and CI gates."),
     ("crap_changes", true, "Inspect the reported outcome: not applicable means there are no changed production classes to measure, not that global CRAP passed. Do not repeat tests or install an analyzer for this outcome; preserve required global CRAP and CI gates."),
     ("coverage_changes", false, "Distinguish missing fresh JaCoCo execution data for changed production classes from incomplete/stale evidence or missing bytecode. Correct the reported prerequisite before retrying; do not reuse stale global reports or bypass coverage gates."),

@@ -3128,6 +3128,35 @@ test_verify_changes_excludes_checked_out_release_candidate() {
   ${CLI} --repo "${repo}" uninstall >/dev/null
 }
 
+test_verify_changes_detached_worktree_scope() {
+  local repo="${TMP_ROOT}/verify-changes-detached"
+  local worktree="${TMP_ROOT}/verify-changes-detached-worktree"
+  local output
+
+  mkdir -p "${repo}/src/main/java/com/example"
+  printf '<project/>\n' > "${repo}/pom.xml"
+  printf 'class Baseline {}\n' > "${repo}/src/main/java/com/example/Baseline.java"
+  git init --initial-branch=develop "${repo}" >/dev/null
+  git -C "${repo}" add .
+  git -C "${repo}" -c user.name='Smoke Test' -c user.email='smoke@example.com' commit -m 'baseline' >/dev/null
+  git -C "${repo}" checkout -b feature >/dev/null
+  printf 'class Feature {}\n' > "${repo}/src/main/java/com/example/Feature.java"
+  git -C "${repo}" add .
+  git -C "${repo}" -c user.name='Smoke Test' -c user.email='smoke@example.com' commit -m 'feature' >/dev/null
+  git -C "${repo}" worktree add --detach "${worktree}" HEAD >/dev/null
+  ${CLI} --repo "${worktree}" init >/dev/null
+  output="$(${CLI} --repo "${worktree}" verify-changes-preview --exhaustive)"
+  [[ "${output}" == *"compare against: develop...HEAD"* && "${output}" == *"production files: 1"* ]] \
+    || fail "expected detached worktree to include committed feature change: ${output}"
+
+  git -C "${repo}" branch -D develop >/dev/null
+  if output="$(${CLI} --repo "${worktree}" verify-changes-preview --exhaustive 2>&1)"; then
+    fail "expected detached worktree without parent ref to reject unknown scope: ${output}"
+  fi
+  [[ "${output}" == *"Cannot determine changed-code scope"* ]] \
+    || fail "expected unknown detached scope diagnostic: ${output}"
+}
+
 test_verify_changes_uses_hotfix_parent_branch() {
   local repo="${TMP_ROOT}/verify-changes-hotfix-parent"
   local output
@@ -4908,6 +4937,7 @@ main() {
   test_verify_leaves_local_containers_unset_without_repo_signal
   test_verify_changes_preview_command
   test_verify_changes_excludes_checked_out_release_candidate
+  test_verify_changes_detached_worktree_scope
   test_verify_changes_uses_hotfix_parent_branch
   test_verify_changes_uses_develop_after_it_advances
   test_verify_changes_preserves_first_parent_after_sync_merge

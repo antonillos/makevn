@@ -1326,7 +1326,7 @@ makevn_detect_parent_branch_spec() {
 
   current_branch="$(git -C "${repo_root}" rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
   case "${current_branch}" in
-    develop|main|master|HEAD)
+    develop|main|master)
       printf '%s\n' HEAD
       return 0
       ;;

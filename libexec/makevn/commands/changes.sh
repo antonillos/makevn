@@ -314,6 +314,11 @@ makevn_collect_verify_changes_scope() {
   local changed_paths=""
   local comparison_base="HEAD"
   changed_paths="$(printf '%s\n%s\n' "${diff_base:-}" "${diff_local}" | LC_ALL=C sort -u | sed '/^$/d')"
+  if [[ "${MAKEVN_VERIFY_CHANGES_PARENT_SPEC}" == HEAD \
+    && "$(git -C "${git_root}" rev-parse --abbrev-ref HEAD)" == HEAD \
+    && -z "${changed_paths}" ]]; then
+    makevn_die "Cannot determine changed-code scope in a clean detached worktree: no parent branch is available. Fetch the parent branch or run makevn verify for the whole project."
+  fi
   if [[ "${MAKEVN_VERIFY_CHANGES_PARENT_SPEC}" != HEAD ]]; then
     comparison_base="$(git -C "${git_root}" merge-base "${MAKEVN_VERIFY_CHANGES_PARENT_SPEC%...HEAD}" HEAD)"
   fi
