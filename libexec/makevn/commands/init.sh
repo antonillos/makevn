@@ -13,7 +13,7 @@ makevn_init_static_impact() {
     makevn_print_item "Test impact" "deferred: run makevn doctor to select a compatible JDK"
     return 0
   fi
-  if result="$(python3 "${SCRIPT_DIR}/common/progressive_impact.py" init "${repo_root}" "${base}" "${java_home}/bin/java" 2>&1)"; then
+  if result="$(python3 "${SCRIPT_DIR}/common/progressive_impact.py" init-summary "${repo_root}" "${base}" "${java_home}/bin/java" 2>&1)"; then
     makevn_print_item "Test impact" "${result}"
   else
     makevn_print_item "Test impact" "deferred: ${result}; retry with makevn test-impact-init"
@@ -62,9 +62,11 @@ cmd_init() {
 
   existing_manifest="$(makevn_manifest_path "${repo_root}")"
   if [[ -f "${existing_manifest}" && "${force}" != true ]]; then
-    makevn_refresh_impact "${repo_root}" "" "${dry_run}"
-    [[ "${dry_run}" == true ]] || makevn_init_static_impact "${repo_root}"
-    printf '%s\n' "$(makevn_warn "makevn is already initialized.")"
+    printf '%s\n' "$(makevn_dim "Already initialized.")"
+    if [[ "${dry_run}" != true ]]; then
+      makevn_refresh_impact "${repo_root}" "" init
+      makevn_init_static_impact "${repo_root}"
+    fi
     return 0
   fi
 
@@ -89,7 +91,7 @@ cmd_init() {
   makevn_update_config_generated_contract_clean_dirs "${repo_root}"
   makevn_write_state_json "${repo_root}"
   makevn_write_manifest "${repo_root}"
-  makevn_refresh_impact "${repo_root}"
+  makevn_refresh_impact "${repo_root}" "" init
   makevn_init_static_impact "${repo_root}"
 
   printf '%s\n' "$(makevn_dim "Initialized makevn.")"

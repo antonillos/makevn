@@ -1730,5 +1730,6 @@ makevn_refresh_impact() {
   fi
   git_root="$(git -C "${repo_root}" rev-parse --show-toplevel 2>/dev/null || printf '%s' "${repo_root}")"
   summary="$(python3 "${MAKEVN_LIBEXEC_DIR}/common/changes_scope.py" "${git_root}" "${base}" HEAD --impact-state "${git_root}/.makevn/impact.json")" || return $?
+  [[ "${3:-}" != init ]] || return 0
   makevn_print_item "Impact analysis" "${summary}"
 }

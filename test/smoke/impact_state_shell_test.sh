@@ -28,7 +28,7 @@ cmd_init "${tmp}" --dry-run > "${tmp}/dry-run"
 cmd_init "${tmp}" > "${tmp}/init"
 [[ -f "${tmp}/.makevn/impact.json" && ! -e "${tmp}/makevn-impact.json" ]]
 grep -q 'all-reactor-suites' "${tmp}/.makevn/impact.json"
-grep -q 'Impact analysis' "${tmp}/init"
+! grep -q 'Impact analysis' "${tmp}/init"
 printf '<project><packaging>pom</packaging><modules><module>second</module></modules></project>' > "${tmp}/workspace/pom.xml"
 cmd_init "${tmp}" --dry-run > "${tmp}/existing-dry-run"
 grep -q 'first' "${tmp}/.makevn/impact.json"
