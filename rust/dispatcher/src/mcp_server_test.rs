@@ -1360,3 +1360,22 @@ fn test_impact_initialization_tools_share_public_cli_contract() {
     assert!(crate::mcp_execution::inspection("test_impact_preview"));
     assert!(!crate::mcp_execution::inspection("test_impact_init"));
 }
+
+#[test]
+fn deferred_global_coverage_is_explicit_and_limited_to_changed_verification() {
+    for name in ["verify_changes", "verify_changes_preview"] {
+        let spec = super::TOOL_SPECS.iter().find(|spec| spec.name == name).unwrap();
+        assert!(spec.options.iter().any(|option| option.name == "defer-global-coverage"));
+        assert!(super::validate_workflow_step(&json!({"tool":name,
+            "arguments":{"focused":true,"defer-global-coverage":true}})).is_ok());
+    }
+    for name in ["verify", "test_impact_init"] {
+        assert!(super::validate_workflow_step(&json!({"tool":name,
+            "arguments":{"defer-global-coverage":true}})).is_err());
+    }
+    let mut args = Vec::new();
+    super::push_tool_option(&mut args, "defer-global-coverage", &json!(false)).unwrap();
+    assert!(args.is_empty());
+    super::push_tool_option(&mut args, "defer-global-coverage", &json!(true)).unwrap();
+    assert_eq!(args, ["--defer-global-coverage"]);
+}

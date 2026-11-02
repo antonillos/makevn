@@ -147,3 +147,11 @@ capture resumption and incompatible-context restart. Then edit production and
 inspect narrowed selection and fresh coverage/CRAP separately. Record complete
 suite and isolated replay costs; report global Maven gates that block isolated
 capture as fixture/workflow limitations rather than claiming a valid map.
+
+When validating explicitly requested focused JaCoCo deferral, reproduce the
+original default failure, then use `defer-global-coverage: true` in both preview
+and verification on the same fixture revision and edit. Confirm instrumentation,
+visible global-rule warnings, fresh changed-code coverage/CRAP, and propagation
+of real test failures. Default and full verification must still enforce global
+gates. Do not replace fixture POMs or change thresholds; document property-based
+support and unsupported literal/custom plugin configurations.

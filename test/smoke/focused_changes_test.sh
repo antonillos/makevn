@@ -62,4 +62,15 @@ makevn_changes_mode
 makevn_changes_mode --record-test-impact --focused
 [[ "${MAKEVN_TEST_IMPACT_CAPTURE}" == true && "${MAKEVN_VERIFY_CHANGES_MODE_ARGS}" == 2 ]]
 if (makevn_changes_mode --record-test-impact --exhaustive) >/dev/null 2>&1; then exit 1; fi
+FAIL_CHECKPOINT=0
+makevn_changes_mode --defer-global-coverage
+: > "${tmp}/commands"
+makevn_run_focused_changes "${tmp}"
+[[ "$(grep -c -- '-Djacoco.haltOnFailure=false -Dcommons.jacoco.haltOnFailure=false' "${tmp}/commands")" == 3 ]]
+[[ "$(grep -c -- '-Djacoco.skip=false' "${tmp}/commands")" == 3 ]]
+! grep -q -- '-Djacoco.skip=true' "${tmp}/commands"
+FAIL_PREPARE=1
+: > "${tmp}/commands"
+if makevn_run_focused_changes "${tmp}"; then exit 1; fi
+[[ "$(wc -l < "${tmp}/commands" | tr -d ' ')" == 1 ]]
 printf 'Focused changes phases regression passed\n'
