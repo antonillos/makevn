@@ -134,6 +134,31 @@ class ReactorProgressiveTests(unittest.TestCase):
         self.write(path, 'package example; class Fixture { int x; }')
         self.assertEqual(self.plan(path), 'app\t*\ncore\t*\nservice\t*')
 
+    def test_shared_test_superclass_edit_retains_downstream_consumers(self):
+        path = 'core/src/test/java/example/FixtureTest.java'
+        content = 'package example; class FixtureTest { int fixtureValue() { return 1; } }'
+        self.write(path, content)
+        self.write('service/src/test/java/example/FeatureTest.java',
+                   'package example; class FeatureTest extends FixtureTest { '
+                   '@Test void check() { assert fixtureValue() == 1; } }')
+        self.write('service/src/test/java/example/OptionalTest.java',
+                   'package example; @Disabled class OptionalTest { @Test void check() {} }')
+        core_pom = self.repo / 'core/pom.xml'
+        core_pom.write_text(core_pom.read_text().replace('</project>',
+                            '<build><plugins><plugin><artifactId>maven-jar-plugin</artifactId>'
+                            '<executions><execution><goals><goal>test-jar</goal></goals></execution></executions>'
+                            '</plugin></plugins></build></project>'))
+        service_pom = self.repo / 'service/pom.xml'
+        service_pom.write_text(service_pom.read_text().replace('</dependencies>',
+                               '<dependency><groupId>example</groupId><artifactId>core</artifactId>'
+                               '<version>1</version><type>test-jar</type><classifier>tests</classifier>'
+                               '<scope>test</scope></dependency></dependencies>'))
+        self.commit()
+        self.write(path, content.replace('return 1', 'return 2'))
+        plan = dict(line.split('\t') for line in self.plan(path).splitlines())
+        self.assertEqual(plan['core'], 'example.FixtureTest')
+        self.assertEqual(set(plan['service'].split(',')), {'example.FeatureTest', 'example.OptionalTest'})
+
     def test_module_resource_change_retains_downstream_suites(self):
         path = 'core/src/main/resources/settings.properties'
         self.write(path, 'changed=true')

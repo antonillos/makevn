@@ -209,7 +209,7 @@ def narrow(repo, base, owner, paths, changed_tests, reference, cache=None):
                     raise ValueError('changed method has dynamic/global effects')
                 changed.add(after['class'])
             parsed[relative]['names'] = sorted(set(before['names']) | set(after['names']))
-        affected = consumers(parsed, changed)
+        affected = consumers(parsed, changed | changed_test_classes)
         selected = changed_test_classes | {reactor.identity(current, owner, name) for name in changed_tests} | (affected & tests(parsed))
         observations, skipped = {}, set()
         try:
