@@ -63,3 +63,26 @@ Earlier syntax-only timing from the local Karate checkout was not evidence that
 its clean committed layout supported class narrowing. This clean-clone exercise
 validates the fallback instead. Neither fixture establishes that every reactor
 layout is supported or replaces the PR smoke/CRAP gates.
+
+## JGraphT: standard source layout with custom test inventory
+
+- Revision: `f75281cb3127ff8dfee56302260905fcc6a0ca90`.
+- Clone: `/private/tmp/makevn-reactor-validation-jgrapht`.
+- Public installed MakeVN build: `0.4.0 (2026.11.02.14.24)`, exercised through MCP.
+- Static initialization: 1.715 seconds, 9 modules, 1,006 Java sources and 363
+  candidate test classes. No tests ran during initialization.
+- Neutral edit: replace the explicit generic constructor argument with the
+  diamond operator in `ElementOrderMethod.guavaComparator()`.
+- Preview retains full suites for `jgrapht-guava` and its consumer `jgrapht-dist`.
+  Surefire/Failsafe filters configured in the core module prevent class narrowing.
+- Real focused verification passed in 34.768 seconds: 32 tests across six fresh
+  Guava test reports, zero failures, errors or skipped tests. Preparation installed
+  upstream outputs without tests; owner verification ran without `-am`.
+- Preparation generates ANTLR Java sources in `jgrapht-io`. Runtime enrichment
+  therefore remains unavailable, and the map has zero observations. This validates
+  standard-layout initialization and conservative real verification, not precise
+  selection or learning for generated-source projects.
+
+Evidence remains in the clone's `.makevn/logs/verify-changes-{1,2,3}.log` and
+`jgrapht-guava/target/surefire-reports/TEST-*.xml`. No fixture POMs, test filters or
+quality thresholds were changed.
