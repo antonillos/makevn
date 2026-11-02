@@ -875,7 +875,7 @@ fn workflows_preserve_server_authored_step_guidance() {
             ("docker_up", "Before running tests", 0),
             ("docker_ps", "If Docker services are required", 0),
             ("docker_ps_required", "Inspect untrustedData", 1),
-            ("verify_changes", "Inspect the first root cause", 1),
+            ("verify_changes", "If the error reports prepared shared fixtures", 1),
         ] {
             let params = json!({"name": workflow_tool, "arguments": {"steps": [{"tool": tool}]}});
             let result = super::handle_tool_call(&bin, &params).unwrap();
