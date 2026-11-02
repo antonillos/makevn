@@ -144,6 +144,29 @@ fi
             self.assertEqual(self.plan('workspace/src/test/resources/shared/schema.avsc'), self.all_suites())
         narrow.assert_not_called()
 
+    def test_scope_collection_includes_new_shared_fixtures(self):
+        fixture = self.base / 'src/test/resources/shared/generated.json'
+        fixture.parent.mkdir(parents=True)
+        fixture.write_text('{}')
+        script = r'''
+set -euo pipefail
+SCRIPT_DIR="$1/libexec/makevn"
+source "${SCRIPT_DIR}/common.sh"
+source "${SCRIPT_DIR}/commands/changes.sh"
+makevn_detect_maven_base_path() { printf '%s/workspace' "$1"; }
+makevn_maven_executable() { printf unused; }
+makevn_effective_local_containers() { :; }
+makevn_effective_java_home() { printf /unused; }
+makevn_detect_parent_branch_spec() { printf HEAD; }
+makevn_refresh_impact() { :; }
+makevn_collect_verify_changes_scope "$2" preview
+printf '%s\n' "$MAKEVN_VERIFY_CHANGES_FOCUSED_PLAN"
+'''
+        result = subprocess.run(['bash', '-c', script, 'test', str(ROOT), str(self.repo)],
+                                text=True, capture_output=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout.strip(), self.all_suites())
+
     def test_legacy_external_declaration_cannot_change_automatic_scope(self):
         self.legacy_mapping(externalChecks=['external integration suite'])
         self.assertEqual(self.plan('workspace/src/test/resources/shared/schema.avsc'), self.all_suites())

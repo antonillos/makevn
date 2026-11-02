@@ -120,8 +120,14 @@ def checkpoint(repo, state, plan):
         rules = automatic_resource_rules(repo, base, modules, parse)
         full = {line.split('\t')[0] for line in plan.splitlines()
                 if line.split('\t')[1:] == ['*']}
-        if not rules or not rules[0][1].issubset(full & set(manifest['owners'])):
+        if not rules:
             raise drift_error(changed)
+        missing = rules[0][1] - (full & set(manifest['owners']))
+        if missing:
+            raise ValueError('Prepared shared fixtures changed, but the current plan does not run all consumer suites. '
+                             'Inspect the changed files, then run verify-changes-preview again with these files present '
+                             'and review its scope before retrying verification. Missing complete suites: ' +
+                             ', '.join(sorted(missing)) + '. Changed inputs: ' + ', '.join(changed))
         print('Prepared shared fixtures changed; all consumer Maven suites will verify these inputs: ' + ', '.join(changed[:20]))
     # Preparation must not contribute execution data to test evidence.
     for path in data_files(base, manifest['owners']):

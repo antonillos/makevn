@@ -47,6 +47,8 @@ class ScopedTests(unittest.TestCase):
         plan = 'client\t*\nboot\t*'
         with self.assertRaisesRegex(ValueError, 'schema.avsc'):
             scoped.checkpoint(self.repo, self.state, 'client\t*\nboot\texample.Test')
+        with self.assertRaisesRegex(ValueError, 'verify-changes-preview.*Missing complete suites: boot'):
+            scoped.checkpoint(self.repo, self.state, 'client\t*\nboot\texample.Test')
         self.ut.write_bytes(b'preparation data')
         scoped.checkpoint(self.repo, self.state, plan)
         self.assertFalse(self.ut.exists())

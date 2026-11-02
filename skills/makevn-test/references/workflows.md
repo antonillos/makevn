@@ -91,6 +91,13 @@ that external/E2E/global gates are not evaluated; unknown models still reject.
 Impact state is internal only; do not create or maintain root impact overrides.
 Keep required external checks separate.
 
+If preparation adds shared test fixtures and focused verification stops because
+the current plan lacks complete consumer suites, inspect the changed files.
+Keep applicable prepared fixtures present and run `verify-changes-preview` again
+in the same mode so the new resources participate in planning. Explain the new
+scope before retrying verification under existing authorization. Do not delete or
+stage fixtures merely to bypass this check, and do not repeat the unchanged plan.
+
 ### Preview scope outcomes
 
 When focused impact is unknown, `verify-changes-preview` completes with exit 0
