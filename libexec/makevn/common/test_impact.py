@@ -195,7 +195,12 @@ def maven_flag_tokens(base):
         # MakeVN's read -ra does not interpret embedded quotes. Keep both views
         # because direct Maven environment/config values can also be shell-quoted.
         tokens.extend(value.split())
-        tokens.extend(shlex.split(value))
+        try:
+            tokens.extend(shlex.split(value))
+        except ValueError:
+            # Decoded printf-%q values can contain literal unmatched quotes;
+            # read -ra still splits those flags on whitespace without evaluation.
+            pass
     return tokens
 
 

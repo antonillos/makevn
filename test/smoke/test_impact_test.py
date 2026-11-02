@@ -222,6 +222,15 @@ class TestImpactTests(unittest.TestCase):
         (self.repo / 'src/test/java/example/NewTest.java').write_text('class NewTest {}')
         self.assertIsNone(self.plan()[0])
 
+    def test_literal_unmatched_quote_in_serialized_profile_uses_actual_word_splitting(self):
+        profile = self.repo / '.makevn/profile.env'
+        profile.parent.mkdir(exist_ok=True)
+        profile.write_text(r'MAKEVN_PROFILE_COMPILE_PROP_FLAGS=-Dmaven.site.skip=true\ -Dmaven.javadoc.skip=true\"' + '\n')
+        impact.validate_layout(self.repo)
+        profile.write_text(r'MAKEVN_PROFILE_VERIFY_CLI_FLAGS=-Dlabel=\"\ -s\ /tmp/settings.xml' + '\n')
+        with self.assertRaisesRegex(ValueError, 'custom Maven settings'):
+            impact.validate_layout(self.repo)
+
     def test_serialized_settings_overrides_cannot_seed_or_reuse_impact_evidence(self):
         profile = self.repo / '.makevn/profile.env'
         variants = [
