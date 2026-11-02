@@ -140,3 +140,10 @@ Testcontainers engine requirements still apply. Explicit Compose lifecycle and
 readiness commands require an actual selected file and cannot use `none`.
 To change a saved selection, use interactive `makevn doctor --reset-config`
 (which resets other preferences too), then answer setup again. Reset is CLI-only.
+
+For explicit impact-initialization product validation, exercise a clean checkout
+with `test_impact_preview` / `test_impact_init`, an identical no-op, interrupted
+capture resumption and incompatible-context restart. Then edit production and
+inspect narrowed selection and fresh coverage/CRAP separately. Record complete
+suite and isolated replay costs; report global Maven gates that block isolated
+capture as fixture/workflow limitations rather than claiming a valid map.

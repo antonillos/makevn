@@ -345,3 +345,9 @@ only appropriate when continued independent diagnostics are explicitly wanted.
 Use verify_changes → coverage_changes → crap_changes for focused changed-code
 gates: one fresh UT/IT snapshot, no repeated tests. Overall-project coverage still
 requires the separate full coverage-producing flow.
+
+For explicit project-wide test-impact preparation, including a clean checkout,
+run doctor/setup, inspect `test-impact-preview`, then run `test-impact-init`.
+A compatible complete map is a no-op; compatible partial captures resume after
+another complete-suite prerequisite. See [precise selection](precise-test-selection.md)
+for cost, invalidation, CLI/MCP parity and current layout limits.

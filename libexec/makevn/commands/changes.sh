@@ -292,6 +292,11 @@ makevn_collect_verify_changes_scope() {
     strip_prefix="${maven_git_rel}/"
   fi
 
+  if [[ "${MAKEVN_TEST_IMPACT_INITIALIZE:-false}" == true ]]; then
+    makevn_test_impact_scope
+    return 0
+  fi
+
   MAKEVN_VERIFY_CHANGES_PARENT_SPEC="$(makevn_detect_parent_branch_spec "${repo_root}")"
   if [[ "${MAKEVN_VERIFY_CHANGES_PARENT_SPEC}" == "HEAD" ]]; then
     diff_local="$(git -C "${git_root}" diff --name-only HEAD || true)"
@@ -560,7 +565,7 @@ cmd_verify_changes() {
   makevn_print_verify_changes_preflight "verify-changes"
   if [[ "${MAKEVN_TEST_IMPACT_CAPTURE}" == true ]]; then
     [[ "${MAKEVN_VERIFY_CHANGES_FOCUSED_PLAN}" == $'.\t*' ]] || makevn_die "Test impact capture requires a complete single-module owner suite"
-    rm -f "$(makevn_state_dir "${repo_root}")/test-impact/map.json"
+    makevn_retire_test_impact "${repo_root}" || return $?
   fi
 
   if [[ -z "${MAKEVN_VERIFY_CHANGES_MODULE_SELECTION}" && -z "${MAKEVN_VERIFY_CHANGES_TEST_FILES}" ]]; then

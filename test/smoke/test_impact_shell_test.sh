@@ -41,6 +41,7 @@ MAKEVN_FOCUSED_PHASE_INDEX=2
 makevn_effective_java_home() { printf '%s\n' "${fixture_java_home}"; }
 makevn_verify_focused_owner() {
   [[ "${FAIL_CLASS:-false}" != true ]] || return 7
+  printf '%s\n' "$3" >> "${tmp}/.makevn/isolated-calls"
   local options="$5" name="$3" traces
   traces="${options##*file=}"
   traces="${traces%%/%p.log*}"
@@ -54,10 +55,24 @@ value = json.load(open(sys.argv[1]))
 assert value['status'] == 'success'
 assert set(value['records']) == {'example.OwnerTest', 'example.OtherTest'}
 PY
+# Resume a sealed partial checkpoint, then fail its remaining class.
+python3 - "${tmp}" "${SCRIPT_DIR}/common" <<'PYTEST'
+import sys
+from pathlib import Path
+sys.path.insert(0, sys.argv[2])
+import test_impact as impact
+root = Path(sys.argv[1])
+value = impact.sealed_load(root / '.makevn/test-impact/capture.json')
+value['records'].pop('example.OtherTest')
+impact.sealed_save(root / '.makevn/test-impact/capture.json', value)
+PYTEST
 FAIL_CLASS=true
 if makevn_capture_test_impact "${tmp}" "${stamp}"; then exit 1; fi
 [[ "$(cat "${tmp}/.makevn/test-impact/map.json")" == *'"status": "pending"'* ]]
 ! find "${tmp}/.makevn/test-impact" -name 'traces.*' | grep -q .
+FAIL_CLASS=false
+makevn_capture_test_impact "${tmp}" "${stamp}"
+[[ "$(wc -l < "${tmp}/.makevn/isolated-calls" | tr -d ' ')" == 3 ]]
 MAKEVN_TEST_IMPACT_CAPTURE=false
 makevn_capture_test_impact "${tmp}" "${stamp}"
 printf 'Test impact shell capture and failure invalidation passed\n'
