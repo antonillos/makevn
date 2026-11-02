@@ -112,6 +112,21 @@ class ReactorProgressiveTests(unittest.TestCase):
         self.edit()
         self.assertEqual(self.plan(self.source, ''), self.plan(self.source))
 
+    def test_all_inventory_accepted_changed_tests_are_retained(self):
+        for name in ['ITAdditional', 'TestAdditional', 'AdditionalChecks']:
+            with self.subTest(name=name):
+                path = 'core/src/test/java/example/' + name + '.java'
+                annotation = '@Test ' if name == 'AdditionalChecks' else ''
+                content = 'package example; class ' + name + ' { ' + annotation + 'void check() { assert true; } }'
+                self.write(path, content)
+                self.commit()
+                self.edit()
+                self.write(path, content.replace('assert true', 'assert false'))
+                core = dict(line.split('\t') for line in self.plan(self.source, path).splitlines())['core']
+                self.assertEqual(set(core.split(',')), {'example.FeatureTest', 'example.' + name})
+                (self.repo / path).unlink()
+                self.write(self.source, self.original)
+
     def test_test_fixture_edit_retains_downstream_suites(self):
         path = 'core/src/test/java/example/Fixture.java'
         self.write(path, 'package example; class Fixture {}')

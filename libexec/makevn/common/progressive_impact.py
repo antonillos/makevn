@@ -191,7 +191,7 @@ def narrow(repo, base, owner, paths, changed_tests, reference, cache=None):
         if 'previous' not in cache:
             cache['previous'] = baseline(repo, base, java, current['facts'], allowed, reference)
         previous = cache['previous']
-        changed = set()
+        changed, changed_test_classes = set(), set()
         parsed = {key: dict(item) for key, item in current['facts'].items()}
         for source in allowed:
             relative = (repo / source).relative_to(base).as_posix()
@@ -201,6 +201,7 @@ def narrow(repo, base, owner, paths, changed_tests, reference, cache=None):
             if reactor.is_source(relative, 'test'):
                 if after['class'] not in tests(current['facts']):
                     raise ValueError('test helper changed')
+                changed_test_classes.add(after['class'])
             else:
                 if impact.state_writes_changed(before, after):
                     raise ValueError('changed method may write shared state')
@@ -209,7 +210,7 @@ def narrow(repo, base, owner, paths, changed_tests, reference, cache=None):
                 changed.add(after['class'])
             parsed[relative]['names'] = sorted(set(before['names']) | set(after['names']))
         affected = consumers(parsed, changed)
-        selected = {reactor.identity(current, owner, name) for name in changed_tests} | (affected & tests(parsed))
+        selected = changed_test_classes | {reactor.identity(current, owner, name) for name in changed_tests} | (affected & tests(parsed))
         observations, skipped = {}, set()
         try:
             stored = load(repo)
