@@ -69,7 +69,7 @@ preference, not engine startup or proof of readiness.
 
 | Intent | Load next |
 | --- | --- |
-| Selected tests, UT/IT, whole-project or changed-code verification | [makevn-test](../makevn-test/SKILL.md) |
+| Selected tests, UT/IT, test-impact initialization or changed-code verification | [makevn-test](../makevn-test/SKILL.md) |
 | Container prerequisites, readiness, diagnosis or lifecycle | [makevn-docker](../makevn-docker/SKILL.md) |
 | Managed application E2E or an externally managed application | [makevn-karate](../makevn-karate/SKILL.md) |
 | Format, Checkstyle, coverage, CRAP or mutation | [makevn-quality](../makevn-quality/SKILL.md) |

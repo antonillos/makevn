@@ -781,3 +781,14 @@ under an explicit command-level diagnostics summary, never attributed to its
 final phase. Diagnostics already published with phase metadata remain phase-local.
 Captured stderr shown in the dashboard is capped at 64 KiB and 200 nonempty
 lines. Omitted output is indicated explicitly; deduplication uses a hash set.
+
+### Explicit local JaCoCo deferral
+
+`verify-changes-preview --defer-global-coverage` and
+`verify-changes --defer-global-coverage` form an opt-in focused workflow that
+retains Maven verify but defers property-based JaCoCo threshold failure. It sets
+`jacoco.haltOnFailure=false` and `commons.jacoco.haltOnFailure=false`; agents and
+rule warnings remain enabled. Custom/literal configurations and other plugins
+are not overridden. Continue with coverage-changes/crap-changes using fresh data.
+Full verify/CI coverage remains separate and required. The default behavior is
+unchanged. The flag is rejected for exhaustive mode and impact capture.

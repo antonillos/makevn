@@ -599,3 +599,37 @@ file to startup, readiness, verification and cleanup; selection alone does not
 start services or authorize a destructive reset. `--compose boot|karate` still
 selects the readiness kind; `--compose-file` supplies its file. A per-execution
 override wins over saved `none` and is never persisted.
+
+### Test-impact baseline capture
+
+`verify_changes_preview` and `verify_changes` accept `"record-test-impact": true`.
+Use the flag in both operations only when an expensive baseline capture is intended:
+a complete suite followed by one isolated verification per test class. Supported
+standard single-module Java projects on JDK 17+ can reuse compatible evidence on
+later focused runs. Missing/stale evidence retains full owner suites with a reason.
+Fresh UT/IT reports and coverage snapshots are still required. See
+[precise selection](../docs/precise-test-selection.md).
+
+### Project-wide impact initialization
+
+`test_impact_preview` inspects capture compatibility and provisional work without
+tests. `test_impact_init` explicitly initializes on clean checkouts, resumes
+identical sealed checkpoints after a fresh complete suite, and returns without
+Maven/tests for a compatible complete map. Both take `repo` and `compact`.
+Run doctor/setup first. Capture is expensive and does not disable repository
+coverage gates. `verify_changes` with `record-test-impact: true` shares the store.
+Normal verification never initiates capture automatically. Partial or incompatible
+evidence cannot enable narrowing. Initialization does not supply fresh coverage
+for a later code change.
+
+### Explicit focused JaCoCo deferral
+
+`verify_changes_preview` and `verify_changes` accept the boolean
+`defer-global-coverage` (default false). Use true in BOTH only for explicitly
+authorized local changed-code feedback, followed by coverage_changes/crap_changes
+in a fail-fast composite. It sets the standard and Apache Commons JaCoCo
+halt-on-failure properties false while retaining instrumentation, warnings, tests
+and other Maven gates. Literal/custom configurations may still fail. It is
+rejected with focused=false or record-test-impact=true and is not exposed on
+verify or test_impact_init. A successful local run does not establish global
+coverage; complete verification and CI remain required.

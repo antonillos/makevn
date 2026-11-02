@@ -48,9 +48,29 @@ Inspect `verify_changes_preview` separately. Then reuse the same focused evidenc
 }
 ```
 
+Validated test-impact selection retains the same fresh focused snapshot contract;
+coverage and CRAP share that new run's data, never the baseline capture data.
 Do not prepend clean or rerun tests without a reason. A valid run with no changed
 production classes returns `not applicable` for changed-code metrics with exit zero:
 no global gate was evaluated. Missing/stale evidence for changed classes still fails.
 For global coverage use complete coverage-producing suites and the aggregate gate.
 Local results never replace mandatory CI gates. In MakeVN's own development, the
 Rust/Bash CRAP ratchet is authoritative in PR CI and must pass before merge.
+
+`test-impact-init` prepares selection evidence, not a coverage snapshot for a
+later edit. After capture, preview and run verification for the actual change
+before coverage/CRAP. Project-wide JaCoCo gates can reject isolated capture;
+report the gate and stop rather than disabling it.
+
+### Explicit local deferral of global JaCoCo failure
+
+When the user authorizes changed-code feedback separately from full coverage,
+preview and execute verify_changes with `defer-global-coverage: true` (CLI
+`--defer-global-coverage`). The flag is opt-in, focused-only and forbidden for
+impact capture. It sets only `jacoco.haltOnFailure=false` and
+`commons.jacoco.haltOnFailure=false`; agents and warnings stay enabled. It does
+not defer arbitrary coverage/check plugins or literal configuration. Tests and
+other Maven failures still stop the fail-fast workflow. Run coverage_changes and
+crap_changes from the fresh successful snapshot and report the actual incremental
+gates. Retain the separate complete-suite/global coverage requirement; a local
+success is not global approval. Never change POM rules or enable this implicitly.

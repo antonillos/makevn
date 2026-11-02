@@ -955,9 +955,19 @@ fn focused_changes_option_is_exposed_in_both_tools() {
     for name in ["verify_changes", "verify_changes_preview"] {
         let spec = super::TOOL_SPECS.iter().find(|spec| spec.name == name).unwrap();
         assert!(spec.options.iter().any(|option| option.name == "focused"));
+        assert!(spec.options.iter().any(|option| option.name == "record-test-impact"));
         assert!(spec.description.contains("focused"));
         assert!(spec.description.contains("gate"));
     }
+}
+
+#[test]
+fn test_impact_capture_flag_is_forwarded_without_changing_focused_mode() {
+    let mut args = Vec::new();
+    super::push_tool_option(&mut args, "record-test-impact", &json!(true)).unwrap();
+    assert_eq!(args, ["--record-test-impact"]);
+    assert!(super::validate_workflow_step(&json!({"tool":"verify_changes", "arguments":{
+        "focused":true, "record-test-impact":true}})).is_ok());
 }
 
 #[test]
@@ -1338,4 +1348,34 @@ fn testcontainers_guidance_distinguishes_engine_from_compose() {
         assert!(guidance.contains("not the engine"));
     }
     assert_eq!(super::docker_interface_guidance("compile", "Build."), "Build.");
+}
+
+#[test]
+fn test_impact_initialization_tools_share_public_cli_contract() {
+    for (tool, command) in [("test_impact_preview", "test-impact-preview"), ("test_impact_init", "test-impact-init")] {
+        let spec = super::TOOL_SPECS.iter().find(|spec| spec.name == tool).unwrap();
+        assert_eq!(spec.command, &[command]);
+        assert!(!spec.options.iter().any(|option| option.name == "record-test-impact"));
+    }
+    assert!(crate::mcp_execution::inspection("test_impact_preview"));
+    assert!(!crate::mcp_execution::inspection("test_impact_init"));
+}
+
+#[test]
+fn deferred_global_coverage_is_explicit_and_limited_to_changed_verification() {
+    for name in ["verify_changes", "verify_changes_preview"] {
+        let spec = super::TOOL_SPECS.iter().find(|spec| spec.name == name).unwrap();
+        assert!(spec.options.iter().any(|option| option.name == "defer-global-coverage"));
+        assert!(super::validate_workflow_step(&json!({"tool":name,
+            "arguments":{"focused":true,"defer-global-coverage":true}})).is_ok());
+    }
+    for name in ["verify", "test_impact_init"] {
+        assert!(super::validate_workflow_step(&json!({"tool":name,
+            "arguments":{"defer-global-coverage":true}})).is_err());
+    }
+    let mut args = Vec::new();
+    super::push_tool_option(&mut args, "defer-global-coverage", &json!(false)).unwrap();
+    assert!(args.is_empty());
+    super::push_tool_option(&mut args, "defer-global-coverage", &json!(true)).unwrap();
+    assert_eq!(args, ["--defer-global-coverage"]);
 }

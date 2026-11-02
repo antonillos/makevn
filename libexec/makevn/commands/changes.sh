@@ -292,6 +292,11 @@ makevn_collect_verify_changes_scope() {
     strip_prefix="${maven_git_rel}/"
   fi
 
+  if [[ "${MAKEVN_TEST_IMPACT_INITIALIZE:-false}" == true ]]; then
+    makevn_test_impact_scope
+    return 0
+  fi
+
   MAKEVN_VERIFY_CHANGES_PARENT_SPEC="$(makevn_detect_parent_branch_spec "${repo_root}")"
   if [[ "${MAKEVN_VERIFY_CHANGES_PARENT_SPEC}" == "HEAD" ]]; then
     diff_local="$(git -C "${git_root}" diff --name-only HEAD || true)"
@@ -325,7 +330,7 @@ makevn_collect_verify_changes_scope() {
 
   MAKEVN_VERIFY_CHANGES_TEST_LIST=''
   if [[ -n "${MAKEVN_VERIFY_CHANGES_TEST_FILES}" ]]; then
-    MAKEVN_VERIFY_CHANGES_TEST_LIST="$(printf '%s\n' "${MAKEVN_VERIFY_CHANGES_TEST_FILES}" | sed "s|^${strip_prefix}||" | sed 's|^.*/src/test/java/||' | sed 's|\.java$||' | tr '/' '.' | paste -sd, -)"
+    MAKEVN_VERIFY_CHANGES_TEST_LIST="$(printf '%s\n' "${MAKEVN_VERIFY_CHANGES_TEST_FILES}" | sed "s|^${strip_prefix}||" | sed 's|^.*src/test/java/||' | sed 's|\.java$||' | tr '/' '.' | paste -sd, -)"
   fi
 }
 
@@ -382,7 +387,7 @@ cmd_verify_changes_preview() {
   shift
   makevn_changes_mode "$@"
   shift "${MAKEVN_VERIFY_CHANGES_MODE_ARGS}"
-  [[ $# -eq 0 ]] || makevn_die "Usage: verify-changes-preview [--focused|--exhaustive]"
+  [[ $# -eq 0 ]] || makevn_die "Usage: verify-changes-preview [--focused|--exhaustive] [--record-test-impact] [--defer-global-coverage]"
 
   if ! makevn_frontend_owns_loader; then
     print_command_intro "${repo_root}" verify-changes-preview
@@ -558,6 +563,10 @@ cmd_verify_changes() {
   # Always re-plan: a preview cache cannot detect content-only local edits.
   makevn_collect_verify_changes_scope "${repo_root}"
   makevn_print_verify_changes_preflight "verify-changes"
+  if [[ "${MAKEVN_TEST_IMPACT_CAPTURE}" == true ]]; then
+    [[ "${MAKEVN_VERIFY_CHANGES_FOCUSED_PLAN}" == $'.\t*' ]] || makevn_die "Test impact capture requires a complete single-module owner suite"
+    makevn_retire_test_impact "${repo_root}" || return $?
+  fi
 
   if [[ -z "${MAKEVN_VERIFY_CHANGES_MODULE_SELECTION}" && -z "${MAKEVN_VERIFY_CHANGES_TEST_FILES}" ]]; then
     makevn_clear_verify_changes_plan "${repo_root}"

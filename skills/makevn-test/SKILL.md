@@ -37,9 +37,44 @@ Exhaustive selected suites still differ from whole-project `verify`. Unknown imp
 requires another exhaustive preview and explanation; never silently broaden.
 A successful preview runs no tests. Preserve existing authorization when broadening.
 
-Focused selection is by module for production changes, not by changed Java class.
-In a single-module project this executes the entire module suite. Explain this
-explicitly before execution; focused does not promise a small number of tests.
+Production changes use validated isolated test-impact evidence when compatible;
+otherwise the complete owner module suite runs, with a visible fallback reason.
+Inspect the selected test list and evidence provenance; focused does not promise
+few tests. Narrowing currently supports standard single-module Java projects with
+JDK 17+ and conventional Surefire/Failsafe ownership. Reactors retain full suites.
+
+Initialize project-wide impact evidence explicitly after doctor/setup, including
+on a clean checkout: CLI `test-impact-preview` then `test-impact-init`, or MCP
+`test_impact_preview` then `test_impact_init`. This is expensive: a complete suite
+followed by isolated verification per test class. Do not capture automatically for
+a quick test request. Preview runs no tests and cost remains provisional until
+fresh complete-suite reports establish the inventory. A compatible complete map
+makes initialization a no-op. Incomplete captures resume completed sealed records
+only in an identical context; initialization reruns the complete suite before
+missing class replays. Changed inputs, bytecode, JDK, environment or dependencies
+restart capture with a reason. Failed/skipped-only classes remain missing and
+partial checkpoints never enable narrowing. Concurrent captures in one checkout
+are rejected; retain logs/checkpoints when diagnosing failures.
+
+For changed-code recording, pass `--record-test-impact` or MCP
+`"record-test-impact": true` in BOTH preview and verification. It uses the same
+checkpoint store and completes missing compatible records, with the complete-suite
+prerequisite. Changed-code recording still requires changed inputs selecting the
+complete root owner suite; use initialization for a clean checkout. Ordinary
+focused verification reuses compatible published maps without capture. Changed
+declarations/helpers/resources/configuration/dependencies/JDK or missing evidence
+retain complete owner suites. Potential shared-state writes, dynamic behavior and
+global effects in either baseline or changed source retain complete suites.
+Repository-wide Maven coverage rules remain enforced by default and during
+impact capture. They can reject a partial verification despite passing tests.
+For explicitly authorized local changed-code feedback, inspect another preview
+with `defer-global-coverage: true`, then use the same flag in `verify_changes`.
+CLI uses `--defer-global-coverage` in both commands. This defers failure through
+JaCoCo's standard/Apache Commons halt-on-failure properties, preserving agents,
+rule warnings and other Maven gates. Custom literal/plugin configurations may
+still fail. Never enable it automatically, combine it with exhaustive/capture, or
+claim global coverage passed. After success, run coverage_changes and crap_changes;
+full verify/CI coverage remains required.
 
 Preparation uses `-am install` with UT/IT execution disabled and retains test
 compilation/test jars. A 34-module reactor does not mean 34 suites ran. Owner

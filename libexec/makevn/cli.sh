@@ -34,8 +34,10 @@ Usage:
   makevn [--repo PATH] verify-it [-- EXTRA_MAVEN_ARGS...]
   makevn [--repo PATH] verify-it-coverage [-- EXTRA_MAVEN_ARGS...]
   makevn [--repo PATH] verify [-- EXTRA_MAVEN_ARGS...]
-  makevn [--repo PATH] verify-changes-preview [--focused|--exhaustive]
-  makevn [--repo PATH] verify-changes [--focused|--exhaustive] [-- EXTRA_MAVEN_ARGS...]
+  makevn [--repo PATH] test-impact-preview
+  makevn [--repo PATH] test-impact-init
+  makevn [--repo PATH] verify-changes-preview [--focused|--exhaustive] [--record-test-impact] [--defer-global-coverage]
+  makevn [--repo PATH] verify-changes [--focused|--exhaustive] [--record-test-impact] [--defer-global-coverage] [-- EXTRA_MAVEN_ARGS...]
   makevn [--repo PATH] coverage [--threshold PCT]
   makevn [--repo PATH] coverage-changes [--threshold PCT] [--overall-threshold PCT] [--verbose]
   makevn [--repo PATH] crap [--jacoco-xml PATH] [--threshold SCORE] [--max-warnings COUNT]
@@ -122,7 +124,7 @@ print_command_intro() {
 
 makevn_cli_is_top_level_command() {
   case "$1" in
-    help|doctor|init|uninstall|profile|compile|test-compile|compile-tests|validate|package|clean|build|test|verify-ut|verify-ut-coverage|verify-it|verify-it-coverage|verify|verify-changes-preview|verify-changes|coverage|coverage-changes|crap|crap-changes|pr-verify|format|checkstyle|docker-up|docker-down|docker-reset|docker-ps|docker-stats|docker-ps-required|karate-docker-up|karate-docker-down|karate-docker-reset|karate-test|karate-all|run-app|run-app-bg|stop-app|run|jdk|mutation)
+    help|doctor|init|uninstall|profile|compile|test-compile|compile-tests|validate|package|clean|build|test|verify-ut|verify-ut-coverage|verify-it|verify-it-coverage|verify|test-impact-preview|test-impact-init|verify-changes-preview|verify-changes|coverage|coverage-changes|crap|crap-changes|pr-verify|format|checkstyle|docker-up|docker-down|docker-reset|docker-ps|docker-stats|docker-ps-required|karate-docker-up|karate-docker-down|karate-docker-reset|karate-test|karate-all|run-app|run-app-bg|stop-app|run|jdk|mutation)
       return 0
       ;;
   esac
@@ -368,11 +370,14 @@ case "${COMMAND}" in
   verify)
     cmd_verify "${REPO_ROOT}" "$@"
     ;;
+  test-impact-preview|test-impact-init)
+    cmd_test_impact "${REPO_ROOT}" "${COMMAND#test-impact-}" "$@"
+    ;;
   verify-changes-preview)
     cmd_verify_changes_preview "${REPO_ROOT}" "$@"
     ;;
   verify-changes)
-    cmd_verify_changes "${REPO_ROOT}" "$@"
+    makevn_dispatch_verify_changes "${REPO_ROOT}" "$@"
     ;;
   coverage)
     cmd_coverage "${REPO_ROOT}" "$@"
