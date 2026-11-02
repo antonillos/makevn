@@ -19,6 +19,10 @@ def comparison_commit(repo, reference):
                                     reference.removesuffix('...HEAD'), 'HEAD']).decode().strip()
 
 
+def evidence_comparison_commit(repo, manifest):
+    return manifest.get('comparison_base') or comparison_commit(repo, manifest['comparison_head'])
+
+
 def fingerprint(repo, base=None, inputs=None):
     head = subprocess.check_output(['git', '-C', str(repo), 'rev-parse', 'HEAD'])
     git_root = Path(subprocess.check_output(['git', '-C', str(repo), 'rev-parse', '--show-toplevel']).decode().strip()).resolve()
@@ -193,7 +197,7 @@ def finish(repo, state):
 
 def load(repo, state):
     manifest = json.loads((state / 'run.json').read_text())
-    if comparison_commit(repo, manifest['comparison']) != manifest.get('comparison_base', manifest['comparison_head']):
+    if comparison_commit(repo, manifest['comparison']) != evidence_comparison_commit(repo, manifest):
         raise ValueError('Comparison base changed; rerun verify-changes')
     if manifest['status'] != 'success':
         raise ValueError('Focused coverage is incomplete: the last verification did not complete successfully '
@@ -219,7 +223,7 @@ def report(repo, state, maven, java, reference=""):
     if reference:
         requested = comparison_commit(repo, reference)
         manifest = load(repo, state)
-        if requested != manifest.get('comparison_base', manifest['comparison_head']):
+        if requested != evidence_comparison_commit(repo, manifest):
             raise ValueError("Requested base differs from focused verification; rerun matching verification")
     manifest = load(repo, state)
     if not manifest['expected']:
@@ -283,7 +287,7 @@ def main():
         manifest = load(repo, state)
         if args and args[0]:
             requested = comparison_commit(repo, args[0])
-            if requested != manifest.get('comparison_base', manifest['comparison_head']):
+            if requested != evidence_comparison_commit(repo, manifest):
                 raise ValueError('Requested base differs from focused verification; rerun matching verification')
         print('applicable' if manifest['expected'] else 'not-applicable')
     else:
