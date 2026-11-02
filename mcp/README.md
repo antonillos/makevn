@@ -600,27 +600,23 @@ start services or authorize a destructive reset. `--compose boot|karate` still
 selects the readiness kind; `--compose-file` supplies its file. A per-execution
 override wins over saved `none` and is never persisted.
 
-### Test-impact baseline capture
+### Progressive test impact and optional capture
 
-`verify_changes_preview` and `verify_changes` accept `"record-test-impact": true`.
-Use the flag in both operations only when an expensive baseline capture is intended:
-a complete suite followed by one isolated verification per test class. Supported
-standard single-module Java projects on JDK 17+ can reuse compatible evidence on
-later focused runs. Missing/stale evidence retains full owner suites with a reason.
-Fresh UT/IT reports and coverage snapshots are still required. See
+`test_impact_preview` inspects static dependencies without writes. `test_impact_init`
+writes a static map without Maven/tests/containers. Both require doctor/setup and
+JDK 17+ for syntax parsing. Normal test/verify executions enrich dependencies using
+fresh successful reports and JVM traces, without reruns. Shared JVM executions
+contribute conservative loaded-class supersets; observations never delete static
+edges. Unknown impact retains complete owner suites. See
 [precise selection](../docs/precise-test-selection.md).
 
-### Project-wide impact initialization
-
-`test_impact_preview` inspects capture compatibility and provisional work without
-tests. `test_impact_init` explicitly initializes on clean checkouts, resumes
-identical sealed checkpoints after a fresh complete suite, and returns without
-Maven/tests for a compatible complete map. Both take `repo` and `compact`.
-Run doctor/setup first. Capture is expensive and does not disable repository
-coverage gates. `verify_changes` with `record-test-impact: true` shares the store.
-Normal verification never initiates capture automatically. Partial or incompatible
-evidence cannot enable narrowing. Initialization does not supply fresh coverage
-for a later code change.
+`test_impact_init` accepts `isolated: true` for explicit expensive full-suite and
+isolated-class capture, including clean checkouts. Required container readiness
+applies to this execution. Unit replays avoid packaging via the test phase;
+integration replays retain verify. Compatible sealed checkpoints resume. Changed
+verification still accepts `record-test-impact: true` in BOTH preview and execution.
+Neither static maps nor runtime observations establish fresh coverage/CRAP or replace
+full verification and CI gates.
 
 ### Explicit focused JaCoCo deferral
 

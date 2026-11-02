@@ -115,31 +115,22 @@ Impact state is internal only: do not create or maintain root impact overrides.
 Keep required external checks separate; automatic Maven scope does not prove them.
 See Focused impact (see the selection rules above).
 
-### Reusable test impact within one module
+### Progressive test impact within one module
 
-Use the selected classes and fallback reason in the preview. Evidence is captured
-only with explicit `--record-test-impact` (MCP `"record-test-impact": true`), passed
-to both preview and verification. This expensive baseline runs a complete suite
-and then isolates every test class, including forks. Do not substitute ordinary
-`test --name` results or aggregate JaCoCo for that map. Narrowing supports standard single-module Java layouts and JDK 17+. Compatible
-method-body changes can reuse a map; new/deleted classes, changed declarations,
-imports/initializers, helpers, configuration, resources, dependencies, generated
-sources and JDK changes retain complete suites. A fresh map includes isolated JVM
-class-load evidence and conservative transitive source consumers; recognized
-dynamic consumers expand selection. Dynamic behavior in the changed class rejects
-narrowing. Maps are disposable managed state; never write them by hand.
+Focused selection starts with static transitive Java dependencies and conservative
+framework/interface consumers, without test execution. `test_impact_preview` is
+read-only; `test_impact_init` writes a static map. Neither runs Maven or tests.
+Normal selected tests and complete suites add runtime dependencies from successful
+fresh reports and JVM traces. Shared executions supply loaded-class supersets;
+never claim per-test attribution from aggregate traces or JaCoCo. Missing evidence
+cannot remove static edges. Unknown effects retain complete suites.
 
-### Initialize or resume test-impact evidence
-
-After doctor/setup, inspect `test_impact_preview`, then explicitly run
-`test_impact_init`. These commands support a clean checkout; normal verification
-never seeds a map automatically. The first capture runs a complete suite and
-isolated test classes. Repeated initialization of an identical complete map runs
-no tests. Identical partial checkpoints reuse completed classes after another
-successful complete suite; changes invalidate reuse with diagnostics.
-`verify_changes` with `record-test-impact: true` shares this checkpoint store.
-Do not disable project coverage gates to make isolated captures pass. A partial
-map is not eligible for narrowed verification and is not coverage/CRAP evidence.
+Explicit `test_impact_init` with `isolated: true` (CLI `--isolated`) retains the
+expensive full-suite plus isolated-class workflow. Unit replays use Maven's test
+phase to avoid package/Shade repetition; integration replays retain verify.
+Changed-code recording uses `record-test-impact: true` in both preview and
+verification. Do not disable coverage gates to make captures pass. Maps are
+managed state and never substitute for fresh verification or quality evidence.
 
 ### Partial suites and global coverage gates
 

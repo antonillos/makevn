@@ -324,7 +324,7 @@ const COMPACT: ToolOption = ToolOption {
 const FOCUSED: ToolOption = ToolOption {
     name: "focused",
     ty: "boolean",
-    description: "Changed-code verification is focused by default. Explain scope and use the SAME mode in preview and verification. Installs dependencies without UT/IT (large preparation reactor is normal), then verifies evidence-selected tests or full production owners with an explicit fallback reason, plus selected changed tests without -am. Never substitutes for full integration/CI/coverage gates. Default true (also when omitted). Set false explicitly to run exhaustive selected owner/dependency suites. Unknown focused impact stops and recommends exhaustive; never expands silently.",
+    description: "Changed-code verification is focused by default. Explain scope and use the SAME mode in preview and verification. Installs dependencies without UT/IT (large preparation reactor is normal), then verifies static/runtime-selected tests or full production owners with an explicit fallback reason, plus selected changed tests without -am. Never substitutes for full integration/CI/coverage gates. Default true (also when omitted). Set false explicitly to run exhaustive selected owner/dependency suites. Unknown focused impact stops and recommends exhaustive; never expands silently.",
     required: false,
 };
 const DEFER_GLOBAL_COVERAGE: ToolOption = ToolOption {
@@ -336,7 +336,13 @@ const DEFER_GLOBAL_COVERAGE: ToolOption = ToolOption {
 const RECORD_TEST_IMPACT: ToolOption = ToolOption {
     name: "record-test-impact",
     ty: "boolean",
-    description: "Explicitly capture reusable test-impact evidence: run the complete single-module suite, then isolated verification for missing classes, reusing only identical sealed checkpoints. For a clean checkout use test_impact_init. Requires JDK 17+ and standard Java layout. Expensive baseline operation; use the same flag in preview and verification. Missing or incompatible evidence retains full owner suites with a reason.",
+    description: "Explicitly capture reusable test-impact evidence: run the complete single-module suite, then isolated verification for missing classes, reusing only identical sealed checkpoints. For a clean checkout use test_impact_init with isolated=true. Requires JDK 17+ and standard Java layout. Expensive baseline operation; use the same flag in preview and verification. Normal selection starts statically; unknown impact retains full owner suites.",
+    required: false,
+};
+const ISOLATED: ToolOption = ToolOption {
+    name: "isolated",
+    ty: "boolean",
+    description: "Explicit expensive capture: complete verification followed by isolated class replays. Default false: create a static map without Maven/tests, then enrich during normal executions.",
     required: false,
 };
 const VERBOSE: ToolOption = ToolOption {
@@ -383,8 +389,8 @@ const TOOL_SPECS: &[ToolSpec] = &[
     ToolSpec { name: "verify_it", description: "Run integration-test-only verification.", command: &["verify-it"], options: &[COMMON_REPO, COMPACT, COMPOSE_FILE] },
     ToolSpec { name: "verify_it_coverage", description: "Run integration-test-only verification with coverage.", command: &["verify-it-coverage"], options: &[COMMON_REPO, COMPACT, COMPOSE_FILE] },
     ToolSpec { name: "verify", description: "Run full combined verification (unit tests + integration tests).", command: &["verify"], options: &[COMMON_REPO, COMPACT, COMPOSE_FILE] },
-    ToolSpec { name: "test_impact_preview", description: "Inspect impact capture compatibility and provisional work without tests. Run doctor/setup first; a preview is not test success.", command: &["test-impact-preview"], options: &[COMMON_REPO, COMPACT] },
-    ToolSpec { name: "test_impact_init", description: "Explicit expensive project-wide impact capture, including clean checkouts. Run doctor/setup and required container readiness first. Reuses an identical complete map without tests; otherwise runs the complete suite then missing isolated classes. Compatible checkpoints resume; changed inputs start fresh. No global gates are disabled.", command: &["test-impact-init"], options: &[COMMON_REPO, COMPACT] },
+    ToolSpec { name: "test_impact_preview", description: "Preview static Java dependencies without writes, Maven or tests. Run doctor/setup first; a preview is not verification evidence.", command: &["test-impact-preview"], options: &[COMMON_REPO, COMPACT] },
+    ToolSpec { name: "test_impact_init", description: "Initialize a static test-impact map without Maven or tests. Normal test executions add conservative runtime dependencies. Run doctor/setup first. Set isolated=true explicitly for expensive full-suite and isolated-class capture; required container readiness applies only to execution. No verification gates are disabled.", command: &["test-impact-init"], options: &[COMMON_REPO, COMPACT, ISOLATED] },
     ToolSpec { name: "verify_changes_preview", description: "Read-only changed-code plan; success does not establish Docker readiness. Before execution, inspect doctor/config/profile or the approved workflow for Docker prerequisites. If boot services are required, first run docker_ps_required with wait-seconds: 30 in the same repository and reuse healthy services. If readiness fails only because services are missing or stopped, with no probe errors or ownership conflict, use volume-preserving docker_up within existing startup authorization, without asking again; rerun docker_ps_required before verify_changes. Reserve docker_reset for a diagnosed need and explicit volume-deletion authorization. Focused by default; use focused=false explicitly for exhaustive suites in both preview and verify_changes. Explain scope; unknown impact stops instead of silently expanding. Inspect preparation versus owner verification phases; a large preparation reactor does not mean its suites run. Preserve required full gates.", command: &["verify-changes-preview"], options: &[COMMON_REPO, COMPACT, FOCUSED, RECORD_TEST_IMPACT, DEFER_GLOBAL_COVERAGE] },
     ToolSpec { name: "verify_changes", description: "Execute changed-code verification only after doctor/setup and any required Docker readiness gate. If boot services are required by doctor/config/profile or the approved workflow, first run docker_ps_required with wait-seconds: 30 in the same repository; reuse healthy services without docker_up. On readiness failure, inspect diagnostics. Missing or stopped services without probe errors or ownership conflicts can be started with volume-preserving docker_up under existing startup authorization, without asking again. Unhealthy services require diagnosis; docker_reset requires explicit volume-deletion authorization. Rerun docker_ps_required successfully before verification. A preview does not replace this prerequisite. Use the SAME mode as preview. Focused defaults to true; false explicitly selects exhaustive suites. Unknown focused impact stops. Focused=true prepares dependencies without UT/IT, verifies validated evidence-selected tests or full production/POM owner suites with a fallback reason, and selected changed tests in other owners without -am, and requires fresh reports. Focused success publishes fresh UT/IT and bytecode evidence for coverage_changes and crap_changes without repeating tests. It is not full integration or global coverage verification; report its scope and retain full gates.", command: &["verify-changes"], options: &[COMMON_REPO, COMPACT, FOCUSED, RECORD_TEST_IMPACT, DEFER_GLOBAL_COVERAGE] },
     ToolSpec { name: "coverage", description: "Check the latest JaCoCo aggregate coverage report.", command: &["coverage"], options: &[COMMON_REPO, ToolOption { name: "threshold", ty: "number", description: "Coverage threshold percentage", required: false }, COMPACT] },
@@ -1002,7 +1008,7 @@ fn push_maven_properties(cmd_args: &mut Vec<String>, value: &Value) -> Result<()
 
 fn push_tool_option(cmd_args: &mut Vec<String>, name: &str, value: &Value) -> Result<(), String> {
     match name {
-        "apply" | "clean-generated-contract-targets" | "dry-run" | "fast" | "force" | "verbose" | "record-test-impact" | "defer-global-coverage" => {
+        "apply" | "clean-generated-contract-targets" | "dry-run" | "fast" | "force" | "verbose" | "isolated" | "record-test-impact" | "defer-global-coverage" => {
             push_boolean_option(cmd_args, name, value)
         }
         "focused" => push_focused_option(cmd_args, value)?,

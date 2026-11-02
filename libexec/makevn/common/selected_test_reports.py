@@ -51,7 +51,7 @@ if __name__ == "__main__":
             sys.exit(0)
         optional = set()
         if len(sys.argv) > 4:
-            from test_impact import sealed_load, state
+            from test_impact import sealed_load, state, digest
             repo = pathlib.Path(sys.argv[4])
             path = state(repo) / 'map.json'
             if path.is_file():
@@ -61,6 +61,20 @@ if __name__ == "__main__":
                         optional = set(value.get('skipped', {}))
                 except (OSError, ValueError, KeyError, TypeError):
                     pass
+            from progressive_impact import load, CONDITIONAL
+            try:
+                value = load(repo)
+                if pathlib.Path(value['base']).resolve() == pathlib.Path(sys.argv[1]).resolve():
+                    unchanged = {item['class'] for source, item in value['facts'].items()
+                                 if source.startswith('src/test/java/') and
+                                 (pathlib.Path(value['base']) / source).is_file() and
+                                 value['inputs'].get((pathlib.Path(value['base']) / source).relative_to(repo).as_posix()) ==
+                                 digest(pathlib.Path(value['base']) / source)}
+                    optional.update(set(value.get('skipped', {})) & unchanged)
+                    optional.update(item['class'] for item in value['facts'].values()
+                                    if item['class'] in unchanged and CONDITIONAL.intersection(item['names']))
+            except (OSError, ValueError, KeyError, TypeError):
+                pass
         missing = missing_tests(pathlib.Path(sys.argv[1]), sys.argv[2].split(","), pathlib.Path(sys.argv[3]), optional)
         if missing:
             print("No fresh executed-test evidence for: " + ",".join(missing), file=sys.stderr)

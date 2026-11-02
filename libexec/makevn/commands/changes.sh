@@ -613,7 +613,7 @@ No modified Java or POM files detected. Skipping verify-changes."
     makevn_validate_focused_flags ${cli_flags[@]+"${cli_flags[@]}"} ${prop_flags[@]+"${prop_flags[@]}"}
     makevn_scoped_coverage_prepare "${repo_root}" || return $?
     if makevn_run_focused_changes "${repo_root}"; then
-      makevn_scoped_coverage_finish "${repo_root}" || return $?
+      [[ "${MAKEVN_TEST_IMPACT_CAPTURE:-false}" == true ]] || makevn_scoped_coverage_finish "${repo_root}" || return $?
       rc=0
     else rc=$?; fi
     makevn_clear_verify_changes_plan "${repo_root}"

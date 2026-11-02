@@ -301,6 +301,12 @@ makevn_run_logged_in_context() {
     set -- python3 "${MAKEVN_LIBEXEC_DIR}/docker/testcontainers.py" "$@"
   fi
 
+  case "${command_key}:${MAKEVN_TEST_IMPACT_CAPTURE:-false}" in
+    test:false|verify:false|verify-ut:false|verify-ut-coverage:false|verify-it:false|verify-it-coverage:false|verify-changes:false)
+      set -- python3 "${MAKEVN_LIBEXEC_DIR}/common/observe_test_impact.py" "${repo_root}" "${maven_base_path}" "${java_home}/bin/java" "$@"
+      ;;
+  esac
+
   logs_dir="$(makevn_logs_dir "${repo_root}")"
   logfile="${logs_dir}/${log_name}.log"
   makevn_prepare_logfile "${logfile}" || return $?

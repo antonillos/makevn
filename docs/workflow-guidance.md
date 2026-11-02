@@ -299,10 +299,10 @@ The preview lists a dependency-preparation phase and the exact per-owner test
 scope. Preparation uses `install -am` with UT/IT execution disabled but test
 compilation retained (test-jar dependencies can be necessary); it updates local
 Maven artifacts so the following phases use this checkout's snapshots.
-Verification then runs **without `-am`**: validated evidence-selected tests when
-available, otherwise full production/POM consumer owner suites with a fallback
-reason; selected changed test classes for test-only owners. See
-[precise test selection](precise-test-selection.md) for explicit baseline capture,
+Verification then runs **without `-am`**: static dependencies enriched by runtime
+observations where supported, otherwise full production/POM consumer owner suites
+with a fallback reason; selected changed test classes for test-only owners. See
+[precise test selection](precise-test-selection.md) for static initialization, optional isolated capture,
 compatibility checks, consumer expansion and supported single-module layouts. Test helpers and deleted
 tests expand to the complete owner suite. Unknown/root impact rejects focused
 execution; choose `--exhaustive` to run all selected owner/dependency suites.
@@ -348,6 +348,7 @@ requires the separate full coverage-producing flow.
 
 For explicit project-wide test-impact preparation, including a clean checkout,
 run doctor/setup, inspect `test-impact-preview`, then run `test-impact-init`.
-A compatible complete map is a no-op; compatible partial captures resume after
-another complete-suite prerequisite. See [precise selection](precise-test-selection.md)
+Initialization writes a static map without Maven/tests. Normal executions enrich
+it with conservative runtime dependencies. Use `--isolated` explicitly for costly
+complete-suite and isolated-class capture; compatible partial captures resume. See [precise selection](precise-test-selection.md)
 for cost, invalidation, CLI/MCP parity and current layout limits.

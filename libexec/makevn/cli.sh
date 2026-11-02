@@ -35,7 +35,7 @@ Usage:
   makevn [--repo PATH] verify-it-coverage [-- EXTRA_MAVEN_ARGS...]
   makevn [--repo PATH] verify [-- EXTRA_MAVEN_ARGS...]
   makevn [--repo PATH] test-impact-preview
-  makevn [--repo PATH] test-impact-init
+  makevn [--repo PATH] test-impact-init [--isolated]
   makevn [--repo PATH] verify-changes-preview [--focused|--exhaustive] [--record-test-impact] [--defer-global-coverage]
   makevn [--repo PATH] verify-changes [--focused|--exhaustive] [--record-test-impact] [--defer-global-coverage] [-- EXTRA_MAVEN_ARGS...]
   makevn [--repo PATH] coverage [--threshold PCT]

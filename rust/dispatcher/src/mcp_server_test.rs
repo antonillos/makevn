@@ -1379,3 +1379,14 @@ fn deferred_global_coverage_is_explicit_and_limited_to_changed_verification() {
     super::push_tool_option(&mut args, "defer-global-coverage", &json!(true)).unwrap();
     assert_eq!(args, ["--defer-global-coverage"]);
 }
+
+#[test]
+fn isolated_capture_is_explicit_and_forwarded_only_on_initialization() {
+    let spec = super::TOOL_SPECS.iter().find(|spec| spec.name == "test_impact_init").unwrap();
+    assert!(spec.options.iter().any(|option| option.name == "isolated"));
+    let preview = super::TOOL_SPECS.iter().find(|spec| spec.name == "test_impact_preview").unwrap();
+    assert!(!preview.options.iter().any(|option| option.name == "isolated"));
+    let mut args = Vec::new();
+    super::push_tool_option(&mut args, "isolated", &json!(true)).unwrap();
+    assert_eq!(args, ["--isolated"]);
+}

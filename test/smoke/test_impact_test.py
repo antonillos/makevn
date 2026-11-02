@@ -47,6 +47,7 @@ class TestImpactTests(unittest.TestCase):
         self.addCleanup(patch.stopall)
         patch.object(impact, 'context', return_value={'java': 'fixture'}).start()
         patch.object(impact, 'repository_models', return_value={}).start()
+        patch('progressive_impact.absorb_isolated').start()
         patch.object(impact, 'facts', side_effect=lambda *_: json.loads(json.dumps(self.facts))).start()
         self.value = {'version': impact.VERSION, 'status': 'success', 'base': str(self.repo),
                       'head': subprocess.check_output(['git', '-C', str(self.repo), 'rev-parse', 'HEAD']).decode().strip(),
@@ -463,10 +464,7 @@ class TestImpactTests(unittest.TestCase):
                 for cls in [name, *loaded]))
             impact.record(self.repo, self.repo, name, traces)
         impact.finish(self.repo, self.repo, Path('/fixture/java'))
-        from changes_scope import focused_plan
-        with contextlib.redirect_stderr(io.StringIO()):
-            self.assertEqual(focused_plan(self.repo, self.repo, 'HEAD', [self.source]),
-                             '.\texample.ConsumerTest,example.OwnerTest')
+        self.assertEqual(self.plan()[0], {'example.ConsumerTest', 'example.OwnerTest'})
 
     def test_generated_sources_and_new_compiled_classes_fall_back(self):
         generated = self.repo / 'target/generated-sources/example/New.java'
