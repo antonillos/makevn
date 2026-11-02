@@ -3,8 +3,17 @@
 Focused verification starts with conservative static Java dependencies. Standard
 single-module Java layouts and JDK 17+ are supported. Reactors, generated Java,
 unknown build/resource impact and unresolved dependencies retain complete suites.
+See the [reactor implementation proposal](multimodule-test-impact-plan.md) for
+the remaining work required to narrow test classes across modules.
 
 ## Start without running tests
+
+`makevn init` (including `--force` / `refresh`) automatically saves the static map
+when a compatible JDK is selected and the layout is supported. Repeating init
+refreshes it while retaining compatible runtime observations. Dry runs never
+write a map. Missing Python/JDK or unsupported layouts defer analysis visibly
+without failing repository initialization; resolve setup and retry with
+`makevn test-impact-init`.
 
 After doctor/setup:
 
