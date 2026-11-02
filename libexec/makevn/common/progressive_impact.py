@@ -287,10 +287,16 @@ def absorb_isolated(repo, base, java, evidence):
 if __name__ == '__main__':
     try:
         command, repo, base, java = sys.argv[1:]
-        value = initialize(Path(repo).resolve(), Path(base).resolve(), Path(java), command == 'init')
-        print('Test impact: static map ' + ('saved' if command == 'init' else 'preview') +
-              '; ' + str(len(tests(value['facts']))) + ' candidate test classes; no Maven or tests executed; ' +
-              str(len(value['observations'])) + ' observed classes retained')
+        value = initialize(Path(repo).resolve(), Path(base).resolve(), Path(java), command in {'init', 'init-summary'})
+        if command == 'init-summary':
+            summary = 'static map updated · ' + str(len(tests(value['facts']))) + ' test classes'
+            if value['observations']:
+                summary += ' · ' + str(len(value['observations'])) + ' observed classes retained'
+            print(summary)
+        else:
+            print('Test impact: static map ' + ('saved' if command == 'init' else 'preview') +
+                  '; ' + str(len(tests(value['facts']))) + ' candidate test classes; no Maven or tests executed; ' +
+                  str(len(value['observations'])) + ' observed classes retained')
     except (OSError, ValueError, KeyError, subprocess.SubprocessError, ET.ParseError) as error:
         print('Cannot initialize static impact: ' + str(error), file=sys.stderr)
         sys.exit(1)

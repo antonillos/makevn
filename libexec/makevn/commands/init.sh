@@ -1,6 +1,25 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+makevn_init_static_impact() {
+  local repo_root="$1" base java_home result
+  if ! command -v python3 >/dev/null 2>&1; then
+    makevn_print_item "Test impact" "deferred: Python 3 is unavailable"
+    return 0
+  fi
+  makevn_load_profile "${repo_root}"
+  base="$(makevn_detect_maven_base_path "${repo_root}")"
+  if ! java_home="$(makevn_effective_java_home "${repo_root}" code "${base}" 2>/dev/null)"; then
+    makevn_print_item "Test impact" "deferred: run makevn doctor to select a compatible JDK"
+    return 0
+  fi
+  if result="$(python3 "${SCRIPT_DIR}/common/progressive_impact.py" init-summary "${repo_root}" "${base}" "${java_home}/bin/java" 2>&1)"; then
+    makevn_print_item "Test impact" "${result}"
+  else
+    makevn_print_item "Test impact" "deferred: ${result}; retry with makevn test-impact-init"
+  fi
+}
+
 # Updates the caller-local dry_run and force options.
 cmd_init_parse_options() {
   while [[ $# -gt 0 ]]; do
@@ -43,8 +62,11 @@ cmd_init() {
 
   existing_manifest="$(makevn_manifest_path "${repo_root}")"
   if [[ -f "${existing_manifest}" && "${force}" != true ]]; then
-    makevn_refresh_impact "${repo_root}" "" "${dry_run}"
-    printf '%s\n' "$(makevn_warn "makevn is already initialized.")"
+    printf '%s\n' "$(makevn_dim "Already initialized.")"
+    if [[ "${dry_run}" != true ]]; then
+      makevn_refresh_impact "${repo_root}" "" init
+      makevn_init_static_impact "${repo_root}"
+    fi
     return 0
   fi
 
@@ -69,7 +91,8 @@ cmd_init() {
   makevn_update_config_generated_contract_clean_dirs "${repo_root}"
   makevn_write_state_json "${repo_root}"
   makevn_write_manifest "${repo_root}"
-  makevn_refresh_impact "${repo_root}"
+  makevn_refresh_impact "${repo_root}" "" init
+  makevn_init_static_impact "${repo_root}"
 
   printf '%s\n' "$(makevn_dim "Initialized makevn.")"
   makevn_print_item "created" ".makevn/config"

@@ -55,6 +55,52 @@ class ProgressiveImpactTests(unittest.TestCase):
     def initialize(self, write=True):
         return progressive.initialize(self.repo, self.repo, self.java, write)
 
+    def test_init_builds_static_map_and_defers_unavailable_analysis(self):
+        script = '''
+set -euo pipefail
+SCRIPT_DIR="$1/libexec/makevn"
+source "${SCRIPT_DIR}/common.sh"
+source "${SCRIPT_DIR}/commands/init.sh"
+print_command_intro() { :; }
+makevn_start_state_phase() { :; }
+makevn_require_unambiguous_maven_project() { :; }
+makevn_detect_maven_base_path() { printf '%s\\n' "$1"; }
+makevn_write_config() { touch "$1/.makevn/config"; }
+makevn_refresh_profile() { :; }
+makevn_update_config_generated_contract_clean_dirs() { :; }
+makevn_write_state_json() { :; }
+makevn_write_manifest() { touch "$(makevn_manifest_path "$1")"; }
+makevn_refresh_impact() { :; }
+makevn_effective_java_home() { [[ "$JAVA_AVAILABLE" == true ]] && printf '%s\\n' "$JAVA_FIXTURE"; }
+if [[ "$PYTHON_AVAILABLE" != true ]]; then command() { return 1; }; fi
+cmd_init "$2" "${@:3}"
+'''
+        def run(*options, available=True, python_available=True):
+            return subprocess.run(['bash', '-c', script, 'fixture', str(ROOT), str(self.repo), *options],
+                                  env=os.environ | {'JAVA_FIXTURE': str(self.java.parent.parent),
+                                                    'JAVA_AVAILABLE': str(available).lower(),
+                                                    'PYTHON_AVAILABLE': str(python_available).lower()},
+                                  capture_output=True, text=True, check=True).stdout
+        run('--dry-run')
+        self.assertFalse((self.repo / '.makevn').exists())
+        self.assertIn('static map updated · 3 test classes', run())
+        self.assertEqual(progressive.tests(progressive.load(self.repo)['facts']),
+                         {'example.OwnerTest', 'example.ConsumerTest', 'example.OtherTest'})
+        output = run()
+        self.assertIn('Already initialized.', output)
+        self.assertNotIn('Test impact: Test impact:', output)
+        self.assertNotIn('no Maven', output)
+        self.assertNotIn('0 observed', output)
+        before = progressive.path(self.repo).read_bytes()
+        run('--dry-run')
+        self.assertEqual(progressive.path(self.repo).read_bytes(), before)
+        self.assertIn('static map updated · 3 test classes', run())
+        self.assertIn('static map updated · 3 test classes', run('--force'))
+        self.assertIn('deferred: run makevn doctor', run('--force', available=False))
+        self.assertIn('deferred: Python 3', run('--force', python_available=False))
+        (self.repo / 'pom.xml').write_text('<project><modules><module>child</module></modules></project>')
+        self.assertIn('deferred:', run('--force'))
+
     def plan(self):
         with contextlib.redirect_stderr(io.StringIO()):
             return progressive.narrow(self.repo, self.repo, '.', [self.source], set(), 'HEAD')
