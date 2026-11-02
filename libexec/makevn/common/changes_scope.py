@@ -237,15 +237,16 @@ def focused_plan(repo, base, reference, paths):
         except (OSError, ValueError, ET.ParseError) as error:
             raise ExhaustiveScopeRequired('Unresolved reactor consumers: ' + str(error) + '; use --exhaustive') from error
     records, impact_cache = [], {}
+    from progressive_impact import narrow, report_fallbacks
     for owner in sorted(suites | tests.keys()):
         if not (base / owner / "pom.xml").is_file():
             raise ExhaustiveScopeRequired("No owner POM for " + owner + "; use --exhaustive")
         chosen = None
         if owner in suites and os.environ.get('MAKEVN_TEST_IMPACT_CAPTURE') != 'true':
-            from progressive_impact import narrow
             chosen = narrow(repo, base, owner, paths, tests.get(owner, set()), reference, impact_cache)
         records.append(owner + "\t" + (",".join(sorted(chosen)) if chosen else
                        "*" if owner in suites else ",".join(sorted(tests[owner]))))
+    report_fallbacks(impact_cache)
     return "\n".join(records)
 
 
