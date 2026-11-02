@@ -89,6 +89,17 @@ When doctor/configuration or the approved workflow requires boot containers:
 | Confirmed bind mismatch or unknown ownership | Diagnose the checkout/mount/project scope and obtain any needed authorization before changing the environment. |
 | Diagnosed need for fresh service data | Use the matching reset tool only with explicit authorization for deletion of that Compose project's data; do not reuse ordinary startup authorization. |
 
+If `docker_up` or `karate_docker_up` fails after partially starting the stack,
+read the returned log and service diagnostics before choosing a recovery action.
+If containers belonging to the selected Compose project remain in a failed or
+partial state and stopping that project is authorized, use the matching
+volume-preserving `docker_down` or `karate_docker_down`, then run the matching up
+command and the required readiness check. Stop if down fails. An orphan warning
+or an exited service does not identify the root cause; investigate the service
+failure before attributing it to existing containers. Do not down containers with
+unknown or different project ownership, and do not use reset unless deleting
+project volume data was explicitly authorized.
+
 In an MCP session, perform these calls through MCP and collect decisions in chat.
 Saving doctor preferences and resetting Docker data are separate operations.
 Reuse previously supplied authorization and ask only unresolved decisions.

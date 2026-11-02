@@ -48,6 +48,12 @@ considering an explicitly authorized reset. Missing services alone do not requir
 doctor, init or resetting doctor configuration.
 Inspect logs already returned by MakeVN. Do not invent a logs/inspect command:
 consult installed command help/tool schemas and report unsupported capabilities.
+If `docker_up` fails after starting some services, inspect its log and the
+affected service diagnostics before retrying. If the selected Compose project's
+containers are left in a failed or partial state and stopping that project is
+authorized, recover with the matching volume-preserving `docker_down`, then
+`docker_up`, and check `docker_ps_required`. Do not infer the root cause from an
+orphan warning or a service exit, or tear down an unrelated or unknown project.
 
 ### Disabling Compose discovery
 

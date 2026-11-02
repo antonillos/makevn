@@ -298,14 +298,16 @@ makevn_collect_verify_changes_scope() {
   fi
 
   MAKEVN_VERIFY_CHANGES_PARENT_SPEC="$(makevn_detect_parent_branch_spec "${repo_root}")"
+  diff_local="$(
+    git -C "${git_root}" diff --name-only HEAD
+    git -C "${git_root}" ls-files --others --exclude-standard -- "${strip_prefix}src/test/resources/"
+  )"
   if [[ "${MAKEVN_VERIFY_CHANGES_PARENT_SPEC}" == "HEAD" ]]; then
-    diff_local="$(git -C "${git_root}" diff --name-only HEAD || true)"
     MAKEVN_VERIFY_CHANGES_DIFF_LOCAL="${diff_local}"
     MAKEVN_VERIFY_CHANGES_SRC_FILES="$(printf '%s\n' "${diff_local}" | grep -E "${path_prefix_regex}.*src/main/java/.*\.java$" || true)"
     MAKEVN_VERIFY_CHANGES_TEST_FILES="$(printf '%s\n' "${diff_local}" | grep -E "${path_prefix_regex}.*src/test/java/.*\.java$" || true)"
   else
     diff_base="$(makevn_first_parent_diff_names "${git_root}" "${MAKEVN_VERIFY_CHANGES_PARENT_SPEC}")"
-    diff_local="$(git -C "${git_root}" diff --name-only HEAD || true)"
     MAKEVN_VERIFY_CHANGES_DIFF_LOCAL="${diff_local}"
     MAKEVN_VERIFY_CHANGES_SRC_FILES="$(printf '%s\n%s\n' "${diff_base}" "${diff_local}" | grep -E "${path_prefix_regex}.*src/main/java/.*\.java$" | LC_ALL=C sort -u || true)"
     MAKEVN_VERIFY_CHANGES_TEST_FILES="$(printf '%s\n%s\n' "${diff_base}" "${diff_local}" | grep -E "${path_prefix_regex}.*src/test/java/.*\.java$" | LC_ALL=C sort -u || true)"
@@ -314,6 +316,11 @@ makevn_collect_verify_changes_scope() {
   local changed_paths=""
   local comparison_base="HEAD"
   changed_paths="$(printf '%s\n%s\n' "${diff_base:-}" "${diff_local}" | LC_ALL=C sort -u | sed '/^$/d')"
+  if [[ "${MAKEVN_VERIFY_CHANGES_PARENT_SPEC}" == HEAD \
+    && "$(git -C "${git_root}" rev-parse --abbrev-ref HEAD)" == HEAD \
+    && -z "${changed_paths}" ]]; then
+    makevn_die "Cannot determine changed-code scope in a clean detached worktree: no parent branch is available. Fetch the parent branch or run makevn verify for the whole project."
+  fi
   if [[ "${MAKEVN_VERIFY_CHANGES_PARENT_SPEC}" != HEAD ]]; then
     comparison_base="$(git -C "${git_root}" merge-base "${MAKEVN_VERIFY_CHANGES_PARENT_SPEC%...HEAD}" HEAD)"
   fi

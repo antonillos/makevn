@@ -37,6 +37,13 @@ Exhaustive selected suites still differ from whole-project `verify`. Unknown imp
 requires another exhaustive preview and explanation; never silently broaden.
 A successful preview runs no tests. Preserve existing authorization when broadening.
 
+If preparation adds shared fixtures and verification reports missing complete
+consumer suites, inspect the named files, preserve applicable prepared fixtures
+and repeat the preview in the same worktree and mode. Review and explain its new
+scope before retrying under existing authorization. Do not delete or stage the
+fixtures to bypass this check or repeat the unchanged plan. Preparation's Maven
+`BUILD SUCCESS` does not establish that any tests ran.
+
 Production changes start with conservative static dependency selection. Standard
 single-module and literal local reactor Java projects on JDK 17+ are supported; unknown impact retains complete
 owner suites. Static selection does not require a prior test run or compiled code.
