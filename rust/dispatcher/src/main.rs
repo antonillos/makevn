@@ -1120,7 +1120,7 @@ fn dispatch_backend_invocations(
             None
         };
 
-        let phase_files = if matches!(fallback_title.as_str(), "karate-all" | "test" | "verify-changes")
+        let phase_files = if matches!(fallback_title.as_str(), "karate-all" | "test" | "verify-changes" | "test-impact-init")
             || (use_frontend_loader && fallback_title == "doctor")
         {
             Some(BackendPhaseFiles::new()?)
@@ -1276,7 +1276,7 @@ fn dispatch_backend_invocations(
             detail_lines: stderr_details,
             ..summary.clone()
         };
-        if fallback_title == "verify-changes" && has_phases {
+        if matches!(fallback_title.as_str(), "verify-changes" | "test-impact-init") && has_phases {
             completed_summaries.push(focused_summary(summary, phases));
         } else {
             completed_summaries.extend(phases);
@@ -1286,7 +1286,7 @@ fn dispatch_backend_invocations(
         }
         append_command_diagnostics(
             &mut completed_summaries, diagnostics,
-            has_phases && fallback_title != "verify-changes",
+            has_phases && !matches!(fallback_title.as_str(), "verify-changes" | "test-impact-init"),
         );
 
         if last_exit_code != 0 {
@@ -1606,7 +1606,7 @@ fn run_backend_with_loader(
         }
         let mut live_summaries = completed_summaries.to_vec();
         if let Some(phases) = phase_files {
-            if fallback_title == "verify-changes" {
+            if matches!(fallback_title, "verify-changes" | "test-impact-init") {
                 let parent = summary_from_backend_metadata(
                     0, format_duration(started_at.elapsed()), fallback_title, None,
                 );
