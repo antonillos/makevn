@@ -31,22 +31,36 @@ makevn_validate_prepared_impact() {
 }
 
 cmd_test_impact() (
-  local repo_root="$1" mode="$2" base java_home rc=0
+  local repo_root="$1" mode="$2"
   shift 2
   [[ $# -eq 0 ]] || makevn_die "test-impact-${mode} does not accept additional arguments"
   if [[ "${mode}" == init && "${MAKEVN_TEST_IMPACT_LOCK_HELD:-}" != true ]]; then
     python3 "${SCRIPT_DIR}/common/test_impact_lock.py" "${repo_root}" "${SCRIPT_DIR}/cli.sh" test-impact-init
     return $?
   fi
+  makevn_run_test_impact "${repo_root}" "${mode}"
+)
+
+makevn_test_impact_status() {
+  local repo_root="$1" base java_home
   makevn_load_profile "${repo_root}"
   base="$(makevn_detect_maven_base_path "${repo_root}")" || return $?
   java_home="$(makevn_effective_java_home "${repo_root}" code "${base}")" || return $?
-  python3 "${SCRIPT_DIR}/common/test_impact.py" status "${repo_root}" "${base}" "${java_home}/bin/java" || rc=$?
-  [[ "${rc}" == 0 || "${rc}" == 2 ]] || return "${rc}"
-  [[ "${mode}" == init && "${rc}" == 2 ]] || return 0
-  local MAKEVN_TEST_IMPACT_INITIALIZE=true
-  cmd_verify_changes "${repo_root}" --record-test-impact
-)
+  python3 "${SCRIPT_DIR}/common/test_impact.py" status "${repo_root}" "${base}" "${java_home}/bin/java"
+}
+
+makevn_run_test_impact() {
+  local rc=0
+  makevn_test_impact_status "$1" || rc=$?
+  case "$2:${rc}" in
+    init:2)
+      local MAKEVN_TEST_IMPACT_INITIALIZE=true
+      cmd_verify_changes "$1" --record-test-impact
+      ;;
+    preview:0|preview:2|init:0) return 0 ;;
+    *) return "${rc}" ;;
+  esac
+}
 
 makevn_test_impact_scope() {
   MAKEVN_VERIFY_CHANGES_PARENT_SPEC=HEAD
