@@ -105,6 +105,61 @@ class TestImpactTests(unittest.TestCase):
         self.assertIn('previous capture did not complete', output.getvalue())
         self.assertNotIn('altered', output.getvalue())
 
+    def test_skipped_optional_class_is_published_without_record_and_always_selected(self):
+        stamp = self.repo / 'stamp'
+        stamp.touch()
+        reports = self.repo / 'target/surefire-reports'
+        reports.mkdir(parents=True)
+        reports.joinpath('TEST-active.xml').write_text(
+            '<testsuite><testcase classname="example.OwnerTest"/></testsuite>')
+        reports.joinpath('TEST-optional.xml').write_text(
+            '<testsuite><testcase classname="example.OtherTest"><skipped '
+            'message="optional property missing"/></testcase></testsuite>')
+        with contextlib.redirect_stdout(io.StringIO()) as output:
+            impact.begin(self.repo, self.repo, Path('java'), stamp)
+        self.assertEqual(output.getvalue().strip(), 'example.OwnerTest')
+        path = impact.state(self.repo) / 'capture.json'
+        value = impact.sealed_load(path)
+        self.assertEqual(value['skipped'], {'example.OtherTest': ['optional property missing']})
+        value['records'] = {'example.OwnerTest': ['example.Owner']}
+        impact.sealed_save(path, value)
+        impact.finish(self.repo, self.repo, Path('java'))
+        with contextlib.redirect_stdout(io.StringIO()):
+            self.assertTrue(impact.capture_status(self.repo, self.repo, Path('java')))
+        (self.repo / self.source).write_text('changed body')
+        selected, _ = self.plan()
+        self.assertEqual(selected, {'example.OwnerTest', 'example.OtherTest'})
+        with patch.object(impact, 'context', return_value={'java': 'changed'}):
+            self.assertIsNone(self.plan()[0])
+
+    def test_all_skipped_baseline_cannot_seed_map(self):
+        stamp = self.repo / 'stamp'
+        stamp.touch()
+        report = self.repo / 'target/surefire-reports/TEST-example.OwnerTest.xml'
+        report.parent.mkdir(parents=True)
+        report.write_text('<testsuite><testcase classname="example.OwnerTest"><skipped/></testcase></testsuite>')
+        with self.assertRaisesRegex(ValueError, 'no fresh complete-suite'):
+            impact.report_inventory(self.repo, stamp, {})
+
+    def test_partially_skipped_class_is_active_and_always_retained(self):
+        stamp = self.repo / 'stamp'
+        stamp.touch()
+        report = self.repo / 'target/surefire-reports/TEST-example.OwnerTest.xml'
+        report.parent.mkdir(parents=True)
+        report.write_text('<testsuite><testcase classname="example.OwnerTest"/>'
+                          '<testcase classname="example.OwnerTest"><skipped/></testcase></testsuite>')
+        skipped = {}
+        self.assertEqual(impact.report_inventory(self.repo, stamp, skipped), ['example.OwnerTest'])
+        self.assertEqual(skipped, {'example.OwnerTest': ['no reason reported']})
+
+    def test_optional_inventory_change_restarts_checkpoint(self):
+        self.checkpoint()
+        value = impact.sealed_load(impact.state(self.repo) / 'capture.json')
+        value['skipped'] = {'example.OptionalTest': ['disabled']}
+        impact.sealed_save(impact.state(self.repo) / 'capture.json', value)
+        self.assertEqual(self.begin_capture(),
+                         ['example.ConsumerTest', 'example.OtherTest', 'example.OwnerTest'])
+
     def checkpoint(self):
         value = dict(self.value)
         value['status'] = 'pending'

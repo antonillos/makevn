@@ -41,7 +41,13 @@ It requires changed inputs selecting the complete root owner suite; initializati
 supports a clean checkout. Ordinary focused runs never capture automatically.
 
 Capture requires fresh non-skipped Surefire/Failsafe reports and matching JVM
-traces. Failed, entirely skipped or missing classes cannot be published. Nested
+traces for active classes. Classes containing skipped cases are stored separately with
+skip reasons and are always selected during focused verification. Their fresh
+reports may remain skipped; if they activate, they must pass. Skipped cases never
+provide class-loading coverage or justify dropping another test. Missing, stale or failed
+reports remain errors. Context changes invalidate reuse as before, and a changed
+optional inventory restarts capture checkpoints. A suite with no active tests
+cannot seed a map. Older map formats require recapture. Nested
 and parameterized cases belong to their top-level class. Custom test ownership,
 reactors and generated Java remain unsupported. Repository-wide coverage rules
 are not disabled and can prevent isolated replay from completing.

@@ -112,7 +112,7 @@ makevn_focused_test_selection() {
 
 makevn_require_focused_test_reports() {
   [[ -n "${MAKEVN_FOCUSED_SELECTED_TESTS:-}" ]] || return 0
-  python3 "${SCRIPT_DIR}/common/selected_test_reports.py" "${MAKEVN_FOCUSED_REPORT_MODULE}" "${MAKEVN_FOCUSED_SELECTED_TESTS}" "${MAKEVN_FOCUSED_REPORT_STAMP}"
+  python3 "${SCRIPT_DIR}/common/selected_test_reports.py" "${MAKEVN_FOCUSED_REPORT_MODULE}" "${MAKEVN_FOCUSED_SELECTED_TESTS}" "${MAKEVN_FOCUSED_REPORT_STAMP}" "${repo_root}"
 }
 
 makevn_validate_focused_flags() {

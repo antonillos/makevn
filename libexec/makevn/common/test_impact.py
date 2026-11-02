@@ -14,7 +14,7 @@ import urllib.parse
 import xml.etree.ElementTree as ET
 import zipfile
 
-VERSION = 4
+VERSION = 5
 DYNAMIC = {'forName', 'loadClass', 'getDeclaredMethod', 'getDeclaredMethods',
            'getDeclaredConstructor', 'getDeclaredConstructors', 'getMethod', 'getMethods',
            'getConstructor', 'getConstructors', 'ServiceLoader', 'MethodHandle',
@@ -217,7 +217,7 @@ def validate_layout(base):
             raise ValueError('generated Java sources have no validated impact graph')
 
 
-def report_inventory(base, stamp):
+def report_inventory(base, stamp, skipped=None):
     tests = set()
     for plugin in ['surefire-reports', 'failsafe-reports']:
         for path in (base / 'target' / plugin).glob('TEST-*.xml'):
@@ -229,19 +229,26 @@ def report_inventory(base, stamp):
                 raise ValueError('baseline has empty or failed test reports')
             names = {case.get('classname', '').split('$')[0] for case in cases}
             for name in names:
-                if not name or not any(case.get('classname', '').split('$')[0] == name and
-                                       case.find('skipped') is None for case in cases):
-                    reasons = sorted({case.find('skipped').get('message') or
-                                      (case.find('skipped').text or '').strip() or 'no reason reported'
-                                      for case in cases
-                                      if case.get('classname', '').split('$')[0] == name
-                                      and case.find('skipped') is not None})
-                    raise ValueError('baseline has an entirely skipped test class: ' + name +
-                                     '; reason: ' + '; '.join(reasons) + '; report: ' + str(path))
+                if not name:
+                    raise ValueError('baseline test report has no class name: ' + str(path))
                 from selected_test_reports import is_integration
                 if is_integration(base, name) != (plugin == 'failsafe-reports'):
                     raise ValueError('custom test plugin ownership is unsupported: ' + name)
-                tests.add(name)
+                matching = [case for case in cases if case.get('classname', '').split('$')[0] == name]
+                active = any(case.find('skipped') is None for case in matching)
+                reasons = sorted({case.find('skipped').get('message') or
+                                  (case.find('skipped').text or '').strip() or 'no reason reported'
+                                  for case in matching if case.find('skipped') is not None})
+                if reasons:
+                    if skipped is None and not active:
+                        raise ValueError('baseline has an entirely skipped test class: ' + name +
+                                         '; reason: ' + '; '.join(reasons) + '; report: ' + str(path))
+                    if skipped is not None:
+                        skipped[name] = sorted(set(skipped.get(name, [])) | set(reasons))
+                        print('Test impact: optional class ' + name + '; reason: ' + '; '.join(reasons) +
+                              '; report: ' + str(path) + '; always retained in focused verification', file=sys.stderr)
+                if active:
+                    tests.add(name)
     if not tests:
         raise ValueError('no fresh complete-suite test inventory')
     return sorted(tests)
@@ -332,9 +339,10 @@ def begin(repo, base, java, stamp):
     save(directory / 'map.json', {'version': VERSION, 'status': 'pending'})
     validate_layout(base)
     source_facts = facts(base, java)
-    tests = report_inventory(base, stamp)
+    skipped = {}
+    tests = report_inventory(base, stamp, skipped)
     known = {value['class'] for key, value in source_facts.items() if key.startswith('src/test/java/')}
-    if not set(tests).issubset(known):
+    if not (set(tests) | set(skipped)).issubset(known):
         raise ValueError('test inventory has nonstandard/generated source ownership')
     compiled = bytecode(base)
     known = {value['class'] for value in source_facts.values()}
@@ -345,11 +353,11 @@ def begin(repo, base, java, stamp):
     value = {'version': VERSION, 'status': 'pending', 'base': str(base),
              'head': subprocess.check_output(['git', '-C', str(repo), 'rev-parse', 'HEAD']).decode().strip(),
              'inputs': inputs(repo, base), 'context': context(java), 'facts': source_facts,
-             'bytecode': compiled, 'tests': tests, 'records': {}, 'jars': {}, 'owned_jars': {}}
+             'bytecode': compiled, 'tests': tests, 'skipped': skipped, 'records': {}, 'jars': {}, 'owned_jars': {}}
     value['models'] = repository_models()
     try:
         previous = compatible_capture(repo, base, java, directory / 'capture.json')
-        if previous['tests'] == tests:
+        if previous['tests'] == tests and previous.get('skipped', {}) == skipped:
             value = previous
             value['status'] = 'pending'
         else:
@@ -528,13 +536,13 @@ def narrow(repo, base, owner, paths, changed_tests):
         # Any dynamic source is a potential consumer of the changed code. Include
         # its transitive callers and tests rather than assuming no reflective edge.
         impacted = impacted_classes(parsed, changed)
-        selected = set(changed_tests)
+        selected = set(changed_tests) | set(value.get('skipped', {}))
         selected.update(name for name, loaded in value['records'].items()
                         if impacted.intersection(loaded) or name in impacted)
         if not selected or not any(changed.intersection(loaded) for loaded in value['records'].values()):
             raise ValueError('changed classes have no recorded test evidence')
         print('Test impact ' + owner + ': validated isolated JVM evidence; ' + str(len(selected)) +
-              '/' + str(len(value['tests'])) + ' test classes selected; baseline ' + value['head'][:12], file=sys.stderr)
+              '/' + str(len(set(value['tests']) | set(value.get('skipped', {})))) + ' test classes selected; baseline ' + value['head'][:12], file=sys.stderr)
         return selected
     except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError, ET.ParseError) as error:
         print('Test impact ' + owner + ': entire module suite; ' + str(error), file=sys.stderr)
