@@ -67,9 +67,12 @@ class MavenInspectionTests(unittest.TestCase):
             (root / "pom.xml").write_text(pom().replace(
                 "<configuration><rules>",
                 "<configuration><skip>${skipEnforceSnapshots}</skip><rules>", 1))
+            executable = root / "mvn"
+            executable.write_text("#!/bin/sh\necho 'Apache Maven 3.9.9'\n")
+            executable.chmod(0o755)
             script = r'''source "$1/common/maven_validation.sh"
 MAKEVN_LIBEXEC_DIR="$1"
-makevn_check_maven_command "$2" "$2" "" env EXAMPLE=value mvn verify "$3"
+makevn_check_maven_command "$2" "$2" "" env EXAMPLE=value "$2/mvn" verify "$3"
 '''
             for flag, expected in (("-DskipEnforceSnapshots", 0),
                                    ("-Dunrelated=true", 1)):
