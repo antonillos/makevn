@@ -1277,6 +1277,7 @@ fn dispatch_backend_invocations(
             ..summary.clone()
         };
         if matches!(fallback_title.as_str(), "verify-changes" | "test-impact-init") && has_phases {
+            summary.title = fallback_title.clone();
             completed_summaries.push(focused_summary(summary, phases));
         } else {
             completed_summaries.extend(phases);
@@ -1976,7 +1977,8 @@ fn backend_header_line(metadata: &BackendMetadata) -> String {
 }
 
 fn backend_tail_notice_line(metadata: &BackendMetadata) -> String {
-    dim_text(&format!(" └ tailing log: {}", metadata.relative_log_path))
+    let prefix = if metadata.command == "verify-changes" { "│    └" } else { " └" };
+    dim_text(&format!("{prefix} tailing log: {}", metadata.relative_log_path))
 }
 
 fn print_final_dashboard(
@@ -2074,7 +2076,9 @@ fn focused_summary(mut parent: CommandSummary, phases: Vec<CommandSummary>) -> C
         details.extend(phase.detail_lines.iter().map(|line| format!("│    {line}")));
     }
     details.extend(parent.detail_lines);
-    parent.title = "verify-changes".to_owned();
+    if parent.title != "test-impact-init" {
+        parent.title = "verify-changes".to_owned();
+    }
     parent.relative_log_path = None;
     parent.detail_lines = details;
     parent
@@ -2085,9 +2089,9 @@ fn live_summary_lines(summaries: &[CommandSummary], metadata: &BackendMetadata) 
     for (index, summary) in summaries.iter().enumerate() {
         if metadata.command == "verify-changes"
             && index + 1 == summaries.len()
-            && summary.title == "verify-changes"
+            && matches!(summary.title.as_str(), "verify-changes" | "test-impact-init")
         {
-            lines.push(format!("{} {}", active_action_text("[•]"), active_action_text("makevn verify-changes")));
+            lines.push(format!("{} {}", active_action_text("[•]"), active_action_text(&format!("makevn {}", summary.title))));
             lines.extend(summary.detail_lines.iter().map(|line| detail_line(line)));
         } else {
             lines.extend(completed_summary_lines(std::slice::from_ref(summary)));

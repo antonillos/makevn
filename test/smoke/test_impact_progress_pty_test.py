@@ -66,8 +66,12 @@ def verify(binary):
             lines = screen.lines()
             assert any('prepare dependencies' in line and 'verify-changes-1.log' in line
                        for line in lines), '\n'.join(lines)
+            assert any('[•] makevn test-impact-init' in line for line in lines)
+            os.write(fd, b't')
+            until(lambda lines: any('│    └ tailing log: verify-changes-2.log' in line for line in lines))
             (repo / 'ack-2').touch()
             until(lambda lines: any('[ok]' in line for line in lines))
+            assert any('[✓] test-impact-init' in line for line in screen.lines())
             assert any('prepare dependencies' in line for line in screen.lines())
             assert any('example.OwnerTest' in line for line in screen.lines())
             _, status = os.waitpid(pid, 0)
