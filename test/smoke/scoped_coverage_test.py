@@ -207,6 +207,30 @@ class ScopedTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'Comparison base changed'):
             scoped.load(self.repo, self.state)
 
+    def test_comparison_tip_can_advance_without_changing_diff_base(self):
+        subprocess.run(['git', '-C', str(self.repo), 'branch', 'comparison'], check=True)
+        scoped.prepare(self.repo, self.state, self.repo, ['client', 'boot'], [], 'comparison...HEAD')
+        scoped.finish(self.repo, self.state)
+        new_tip = subprocess.check_output([
+            'git', '-C', str(self.repo), '-c', 'user.name=Test', '-c', 'user.email=test@example.com',
+            'commit-tree', 'HEAD^{tree}', '-p', 'HEAD', '-m', 'unrelated base advancement']).decode().strip()
+        subprocess.run(['git', '-C', str(self.repo), 'branch', '-f', 'comparison', new_tip], check=True)
+        manifest = scoped.load(self.repo, self.state)
+        self.assertNotEqual(manifest['comparison_head'], new_tip)
+        scoped.report(self.repo, self.state, 'unused-maven', 'unused-java', 'comparison')
+
+    def test_merge_base_change_is_rejected_without_head_change(self):
+        subprocess.run(['git', '-C', str(self.repo), 'branch', 'comparison'], check=True)
+        feature = subprocess.check_output([
+            'git', '-C', str(self.repo), '-c', 'user.name=Test', '-c', 'user.email=test@example.com',
+            'commit-tree', 'HEAD^{tree}', '-p', 'HEAD', '-m', 'feature']).decode().strip()
+        subprocess.run(['git', '-C', str(self.repo), 'checkout', '--detach', feature], check=True, capture_output=True)
+        scoped.prepare(self.repo, self.state, self.repo, ['client', 'boot'], [], 'comparison...HEAD')
+        scoped.finish(self.repo, self.state)
+        subprocess.run(['git', '-C', str(self.repo), 'branch', '-f', 'comparison', feature], check=True)
+        with self.assertRaisesRegex(ValueError, 'Comparison base changed'):
+            scoped.load(self.repo, self.state)
+
     def test_report_is_direct_cli_and_reused_by_second_gate(self):
         manifest = self.ready()
         output = Path(manifest['report'])

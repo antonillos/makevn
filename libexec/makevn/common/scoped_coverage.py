@@ -14,6 +14,11 @@ import xml.etree.ElementTree as ET
 VERSION = '0.8.14'
 
 
+def comparison_commit(repo, reference):
+    return subprocess.check_output(['git', '-C', str(repo), 'merge-base',
+                                    reference.removesuffix('...HEAD'), 'HEAD']).decode().strip()
+
+
 def fingerprint(repo, base=None, inputs=None):
     head = subprocess.check_output(['git', '-C', str(repo), 'rev-parse', 'HEAD'])
     git_root = Path(subprocess.check_output(['git', '-C', str(repo), 'rev-parse', '--show-toplevel']).decode().strip()).resolve()
@@ -73,7 +78,8 @@ def prepare(repo, state, base, owners, sources, reference="HEAD"):
     state.mkdir(parents=True, exist_ok=True)
     inputs = {}
     manifest = {'status': 'pending', 'fingerprint': fingerprint(repo, base, inputs), 'inputs': inputs, 'base': str(base),
-                'owners': owners, 'sources': sources, 'comparison': comparison, 'comparison_head': comparison_head}
+                'owners': owners, 'sources': sources, 'comparison': comparison, 'comparison_head': comparison_head,
+                'comparison_base': comparison_commit(repo, reference)}
     (state / 'run.json').write_text(json.dumps(manifest))
     for evidence in state.glob('evidence-*'):
         if evidence.is_dir() and not evidence.is_symlink():
@@ -187,8 +193,7 @@ def finish(repo, state):
 
 def load(repo, state):
     manifest = json.loads((state / 'run.json').read_text())
-    comparison_head = subprocess.check_output(['git', '-C', str(repo), 'rev-parse', manifest['comparison']]).decode().strip()
-    if comparison_head != manifest['comparison_head']:
+    if comparison_commit(repo, manifest['comparison']) != manifest.get('comparison_base', manifest['comparison_head']):
         raise ValueError('Comparison base changed; rerun verify-changes')
     if manifest['status'] != 'success':
         raise ValueError('Focused coverage is incomplete: the last verification did not complete successfully '
@@ -212,8 +217,9 @@ def load(repo, state):
 
 def report(repo, state, maven, java, reference=""):
     if reference:
-        requested = subprocess.check_output(["git", "-C", str(repo), "rev-parse", reference.removesuffix("...HEAD")]).decode().strip()
-        if requested != load(repo, state)["comparison_head"]:
+        requested = comparison_commit(repo, reference)
+        manifest = load(repo, state)
+        if requested != manifest.get('comparison_base', manifest['comparison_head']):
             raise ValueError("Requested base differs from focused verification; rerun matching verification")
     manifest = load(repo, state)
     if not manifest['expected']:
@@ -276,8 +282,8 @@ def main():
     elif action == 'applicability':
         manifest = load(repo, state)
         if args and args[0]:
-            requested = subprocess.check_output(['git', '-C', str(repo), 'rev-parse', args[0].removesuffix('...HEAD')]).decode().strip()
-            if requested != manifest['comparison_head']:
+            requested = comparison_commit(repo, args[0])
+            if requested != manifest.get('comparison_base', manifest['comparison_head']):
                 raise ValueError('Requested base differs from focused verification; rerun matching verification')
         print('applicable' if manifest['expected'] else 'not-applicable')
     else:
