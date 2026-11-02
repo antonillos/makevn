@@ -45,7 +45,10 @@ makevn_test_impact_status() {
   local repo_root="$1" base java_home
   makevn_load_profile "${repo_root}"
   base="$(makevn_detect_maven_base_path "${repo_root}")" || return $?
-  java_home="$(makevn_effective_java_home "${repo_root}" code "${base}")" || return $?
+  java_home="$(makevn_effective_java_home "${repo_root}" code "${base}")" || {
+    printf 'Cannot inspect test impact: no unambiguous compatible JDK is configured. Run makevn doctor and resolve Java selection before retrying.\n' >&2
+    return 1
+  }
   python3 "${SCRIPT_DIR}/common/test_impact.py" status "${repo_root}" "${base}" "${java_home}/bin/java"
 }
 

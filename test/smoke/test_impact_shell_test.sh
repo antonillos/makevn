@@ -83,3 +83,10 @@ python3 "${SCRIPT_DIR}/common/selected_test_reports.py" "${tmp}" example.Optiona
 printf '<testsuite><testcase classname="example.OptionalTest"><failure/></testcase></testsuite>' > "${tmp}/target/surefire-reports/TEST-OptionalTest.xml"
 if python3 "${SCRIPT_DIR}/common/selected_test_reports.py" "${tmp}" example.OptionalTest "${stamp}" "${tmp}"; then exit 1; fi
 printf 'Test impact shell capture, optional reports and failure invalidation passed\n'
+
+# A JDK selection failure must be actionable before any capture starts.
+makevn_load_profile() { :; }
+makevn_detect_maven_base_path() { printf '%s\n' "${tmp}"; }
+makevn_effective_java_home() { return 1; }
+if diagnostic="$(makevn_test_impact_status "${tmp}" 2>&1)"; then exit 1; fi
+[[ "${diagnostic}" == *'Run makevn doctor and resolve Java selection'* ]]
