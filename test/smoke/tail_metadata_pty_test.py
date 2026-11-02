@@ -253,6 +253,8 @@ if __name__ == '__main__':
         verify(str(Path(sys.argv[1]).resolve()), hide_at_end=True)
         subprocess.run([sys.executable, str(Path(__file__).with_name('dashboard_transition_pty_test.py')),
                         str(Path(sys.argv[1]).resolve())], check=True)
+        subprocess.run([sys.executable, str(Path(__file__).with_name('test_impact_progress_pty_test.py')),
+                        str(Path(sys.argv[1]).resolve())], check=True)
         print('Tail metadata PTY regression tests passed')
     else:
         print('Tail metadata PTY test skipped: Rust dispatcher not built')

@@ -20,7 +20,7 @@ from pathlib import Path
 import sys
 root = Path(sys.argv[1])
 (root / 'pom.xml').write_text('<project/>')
-for name in ['Owner', 'Other', 'OwnerTest', 'OtherTest']:
+for name in ['Owner', 'Other', 'OwnerTest', 'OtherTest', 'OptionalTest']:
     kind = 'test' if name.endswith('Test') else 'main'
     path = root / ('src/' + kind + '/java/example/' + name + '.java')
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -35,6 +35,7 @@ mkdir -p "${tmp}/target/surefire-reports"
 for name in OwnerTest OtherTest; do
   printf '<testsuite><testcase classname="example.%s"/></testsuite>' "${name}" > "${tmp}/target/surefire-reports/TEST-${name}.xml"
 done
+printf '<testsuite><testcase classname="example.OptionalTest"><skipped message="live test disabled"/></testcase></testsuite>' > "${tmp}/target/surefire-reports/TEST-OptionalTest.xml"
 MAKEVN_VERIFY_CHANGES_MAVEN_BASE_PATH="${tmp}"
 MAKEVN_TEST_IMPACT_CAPTURE=true
 MAKEVN_FOCUSED_PHASE_INDEX=2
@@ -54,6 +55,7 @@ import json, sys
 value = json.load(open(sys.argv[1]))
 assert value['status'] == 'success'
 assert set(value['records']) == {'example.OwnerTest', 'example.OtherTest'}
+assert value['skipped'] == {'example.OptionalTest': ['live test disabled']}
 PY
 # Resume a sealed partial checkpoint, then fail its remaining class.
 python3 - "${tmp}" "${SCRIPT_DIR}/common" <<'PYTEST'
@@ -75,4 +77,16 @@ makevn_capture_test_impact "${tmp}" "${stamp}"
 [[ "$(wc -l < "${tmp}/.makevn/isolated-calls" | tr -d ' ')" == 3 ]]
 MAKEVN_TEST_IMPACT_CAPTURE=false
 makevn_capture_test_impact "${tmp}" "${stamp}"
-printf 'Test impact shell capture and failure invalidation passed\n'
+
+# Optional classes still require fresh reports; activation failures cannot pass.
+python3 "${SCRIPT_DIR}/common/selected_test_reports.py" "${tmp}" example.OptionalTest "${stamp}" "${tmp}"
+printf '<testsuite><testcase classname="example.OptionalTest"><failure/></testcase></testsuite>' > "${tmp}/target/surefire-reports/TEST-OptionalTest.xml"
+if python3 "${SCRIPT_DIR}/common/selected_test_reports.py" "${tmp}" example.OptionalTest "${stamp}" "${tmp}"; then exit 1; fi
+printf 'Test impact shell capture, optional reports and failure invalidation passed\n'
+
+# A JDK selection failure must be actionable before any capture starts.
+makevn_load_profile() { :; }
+makevn_detect_maven_base_path() { printf '%s\n' "${tmp}"; }
+makevn_effective_java_home() { return 1; }
+if diagnostic="$(makevn_test_impact_status "${tmp}" 2>&1)"; then exit 1; fi
+[[ "${diagnostic}" == *'Run makevn doctor and resolve Java selection'* ]]

@@ -2737,3 +2737,18 @@ fn parses_agent_upgrade_with_conventional_scope_or_explicit_override() {
         assert!(parse_invocation(args.into_iter().map(OsString::from).collect()).is_err());
     }
 }
+
+#[test]
+fn impact_initialization_preserves_its_title_and_nests_tail_under_active_phase() {
+    let mut metadata = super::pending_backend_metadata("verify-changes");
+    metadata.title = "verify . (example.OwnerTest)".into();
+    metadata.relative_log_path = "verify-changes-3.log".into();
+    let parent = super::summary_from_backend_metadata(0, "5s".into(), "test-impact-init", None);
+    let group = super::focused_summary(parent, vec![]);
+    let tail = tail_status_lines(Duration::from_secs(5), &[group.clone()], &metadata);
+    assert_eq!(tail[1], "[•] makevn test-impact-init");
+    assert!(tail.iter().any(|line| line == "│  • . (example.OwnerTest)"));
+    assert_eq!(tail.last().unwrap(), "│    └ tailing log: verify-changes-3.log");
+    let final_lines = super::final_dashboard_lines(Duration::from_secs(5), &[group], false);
+    assert_eq!(final_lines[1], "[✓] test-impact-init | 5s");
+}

@@ -52,8 +52,12 @@ fresh complete-suite reports establish the inventory. A compatible complete map
 makes initialization a no-op. Incomplete captures resume completed sealed records
 only in an identical context; initialization reruns the complete suite before
 missing class replays. Changed inputs, bytecode, JDK, environment or dependencies
-restart capture with a reason. Failed/skipped-only classes remain missing and
-partial checkpoints never enable narrowing. Concurrent captures in one checkout
+restart capture with a reason. Failed classes remain missing and partial
+checkpoints never enable narrowing.
+Skipped-only classes are recorded separately and always included in focused
+verification, with fresh reports required; activation must pass. They contribute
+no class-loading evidence. A baseline must contain at least one active class.
+Concurrent captures in one checkout
 are rejected; retain logs/checkpoints when diagnosing failures.
 
 For changed-code recording, pass `--record-test-impact` or MCP
