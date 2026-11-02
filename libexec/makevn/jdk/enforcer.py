@@ -15,6 +15,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from parent_properties import inherited_properties
 
 
+class UnresolvedSkipError(ValueError):
+    """An active version rule depends on an unresolved execution skip."""
+
+
 def models(pom, seen=None):
     seen = set() if seen is None else seen
     pom = pom.resolve()
@@ -199,7 +203,9 @@ def rules(pom, roots=None, rule_name="requireJavaVersion", user_properties=None)
         skip = configuration.findtext("skip", "false")
         try:
             skipped = resolve(skip).lower() == "true"
-        except ValueError:
+        except ValueError as error:
+            if rule_name != "requireJavaVersion":
+                raise UnresolvedSkipError(str(error)) from error
             # An unknown skip cannot justify dropping a version constraint.
             skipped = False
         if skipped:
