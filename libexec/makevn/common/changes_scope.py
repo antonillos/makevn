@@ -193,6 +193,7 @@ def selection(repo, base, reference, paths):
 
 def focused_plan(repo, base, reference, paths):
     """Full suites for production/POM owners, changed tests in other owners."""
+    paths = [path for path in paths if path]
     root_pom = base / "pom.xml"
     test_paths = {path for path in paths if "/src/test/java/" in f"/{path}"}
     root_sources = set()

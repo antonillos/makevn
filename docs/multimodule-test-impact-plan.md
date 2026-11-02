@@ -57,8 +57,10 @@ module, duplicate test names, test fixtures, runtime enrichment, optional/failed
 reports, configuration drift, custom filters and profile membership. Existing
 single-module, isolated-capture and reactor-scoping regressions remain applicable.
 
-Read-only analysis on local repositories with JDK 25 measured approximately 0.6 s
-for Petclinic Microservices (8 modules, 62 sources, 8 test classes) and 1.7 s for
-Karate (7 modules, 843 sources, 324 test classes). These measure static analysis,
-not builds or test execution, and include neither cold-disk guarantees nor a full
-verification result. CI smoke and the CRAP ratchet remain required before merge.
+An isolated Petclinic Microservices clone (8 modules, 62 sources, 8 test classes)
+initialized its static map in approximately 0.76 s on JDK 25. Focused verification
+then executed one selected test and enriched its module-qualified observation.
+A clean Karate clone correctly retained full consumer suites because it declares
+additional Java source roots. See the [validation report](test-impact-reactor-validation.md)
+for revisions, evidence and timing limits. CI smoke and the CRAP ratchet remain
+required before merge.

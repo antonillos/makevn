@@ -108,6 +108,10 @@ class ReactorProgressiveTests(unittest.TestCase):
         self.assertEqual(self.plan(), 'app\texample.FeatureTest\ncore\texample.FeatureTest\nservice\texample.FeatureTest')
         self.assertFalse((self.repo / '.makevn').exists())
 
+    def test_prepared_plan_ignores_empty_changed_test_list(self):
+        self.edit()
+        self.assertEqual(self.plan(self.source, ''), self.plan(self.source))
+
     def test_test_fixture_edit_retains_downstream_suites(self):
         path = 'core/src/test/java/example/Fixture.java'
         self.write(path, 'package example; class Fixture {}')
