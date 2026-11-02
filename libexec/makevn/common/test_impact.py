@@ -231,7 +231,13 @@ def report_inventory(base, stamp):
             for name in names:
                 if not name or not any(case.get('classname', '').split('$')[0] == name and
                                        case.find('skipped') is None for case in cases):
-                    raise ValueError('baseline has an entirely skipped test class')
+                    reasons = sorted({case.find('skipped').get('message') or
+                                      (case.find('skipped').text or '').strip() or 'no reason reported'
+                                      for case in cases
+                                      if case.get('classname', '').split('$')[0] == name
+                                      and case.find('skipped') is not None})
+                    raise ValueError('baseline has an entirely skipped test class: ' + name +
+                                     '; reason: ' + '; '.join(reasons) + '; report: ' + str(path))
                 from selected_test_reports import is_integration
                 if is_integration(base, name) != (plugin == 'failsafe-reports'):
                     raise ValueError('custom test plugin ownership is unsupported: ' + name)
@@ -282,6 +288,9 @@ def capture_status(repo, base, java):
     validate_layout(base)
     facts(base, java)
     for name in ['map.json', 'capture.json']:
+        if not (state(repo) / name).exists():
+            print('Test impact ' + name + ': no previous evidence; will create it during capture')
+            continue
         try:
             value = compatible_capture(repo, base, java, state(repo) / name)
             remaining = set(value['tests']) - set(value['records'])
@@ -305,6 +314,11 @@ def retire_capture(repo, base, java):
         if value['status'] == 'success' and set(value['records']) == set(value['tests']):
             value['status'] = 'pending'
             sealed_save(state(repo) / 'capture.json', value)
+    except FileNotFoundError as error:
+        if (state(repo) / 'map.json').exists():
+            print('Test impact map: cannot reuse: ' + str(error), file=sys.stderr)
+        else:
+            print('Test impact map: no previous map; will create one during capture', file=sys.stderr)
     except (OSError, ValueError, KeyError, TypeError) as error:
         print('Test impact map: cannot reuse: ' + str(error), file=sys.stderr)
     save(state(repo) / 'map.json', {'version': VERSION, 'status': 'pending'})

@@ -82,6 +82,17 @@ class TestImpactTests(unittest.TestCase):
         with contextlib.redirect_stdout(io.StringIO()):
             self.assertFalse(impact.capture_status(self.repo, self.repo, Path('java')))
 
+    def test_first_capture_explains_missing_evidence_without_reuse_error(self):
+        (impact.state(self.repo) / 'map.json').unlink()
+        with contextlib.redirect_stdout(io.StringIO()) as output:
+            self.assertFalse(impact.capture_status(self.repo, self.repo, Path('java')))
+        self.assertIn('no previous evidence', output.getvalue())
+        self.assertNotIn('cannot reuse', output.getvalue())
+        with contextlib.redirect_stderr(io.StringIO()) as output:
+            impact.retire_capture(self.repo, self.repo, Path('java'))
+        self.assertIn('no previous map', output.getvalue())
+        self.assertNotIn('cannot reuse', output.getvalue())
+
     def checkpoint(self):
         value = dict(self.value)
         value['status'] = 'pending'
@@ -354,9 +365,12 @@ class TestImpactTests(unittest.TestCase):
         report.write_text('<testsuite><testcase classname="example.OwnerTest"><failure/></testcase></testsuite>')
         with self.assertRaisesRegex(ValueError, 'failed'):
             impact.report_inventory(self.repo, stamp)
-        report.write_text('<testsuite><testcase classname="example.OwnerTest"><skipped/></testcase></testsuite>')
-        with self.assertRaisesRegex(ValueError, 'skipped'):
+        report.write_text('<testsuite><testcase classname="example.OwnerTest"><skipped message="optional property missing"/></testcase></testsuite>')
+        with self.assertRaisesRegex(ValueError, 'skipped') as raised:
             impact.report_inventory(self.repo, stamp)
+        self.assertIn('example.OwnerTest', str(raised.exception))
+        self.assertIn('optional property missing', str(raised.exception))
+        self.assertIn(str(report), str(raised.exception))
         report.write_text('<testsuite><testcase classname="example.OwnerTest"/></testsuite>')
         self.assertEqual(impact.report_inventory(self.repo, stamp), ['example.OwnerTest'])
         stale_after = report.stat().st_mtime_ns + 1_000_000_000
