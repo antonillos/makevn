@@ -193,6 +193,7 @@ def selection(repo, base, reference, paths):
 
 def focused_plan(repo, base, reference, paths):
     """Full suites for production/POM owners, changed tests in other owners."""
+    repo, base = repo.resolve(), base.resolve()
     paths = [path for path in paths if path]
     root_pom = base / "pom.xml"
     test_paths = {path for path in paths if "/src/test/java/" in f"/{path}"}
@@ -225,6 +226,11 @@ def focused_plan(repo, base, reference, paths):
         else:
             tests.setdefault(owner, set()).add(name[:-5].replace("/", "."))
     reactor = declared_modules(base, parse(root_pom.read_text())) if root_pom.is_file() else set()
+    shared_suites = set()
+    if reactor:
+        for path in production:
+            if (repo / path).is_relative_to(base / 'src/test/resources'):
+                shared_suites.update(shared_resource_owners(repo, base, reactor, repo / path, parse))
     source_owners = {(repo / path).relative_to(base).as_posix().split('/src/', 1)[0]
                      for path in paths if path and not non_verification_path(path)
                      and (repo / path).is_relative_to(base)
@@ -242,7 +248,7 @@ def focused_plan(repo, base, reference, paths):
         if not (base / owner / "pom.xml").is_file():
             raise ExhaustiveScopeRequired("No owner POM for " + owner + "; use --exhaustive")
         chosen = None
-        if owner in suites and os.environ.get('MAKEVN_TEST_IMPACT_CAPTURE') != 'true':
+        if owner in suites and owner not in shared_suites and os.environ.get('MAKEVN_TEST_IMPACT_CAPTURE') != 'true':
             chosen = narrow(repo, base, owner, paths, tests.get(owner, set()), reference, impact_cache)
         records.append(owner + "\t" + (",".join(sorted(chosen)) if chosen else
                        "*" if owner in suites else ",".join(sorted(tests[owner]))))

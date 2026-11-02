@@ -6,6 +6,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / 'libexec/makevn/common'))
@@ -137,6 +138,11 @@ fi
         self.legacy_mapping()
         self.assertEqual(self.plan(path, 'workspace/src/test/resources/shared/examples.yml', 'workspace/src/test/resources/shared/src/nested.avsc'), self.all_suites())
         self.assertEqual(self.plan('workspace/src/test/resources/shared-other/schema.avsc'), self.all_suites())
+
+    def test_shared_resources_keep_full_suites_despite_test_narrowing(self):
+        with patch('progressive_impact.narrow', return_value={'example.SelectedTest'}) as narrow:
+            self.assertEqual(self.plan('workspace/src/test/resources/shared/schema.avsc'), self.all_suites())
+        narrow.assert_not_called()
 
     def test_legacy_external_declaration_cannot_change_automatic_scope(self):
         self.legacy_mapping(externalChecks=['external integration suite'])
