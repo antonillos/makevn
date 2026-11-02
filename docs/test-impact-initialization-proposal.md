@@ -1,6 +1,7 @@
 # Project-wide test-impact initialization
 
-Status: proposal; the commands below are not implemented.
+Status: implementation contract. See [usage](precise-test-selection.md) for the
+current workflow.
 
 ## Problem
 

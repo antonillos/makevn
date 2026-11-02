@@ -74,6 +74,89 @@ class TestImpactTests(unittest.TestCase):
         self.assertEqual(selected, {'example.OwnerTest', 'example.ConsumerTest'})
         self.assertIn('2/3', diagnostic)
 
+    def test_initialization_is_noop_only_for_complete_identical_map(self):
+        with contextlib.redirect_stdout(io.StringIO()) as output:
+            self.assertTrue(impact.capture_status(self.repo, self.repo, Path('java')))
+        self.assertIn('no-op', output.getvalue())
+        (self.repo / self.source).write_text('changed')
+        with contextlib.redirect_stdout(io.StringIO()):
+            self.assertFalse(impact.capture_status(self.repo, self.repo, Path('java')))
+
+    def checkpoint(self):
+        value = dict(self.value)
+        value['status'] = 'pending'
+        value['records'] = {'example.OwnerTest': ['example.Owner']}
+        impact.sealed_save(impact.state(self.repo) / 'capture.json', value)
+
+    def begin_capture(self):
+        with patch.object(impact, 'report_inventory', return_value=self.value['tests']), contextlib.redirect_stdout(io.StringIO()) as output:
+            impact.begin(self.repo, self.repo, Path('java'), self.repo / 'stamp')
+        return output.getvalue().strip().splitlines()
+
+    def test_recording_retires_map_but_preserves_compatible_completed_records(self):
+        impact.retire_capture(self.repo, self.repo, Path('java'))
+        self.assertIsNone(self.plan()[0])
+        self.assertEqual(self.begin_capture(), [])
+        impact.finish(self.repo, self.repo, Path('java'))
+        self.assertIsNotNone(self.plan()[0])
+
+    def test_resuming_checkpoint_runs_only_missing_classes(self):
+        self.checkpoint()
+        self.assertEqual(self.begin_capture(), ['example.ConsumerTest', 'example.OtherTest'])
+        self.assertEqual(impact.sealed_load(impact.state(self.repo) / 'capture.json')['records'],
+                         {'example.OwnerTest': ['example.Owner']})
+        self.assertIsNone(self.plan()[0])
+
+    def test_incompatible_or_corrupt_checkpoint_restarts_all_classes(self):
+        for change in ['source', 'bytecode', 'jar', 'seal']:
+            with self.subTest(change=change):
+                self.checkpoint()
+                path = impact.state(self.repo) / 'capture.json'
+                value = impact.sealed_load(path)
+                if change == 'source':
+                    value['inputs'][self.source] = 'old'
+                elif change == 'bytecode':
+                    value['bytecode']['target/classes/example/Owner.class'] = 'old'
+                elif change == 'jar':
+                    value['jars'] = {str(self.repo / 'missing.jar'): 'old'}
+                impact.sealed_save(path, value)
+                if change == 'seal':
+                    value['records'] = {}
+                    impact.save(path, value)
+                self.assertEqual(self.begin_capture(), sorted(self.value['tests']))
+
+    def test_incomplete_checkpoint_cannot_be_published(self):
+        self.checkpoint()
+        with self.assertRaisesRegex(ValueError, 'incomplete isolated'):
+            impact.finish(self.repo, self.repo, Path('java'))
+
+    def test_consumer_index_preserves_collisions_cycles_and_dynamic_callers(self):
+        sources = {
+            'a': {'class': 'one.Owner', 'names': ['Consumer']},
+            'b': {'class': 'two.Owner', 'names': []},
+            'c': {'class': 'example.Consumer', 'names': ['Owner']},
+            'd': {'class': 'example.Dynamic', 'names': ['forName']},
+            'e': {'class': 'example.DynamicTest', 'names': ['Dynamic']},
+            'f': {'class': 'example.Unrelated', 'names': []},
+        }
+        self.assertEqual(impact.impacted_classes(sources, {'one.Owner', 'two.Owner'}),
+                         {'one.Owner', 'two.Owner', 'example.Consumer', 'example.Dynamic', 'example.DynamicTest'})
+
+    def test_consumer_index_does_not_rescan_sources_for_each_chain_step(self):
+        class Sources(dict):
+            scans = 0
+
+            def values(self):
+                self.scans += 1
+                return super().values()
+
+        sources = Sources({str(index): {'class': 'example.Type' + str(index),
+                                       'names': ['Type' + str(index - 1)]}
+                           for index in range(2000)})
+        result = impact.impacted_classes(sources, {'example.Type0'})
+        self.assertEqual(len(result), 2000)
+        self.assertEqual(sources.scans, 1)
+
     def test_changed_test_is_always_included(self):
         selected, _ = self.plan([self.source, 'src/test/java/example/OtherTest.java'], {'example.OtherTest'})
         self.assertEqual(selected, set(self.value['tests']))
@@ -227,7 +310,7 @@ class TestImpactTests(unittest.TestCase):
     def test_isolated_trace_requires_the_selected_test_jvm(self):
         value = dict(self.value)
         value['records'] = {}
-        impact.save(impact.state(self.repo) / 'capture.json', value)
+        impact.sealed_save(impact.state(self.repo) / 'capture.json', value)
         trace = impact.state(self.repo) / 'traces'
         trace.mkdir()
         (trace / '1.log').write_text('[0.1s][info][class,load] example.Owner source: file:/fixture/target/classes/\n')
@@ -308,6 +391,25 @@ class TestImpactTests(unittest.TestCase):
         self.assertIsNone(self.plan()[0])
         package(compiled=b'stale class')
         self.assertIsNone(self.plan()[0])
+
+
+class CaptureLockTests(unittest.TestCase):
+    def test_concurrent_capture_is_rejected_and_lock_is_released(self):
+        import fcntl
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            state = root / '.makevn/test-impact'
+            state.mkdir(parents=True)
+            script = root / 'backend.sh'
+            script.write_text('exit 0\n')
+            command = [sys.executable, str(ROOT / 'libexec/makevn/common/test_impact_lock.py'),
+                       str(root), str(script), 'test-impact-init']
+            with (state / 'capture.lock').open('w') as lock:
+                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                blocked = subprocess.run(command, capture_output=True, text=True)
+                self.assertNotEqual(blocked.returncode, 0)
+                self.assertIn('already running', blocked.stderr)
+            self.assertEqual(subprocess.run(command, capture_output=True).returncode, 0)
 
 
 class JavaSourceFactsTests(unittest.TestCase):

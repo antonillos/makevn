@@ -43,15 +43,30 @@ Inspect the selected test list and evidence provenance; focused does not promise
 few tests. Narrowing currently supports standard single-module Java projects with
 JDK 17+ and conventional Surefire/Failsafe ownership. Reactors retain full suites.
 
-Capturing a baseline is an explicit, expensive operation: use CLI
-`--record-test-impact` or MCP `"record-test-impact": true` in BOTH preview and
-verification. It runs the complete suite, then one isolated verification per test
-class. Do not enable it automatically for a quick test request. Failed, interrupted,
-entirely skipped-class or incomplete capture cannot enable narrowing. Normal
-focused runs reuse compatible evidence; changed declarations, helpers, resources,
-configuration, dependencies, JDK or missing evidence retain complete owner suites.
-Changed method bodies with assignment/update targets that cannot be proven local
-also retain complete suites, including removal of a previously recorded write.
+Initialize project-wide impact evidence explicitly after doctor/setup, including
+on a clean checkout: CLI `test-impact-preview` then `test-impact-init`, or MCP
+`test_impact_preview` then `test_impact_init`. This is expensive: a complete suite
+followed by isolated verification per test class. Do not capture automatically for
+a quick test request. Preview runs no tests and cost remains provisional until
+fresh complete-suite reports establish the inventory. A compatible complete map
+makes initialization a no-op. Incomplete captures resume completed sealed records
+only in an identical context; initialization reruns the complete suite before
+missing class replays. Changed inputs, bytecode, JDK, environment or dependencies
+restart capture with a reason. Failed/skipped-only classes remain missing and
+partial checkpoints never enable narrowing. Concurrent captures in one checkout
+are rejected; retain logs/checkpoints when diagnosing failures.
+
+For changed-code recording, pass `--record-test-impact` or MCP
+`"record-test-impact": true` in BOTH preview and verification. It uses the same
+checkpoint store and completes missing compatible records, with the complete-suite
+prerequisite. Changed-code recording still requires changed inputs selecting the
+complete root owner suite; use initialization for a clean checkout. Ordinary
+focused verification reuses compatible published maps without capture. Changed
+declarations/helpers/resources/configuration/dependencies/JDK or missing evidence
+retain complete owner suites. Potential shared-state writes, dynamic behavior and
+global effects in either baseline or changed source retain complete suites.
+Repository-wide Maven coverage rules are never disabled; they can prevent
+isolated replay even if the selected tests pass.
 
 Preparation uses `-am install` with UT/IT execution disabled and retains test
 compilation/test jars. A 34-module reactor does not mean 34 suites ran. Owner

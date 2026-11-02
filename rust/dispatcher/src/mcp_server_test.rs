@@ -1349,3 +1349,14 @@ fn testcontainers_guidance_distinguishes_engine_from_compose() {
     }
     assert_eq!(super::docker_interface_guidance("compile", "Build."), "Build.");
 }
+
+#[test]
+fn test_impact_initialization_tools_share_public_cli_contract() {
+    for (tool, command) in [("test_impact_preview", "test-impact-preview"), ("test_impact_init", "test-impact-init")] {
+        let spec = super::TOOL_SPECS.iter().find(|spec| spec.name == tool).unwrap();
+        assert_eq!(spec.command, &[command]);
+        assert!(!spec.options.iter().any(|option| option.name == "record-test-impact"));
+    }
+    assert!(crate::mcp_execution::inspection("test_impact_preview"));
+    assert!(!crate::mcp_execution::inspection("test_impact_init"));
+}

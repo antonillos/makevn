@@ -1,5 +1,6 @@
 """Conservative test-class selection from isolated JVM class-loading evidence."""
 import base64
+from collections import defaultdict, deque
 import hashlib
 import json
 import os
@@ -235,6 +236,75 @@ def report_inventory(base, stamp):
     return sorted(tests)
 
 
+def sealed_save(path, value):
+    value = dict(value)
+    value.pop('seal', None)
+    value['seal'] = hashlib.sha256(json.dumps(value, sort_keys=True).encode()).hexdigest()
+    save(path, value)
+
+
+def sealed_load(path):
+    value = json.loads(path.read_text())
+    seal = value.pop('seal', '')
+    if value.get('version') != VERSION or seal != hashlib.sha256(json.dumps(value, sort_keys=True).encode()).hexdigest():
+        raise ValueError('incomplete or altered capture evidence')
+    return value
+
+
+def compatible_capture(repo, base, java, path):
+    value = sealed_load(path)
+    if value.get('status') not in {'pending', 'success'}:
+        raise ValueError('invalid capture status')
+    if value['base'] != str(base) or value['head'] != subprocess.check_output(
+            ['git', '-C', str(repo), 'rev-parse', 'HEAD']).decode().strip():
+        raise ValueError('checkout or baseline revision changed')
+    if value['inputs'] != inputs(repo, base):
+        raise ValueError('source, test, resource or configuration inventory changed')
+    current_context = context(java)
+    if value['context'] != current_context:
+        raise ValueError('JDK or execution environment changed: ' +
+                         ', '.join(changed_context(value['context'], current_context)))
+    if not set(value['records']).issubset(value['tests']):
+        raise ValueError('unexpected capture records')
+    validate_bytecode(base, value, [])
+    for path, sha in value['jars'].items():
+        if digest(Path(path)) != sha:
+            raise ValueError('resolved dependency changed')
+    return value
+
+
+def capture_status(repo, base, java):
+    validate_layout(base)
+    facts(base, java)
+    for name in ['map.json', 'capture.json']:
+        try:
+            value = compatible_capture(repo, base, java, state(repo) / name)
+            remaining = set(value['tests']) - set(value['records'])
+            if value['status'] == 'success' and not remaining:
+                print('Test impact: compatible complete map; initialization is a no-op (' +
+                      str(len(value['tests'])) + ' test classes)')
+                return True
+            print('Test impact: compatible checkpoint; ' + str(len(value['records'])) +
+                  ' completed, ' + str(len(remaining)) + ' missing classes; complete suite will run first')
+            return False
+        except (OSError, ValueError, KeyError, TypeError) as error:
+            print('Test impact ' + name + ': cannot reuse: ' + str(error))
+    print('Test impact: fresh complete suite then isolated classes; inventory and cost are provisional until the suite succeeds')
+    return False
+
+
+def retire_capture(repo, base, java):
+    validate_layout(base)
+    try:
+        value = compatible_capture(repo, base, java, state(repo) / 'map.json')
+        if value['status'] == 'success' and set(value['records']) == set(value['tests']):
+            value['status'] = 'pending'
+            sealed_save(state(repo) / 'capture.json', value)
+    except (OSError, ValueError, KeyError, TypeError) as error:
+        print('Test impact map: cannot reuse: ' + str(error), file=sys.stderr)
+    save(state(repo) / 'map.json', {'version': VERSION, 'status': 'pending'})
+
+
 def begin(repo, base, java, stamp):
     directory = state(repo)
     # A failed capture must never leave an older map eligible for selection.
@@ -255,13 +325,26 @@ def begin(repo, base, java, stamp):
              'head': subprocess.check_output(['git', '-C', str(repo), 'rev-parse', 'HEAD']).decode().strip(),
              'inputs': inputs(repo, base), 'context': context(java), 'facts': source_facts,
              'bytecode': compiled, 'tests': tests, 'records': {}, 'jars': {}, 'owned_jars': {}}
-    save(directory / 'capture.json', value)
-    print('\n'.join(tests))
+    value['models'] = repository_models()
+    try:
+        previous = compatible_capture(repo, base, java, directory / 'capture.json')
+        if previous['tests'] == tests:
+            value = previous
+            value['status'] = 'pending'
+        else:
+            print('Test impact checkpoint: discovered test inventory changed; starting fresh', file=sys.stderr)
+    except (OSError, ValueError, KeyError, TypeError) as error:
+        print('Test impact checkpoint: cannot reuse: ' + str(error), file=sys.stderr)
+    sealed_save(directory / 'capture.json', value)
+    missing = sorted(set(tests) - set(value['records']))
+    print('Test impact capture: reused ' + str(len(value['records'])) + ', missing ' +
+          str(len(missing)) + ' test classes', file=sys.stderr)
+    print('\n'.join(missing))
 
 
 def record(repo, base, name, traces):
     path = state(repo) / 'capture.json'
-    value = json.loads(path.read_text())
+    value = sealed_load(path)
     if name not in value['tests'] or name in value['records']:
         raise ValueError('unexpected or duplicate test capture')
     loaded, sources = set(), set()
@@ -294,23 +377,17 @@ def record(repo, base, name, traces):
     value['records'][name] = sorted(loaded & known)
     if value['inputs'] != inputs(repo, base) or value['bytecode'] != bytecode(base):
         raise ValueError('source/config/bytecode changed during test capture')
-    save(path, value)
+    value['models'] = repository_models()
+    sealed_save(path, value)
 
 
 def finish(repo, base, java):
-    value = json.loads((state(repo) / 'capture.json').read_text())
+    value = compatible_capture(repo, base, java, state(repo) / 'capture.json')
     if set(value['records']) != set(value['tests']):
         raise ValueError('incomplete isolated test capture')
-    if value['inputs'] != inputs(repo, base):
-        raise ValueError('source/config changed during test capture')
-    current_context = context(java)
-    if value['context'] != current_context:
-        raise ValueError('JDK/environment changed during test capture: ' +
-                         ', '.join(changed_context(value['context'], current_context)))
     value['status'] = 'success'
-    value['models'] = repository_models()
-    value['seal'] = hashlib.sha256(json.dumps(value, sort_keys=True).encode()).hexdigest()
-    save(state(repo) / 'map.json', value)
+    sealed_save(state(repo) / 'map.json', value)
+    print('Test impact: published complete map (' + str(len(value['tests'])) + ' test classes)', file=sys.stderr)
 
 
 def changed_context(before, after):
@@ -343,6 +420,28 @@ def validate_bytecode(base, value, paths):
     metadata = lambda items: {key for key in items if Path(key).name.startswith('maven-metadata')}
     if any(models.get(key) != sha for key, sha in previous.items()) or metadata(models) != metadata(previous):
         raise ValueError('cached Maven model inventory changed; recapture the baseline')
+
+
+def impacted_classes(parsed, changed):
+    consumers = defaultdict(set)
+    impacted = set(changed)
+    for item in parsed.values():
+        name = item['class']
+        for reference in item['names']:
+            consumers[reference].add(name)
+        if DYNAMIC.intersection(item['names']):
+            impacted.add(name)
+    pending = deque(impacted)
+    visited_names = set()
+    while pending:
+        simple = pending.popleft().rsplit('.', 1)[-1]
+        if simple in visited_names:
+            continue
+        visited_names.add(simple)
+        callers = consumers.get(simple, set()) - impacted
+        impacted.update(callers)
+        pending.extend(callers)
+    return impacted
 
 
 def narrow(repo, base, owner, paths, changed_tests):
@@ -404,15 +503,7 @@ def narrow(repo, base, owner, paths, changed_tests):
                 raise ValueError('resolved dependency JAR changed')
         # Any dynamic source is a potential consumer of the changed code. Include
         # its transitive callers and tests rather than assuming no reflective edge.
-        impacted = changed | {item['class'] for item in parsed.values()
-                              if DYNAMIC.intersection(item['names'])}
-        while True:
-            simple = {name.rsplit('.', 1)[-1] for name in impacted}
-            expanded = impacted | {item['class'] for item in parsed.values()
-                                    if simple.intersection(item['names'])}
-            if expanded == impacted:
-                break
-            impacted = expanded
+        impacted = impacted_classes(parsed, changed)
         selected = set(changed_tests)
         selected.update(name for name, loaded in value['records'].items()
                         if impacted.intersection(loaded) or name in impacted)
@@ -430,7 +521,11 @@ if __name__ == '__main__':
     try:
         command, repo, base, *args = sys.argv[1:]
         repo, base = Path(repo).resolve(), Path(base).resolve()
-        if command == 'begin':
+        if command == 'status':
+            sys.exit(0 if capture_status(repo, base, Path(args[0])) else 2)
+        elif command == 'retire':
+            retire_capture(repo, base, Path(args[0]))
+        elif command == 'begin':
             begin(repo, base, Path(args[0]), Path(args[1]))
         elif command == 'record':
             record(repo, base, args[0], Path(args[1]))

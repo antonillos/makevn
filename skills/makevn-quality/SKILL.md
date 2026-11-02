@@ -56,3 +56,8 @@ no global gate was evaluated. Missing/stale evidence for changed classes still f
 For global coverage use complete coverage-producing suites and the aggregate gate.
 Local results never replace mandatory CI gates. In MakeVN's own development, the
 Rust/Bash CRAP ratchet is authoritative in PR CI and must pass before merge.
+
+`test-impact-init` prepares selection evidence, not a coverage snapshot for a
+later edit. After capture, preview and run verification for the actual change
+before coverage/CRAP. Project-wide JaCoCo gates can reject isolated capture;
+report the gate and stop rather than disabling it.

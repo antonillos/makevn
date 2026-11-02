@@ -354,6 +354,7 @@ pub fn inspection(tool: &str) -> bool {
     matches!(
         tool,
         "doctor"
+            | "test_impact_preview"
             | "verify_changes_preview"
             | "docker_ps"
             | "docker_stats"

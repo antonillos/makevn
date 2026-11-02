@@ -128,3 +128,15 @@ sources and JDK changes retain complete suites. A fresh map includes isolated JV
 class-load evidence and conservative transitive source consumers; recognized
 dynamic consumers expand selection. Dynamic behavior in the changed class rejects
 narrowing. Maps are disposable managed state; never write them by hand.
+
+### Initialize or resume test-impact evidence
+
+After doctor/setup, inspect `test_impact_preview`, then explicitly run
+`test_impact_init`. These commands support a clean checkout; normal verification
+never seeds a map automatically. The first capture runs a complete suite and
+isolated test classes. Repeated initialization of an identical complete map runs
+no tests. Identical partial checkpoints reuse completed classes after another
+successful complete suite; changes invalidate reuse with diagnostics.
+`verify_changes` with `record-test-impact: true` shares this checkpoint store.
+Do not disable project coverage gates to make isolated captures pass. A partial
+map is not eligible for narrowed verification and is not coverage/CRAP evidence.

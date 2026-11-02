@@ -6,28 +6,45 @@ the complete owner suite and prints the reason. Reactors and generated Java
 sources currently retain complete owner suites; cross-module narrowing is not
 implemented.
 
-## Capture once, reuse for compatible method-body edits
+## Initialize once, reuse for compatible method-body edits
+
+After doctor/setup, initialize selection evidence on a clean or modified checkout:
 
 ```bash
-makevn verify-changes-preview --record-test-impact
-makevn verify-changes --record-test-impact
+makevn test-impact-preview
+makevn test-impact-init
 # After a compatible production method-body edit:
 makevn verify-changes-preview
-makevn verify-changes coverage-changes crap-changes
+makevn verify-changes
+makevn coverage-changes
+makevn crap-changes
 ```
 
-For MCP pass `"record-test-impact": true` in both preview and verification.
-The flag is opt-in because capture first runs the complete owner suite, then
-runs one isolated verification per discovered test class. This is substantially
-more expensive than ordinary focused verification. It needs an actual changed
-production/test input selecting the complete root owner suite. A clean checkout
-with no changed verification inputs does not seed evidence.
+MCP exposes `test_impact_preview` and `test_impact_init`. The preview runs no tests
+and reports compatibility and provisional cost. Initialization is explicit and
+expensive: preparation, a complete suite, then isolated verification per test
+class. Repeating it with an identical complete map runs no Maven or tests.
 
-Capture requires a successful complete suite with fresh Surefire/Failsafe XML.
-An entirely skipped test class, missing identity, failed test, interrupted run or
-changing source/bytecode prevents publication. Parameterized and nested test
-cases belong to their top-level class. Conventional plugin naming is enforced;
-custom ownership falls back rather than guessing selectors.
+Completed per-class records are sealed and saved atomically. On interruption,
+rerun initialization: it runs the complete suite again and replays only missing
+classes if the capture context is identical. Source/test/configuration/resource,
+revision, dependency, JDK, environment, compiled bytecode or Maven model changes
+invalidate reuse. The first implementation does not attempt partial invalidation
+across source edits. A per-checkout advisory lock prevents concurrent captures.
+Partial checkpoints cannot enable narrowed verification. Publish the complete map
+only after every class succeeds and final context checks pass.
+
+Changed-code recording remains available with `--record-test-impact` (MCP
+`record-test-impact: true`) in both preview and verification. It shares the same
+checkpoint and reuses compatible records after the successful complete suite.
+It requires changed inputs selecting the complete root owner suite; initialization
+supports a clean checkout. Ordinary focused runs never capture automatically.
+
+Capture requires fresh non-skipped Surefire/Failsafe reports and matching JVM
+traces. Failed, entirely skipped or missing classes cannot be published. Nested
+and parameterized cases belong to their top-level class. Custom test ownership,
+reactors and generated Java remain unsupported. Repository-wide coverage rules
+are not disabled and can prevent isolated replay from completing.
 
 ## Evidence and consumer expansion
 
@@ -41,7 +58,9 @@ cannot identify test classes and is never accepted as a substitute for this map.
 Java's compiler parser derives source declaration fingerprints and conservative
 identifier references without executing repository code. Consumer expansion uses
 all matching simple type names, retaining collisions rather than resolving them
-optimistically. Transitive consumers and explicitly changed tests are included.
+optimistically. Transitive consumers and explicitly changed tests are included. A reverse
+reference index and queue visit each impacted simple type name once, retaining
+name collisions and cycles without repeatedly scanning the source inventory.
 Sources using recognized reflection/service-loading APIs are potential consumers;
 their callers/tests are retained even without a direct static edge. Dynamic
 behavior or recognized process-wide state/I/O effects in a changed production
@@ -66,7 +85,8 @@ settings/repository overrides are currently unsupported for narrowing.
 Evidence lives under `.makevn/test-impact`. Atomic publication and integrity
 checks reject incomplete or altered artifacts. This is disposable local build
 state, not a security boundary against a user able to rewrite the state and its
-checksums. Do not hand-maintain it. A new capture retires the old map before tests.
+checksums. Do not hand-maintain it. A capture requiring work retires the old map before tests; identical complete
+initialization is a no-op.
 Preparation revalidates bytecode before selected tests execute; incompatible
 prepared output stops and requires a new preview, never silently widens execution.
 

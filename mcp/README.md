@@ -609,3 +609,15 @@ standard single-module Java projects on JDK 17+ can reuse compatible evidence on
 later focused runs. Missing/stale evidence retains full owner suites with a reason.
 Fresh UT/IT reports and coverage snapshots are still required. See
 [precise selection](../docs/precise-test-selection.md).
+
+### Project-wide impact initialization
+
+`test_impact_preview` inspects capture compatibility and provisional work without
+tests. `test_impact_init` explicitly initializes on clean checkouts, resumes
+identical sealed checkpoints after a fresh complete suite, and returns without
+Maven/tests for a compatible complete map. Both take `repo` and `compact`.
+Run doctor/setup first. Capture is expensive and does not disable repository
+coverage gates. `verify_changes` with `record-test-impact: true` shares the store.
+Normal verification never initiates capture automatically. Partial or incompatible
+evidence cannot enable narrowing. Initialization does not supply fresh coverage
+for a later code change.
