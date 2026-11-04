@@ -14,6 +14,30 @@ spec.loader.exec_module(scope)
 
 
 class ScopeTests(unittest.TestCase):
+    def test_changed_code_preview_reports_local_jacoco_signal_without_maven(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repo = pathlib.Path(directory)
+            pom = repo / 'pom.xml'
+            script = r'''
+set -euo pipefail
+SCRIPT_DIR="$1/libexec/makevn"
+source "${SCRIPT_DIR}/common.sh"
+source "${SCRIPT_DIR}/commands/changes.sh"
+makevn_print_changes_coverage_signal "$2"
+'''
+            command = ['bash', '-c', script, 'test', str(ROOT), directory]
+            pom.write_text('<project/>')
+            absent = subprocess.run(command, text=True, capture_output=True)
+            self.assertEqual(absent.returncode, 0, absent.stderr)
+            self.assertIn('no local declaration; inherited agent possible', absent.stdout)
+            self.assertIn('jacoco.skip=false alone is insufficient', absent.stdout)
+            pom.write_text('<project><build><plugins><plugin><artifactId>jacoco-maven-plugin'
+                           '</artifactId></plugin></plugins></build></project>')
+            declared = subprocess.run(command, text=True, capture_output=True)
+            self.assertEqual(declared.returncode, 0, declared.stderr)
+            self.assertIn('plugin declared locally; execution not verified', declared.stdout)
+            self.assertNotIn('jacoco.skip=false alone is insufficient', declared.stdout)
+
     def test_preview_distinguishes_scope_outcome_from_planner_errors(self):
         with tempfile.TemporaryDirectory() as directory:
             repo = pathlib.Path(directory)
