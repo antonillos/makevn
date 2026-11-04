@@ -190,22 +190,3 @@ visible global-rule warnings, fresh changed-code coverage/CRAP, and propagation
 of real test failures. Default and full verification must still enforce global
 gates. Do not replace fixture POMs or change thresholds; document property-based
 support and unsupported literal/custom plugin configurations.
-
-## Changed-code diagnostic validation
-
-The 2026-11-04 changed-code campaign found a diagnostic gap. In PetClinic
-Microservices, focused preview and
-`verify_changes` succeeded, but `coverage_changes` failed because no fresh JaCoCo
-execution data existed; `crap_changes` was skipped by fail-fast. The fixture did
-not run a JaCoCo agent, although generated MakeVN config contained
-`-Djacoco.skip=false`. In Commons CSV, which has effective JaCoCo instrumentation,
-all three steps passed with fresh coverage and CRAP evidence.
-
-`verify_changes_preview` now reports whether a JaCoCo plugin is declared in
-checkout POMs, while explicitly leaving inherited activation and execution
-unverified. The missing-data error points to effective `prepare-agent` binding
-and execution-data paths. Do not infer support from `jacoco.skip=false` alone.
-Validate both the no-agent and inherited-agent fixture cases when changing this
-diagnostic. The read-only preview must not invoke Maven to resolve a remote
-parent. Preserve successful `verify_changes` evidence when a later quality step
-is unavailable.
