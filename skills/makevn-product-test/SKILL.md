@@ -76,6 +76,41 @@ their JDK selection; reuse a previously authorized choice only when still applic
 For Checkstyle, consult doctor's explicit support signal and follow makevn-quality;
 availability alone does not validate the check.
 
+### Changed-code product scenario
+
+Use a clean isolated fixture clone for `*-changes` validation and keep its
+original checkout untouched. After doctor/setup, inspect the fixture's test and
+coverage plugins, then make one small, behavior-preserving production edit. Record
+the exact diff and comparison ref. A selected test run before the edit can establish
+baseline evidence, but it does not verify the later change.
+
+Run `verify_changes_preview` with `focused: true` separately. Record changed
+files, selected owners/classes, fallback reasons and whether the plan requires
+exhaustive scope. When it requires exhaustive scope, preview with `focused: false`
+and execute only that reviewed scope; a preview alone runs no tests. Check Docker
+prerequisites from doctor/config/profile/test signals, not a root Compose file.
+
+For a valid plan, use fail-fast `composite_run`: `verify_changes` with the same
+focus mode, then `coverage_changes`, then `crap_changes`. Inspect preparation
+and owner-verification logs separately: dependency installation can cover many
+modules while the selected owner suites alone run tests. Confirm fresh non-skipped
+Surefire/Failsafe XML in each selected owner. Record each step's exit code and
+whether later steps were skipped by fail-fast; never describe skipped gates as
+passing.
+
+Changed-class coverage requires fresh JaCoCo execution data from that run. Check
+the fixture's actual JaCoCo plugin/agent configuration and generated data before
+claiming the coverage and CRAP stages are supported. A `jacoco.skip=false`
+property alone cannot add an undeclared agent. If verification passes but no
+fresh data exists, classify the test-selection result separately from the
+coverage prerequisite, preserve the failure and choose a JaCoCo-enabled fixture
+for a complete three-stage scenario. Do not add a plugin to the fixture, reuse old
+global reports, disable gates or claim full CI coverage from focused results.
+On a JaCoCo-enabled fixture, record changed lines/classes, threshold outcome,
+methods, CRAP warnings and the fresh `.exec`/report paths. A focused plan may
+retain an entire owner suite when its test inventory is unknown; report that
+scope and actual test/skip counts rather than calling it class-level selection.
+
 ## Assess evidence and reproduce fixes
 
 Inspect structured exit status, diagnostics, logs and fresh test reports. Use

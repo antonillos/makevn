@@ -212,7 +212,11 @@ def load(repo, state):
     if manifest.get('missing'):
         raise ValueError('Missing changed-class bytecode; rerun verify-changes: ' + ', '.join(manifest['missing']))
     if manifest['expected'] and not manifest['data']:
-        raise ValueError('Changed production classes require fresh JaCoCo execution data, but none was captured. Enable coverage agents and rerun verify-changes; existing global reports are not reused')
+        raise ValueError('Changed production classes require fresh JaCoCo execution data, but none was captured. '
+                         'Check that the effective Maven build binds a JaCoCo prepare-agent goal for the selected tests; '
+                         'jacoco.skip=false alone does not activate an undeclared agent. '
+                         'If the agent ran, check its execution-data path under the selected module target directory. '
+                         'Then rerun verify-changes; existing global reports are not reused')
     for name, digest in manifest['hashes'].items():
         if hashlib.sha256(Path(name).read_bytes()).hexdigest() != digest:
             raise ValueError('Focused evidence changed; rerun verify-changes')

@@ -341,6 +341,17 @@ makevn_collect_verify_changes_scope() {
   fi
 }
 
+makevn_print_changes_coverage_signal() {
+  local maven_base_path="$1"
+
+  if makevn_repo_declares_jacoco_plugin "${maven_base_path}"; then
+    makevn_print_item "JaCoCo instrumentation" "plugin declared locally; execution not verified"
+  else
+    makevn_print_item "JaCoCo instrumentation" "no local declaration; inherited agent possible; execution not verified"
+    makevn_print_detail_line "Confirm effective agent binding before coverage-changes; jacoco.skip=false alone is insufficient."
+  fi
+}
+
 makevn_print_verify_changes_preflight() {
   local command_name="$1"
   local strategy=""
@@ -355,6 +366,7 @@ makevn_print_verify_changes_preflight() {
 
   if [[ -n "${MAKEVN_VERIFY_CHANGES_SRC_FILES}" ]]; then
     makevn_print_item "production files" "$(makevn_count_non_empty_lines "${MAKEVN_VERIFY_CHANGES_SRC_FILES}")"
+    makevn_print_changes_coverage_signal "${MAKEVN_VERIFY_CHANGES_MAVEN_BASE_PATH}"
   fi
   if [[ -n "${MAKEVN_VERIFY_CHANGES_TEST_FILES}" ]]; then
     makevn_print_item "test files" "$(makevn_count_non_empty_lines "${MAKEVN_VERIFY_CHANGES_TEST_FILES}")"

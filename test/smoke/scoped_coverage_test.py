@@ -155,7 +155,7 @@ class ScopedTests(unittest.TestCase):
     def test_no_data_and_missing_classes_fail_not_fall_back(self):
         scoped.prepare(self.repo, self.state, self.repo, ['client', 'boot'], [self.source])
         scoped.finish(self.repo, self.state)
-        with self.assertRaisesRegex(ValueError, 'require fresh JaCoCo execution data'):
+        with self.assertRaisesRegex(ValueError, 'prepare-agent goal.*jacoco.skip=false alone.*selected module target'):
             scoped.load(self.repo, self.state)
         self.compiled.unlink()
         self.ready_without_load()
