@@ -1033,6 +1033,21 @@ fn changed_code_preview_requires_docker_readiness_before_execution() {
 }
 
 #[test]
+fn changed_verification_guidance_omits_metrics_without_jacoco() {
+    for tool in ["verify_changes_preview", "verify_changes"] {
+        let result = super::ToolCallResult {
+            output: String::new(), exit_code: 0, duration_ms: 1,
+            doctor_snapshot: None, next_suggestion: None,
+        };
+        let response = super::standard_tool_result(&result, &json!({"name": tool}));
+        let guidance = response["structuredContent"]["nextSuggestion"].as_str().unwrap();
+        assert!(guidance.contains("JaCoCo is confirmed absent"));
+        assert!(guidance.contains("inherited"));
+        assert!(guidance.contains("missing/stale data"));
+    }
+}
+
+#[test]
 fn incremental_gate_not_applicable_output_is_success_without_global_claim() {
     for tool in ["coverage_changes", "crap_changes"] {
         let result = super::ToolCallResult {

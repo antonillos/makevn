@@ -342,9 +342,13 @@ then execute the reviewed focused plan. Do not automatically prepend `clean`, wh
 forces rebuilding. Use `fail-fast: true` for dependent verification/coverage/CRAP
 steps so failed prerequisite runs cannot be treated as fresh evidence. False is
 only appropriate when continued independent diagnostics are explicitly wanted.
-Use verify_changes → coverage_changes → crap_changes for focused changed-code
+When effective JaCoCo instrumentation is configured,
+use verify_changes → coverage_changes → crap_changes for focused changed-code
 gates: one fresh UT/IT snapshot, no repeated tests. Overall-project coverage still
 requires the separate full coverage-producing flow.
+When JaCoCo is confirmed absent after inspecting parents and active profiles, run
+verify_changes only and report metrics unavailable. Do not queue predictable
+coverage/CRAP failures or skips. Missing data from a configured agent still fails.
 
 For explicit project-wide test-impact preparation, including a clean checkout,
 run doctor/setup, inspect `test-impact-preview`, then run `test-impact-init`.
