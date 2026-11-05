@@ -246,7 +246,7 @@ def report(repo, state, maven, java, reference=""):
             environment = dict(os.environ, JAVA_HOME=str(Path(java).parent.parent))
             subprocess.run([maven, '-f', str(pom), 'org.apache.maven.plugins:maven-dependency-plugin:3.8.1:copy',
                             '-Dartifact=org.jacoco:org.jacoco.cli:' + VERSION + ':jar:nodeps',
-                            '-DoutputDirectory=' + str(state)], check=True, cwd=directory, env=environment)
+                            '-DoutputDirectory=' + str(state)], check=True, cwd=repo, env=environment)
     command = [java, '-jar', str(jar), 'report', *manifest['data'], '--classfiles', manifest['classes'],
                '--name', 'makevn focused changes (not global coverage)', '--xml', str(output / 'jacoco.xml'),
                '--csv', str(output / 'jacoco.csv'), '--html', str(output)]
