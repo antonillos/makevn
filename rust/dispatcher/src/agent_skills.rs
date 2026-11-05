@@ -178,8 +178,14 @@ pub fn prepare(source: &Path, target: &Path, version: &str) -> Result<Changes, S
     if owner.is_none() {
         reject_unmanaged_directories(target)?;
     }
-    let actual = hashes(&current);
     let mut changes = build_changes(target, current.clone(), desired, version)?;
+    changes.extend(backups(target, &current, modified)?);
+    Ok(changes)
+}
+
+fn backups(target: &Path, current: &Inventory, modified: Vec<String>) -> Result<Changes, String> {
+    let actual = hashes(current);
+    let mut changes = Changes::new();
     for name in modified {
         let bytes = current.get(&name).expect("modified resource exists");
         let backup = target
