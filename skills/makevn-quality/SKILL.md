@@ -18,6 +18,7 @@ Load [makevn-test](../makevn-test/SKILL.md) for verification and
 | Produce full-suite coverage | `makevn verify-ut-coverage` or `makevn verify-it-coverage` | `verify_ut_coverage` / `verify_it_coverage` | Fresh JaCoCo classes and execution data |
 | Aggregate coverage | `makevn coverage` | `coverage` | Existing report meets requested threshold |
 | Changed-code coverage / CRAP | `makevn coverage-changes` / `makevn crap-changes` | `coverage_changes` / `crap_changes` | Fresh matching changed-class evidence and gate outcome |
+| Install CRAP analyzer | `makevn crap install-analyzer` | `crap_install_analyzer` | Pinned download passes SHA-256 verification |
 | Mutation | `makevn mutation` | `mutation` | Supported PIT report and requested result |
 
 For Checkstyle, inspect doctor's `Checkstyle support: yes` signal (CLI JSON:
@@ -66,6 +67,11 @@ no global gate was evaluated. Missing/stale evidence for changed classes still f
 For global coverage use complete coverage-producing suites and the aggregate gate.
 Local results never replace mandatory CI gates. In MakeVN's own development, the
 Rust/Bash CRAP ratchet is authoritative in PR CI and must pass before merge.
+
+If CRAP reports the analyzer is missing, use `crap_install_analyzer` explicitly,
+then retry the affected CRAP operation using the existing fresh evidence. The
+installer downloads a pinned release and verifies its checksum; CRAP checks do
+not download it automatically.
 
 `test-impact-init` prepares selection evidence, not a coverage snapshot for a
 later edit. After capture, preview and run verification for the actual change

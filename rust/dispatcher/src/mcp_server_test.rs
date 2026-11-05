@@ -91,6 +91,22 @@ fn crap_tool_has_typed_schema_and_forwards_flags() {
 }
 
 #[test]
+fn crap_install_analyzer_tool_maps_to_explicit_installer() {
+    let spec = TOOL_SPECS
+        .iter()
+        .find(|s| s.name == "crap_install_analyzer")
+        .unwrap();
+    assert_eq!(spec.command, &["crap", "install-analyzer"]);
+    assert_eq!(
+        super::tool(spec)["inputSchema"]["properties"]["repo"]["type"],
+        "string"
+    );
+    let mut args = Vec::from_iter(spec.command.iter().map(|s| s.to_string()));
+    push_tool_flags(&mut args, spec, &Map::new()).unwrap();
+    assert_eq!(args, ["crap", "install-analyzer"]);
+}
+
+#[test]
 fn crap_changes_tool_has_typed_schema_and_forwards_base() {
     let spec = TOOL_SPECS
         .iter()
