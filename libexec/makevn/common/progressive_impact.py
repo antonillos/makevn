@@ -54,8 +54,9 @@ def snapshot(repo, base, java):
 
 
 def mark_non_executable(base, parsed):
-    production = {item['class'].split('::')[-1].rsplit('.', 1)[-1]
+    production = {item['class']
                   for source, item in parsed.items() if reactor.is_source(source, 'main')}
+    test_classes = {item['class'] for source, item in parsed.items() if reactor.is_source(source, 'test')}
     for source, item in parsed.items():
         if not reactor.is_source(source, 'test'):
             continue
@@ -67,7 +68,8 @@ def mark_non_executable(base, parsed):
         declaration = re.search(r'\bclass\s+' + re.escape(simple) + r'\b[^{};]*?\bextends\s+(\w+)', content)
         test_markers = {'Test', 'ParameterizedTest', 'RepeatedTest', 'TestFactory', 'TestTemplate',
                         'RunWith', 'ExtendWith', 'TestCase'}
-        if (simple.startswith('Test') and declaration and declaration.group(1) in production and
+        superclass = item['class'].rsplit('.', 1)[0] + '.' + declaration.group(1) if declaration else None
+        if (simple.startswith('Test') and superclass in production and superclass not in test_classes and
                 not test_markers.intersection(item['names'])):
             item['executable'] = False
 

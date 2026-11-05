@@ -178,6 +178,22 @@ cmd_init "$2" "${@:3}"
         self.assertIn('example.InheritedOwnerTest', progressive.tests(value['facts']))
         self.assertIn('example.TestOwnerBehavior', progressive.tests(value['facts']))
 
+    def test_inherited_test_survives_unrelated_production_superclass_name(self):
+        source = self.repo / 'src/main/java/unrelated/Base.java'
+        source.parent.mkdir(parents=True)
+        source.write_text('package unrelated; class Base {}')
+        (self.repo / 'src/test/java/example/Base.java').write_text(
+            'package example; abstract class Base { @Test void check() { new Owner().value(); } }')
+        (self.repo / 'src/test/java/example/TestInherited.java').write_text(
+            'package example; class TestInherited extends Base {}')
+        subprocess.run(['git', '-C', str(self.repo), 'add', '.'], check=True)
+        subprocess.run(['git', '-C', str(self.repo), '-c', 'user.name=Test', '-c', 'user.email=test@example.org',
+                        'commit', '--no-gpg-sign', '-qm', 'inherited test fixture'], check=True)
+        value = self.initialize(False)
+        self.assertIn('example.TestInherited', progressive.tests(value['facts']))
+        self.edit()
+        self.assertIn('example.TestInherited', self.plan())
+
     def test_custom_test_class_filters_retain_complete_suite(self):
         for artifact in ['maven-surefire-plugin', 'maven-failsafe-plugin']:
             for tag in ['includes', 'excludes', 'includesFile', 'excludesFile']:
