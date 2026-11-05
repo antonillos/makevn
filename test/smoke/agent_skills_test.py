@@ -89,10 +89,12 @@ class SkillBundleTest(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertEqual(global_resource.read_text(), resource.read_text())
             local_resource.write_text('Local customization\n')
-            result = subprocess.run(command, cwd=subdir, env=env, capture_output=True, text=True)
-            self.assertNotEqual(result.returncode, 0)
-            self.assertIn('locally modified', result.stderr)
-            self.assertEqual(local_resource.read_text(), 'Local customization\n')
+            result = run('install', 'codex', 'project')
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(local_resource.read_text(), resource.read_text())
+            backups = list((repo / '.agents/makevn-skills-backup/makevn/references').glob('upgrade-test.md-*'))
+            self.assertEqual(len(backups), 1)
+            self.assertEqual(backups[0].read_text(), 'Local customization\n')
 
     def test_release_archive_has_complete_bundle(self):
         with tempfile.TemporaryDirectory() as tmp:

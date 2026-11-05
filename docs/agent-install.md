@@ -226,12 +226,13 @@ existing config and then global scope; noninteractive setup uses global scope.
 Codex defaults to global scope. Status requires an explicit scope and never prompts.
 
 The `.makevn-skills.json` ownership manifest records version and SHA-256 file hashes.
-Only unchanged managed resources can be updated or removed. Foreign names, local
-edits, missing managed files, extra resources and symlinks block replacement with
-paths and reasons. Inspect and preserve custom content before retrying; setup does
-not override skill permissions. Repeating setup is idempotent. Skill registration
-is shared across clients: registering the second client reuses the same managed
-bundle and configures that client's MCP entry separately.
+Locally edited managed resources are backed up under `makevn-skills-backup` beside
+the skills directory before the distributed files replace them. Foreign names,
+missing managed files, extra resources and symlinks block replacement with paths
+and reasons. Setup does not override skill permissions. Repeating setup is
+idempotent. Skill registration is shared across clients: registering the second
+client reuses the same managed bundle and configures that client's MCP entry
+separately.
 
 Preflight validates resources and configuration before changes. Setup serializes
 writers with `.makevn-setup.lock`, stages files, backs up existing configuration
@@ -294,7 +295,7 @@ integration exists, run `makevn agent install <opencode|codex>` first.
 Use `makevn agent upgrade --scope global` or `--scope project` to override scope
 detection. Explicit project scope requires a Git worktree. Upgrade preserves
 unrelated configuration and uses the same ownership checks, backups, locking and
-rollback as installation. Local skill edits block replacement; a project conflict
+rollback as installation. Local skill edits receive a backup; a project conflict
 does not silently fall back to global scope. All selected configurations are
 validated before resources are replaced.
 

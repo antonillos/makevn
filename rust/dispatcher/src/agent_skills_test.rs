@@ -36,10 +36,19 @@ fn manages_six_skills_and_reports_missing_current_outdated_modified() {
     agent_transaction::apply(prepare(&source, &target, "2").unwrap()).unwrap();
     assert!(status(&source, &target, "2").starts_with("current"));
     fs::write(target.join("makevn/SKILL.md"), "local edit").unwrap();
-    assert!(prepare(&source, &target, "2")
-        .unwrap_err()
-        .contains("locally modified"));
     assert!(status(&source, &target, "2").contains("conflict"));
+    agent_transaction::apply(prepare(&source, &target, "2").unwrap()).unwrap();
+    assert_eq!(
+        fs::read(target.join("makevn/SKILL.md")).unwrap(),
+        fs::read(&file).unwrap()
+    );
+    let backups: Vec<_> = fs::read_dir(fixture.0.join("makevn-skills-backup/makevn"))
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .collect();
+    assert_eq!(backups.len(), 1);
+    assert_eq!(fs::read(&backups[0]).unwrap(), b"local edit");
+    assert!(status(&source, &target, "2").starts_with("current"));
 }
 
 #[test]

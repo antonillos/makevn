@@ -178,8 +178,9 @@ terminal, multiple choices or linked configurations prompt for a selection,
 showing resolved destinations and preserving links. Noninteractive use selects
 project integration before global integration and rejects linked paths.
 Use `--scope global|project` only to override scope detection.
-Existing foreign skills or local edits block replacement; inspect conflicts rather
-than deleting user content. Agent selection remains model-dependent.
+Local edits to managed skills are backed up before replacement. Foreign skills,
+extra resources and linked paths still block replacement. Agent selection remains
+model-dependent.
 
 ### Disabling Compose discovery
 
