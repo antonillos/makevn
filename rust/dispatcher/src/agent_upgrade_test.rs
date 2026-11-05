@@ -135,19 +135,18 @@ fn conflicts_and_invalid_clients_leave_all_resources_unchanged() {
     install(Client::Codex, &config, &source, &target, "old").unwrap();
     let original = fs::read(&config).unwrap();
     fs::write(target.join("makevn/SKILL.md"), "local changes").unwrap();
-    assert!(run_at(None, &home, &repo, &source)
-        .unwrap_err()
-        .contains("locally modified"));
+    run_at(None, &home, &repo, &source).unwrap();
     assert_eq!(fs::read(&config).unwrap(), original);
     assert_eq!(
-        fs::read_to_string(target.join("makevn/SKILL.md")).unwrap(),
-        "local changes"
+        fs::read(target.join("makevn/SKILL.md")).unwrap(),
+        fs::read(source.join("makevn/SKILL.md")).unwrap()
     );
-    fs::copy(
-        source.join("makevn/SKILL.md"),
-        target.join("makevn/SKILL.md"),
-    )
-    .unwrap();
+    let backups: Vec<_> = fs::read_dir(repo.join(".agents/makevn-skills-backup/makevn"))
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .collect();
+    assert_eq!(backups.len(), 1);
+    assert_eq!(fs::read(&backups[0]).unwrap(), b"local changes");
     fs::write(source.join("makevn/new.md"), "new").unwrap();
     fs::create_dir(repo.join(".opencode")).unwrap();
     fs::write(
