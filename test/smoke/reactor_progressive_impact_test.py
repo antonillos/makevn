@@ -146,6 +146,18 @@ class ReactorProgressiveTests(unittest.TestCase):
         self.assertEqual(plan['suites'], [])
         self.assertIn('--exhaustive', plan['next_action'])
 
+    def test_custom_build_directory_leaves_source_expression_unresolved(self):
+        pom = self.repo / 'core/pom.xml'
+        plugin = ('<build><directory>build-output</directory><plugins><plugin>'
+                  '<groupId>org.codehaus.mojo</groupId><artifactId>build-helper-maven-plugin</artifactId>'
+                  '<executions><execution><goals><goal>add-source</goal></goals><configuration><sources>'
+                  '<source>${project.build.directory}/generated</source></sources></configuration>'
+                  '</execution></executions></plugin></plugins></build>')
+        pom.write_text(pom.read_text().replace('</project>', plugin + '</project>'))
+        result = reactor.additional_roots_preview(self.repo, reactor.modules(self.repo))
+        self.assertEqual(result['status'], 'unsupported')
+        self.assertEqual(result['unresolved_roots'][0]['root'], '${project.build.directory}/generated')
+
     def test_inherited_additional_root_is_not_assigned_to_one_owner(self):
         pom = self.repo / 'pom.xml'
         plugin = ('<build><plugins><plugin><groupId>org.codehaus.mojo</groupId>'

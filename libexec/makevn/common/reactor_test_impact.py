@@ -46,6 +46,9 @@ def additional_roots_preview(base, owners):
     from reactor_impact import reactor_consumers
     roots, unresolved, affected = [], [], set()
     models = {owner: parse((base / owner / 'pom.xml').read_text()) for owner in owners}
+    custom_build_directory = any(model.find('./build/directory') is not None or
+                                 model.findall('./profiles/profile/build/directory')
+                                 for model in models.values())
     pom_paths = {(base / owner / 'pom.xml').resolve() for owner in owners}
     external_parent = any(
         not (relative := model.findtext('./parent/relativePath', '../pom.xml')) or
@@ -77,6 +80,7 @@ def additional_roots_preview(base, owners):
                 expanded = value.replace('${project.basedir}', str(base / owner)).replace('${basedir}', str(base / owner)).replace('${project.build.directory}', str(base / owner / 'target'))
                 path = (base / owner / expanded).resolve()
                 known = (value and '${' not in expanded and not value.startswith('<') and
+                         not (custom_build_directory and '${project.build.directory}' in value) and
                          path.is_relative_to((base / owner).resolve()) and not inherited and simple and
                          plugin.findtext('artifactId') == 'build-helper-maven-plugin')
                 item = {'root': path.relative_to(base).as_posix() if known else value, 'owner': owner if known else None,
