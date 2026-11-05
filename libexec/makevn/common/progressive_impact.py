@@ -2,6 +2,7 @@
 import contextlib
 import fcntl
 import io
+import json
 import os
 import re
 from pathlib import Path
@@ -341,5 +342,14 @@ if __name__ == '__main__':
                   '; ' + str(len(tests(value['facts']))) + ' candidate test classes; no Maven or tests executed; ' +
                   str(len(value['observations'])) + ' observed classes retained')
     except (OSError, ValueError, KeyError, subprocess.SubprocessError, ET.ParseError) as error:
+        if command == 'preview' and str(error) == 'additional Java source roots require complete owner suites':
+            try:
+                base_path = Path(base).resolve()
+                result = reactor.additional_roots_preview(base_path, reactor.modules(base_path))
+                if result is not None:
+                    print(json.dumps(result, sort_keys=True))
+                    sys.exit(0 if result['status'] == 'requires_exhaustive_scope' else 1)
+            except (OSError, ValueError, KeyError, ET.ParseError):
+                pass
         print('Cannot initialize static impact: ' + str(error), file=sys.stderr)
         sys.exit(1)
