@@ -255,6 +255,7 @@ class ScopedTests(unittest.TestCase):
             if command[0] == 'mvn':
                 self.assertIn('org.apache.maven.plugins:maven-dependency-plugin:3.8.1:copy', command)
                 self.assertFalse(Path(command[2]).is_relative_to(self.repo))
+                self.assertEqual(kwargs['cwd'], self.repo)
                 self.assertNotIn('-am', command)
                 self.assertNotIn('verify', command)
                 (self.state / ('org.jacoco.cli-' + scoped.VERSION + '-nodeps.jar')).touch()
