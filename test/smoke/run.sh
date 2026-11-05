@@ -1526,10 +1526,10 @@ EOF
   assert_matches "${repo}/.mvnw.log" '^ARGS=-B -nsu -f .*/pom\.xml test -Dsurefire\.failIfNoSpecifiedTests=false$'
   assert_matches "${repo}/.mvnw.log" '^ARGS=-B -nsu -f .*/pom\.xml com\.example\.format:custom-javaformat-maven-plugin:apply$'
   assert_matches "${repo}/.mvnw.log" '^ARGS=-B -nsu -f .*/pom\.xml -pl module-a org\.apache\.maven\.plugins:maven-checkstyle-plugin:check -Dcheckstyle\.consoleOutput=true$'
-  assert_matches "${repo}/.mvnw.log" '^ARGS=-B -nsu -f .*/pom\.xml -pl module-a -am test -Dsurefire\.failIfNoSpecifiedTests=false -Dtest=com\.example\.UserRepositoryTest -Dfailsafe\.failIfNoSpecifiedTests=false -Dmaven\.build\.cache\.enabled=true -Dsurefire\.testFailureIgnore=false$'
-  assert_matches "${repo}/.mvnw.log" '^ARGS=-B -nsu -f .*/pom\.xml -pl module-a -am test -Dsurefire\.failIfNoSpecifiedTests=false -Dtest=com\.example\.OrderRepositoryTest -Dfailsafe\.failIfNoSpecifiedTests=false -Dmaven\.build\.cache\.enabled=true -Dsurefire\.testFailureIgnore=false$'
-  assert_matches "${repo}/.mvnw.log" '^ARGS=-B -nsu -f .*/pom\.xml -pl module-a -am surefire:test -Dsurefire\.failIfNoSpecifiedTests=false -Dtest=com\.example\.UserRepositoryTest -Dfailsafe\.failIfNoSpecifiedTests=false -Dmaven\.build\.cache\.enabled=true -Dsurefire\.testFailureIgnore=false$'
-  assert_matches "${repo}/.mvnw.log" '^ARGS=-B -nsu -f .*/pom\.xml -pl module-a -am test-compile failsafe:integration-test -Dsurefire\.failIfNoSpecifiedTests=false -Dit\.test=com\.example\.UserFlowIT -Dfailsafe\.failIfNoSpecifiedTests=false -Dmaven\.build\.cache\.enabled=true$'
+  assert_matches "${repo}/.mvnw.log" '^ARGS=-B -nsu -f .*/pom\.xml -pl module-a -am test -Dsurefire\.failIfNoSpecifiedTests=false -Dtest=com\.example\.UserRepositoryTest -Dfailsafe\.failIfNoSpecifiedTests=false -Dmaven\.build\.cache\.enabled=false -Dsurefire\.testFailureIgnore=false$'
+  assert_matches "${repo}/.mvnw.log" '^ARGS=-B -nsu -f .*/pom\.xml -pl module-a -am test -Dsurefire\.failIfNoSpecifiedTests=false -Dtest=com\.example\.OrderRepositoryTest -Dfailsafe\.failIfNoSpecifiedTests=false -Dmaven\.build\.cache\.enabled=false -Dsurefire\.testFailureIgnore=false$'
+  assert_matches "${repo}/.mvnw.log" '^ARGS=-B -nsu -f .*/pom\.xml -pl module-a -am surefire:test -Dsurefire\.failIfNoSpecifiedTests=false -Dtest=com\.example\.UserRepositoryTest -Dfailsafe\.failIfNoSpecifiedTests=false -Dmaven\.build\.cache\.enabled=false -Dsurefire\.testFailureIgnore=false$'
+  assert_matches "${repo}/.mvnw.log" '^ARGS=-B -nsu -f .*/pom\.xml -pl module-a -am test-compile failsafe:integration-test -Dsurefire\.failIfNoSpecifiedTests=false -Dit\.test=com\.example\.UserFlowIT -Dfailsafe\.failIfNoSpecifiedTests=false -Dmaven\.build\.cache\.enabled=false$'
   assert_matches "${repo}/.mvnw.log" '^ARGS=-B -nsu -f .*/pom\.xml verify -DfailIfNoTests=false -Dmaven\.build\.cache\.enabled=false$'
   assert_contains "${repo}/.mvnw.log" "JAVA_HOME=${java_home}"
   assert_contains "${repo}/.mvnw.log" "LOCAL_CONTAINERS="
@@ -1591,7 +1591,7 @@ EOF
   ${CLI} --repo "${repo}" checkstyle --module cataloger-cli --verbose >/dev/null
 
   assert_matches "${repo}/cataloger-cli/.mvnw.log" '^CWD=.*/nested-single-maven-project-routing/cataloger-cli$'
-  assert_matches "${repo}/cataloger-cli/.mvnw.log" '^ARGS=-nsu -f .*/cataloger-cli/pom\.xml test -Dtest=com\.example\.NestedTest -Dfailsafe\.failIfNoSpecifiedTests=false -Dsurefire\.failIfNoSpecifiedTests=false -Dmaven\.build\.cache\.enabled=true -Dsurefire\.testFailureIgnore=false$'
+  assert_matches "${repo}/cataloger-cli/.mvnw.log" '^ARGS=-nsu -f .*/cataloger-cli/pom\.xml test -Dtest=com\.example\.NestedTest -Dfailsafe\.failIfNoSpecifiedTests=false -Dsurefire\.failIfNoSpecifiedTests=false -Dmaven\.build\.cache\.enabled=false -Dsurefire\.testFailureIgnore=false$'
   assert_matches "${repo}/cataloger-cli/.mvnw.log" '^ARGS=-f .*/cataloger-cli/pom\.xml org\.apache\.maven\.plugins:maven-checkstyle-plugin:check -Dcheckstyle\.consoleOutput=true$'
   assert_not_contains "${repo}/cataloger-cli/.mvnw.log" '-pl cataloger-cli'
   assert_contains "${repo}/cataloger-cli/.mvnw.log" "JAVA_HOME=${java_home}"

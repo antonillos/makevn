@@ -427,7 +427,7 @@ makevn_run_selected_test() {
   prop_flags_value="$(makevn_append_word "${prop_flags_value}" "${test_param}")"
   prop_flags_value="$(makevn_append_word "${prop_flags_value}" "-Dfailsafe.failIfNoSpecifiedTests=false")"
   prop_flags_value="$(makevn_append_word "${prop_flags_value}" "-Dsurefire.failIfNoSpecifiedTests=false")"
-  prop_flags_value="$(makevn_append_word "${prop_flags_value}" "-Dmaven.build.cache.enabled=true")"
+  prop_flags_value="$(makevn_append_word "${prop_flags_value}" "-Dmaven.build.cache.enabled=false")"
 
   if [[ "${test_mode}" == "integration" ]]; then
     boot_module="$(makevn_detect_boot_module_name "${repo_root}")"
