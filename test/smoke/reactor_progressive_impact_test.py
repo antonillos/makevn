@@ -218,6 +218,33 @@ class ReactorProgressiveTests(unittest.TestCase):
                          '${project.build.directory}/generated-sources/${generator.output}')
         self.assertEqual(plan['suites'], [])
 
+    def test_inherited_generated_root_with_child_plugin_override_is_unresolved(self):
+        pom = self.repo / 'pom.xml'
+        plugin = ('<build><plugins><plugin><groupId>org.codehaus.mojo</groupId>'
+                  '<artifactId>build-helper-maven-plugin</artifactId><executions><execution>'
+                  '<id>generated</id><goals><goal>add-source</goal></goals>'
+                  '<configuration><sources><source>target/generated-sources/api</source>'
+                  '</sources></configuration></execution></executions></plugin></plugins></build>')
+        pom.write_text(pom.read_text().replace('</project>', plugin + '</project>'))
+        child = self.repo / 'core/pom.xml'
+        override = ('<build><plugins><plugin><groupId>org.codehaus.mojo</groupId>'
+                    '<artifactId>build-helper-maven-plugin</artifactId><executions><execution>'
+                    '<id>generated</id><configuration combine.self="override"><sources>'
+                    '<source>${generator.output}</source></sources></configuration>'
+                    '</execution></executions></plugin></plugins></build>')
+        child.write_text(child.read_text().replace('</project>', override + '</project>'))
+        plan = reactor.additional_roots_preview(self.repo, reactor.modules(self.repo))
+        self.assertEqual(plan['status'], 'unsupported')
+        self.assertIn('target/generated-sources/api',
+                      [item['root'] for item in plan['unresolved_roots']])
+        self.assertEqual(plan['roots'], [])
+        self.assertEqual(plan['suites'], [])
+        command = [sys.executable, str(ROOT / 'libexec/makevn/common/progressive_impact.py'),
+                   'preview', str(self.repo), str(self.repo), str(self.java)]
+        result = subprocess.run(command, capture_output=True, text=True)
+        self.assertEqual(result.returncode, 1)
+        self.assertEqual(json.loads(result.stdout)['status'], 'unsupported')
+
     def test_core_edit_selects_consumers_without_unrelated_tests(self):
         self.edit()
         self.assertEqual(self.plan(), 'app\texample.FeatureTest\ncore\texample.FeatureTest\nservice\texample.FeatureTest')
