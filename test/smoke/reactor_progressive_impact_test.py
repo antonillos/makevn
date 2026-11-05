@@ -175,6 +175,27 @@ class ReactorProgressiveTests(unittest.TestCase):
         self.assertIn('extra/java', [item['root'] for item in plan['unresolved_roots']])
         self.assertEqual(plan['suites'], [])
 
+    def test_inherited_generated_roots_require_child_consumer_suites(self):
+        pom = self.repo / 'pom.xml'
+        plugin = ('<build><plugins><plugin><groupId>org.codehaus.mojo</groupId>'
+                  '<artifactId>build-helper-maven-plugin</artifactId><executions><execution>'
+                  '<goals><goal>add-source</goal></goals><configuration><sources>'
+                  '<source>target/generated-sources/openapi/src/gen/java/main</source>'
+                  '</sources></configuration></execution></executions></plugin></plugins></build>')
+        pom.write_text(pom.read_text().replace('</project>', plugin + '</project>'))
+        plan = reactor.additional_roots_preview(self.repo, reactor.modules(self.repo))
+        self.assertEqual(plan['status'], 'requires_exhaustive_scope', plan)
+        self.assertEqual({item['root'] for item in plan['roots']},
+                         {owner + '/target/generated-sources/openapi/src/gen/java/main' for owner in self.owners})
+        self.assertEqual(plan['suites'], sorted(self.owners))
+        self.assertFalse(plan['tests_executed'])
+        command = [sys.executable, str(ROOT / 'libexec/makevn/common/progressive_impact.py'),
+                   'preview', str(self.repo), str(self.repo), str(self.java)]
+        result = subprocess.run(command, capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(result.stdout)['status'], 'requires_exhaustive_scope')
+        self.assertFalse((self.repo / '.makevn').exists())
+
     def test_core_edit_selects_consumers_without_unrelated_tests(self):
         self.edit()
         self.assertEqual(self.plan(), 'app\texample.FeatureTest\ncore\texample.FeatureTest\nservice\texample.FeatureTest')

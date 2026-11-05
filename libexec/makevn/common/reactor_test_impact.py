@@ -50,6 +50,23 @@ def additional_roots_preview(base, owners):
                                  model.findall('./profiles/profile/build/directory')
                                  for model in models.values())
     pom_paths = {(base / owner / 'pom.xml').resolve() for owner in owners}
+    children = {owner: set() for owner in owners}
+    for child, model in models.items():
+        parent = model.find('./parent')
+        if parent is not None:
+            relative = parent.findtext('relativePath', '../pom.xml')
+            for owner in owners:
+                if relative and (base / child / relative).resolve() == (base / owner / 'pom.xml').resolve():
+                    children[owner].add(child)
+
+    def descendants(owner):
+        result, pending = set(), list(children[owner])
+        while pending:
+            child = pending.pop()
+            if child not in result:
+                result.add(child)
+                pending.extend(children[child])
+        return result
     external_parent = any(
         not (relative := model.findtext('./parent/relativePath', '../pom.xml')) or
         (base / owner / relative).resolve() not in pom_paths
@@ -76,7 +93,22 @@ def additional_roots_preview(base, owners):
                 if other_model.find('./parent') is not None)
             if not values:
                 values = ['<unspecified sources>']
+            resolved_inherited = False
             for value in values:
+                generated = value.startswith('target/generated-sources/') or value.startswith('${project.build.directory}/generated-sources/')
+                if inherited and generated and not custom_build_directory and not external_parent and plugin.findtext('artifactId') == 'build-helper-maven-plugin':
+                    consumers = descendants(owner)
+                    if consumers and all(models[child].findtext('packaging', 'jar') != 'pom' for child in consumers):
+                        resolved_inherited = True
+                        for child in sorted(consumers):
+                            suffix = value.removeprefix('${project.build.directory}/') if value.startswith('${project.build.directory}/') else value
+                            root = (base / child / suffix).resolve()
+                            if root.is_relative_to((base / child).resolve()):
+                                roots.append({'root': root.relative_to(base).as_posix(), 'owner': child, 'declared_in': owner})
+                                affected.add(child)
+                            else:
+                                unresolved.append({'root': value, 'owner': None, 'declared_in': owner})
+                        continue
                 expanded = value.replace('${project.basedir}', str(base / owner)).replace('${basedir}', str(base / owner)).replace('${project.build.directory}', str(base / owner / 'target'))
                 path = (base / owner / expanded).resolve()
                 known = (value and '${' not in expanded and not value.startswith('<') and
@@ -86,9 +118,9 @@ def additional_roots_preview(base, owners):
                 item = {'root': path.relative_to(base).as_posix() if known else value, 'owner': owner if known else None,
                         'declared_in': owner}
                 (roots if known else unresolved).append(item)
-            if owner == '.':
+            if owner == '.' and not resolved_inherited:
                 unresolved.append({'root': '<Maven-root owner>', 'owner': None, 'declared_in': owner})
-            else:
+            elif not resolved_inherited:
                 affected.add(owner)
     if not roots and not unresolved:
         return None
