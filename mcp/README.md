@@ -263,6 +263,7 @@ Tool mapping for common commands:
 - `makevn coverage-changes` -> `makevn_coverage_changes`
 - `makevn crap` -> `makevn_crap`
 - `makevn crap-changes` -> `makevn_crap_changes` (`base` optional; uses existing JaCoCo XML)
+- `makevn crap install-analyzer` -> `makevn_crap_install_analyzer` (downloads the pinned analyzer and verifies its SHA-256 checksum)
 - `makevn docker-up` -> `makevn_docker_up`
 - `makevn docker-reset` -> `makevn_docker_reset`
 - `makevn karate-docker-reset` -> `makevn_karate_docker_reset`
