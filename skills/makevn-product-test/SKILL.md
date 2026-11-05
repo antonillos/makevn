@@ -35,6 +35,12 @@ MakeVN itself are separate from executing the fixture's Maven/Docker workflows.
    a root Compose file as proof tests require it. Prefer one useful next fixture
    over a large unbounded campaign.
 
+Before running a scenario with several required checks, list its completion
+criteria. A successful setup, preview or static map is evidence for that step
+only. If work stops before the remaining checks, classify them as `slow_path`
+and describe the scenario as partial; do not present it as the completed next
+product test.
+
 ## Prepare and execute
 
 Follow the base skill's MCP doctor/init/doctor/configure sequence in the fixture
@@ -182,6 +188,9 @@ capture resumption and incompatible-context restart. Then edit production and
 inspect narrowed selection and fresh coverage/CRAP separately. Record complete
 suite and isolated replay costs; report global Maven gates that block isolated
 capture as fixture/workflow limitations rather than claiming a valid map.
+Report static initialization and capture as separate results. Mark the impact
+scenario complete only after the resumption, restart and post-edit checks have
+evidence; otherwise list each unrun check and its concrete next action.
 
 When validating explicitly requested focused JaCoCo deferral, reproduce the
 original default failure, then use `defer-global-coverage: true` in both preview

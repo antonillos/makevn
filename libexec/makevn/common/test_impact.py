@@ -219,11 +219,10 @@ def validate_layout(base):
 
 
 def report_inventory(base, stamp, skipped=None):
+    from selected_test_reports import fresh_reports
     tests = set()
     for plugin in ['surefire-reports', 'failsafe-reports']:
-        for path in (base / 'target' / plugin).glob('TEST-*.xml'):
-            if path.stat().st_mtime_ns < stamp.stat().st_mtime_ns:
-                continue
+        for path in fresh_reports(base, plugin, stamp.stat().st_mtime_ns):
             root = ET.parse(path).getroot()
             cases = list(root.iter('testcase'))
             if not cases or any(case.find('failure') is not None or case.find('error') is not None for case in cases):

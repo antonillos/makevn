@@ -446,6 +446,14 @@ class TestImpactTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'no fresh'):
             impact.report_inventory(self.repo, stamp)
 
+    def test_nested_surefire_reports_seed_capture(self):
+        stamp = self.repo / 'stamp'
+        stamp.touch()
+        report = self.repo / 'target/surefire-reports/default/TEST-example.OwnerTest.xml'
+        report.parent.mkdir(parents=True)
+        report.write_text('<testsuite><testcase classname="example.OwnerTest"/></testsuite>')
+        self.assertEqual(impact.report_inventory(self.repo, stamp), ['example.OwnerTest'])
+
     def test_complete_capture_publishes_reusable_map_and_planner_selects_consumers(self):
         stamp = impact.state(self.repo) / 'stamp'
         stamp.touch()

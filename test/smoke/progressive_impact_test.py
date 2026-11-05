@@ -163,6 +163,37 @@ cmd_init "$2" "${@:3}"
         progressive.enrich(self.repo, self.repo, self.java, before, stamp, traces)
         self.assertEqual(progressive.load(self.repo)['observations'], {'example.TestOwner': ['example.Owner']})
 
+    def test_static_selection_excludes_proven_helpers_and_abstract_tests(self):
+        (self.repo / 'src/test/java/example/TestOwnerHelper.java').write_text(
+            'package example; class TestOwnerHelper extends Owner {}')
+        (self.repo / 'src/test/java/example/AbstractOwnerTest.java').write_text(
+            'package example; abstract class AbstractOwnerTest { @Test void check() {} }')
+        (self.repo / 'src/test/java/example/InheritedOwnerTest.java').write_text(
+            'package example; class InheritedOwnerTest extends AbstractOwnerTest { Owner owner; }')
+        (self.repo / 'src/test/java/example/TestOwnerBehavior.java').write_text(
+            'package example; class TestOwnerBehavior extends Owner { @Test void check() {} }')
+        value = self.initialize(False)
+        self.assertNotIn('example.TestOwnerHelper', progressive.tests(value['facts']))
+        self.assertNotIn('example.AbstractOwnerTest', progressive.tests(value['facts']))
+        self.assertIn('example.InheritedOwnerTest', progressive.tests(value['facts']))
+        self.assertIn('example.TestOwnerBehavior', progressive.tests(value['facts']))
+
+    def test_inherited_test_survives_unrelated_production_superclass_name(self):
+        source = self.repo / 'src/main/java/unrelated/Base.java'
+        source.parent.mkdir(parents=True)
+        source.write_text('package unrelated; class Base {}')
+        (self.repo / 'src/test/java/example/Base.java').write_text(
+            'package example; abstract class Base { @Test void check() { new Owner().value(); } }')
+        (self.repo / 'src/test/java/example/TestInherited.java').write_text(
+            'package example; class TestInherited extends Base {}')
+        subprocess.run(['git', '-C', str(self.repo), 'add', '.'], check=True)
+        subprocess.run(['git', '-C', str(self.repo), '-c', 'user.name=Test', '-c', 'user.email=test@example.org',
+                        'commit', '--no-gpg-sign', '-qm', 'inherited test fixture'], check=True)
+        value = self.initialize(False)
+        self.assertIn('example.TestInherited', progressive.tests(value['facts']))
+        self.edit()
+        self.assertIn('example.TestInherited', self.plan())
+
     def test_custom_test_class_filters_retain_complete_suite(self):
         for artifact in ['maven-surefire-plugin', 'maven-failsafe-plugin']:
             for tag in ['includes', 'excludes', 'includesFile', 'excludesFile']:
@@ -188,6 +219,16 @@ cmd_init "$2" "${@:3}"
         self.assertEqual(value['observations'], {'example.OtherTest': ['example.Owner']})
         self.edit()
         self.assertEqual(self.plan(), {'example.OwnerTest', 'example.ConsumerTest', 'example.OtherTest'})
+
+    def test_nested_surefire_reports_enrich_runtime_observations(self):
+        before = self.initialize()
+        traces, stamp = self.execution(before)
+        report = self.repo / 'target/surefire-reports/TEST-OtherTest.xml'
+        nested = report.parent / 'default' / report.name
+        nested.parent.mkdir()
+        report.rename(nested)
+        progressive.enrich(self.repo, self.repo, self.java, before, stamp, traces)
+        self.assertEqual(progressive.load(self.repo)['observations'], {'example.OtherTest': ['example.Owner']})
 
     def test_full_suite_attributes_execution_superset_to_each_executed_class(self):
         before = self.initialize()
