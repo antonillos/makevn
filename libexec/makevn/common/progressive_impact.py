@@ -14,6 +14,7 @@ import xml.etree.ElementTree as ET
 import test_impact as impact
 import reactor_test_impact as reactor
 from test_inventory import validate as validate_test_inventory
+from selected_test_reports import fresh_reports
 
 KIND = 'progressive-v1'
 CONDITIONAL = {'Disabled', 'EnabledOnOs', 'DisabledOnOs', 'EnabledOnJre', 'DisabledOnJre',
@@ -42,16 +43,38 @@ def snapshot(repo, base, java):
         reactor.validate(base, owners)
     else:
         impact.validate_layout(base)
+    source_facts = reactor.facts(base, owners, java) if owners else impact.facts(base, java)
+    mark_non_executable(base, source_facts)
     return {'version': impact.VERSION, 'kind': reactor.KIND if owners else KIND,
             'modules': owners, 'repo': str(repo), 'base': str(base),
             'head': subprocess.check_output(['git', '-C', str(repo), 'rev-parse', 'HEAD'], stderr=subprocess.DEVNULL).decode().strip(),
             'inputs': reactor.inputs(repo, base, owners), 'context': environment(java),
-            'facts': reactor.facts(base, owners, java) if owners else impact.facts(base, java),
+            'facts': source_facts,
             'observations': {}, 'skipped': {}, 'jars': {}}
+
+
+def mark_non_executable(base, parsed):
+    production = {item['class'].split('::')[-1].rsplit('.', 1)[-1]
+                  for source, item in parsed.items() if reactor.is_source(source, 'main')}
+    for source, item in parsed.items():
+        if not reactor.is_source(source, 'test'):
+            continue
+        simple = item['class'].split('::')[-1].rsplit('.', 1)[-1]
+        content = (base / source).read_text()
+        if re.search(r'(?m)(?:^|[;{}])\s*(?:(?:public|protected|private)\s+)?abstract\s+class\s+' + re.escape(simple) + r'\b', content):
+            item['executable'] = False
+            continue
+        declaration = re.search(r'\bclass\s+' + re.escape(simple) + r'\b[^{};]*?\bextends\s+(\w+)', content)
+        test_markers = {'Test', 'ParameterizedTest', 'RepeatedTest', 'TestFactory', 'TestTemplate',
+                        'RunWith', 'ExtendWith', 'TestCase'}
+        if (simple.startswith('Test') and declaration and declaration.group(1) in production and
+                not test_markers.intersection(item['names'])):
+            item['executable'] = False
 
 
 def tests(parsed):
     return {item['class'] for source, item in parsed.items() if reactor.is_source(source, 'test')
+            and item.get('executable', True)
             and (item.get('name', item['class']).rsplit('.', 1)[-1].startswith(('IT', 'Test')) or
                  item['class'].endswith(('Test', 'Tests', 'IT', 'ITCase', 'TestCase')) or
                  {'Test', 'ParameterizedTest', 'RepeatedTest', 'TestFactory', 'TestTemplate'}.intersection(item['names']))}
@@ -240,9 +263,7 @@ def enrich(repo, base, java, before, stamp, traces):
     active, skipped = set(), {}
     for owner in after['modules'] or ['.']:
         for plugin in ['surefire-reports', 'failsafe-reports']:
-            for report in (base / owner / 'target' / plugin).glob('TEST-*.xml'):
-                if report.stat().st_mtime_ns < stamp.stat().st_mtime_ns:
-                    continue
+            for report in fresh_reports(base / owner, plugin, stamp.stat().st_mtime_ns):
                 for case in ET.parse(report).getroot().iter('testcase'):
                     if case.find('failure') is not None or case.find('error') is not None:
                         raise ValueError('failed reports cannot enrich the map')

@@ -22,13 +22,17 @@ def selection_flags(module, names):
             "-Dsurefire.failIfNoSpecifiedTests=false", "-Dfailsafe.failIfNoSpecifiedTests=false"]
 
 
+def fresh_reports(module, directory, started):
+    for report in (module / "target" / directory).rglob("TEST-*.xml"):
+        if report.stat().st_mtime_ns >= started:
+            yield report
+
+
 def missing_tests(module, names, stamp, optional=()):
     started = stamp.stat().st_mtime_ns
     executed = {"surefire-reports": set(), "failsafe-reports": set()}
     for directory in ("surefire-reports", "failsafe-reports"):
-        for report in (module / "target" / directory).glob("TEST-*.xml"):
-            if report.stat().st_mtime_ns < started:
-                continue
+        for report in fresh_reports(module, directory, started):
             root = ET.parse(report).getroot()
             for test in root.iter("testcase"):
                 name = test.get("classname", "").split("$")[0]

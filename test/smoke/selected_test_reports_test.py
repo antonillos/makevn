@@ -83,6 +83,18 @@ class ReportTests(unittest.TestCase):
             os.utime(report, ns=(stamp.stat().st_mtime_ns - 1_000_000_000,) * 2)
             self.assertEqual(reports.missing_tests(module, ["example.OwnerIT"], stamp), ["example.OwnerIT"])
 
+    def test_nested_surefire_directory_requires_fresh_evidence(self):
+        with tempfile.TemporaryDirectory() as directory:
+            module = pathlib.Path(directory)
+            stamp = module / 'stamp'
+            stamp.touch()
+            report = module / 'target/surefire-reports/default/TEST-example.OwnerTest.xml'
+            report.parent.mkdir(parents=True)
+            report.write_text('<testsuite><testcase classname="example.OwnerTest" name="test"/></testsuite>')
+            self.assertEqual(reports.missing_tests(module, ['example.OwnerTest'], stamp), [])
+            os.utime(report, ns=(stamp.stat().st_mtime_ns - 1_000_000_000,) * 2)
+            self.assertEqual(reports.missing_tests(module, ['example.OwnerTest'], stamp), ['example.OwnerTest'])
+
 
 if __name__ == "__main__":
     unittest.main()
