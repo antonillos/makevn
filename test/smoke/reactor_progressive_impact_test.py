@@ -196,6 +196,28 @@ class ReactorProgressiveTests(unittest.TestCase):
         self.assertEqual(json.loads(result.stdout)['status'], 'requires_exhaustive_scope')
         self.assertFalse((self.repo / '.makevn').exists())
 
+    def test_inherited_generated_build_directory_and_unknown_suffix(self):
+        pom = self.repo / 'pom.xml'
+        original = pom.read_text()
+        plugin = ('<build><plugins><plugin><groupId>org.codehaus.mojo</groupId>'
+                  '<artifactId>build-helper-maven-plugin</artifactId><executions><execution>'
+                  '<goals><goal>add-source</goal></goals><configuration><sources>'
+                  '<source>${project.build.directory}/generated-sources/api</source>'
+                  '</sources></configuration></execution></executions></plugin></plugins></build>')
+        pom.write_text(original.replace('</project>', plugin + '</project>'))
+        plan = reactor.additional_roots_preview(self.repo, reactor.modules(self.repo))
+        self.assertEqual(plan['status'], 'requires_exhaustive_scope', plan)
+        self.assertEqual({item['root'] for item in plan['roots']},
+                         {owner + '/target/generated-sources/api' for owner in self.owners})
+
+        pom.write_text(pom.read_text().replace('generated-sources/api',
+                                               'generated-sources/${generator.output}'))
+        plan = reactor.additional_roots_preview(self.repo, reactor.modules(self.repo))
+        self.assertEqual(plan['status'], 'unsupported')
+        self.assertEqual(plan['unresolved_roots'][0]['root'],
+                         '${project.build.directory}/generated-sources/${generator.output}')
+        self.assertEqual(plan['suites'], [])
+
     def test_core_edit_selects_consumers_without_unrelated_tests(self):
         self.edit()
         self.assertEqual(self.plan(), 'app\texample.FeatureTest\ncore\texample.FeatureTest\nservice\texample.FeatureTest')

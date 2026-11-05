@@ -97,11 +97,14 @@ def additional_roots_preview(base, owners):
             for value in values:
                 generated = value.startswith('target/generated-sources/') or value.startswith('${project.build.directory}/generated-sources/')
                 if inherited and generated and not custom_build_directory and not external_parent and plugin.findtext('artifactId') == 'build-helper-maven-plugin':
+                    suffix = value.replace('${project.build.directory}', 'target', 1)
+                    if '${' in suffix:
+                        unresolved.append({'root': value, 'owner': None, 'declared_in': owner})
+                        continue
                     consumers = descendants(owner)
                     if consumers and all(models[child].findtext('packaging', 'jar') != 'pom' for child in consumers):
                         resolved_inherited = True
                         for child in sorted(consumers):
-                            suffix = value.removeprefix('${project.build.directory}/') if value.startswith('${project.build.directory}/') else value
                             root = (base / child / suffix).resolve()
                             if root.is_relative_to((base / child).resolve()):
                                 roots.append({'root': root.relative_to(base).as_posix(), 'owner': child, 'declared_in': owner})
