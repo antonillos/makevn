@@ -84,6 +84,16 @@ availability alone does not validate the check.
 
 ### Changed-code product scenario
 
+Before queuing coverage/CRAP steps, inspect the fixture's effective JaCoCo
+agent configuration, including inherited parents and active profiles. When JaCoCo
+is confirmed absent, run verification only: omit `coverage_changes` and
+`crap_changes` from the composite and report coverage/CRAP as unavailable because
+the project does not configure JaCoCo. Do not make calls merely to obtain an
+expected error or skip. No local declaration alone does not prove absence when
+parent/profile configuration is unresolved; resolve that uncertainty first.
+When an agent is configured, preserve the normal verification/coverage/CRAP flow;
+missing or stale execution data remains an error, never an automatic skip.
+
 Use a clean isolated fixture clone for `*-changes` validation and keep its
 original checkout untouched. After doctor/setup, inspect the fixture's test and
 coverage plugins, then make one small, behavior-preserving production edit. Record
@@ -96,7 +106,7 @@ exhaustive scope. When it requires exhaustive scope, preview with `focused: fals
 and execute only that reviewed scope; a preview alone runs no tests. Check Docker
 prerequisites from doctor/config/profile/test signals, not a root Compose file.
 
-For a valid plan, use fail-fast `composite_run`: `verify_changes` with the same
+For a valid plan with configured JaCoCo, use fail-fast `composite_run`: `verify_changes` with the same
 focus mode, then `coverage_changes`, then `crap_changes`. Inspect preparation
 and owner-verification logs separately: dependency installation can cover many
 modules while the selected owner suites alone run tests. Confirm fresh non-skipped

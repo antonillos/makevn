@@ -348,7 +348,7 @@ makevn_print_changes_coverage_signal() {
     makevn_print_item "JaCoCo instrumentation" "plugin declared locally; execution not verified"
   else
     makevn_print_item "JaCoCo instrumentation" "no local declaration; inherited agent possible; execution not verified"
-    makevn_print_detail_line "Confirm effective agent binding before coverage-changes; jacoco.skip=false alone is insufficient."
+    makevn_print_detail_line "Confirm effective agent binding before queuing coverage-changes/crap-changes; omit both when JaCoCo is confirmed absent. Missing local declarations alone are inconclusive; jacoco.skip=false alone is insufficient."
   fi
 }
 

@@ -77,8 +77,11 @@ CLI uses `--defer-global-coverage` in both commands. This defers failure through
 JaCoCo's standard/Apache Commons halt-on-failure properties, preserving agents,
 rule warnings and other Maven gates. Custom literal/plugin configurations may
 still fail. Never enable it automatically, combine it with exhaustive/capture, or
-claim global coverage passed. After success, run coverage_changes and crap_changes;
-full verify/CI coverage remains required.
+claim global coverage passed. After success, run coverage_changes and crap_changes
+only when effective JaCoCo instrumentation is configured. If JaCoCo is confirmed
+absent after inspecting inherited parents and active profiles, omit both calls and
+report metrics unavailable; missing/stale data from a configured agent still fails.
+Full verify/CI coverage remains required.
 
 Preparation uses `-am install` with UT/IT execution disabled and retains test
 compilation/test jars. A 34-module reactor does not mean 34 suites ran. Owner

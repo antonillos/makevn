@@ -33,7 +33,17 @@ rerun the appropriate coverage-producing flow. Do not switch to raw Maven.
 
 ### Changed-code checks
 
-Inspect `verify_changes_preview` separately. Then reuse the same focused evidence:
+Before queuing coverage/CRAP steps, inspect the fixture's effective JaCoCo
+agent configuration, including inherited parents and active profiles. When JaCoCo
+is confirmed absent, run verification only: omit `coverage_changes` and
+`crap_changes` from the composite and report coverage/CRAP as unavailable because
+the project does not configure JaCoCo. Do not make calls merely to obtain an
+expected error or skip. No local declaration alone does not prove absence when
+parent/profile configuration is unresolved; resolve that uncertainty first.
+When an agent is configured, preserve the normal verification/coverage/CRAP flow;
+missing or stale execution data remains an error, never an automatic skip.
+
+Inspect `verify_changes_preview` separately. For projects with configured JaCoCo, reuse the same focused evidence:
 
 ```json
 {
