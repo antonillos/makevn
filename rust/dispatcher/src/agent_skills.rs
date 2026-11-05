@@ -154,8 +154,13 @@ fn validate_owned(
     ))
 }
 
-fn modified_owned(current: &Inventory, owner: Option<&Manifest>) -> Result<Vec<String>, String> {
+fn modified_owned(
+    target: &Path,
+    current: &Inventory,
+    owner: Option<&Manifest>,
+) -> Result<Vec<String>, String> {
     let Some(owner) = owner else {
+        reject_unmanaged_directories(target)?;
         return Ok(Vec::new());
     };
     let actual = hashes(current);
@@ -173,11 +178,7 @@ pub fn prepare(source: &Path, target: &Path, version: &str) -> Result<Changes, S
     let desired = inventory(source, true)?;
     let current = inventory(target, false)?;
     let owner = manifest(target)?;
-    let modified = modified_owned(&current, owner.as_ref())?;
-    // Empty directories without a manifest are also user-owned.
-    if owner.is_none() {
-        reject_unmanaged_directories(target)?;
-    }
+    let modified = modified_owned(target, &current, owner.as_ref())?;
     let mut changes = build_changes(target, current.clone(), desired, version)?;
     changes.extend(backups(target, &current, modified)?);
     Ok(changes)
