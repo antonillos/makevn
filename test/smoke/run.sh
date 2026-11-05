@@ -1591,7 +1591,7 @@ EOF
   ${CLI} --repo "${repo}" checkstyle --module cataloger-cli --verbose >/dev/null
 
   assert_matches "${repo}/cataloger-cli/.mvnw.log" '^CWD=.*/nested-single-maven-project-routing/cataloger-cli$'
-  assert_matches "${repo}/cataloger-cli/.mvnw.log" '^ARGS=-nsu -f .*/cataloger-cli/pom\.xml test -Dtest=com\.example\.NestedTest -Dfailsafe\.failIfNoSpecifiedTests=false -Dsurefire\.failIfNoSpecifiedTests=false -Dmaven\.build\.cache\.enabled=true -Dsurefire\.testFailureIgnore=false$'
+  assert_matches "${repo}/cataloger-cli/.mvnw.log" '^ARGS=-nsu -f .*/cataloger-cli/pom\.xml test -Dtest=com\.example\.NestedTest -Dfailsafe\.failIfNoSpecifiedTests=false -Dsurefire\.failIfNoSpecifiedTests=false -Dmaven\.build\.cache\.enabled=false -Dsurefire\.testFailureIgnore=false$'
   assert_matches "${repo}/cataloger-cli/.mvnw.log" '^ARGS=-f .*/cataloger-cli/pom\.xml org\.apache\.maven\.plugins:maven-checkstyle-plugin:check -Dcheckstyle\.consoleOutput=true$'
   assert_not_contains "${repo}/cataloger-cli/.mvnw.log" '-pl cataloger-cli'
   assert_contains "${repo}/cataloger-cli/.mvnw.log" "JAVA_HOME=${java_home}"
