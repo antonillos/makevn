@@ -50,6 +50,14 @@ retain complete suites. Unknown owner/consumer scope requires exhaustive preview
 rather than silently omitting verification. Maven-root consumers still require
 exhaustive verification.
 
+When additional-source declarations block static initialization,
+`test-impact-preview` reports declared roots and, where safely resolvable, their
+owners and complete downstream suites. Its `requires_exhaustive_scope` result is
+only a preview: run `verify-changes --exhaustive` explicitly to execute tests.
+Unresolved expressions, inheritance, or other ambiguous declarations are reported
+as `unsupported` with unknown roots and the same exhaustive next action. Neither
+outcome creates a static map or runs Maven tests.
+
 ## Verification
 
 The reactor regression suite covers `core -> service -> app`, an independent

@@ -1,6 +1,7 @@
 """Exercise cross-module static selection and additive runtime evidence."""
 import contextlib
 import io
+import json
 import os
 from pathlib import Path
 import shutil
@@ -102,6 +103,65 @@ class ReactorProgressiveTests(unittest.TestCase):
         self.initialize()
         self.assertIn('core::example.FeatureTest', progressive.load(self.repo)['facts'][
             'core/src/test/java/example/FeatureTest.java']['class'])
+
+    def test_additional_roots_preview_requires_complete_consumer_suites(self):
+        pom = self.repo / 'core/pom.xml'
+        plugin = ('<build><plugins><plugin><groupId>org.codehaus.mojo</groupId>'
+                  '<artifactId>build-helper-maven-plugin</artifactId><executions><execution>'
+                  '<goals><goal>add-source</goal></goals><configuration><sources>'
+                  '<source>${project.build.directory}/generated-sources/event</source>'
+                  '<source>extra/java</source></sources></configuration></execution></executions>'
+                  '</plugin></plugins></build>')
+        pom.write_text(pom.read_text().replace('</project>', plugin + '</project>'))
+        command = [sys.executable, str(ROOT / 'libexec/makevn/common/progressive_impact.py'),
+                   'preview', str(self.repo), str(self.repo), str(self.java)]
+        result = subprocess.run(command, capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        plan = json.loads(result.stdout)
+        self.assertEqual(plan['status'], 'requires_exhaustive_scope')
+        self.assertEqual({item['root'] for item in plan['roots']},
+                         {'core/target/generated-sources/event', 'core/extra/java'})
+        self.assertEqual(plan['suites'], ['app', 'core', 'service'])
+        self.assertFalse(plan['tests_executed'])
+        self.assertFalse((self.repo / '.makevn').exists())
+        self.edit()
+        self.assertEqual(self.plan(), 'app\t*\ncore\t*\nservice\t*')
+        command[2] = 'init'
+        self.assertNotEqual(subprocess.run(command, capture_output=True).returncode, 0)
+
+    def test_additional_roots_preview_reports_unresolved_expression(self):
+        pom = self.repo / 'core/pom.xml'
+        plugin = ('<build><plugins><plugin><artifactId>build-helper-maven-plugin</artifactId>'
+                  '<executions><execution><goals><goal>add-source</goal></goals>'
+                  '<configuration><sources><source>${unknown}/generated</source></sources>'
+                  '</configuration></execution></executions></plugin></plugins></build>')
+        pom.write_text(pom.read_text().replace('</project>', plugin + '</project>'))
+        command = [sys.executable, str(ROOT / 'libexec/makevn/common/progressive_impact.py'),
+                   'preview', str(self.repo), str(self.repo), str(self.java)]
+        result = subprocess.run(command, capture_output=True, text=True)
+        self.assertNotEqual(result.returncode, 0)
+        plan = json.loads(result.stdout)
+        self.assertEqual(plan['status'], 'unsupported')
+        self.assertEqual(plan['unresolved_roots'][0]['root'], '${unknown}/generated')
+        self.assertEqual(plan['suites'], [])
+        self.assertIn('--exhaustive', plan['next_action'])
+
+    def test_inherited_additional_root_is_not_assigned_to_one_owner(self):
+        pom = self.repo / 'pom.xml'
+        plugin = ('<build><plugins><plugin><groupId>org.codehaus.mojo</groupId>'
+                  '<artifactId>build-helper-maven-plugin</artifactId><executions><execution>'
+                  '<goals><goal>add-source</goal></goals><configuration><sources>'
+                  '<source>extra/java</source></sources></configuration></execution></executions>'
+                  '</plugin></plugins></build>')
+        pom.write_text(pom.read_text().replace('</project>', plugin + '</project>'))
+        command = [sys.executable, str(ROOT / 'libexec/makevn/common/progressive_impact.py'),
+                   'preview', str(self.repo), str(self.repo), str(self.java)]
+        result = subprocess.run(command, capture_output=True, text=True)
+        self.assertNotEqual(result.returncode, 0)
+        plan = json.loads(result.stdout)
+        self.assertEqual(plan['status'], 'unsupported')
+        self.assertIn('extra/java', [item['root'] for item in plan['unresolved_roots']])
+        self.assertEqual(plan['suites'], [])
 
     def test_core_edit_selects_consumers_without_unrelated_tests(self):
         self.edit()
