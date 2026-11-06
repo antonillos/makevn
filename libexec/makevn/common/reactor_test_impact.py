@@ -1,5 +1,6 @@
 """Module-qualified Java facts for literal local Maven reactors."""
 import test_impact as impact
+import xml.etree.ElementTree as ET
 
 KIND = 'progressive-reactor-v1'
 
@@ -139,9 +140,33 @@ def additional_roots_preview(base, owners):
         unresolved.append({'root': '<consumer scope: ' + str(error) + '>', 'owner': None, 'declared_in': None})
         suites = set()
     return {'status': 'unsupported' if unresolved else 'requires_exhaustive_scope',
+            'selection_granularity': 'unresolved' if unresolved else 'module',
+            'reason': 'Additional Java source roots prevent class-level selection',
             'roots': roots, 'unresolved_roots': unresolved,
             'suites': sorted(suites) if not unresolved else [],
-            'next_action': 'Run makevn verify-changes --exhaustive after reviewing the changes.',
+            'next_action': 'Run makevn verify-changes-preview to review the affected module suites' +
+                           ('; use --exhaustive if focused scope remains unresolved.' if unresolved else '.'),
+            'tests_executed': False}
+
+
+def unavailable_preview(base, reason):
+    """Report map precision separately from resolvable reactor dependencies."""
+    from changes_scope import parse
+    from reactor_impact import reactor_consumers
+    try:
+        owners = modules(base)
+        members = set(owners) - {'.'} if owners else {'.'}
+        for owner in members:
+            if owner != '.':
+                reactor_consumers(base, members, owner, parse)
+    except (OSError, ValueError, ET.ParseError) as error:
+        return {'status': 'unsupported', 'selection_granularity': 'unresolved',
+                'reason': reason, 'unresolved_information': str(error),
+                'next_action': 'Run makevn verify-changes-preview --exhaustive to review the safe scope.',
+                'tests_executed': False}
+    return {'status': 'requires_module_scope', 'selection_granularity': 'module',
+            'reason': reason, 'available_modules': sorted(members),
+            'next_action': 'Run makevn verify-changes-preview to review the affected complete module suites.',
             'tests_executed': False}
 
 
