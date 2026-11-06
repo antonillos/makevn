@@ -175,6 +175,124 @@ class ReactorProgressiveTests(unittest.TestCase):
         self.assertIn('extra/java', [item['root'] for item in plan['unresolved_roots']])
         self.assertEqual(plan['suites'], [])
 
+    def test_inherited_generated_roots_require_child_consumer_suites(self):
+        pom = self.repo / 'pom.xml'
+        plugin = ('<build><plugins><plugin><groupId>org.codehaus.mojo</groupId>'
+                  '<artifactId>build-helper-maven-plugin</artifactId><executions><execution>'
+                  '<goals><goal>add-source</goal></goals><configuration><sources>'
+                  '<source>target/generated-sources/openapi/src/gen/java/main</source>'
+                  '</sources></configuration></execution></executions></plugin></plugins></build>')
+        pom.write_text(pom.read_text().replace('</project>', plugin + '</project>'))
+        plan = reactor.additional_roots_preview(self.repo, reactor.modules(self.repo))
+        self.assertEqual(plan['status'], 'requires_exhaustive_scope', plan)
+        self.assertEqual({item['root'] for item in plan['roots']},
+                         {owner + '/target/generated-sources/openapi/src/gen/java/main' for owner in self.owners})
+        self.assertEqual(plan['suites'], sorted(self.owners))
+        self.assertFalse(plan['tests_executed'])
+        command = [sys.executable, str(ROOT / 'libexec/makevn/common/progressive_impact.py'),
+                   'preview', str(self.repo), str(self.repo), str(self.java)]
+        result = subprocess.run(command, capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(result.stdout)['status'], 'requires_exhaustive_scope')
+        self.assertFalse((self.repo / '.makevn').exists())
+
+    def test_inherited_generated_build_directory_and_unknown_suffix(self):
+        pom = self.repo / 'pom.xml'
+        original = pom.read_text()
+        plugin = ('<build><plugins><plugin><groupId>org.codehaus.mojo</groupId>'
+                  '<artifactId>build-helper-maven-plugin</artifactId><executions><execution>'
+                  '<goals><goal>add-source</goal></goals><configuration><sources>'
+                  '<source>${project.build.directory}/generated-sources/api</source>'
+                  '</sources></configuration></execution></executions></plugin></plugins></build>')
+        pom.write_text(original.replace('</project>', plugin + '</project>'))
+        plan = reactor.additional_roots_preview(self.repo, reactor.modules(self.repo))
+        self.assertEqual(plan['status'], 'requires_exhaustive_scope', plan)
+        self.assertEqual({item['root'] for item in plan['roots']},
+                         {owner + '/target/generated-sources/api' for owner in self.owners})
+
+        pom.write_text(pom.read_text().replace('generated-sources/api',
+                                               'generated-sources/${generator.output}'))
+        plan = reactor.additional_roots_preview(self.repo, reactor.modules(self.repo))
+        self.assertEqual(plan['status'], 'unsupported')
+        self.assertEqual(plan['unresolved_roots'][0]['root'],
+                         '${project.build.directory}/generated-sources/${generator.output}')
+        self.assertEqual(plan['suites'], [])
+
+    def test_inherited_generated_root_with_child_plugin_override_is_unresolved(self):
+        pom = self.repo / 'pom.xml'
+        plugin = ('<build><plugins><plugin><groupId>org.codehaus.mojo</groupId>'
+                  '<artifactId>build-helper-maven-plugin</artifactId><executions><execution>'
+                  '<id>generated</id><goals><goal>add-source</goal></goals>'
+                  '<configuration><sources><source>target/generated-sources/api</source>'
+                  '</sources></configuration></execution></executions></plugin></plugins></build>')
+        pom.write_text(pom.read_text().replace('</project>', plugin + '</project>'))
+        child = self.repo / 'core/pom.xml'
+        override = ('<build><plugins><plugin><groupId>org.codehaus.mojo</groupId>'
+                    '<artifactId>build-helper-maven-plugin</artifactId><executions><execution>'
+                    '<id>generated</id><configuration combine.self="override"><sources>'
+                    '<source>${generator.output}</source></sources></configuration>'
+                    '</execution></executions></plugin></plugins></build>')
+        child.write_text(child.read_text().replace('</project>', override + '</project>'))
+        plan = reactor.additional_roots_preview(self.repo, reactor.modules(self.repo))
+        self.assertEqual(plan['status'], 'unsupported')
+        self.assertIn('target/generated-sources/api',
+                      [item['root'] for item in plan['unresolved_roots']])
+        self.assertEqual(plan['roots'], [])
+        self.assertEqual(plan['suites'], [])
+        command = [sys.executable, str(ROOT / 'libexec/makevn/common/progressive_impact.py'),
+                   'preview', str(self.repo), str(self.repo), str(self.java)]
+        result = subprocess.run(command, capture_output=True, text=True)
+        self.assertEqual(result.returncode, 1)
+        self.assertEqual(json.loads(result.stdout)['status'], 'unsupported')
+
+    def test_managed_generated_source_plugin_has_no_child_owner(self):
+        pom = self.repo / 'pom.xml'
+        plugin = ('<build><pluginManagement><plugins><plugin><groupId>org.codehaus.mojo</groupId>'
+                  '<artifactId>build-helper-maven-plugin</artifactId><executions><execution>'
+                  '<goals><goal>add-source</goal></goals><configuration><sources>'
+                  '<source>target/generated-sources/api</source></sources></configuration>'
+                  '</execution></executions></plugin></plugins></pluginManagement></build>')
+        pom.write_text(pom.read_text().replace('</project>', plugin + '</project>'))
+        plan = reactor.additional_roots_preview(self.repo, reactor.modules(self.repo))
+        self.assertEqual(plan['status'], 'unsupported')
+        self.assertEqual(plan['roots'], [])
+        self.assertIn('target/generated-sources/api',
+                      [item['root'] for item in plan['unresolved_roots']])
+
+    def test_noninherited_generated_source_execution_has_no_child_owner(self):
+        pom = self.repo / 'pom.xml'
+        plugin = ('<build><plugins><plugin><groupId>org.codehaus.mojo</groupId>'
+                  '<artifactId>build-helper-maven-plugin</artifactId><executions><execution>'
+                  '<inherited>false</inherited><goals><goal>add-source</goal></goals>'
+                  '<configuration><sources><source>target/generated-sources/api</source>'
+                  '</sources></configuration></execution></executions></plugin></plugins></build>')
+        pom.write_text(pom.read_text().replace('</project>', plugin + '</project>'))
+        plan = reactor.additional_roots_preview(self.repo, reactor.modules(self.repo))
+        self.assertEqual(plan['status'], 'unsupported')
+        self.assertEqual(plan['roots'], [])
+        self.assertIn('target/generated-sources/api',
+                      [item['root'] for item in plan['unresolved_roots']])
+
+    def test_parent_profile_override_keeps_generated_root_unresolved(self):
+        pom = self.repo / 'pom.xml'
+        plugin = ('<build><plugins><plugin><groupId>org.codehaus.mojo</groupId>'
+                  '<artifactId>build-helper-maven-plugin</artifactId><executions><execution>'
+                  '<id>generated</id><goals><goal>add-source</goal></goals>'
+                  '<configuration><sources><source>target/generated-sources/api</source>'
+                  '</sources></configuration></execution></executions></plugin></plugins></build>')
+        profile = ('<profiles><profile><id>alternate</id><activation><activeByDefault>true</activeByDefault>'
+                   '</activation><build><plugins><plugin><groupId>org.codehaus.mojo</groupId>'
+                   '<artifactId>build-helper-maven-plugin</artifactId><executions><execution>'
+                   '<id>generated</id><configuration><sources>'
+                   '<source>target/generated-sources/other</source></sources></configuration>'
+                   '</execution></executions></plugin></plugins></build></profile></profiles>')
+        pom.write_text(pom.read_text().replace('</project>', plugin + profile + '</project>'))
+        plan = reactor.additional_roots_preview(self.repo, reactor.modules(self.repo))
+        self.assertEqual(plan['status'], 'unsupported')
+        self.assertEqual(plan['roots'], [])
+        self.assertIn('target/generated-sources/api',
+                      [item['root'] for item in plan['unresolved_roots']])
+
     def test_core_edit_selects_consumers_without_unrelated_tests(self):
         self.edit()
         self.assertEqual(self.plan(), 'app\texample.FeatureTest\ncore\texample.FeatureTest\nservice\texample.FeatureTest')
