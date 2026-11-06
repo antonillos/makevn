@@ -245,6 +245,34 @@ class ReactorProgressiveTests(unittest.TestCase):
         self.assertEqual(result.returncode, 1)
         self.assertEqual(json.loads(result.stdout)['status'], 'unsupported')
 
+    def test_managed_generated_source_plugin_has_no_child_owner(self):
+        pom = self.repo / 'pom.xml'
+        plugin = ('<build><pluginManagement><plugins><plugin><groupId>org.codehaus.mojo</groupId>'
+                  '<artifactId>build-helper-maven-plugin</artifactId><executions><execution>'
+                  '<goals><goal>add-source</goal></goals><configuration><sources>'
+                  '<source>target/generated-sources/api</source></sources></configuration>'
+                  '</execution></executions></plugin></plugins></pluginManagement></build>')
+        pom.write_text(pom.read_text().replace('</project>', plugin + '</project>'))
+        plan = reactor.additional_roots_preview(self.repo, reactor.modules(self.repo))
+        self.assertEqual(plan['status'], 'unsupported')
+        self.assertEqual(plan['roots'], [])
+        self.assertIn('target/generated-sources/api',
+                      [item['root'] for item in plan['unresolved_roots']])
+
+    def test_noninherited_generated_source_execution_has_no_child_owner(self):
+        pom = self.repo / 'pom.xml'
+        plugin = ('<build><plugins><plugin><groupId>org.codehaus.mojo</groupId>'
+                  '<artifactId>build-helper-maven-plugin</artifactId><executions><execution>'
+                  '<inherited>false</inherited><goals><goal>add-source</goal></goals>'
+                  '<configuration><sources><source>target/generated-sources/api</source>'
+                  '</sources></configuration></execution></executions></plugin></plugins></build>')
+        pom.write_text(pom.read_text().replace('</project>', plugin + '</project>'))
+        plan = reactor.additional_roots_preview(self.repo, reactor.modules(self.repo))
+        self.assertEqual(plan['status'], 'unsupported')
+        self.assertEqual(plan['roots'], [])
+        self.assertIn('target/generated-sources/api',
+                      [item['root'] for item in plan['unresolved_roots']])
+
     def test_core_edit_selects_consumers_without_unrelated_tests(self):
         self.edit()
         self.assertEqual(self.plan(), 'app\texample.FeatureTest\ncore\texample.FeatureTest\nservice\texample.FeatureTest')

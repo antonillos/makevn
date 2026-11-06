@@ -83,9 +83,10 @@ def additional_roots_preview(base, owners):
                 node.findtext('artifactId') == 'build-helper-maven-plugin'
                 for node in other_model.findall('.//plugin'))
                 for other, other_model in models.items())
+            executions = plugin.findall('./executions/execution')
             simple = (plugin in model.findall('./build/plugins/plugin') and
                       plugin.findtext('groupId') == 'org.codehaus.mojo' and
-                      len(plugin.findall('./executions/execution')) == 1 and
+                      len(executions) == 1 and
                       plugin.find('./configuration') is None and not external_parent and
                       not competing)
             inherited = plugin.findtext('inherited', 'true').strip() != 'false' and any(
@@ -97,7 +98,9 @@ def additional_roots_preview(base, owners):
             resolved_inherited = False
             for value in values:
                 generated = value.startswith('target/generated-sources/') or value.startswith('${project.build.directory}/generated-sources/')
-                if inherited and generated and not custom_build_directory and not external_parent and not competing and plugin.findtext('artifactId') == 'build-helper-maven-plugin':
+                if (inherited and generated and simple and not custom_build_directory and
+                        executions[0].findtext('inherited', 'true').strip() != 'false' and
+                        plugin.findtext('artifactId') == 'build-helper-maven-plugin'):
                     suffix = value.replace('${project.build.directory}', 'target', 1)
                     if '${' in suffix:
                         unresolved.append({'root': value, 'owner': None, 'declared_in': owner})
