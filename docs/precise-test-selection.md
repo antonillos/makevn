@@ -29,6 +29,11 @@ without Maven, compilation, packaging, tests or container startup. A JDK is used
 only to parse Java syntax. Focused planning also works without initialization and
 never writes a map. It compares changed sources with the Git comparison baseline,
 including removed references, rather than assuming the edited graph is complete.
+When class-map initialization is unavailable, `test-impact-preview` reports the
+reason and whether module-level selection can still be planned. Run
+`verify-changes-preview` to see the affected complete module suites before any
+verification. An unresolved module or dependency graph is reported explicitly;
+the impact preview never runs tests.
 
 The static inventory includes Surefire's `Test*`, `*Test`, `*Tests`, and `*TestCase`
 conventions, including annotation-free JUnit 3 classes. Configured Surefire/Failsafe

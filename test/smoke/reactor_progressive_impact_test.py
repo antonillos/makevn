@@ -122,6 +122,8 @@ class ReactorProgressiveTests(unittest.TestCase):
         self.assertEqual({item['root'] for item in plan['roots']},
                          {'core/target/generated-sources/event', 'core/extra/java'})
         self.assertEqual(plan['suites'], ['app', 'core', 'service'])
+        self.assertEqual(plan['selection_granularity'], 'module')
+        self.assertIn('verify-changes-preview', plan['next_action'])
         self.assertFalse(plan['tests_executed'])
         self.assertFalse((self.repo / '.makevn').exists())
         self.edit()
@@ -144,7 +146,25 @@ class ReactorProgressiveTests(unittest.TestCase):
         self.assertEqual(plan['status'], 'unsupported')
         self.assertEqual(plan['unresolved_roots'][0]['root'], '${unknown}/generated')
         self.assertEqual(plan['suites'], [])
-        self.assertIn('--exhaustive', plan['next_action'])
+        self.assertEqual(plan['selection_granularity'], 'unresolved')
+        self.assertIn('verify-changes-preview', plan['next_action'])
+
+    def test_other_class_map_limit_reports_available_module_scope(self):
+        pom = self.repo / 'core/pom.xml'
+        pom.write_text(pom.read_text().replace('</project>',
+            '<build><sourceDirectory>custom/java</sourceDirectory></build></project>'))
+        command = [sys.executable, str(ROOT / 'libexec/makevn/common/progressive_impact.py'),
+                   'preview', str(self.repo), str(self.repo), str(self.java)]
+        result = subprocess.run(command, capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        plan = json.loads(result.stdout)
+        self.assertEqual(plan['status'], 'requires_module_scope')
+        self.assertEqual(plan['selection_granularity'], 'module')
+        self.assertIn('custom Java layout', plan['reason'])
+        self.assertIn('verify-changes-preview', plan['next_action'])
+        self.assertFalse(plan['tests_executed'])
+        self.edit()
+        self.assertEqual(self.plan(), 'app\t*\ncore\t*\nservice\t*')
 
     def test_custom_build_directory_leaves_source_expression_unresolved(self):
         pom = self.repo / 'core/pom.xml'
