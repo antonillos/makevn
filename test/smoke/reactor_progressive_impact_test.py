@@ -273,6 +273,26 @@ class ReactorProgressiveTests(unittest.TestCase):
         self.assertIn('target/generated-sources/api',
                       [item['root'] for item in plan['unresolved_roots']])
 
+    def test_parent_profile_override_keeps_generated_root_unresolved(self):
+        pom = self.repo / 'pom.xml'
+        plugin = ('<build><plugins><plugin><groupId>org.codehaus.mojo</groupId>'
+                  '<artifactId>build-helper-maven-plugin</artifactId><executions><execution>'
+                  '<id>generated</id><goals><goal>add-source</goal></goals>'
+                  '<configuration><sources><source>target/generated-sources/api</source>'
+                  '</sources></configuration></execution></executions></plugin></plugins></build>')
+        profile = ('<profiles><profile><id>alternate</id><activation><activeByDefault>true</activeByDefault>'
+                   '</activation><build><plugins><plugin><groupId>org.codehaus.mojo</groupId>'
+                   '<artifactId>build-helper-maven-plugin</artifactId><executions><execution>'
+                   '<id>generated</id><configuration><sources>'
+                   '<source>target/generated-sources/other</source></sources></configuration>'
+                   '</execution></executions></plugin></plugins></build></profile></profiles>')
+        pom.write_text(pom.read_text().replace('</project>', plugin + profile + '</project>'))
+        plan = reactor.additional_roots_preview(self.repo, reactor.modules(self.repo))
+        self.assertEqual(plan['status'], 'unsupported')
+        self.assertEqual(plan['roots'], [])
+        self.assertIn('target/generated-sources/api',
+                      [item['root'] for item in plan['unresolved_roots']])
+
     def test_core_edit_selects_consumers_without_unrelated_tests(self):
         self.edit()
         self.assertEqual(self.plan(), 'app\texample.FeatureTest\ncore\texample.FeatureTest\nservice\texample.FeatureTest')

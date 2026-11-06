@@ -79,10 +79,10 @@ def additional_roots_preview(base, owners):
                 continue
             configurations = plugin.findall('./configuration/sources/source') + plugin.findall('./executions/execution/configuration/sources/source')
             values = [(node.text or '').strip() for node in configurations]
-            competing = any(other != owner and any(
-                node.findtext('artifactId') == 'build-helper-maven-plugin'
+            competing = any(any(
+                node is not plugin and node.findtext('artifactId') == 'build-helper-maven-plugin'
                 for node in other_model.findall('.//plugin'))
-                for other, other_model in models.items())
+                for other_model in models.values())
             executions = plugin.findall('./executions/execution')
             simple = (plugin in model.findall('./build/plugins/plugin') and
                       plugin.findtext('groupId') == 'org.codehaus.mojo' and
