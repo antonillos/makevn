@@ -210,7 +210,7 @@ class ReactorProgressiveTests(unittest.TestCase):
         plugin = ('<build><plugins><plugin><groupId>org.codehaus.mojo</groupId>'
                   '<artifactId>build-helper-maven-plugin</artifactId><executions><execution>'
                   '<goals><goal>add-source</goal></goals><configuration><sources>'
-                  '<source>target/generated-sources/openapi/src/gen/java/main</source>'
+                  '<source>${project.build.directory}/generated-sources/schema/java</source>'
                   '</sources></configuration></execution></executions></plugin></plugins></build>')
         api = self.repo / 'api/pom.xml'
         api.write_text(api.read_text().replace('</project>', plugin + '</project>'))
@@ -221,7 +221,7 @@ class ReactorProgressiveTests(unittest.TestCase):
         plan = reactor.additional_roots_preview(self.repo, reactor.modules(self.repo))
         self.assertEqual(plan['status'], 'requires_exhaustive_scope', plan)
         self.assertEqual({item['root'] for item in plan['roots']},
-                         {'api/generated/target/generated-sources/openapi/src/gen/java/main'})
+                         {'api/generated/target/generated-sources/schema/java'})
         self.assertEqual(plan['suites'], ['api/generated', 'app', 'service'])
         self.assertFalse(plan['tests_executed'])
 
