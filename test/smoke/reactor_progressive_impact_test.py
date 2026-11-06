@@ -196,6 +196,35 @@ class ReactorProgressiveTests(unittest.TestCase):
         self.assertEqual(json.loads(result.stdout)['status'], 'requires_exhaustive_scope')
         self.assertFalse((self.repo / '.makevn').exists())
 
+    def test_inherited_generated_roots_cross_nested_aggregator(self):
+        self.write('api/pom.xml', '<project><parent><groupId>example</groupId>'
+                   '<artifactId>root</artifactId><version>1</version></parent>'
+                   '<artifactId>api</artifactId><packaging>pom</packaging>'
+                   '<modules><module>generated</module></modules></project>')
+        self.write('api/generated/pom.xml', '<project><parent><groupId>example</groupId>'
+                   '<artifactId>api</artifactId><version>1</version></parent>'
+                   '<artifactId>generated</artifactId></project>')
+        root = self.repo / 'pom.xml'
+        root.write_text(root.read_text().replace('<module>core</module>',
+                   '<module>api</module><module>core</module>'))
+        plugin = ('<build><plugins><plugin><groupId>org.codehaus.mojo</groupId>'
+                  '<artifactId>build-helper-maven-plugin</artifactId><executions><execution>'
+                  '<goals><goal>add-source</goal></goals><configuration><sources>'
+                  '<source>target/generated-sources/openapi/src/gen/java/main</source>'
+                  '</sources></configuration></execution></executions></plugin></plugins></build>')
+        api = self.repo / 'api/pom.xml'
+        api.write_text(api.read_text().replace('</project>', plugin + '</project>'))
+        service = self.repo / 'service/pom.xml'
+        service.write_text(service.read_text().replace('</dependencies>',
+                           '<dependency><groupId>example</groupId><artifactId>generated</artifactId>'
+                           '<version>1</version></dependency></dependencies>'))
+        plan = reactor.additional_roots_preview(self.repo, reactor.modules(self.repo))
+        self.assertEqual(plan['status'], 'requires_exhaustive_scope', plan)
+        self.assertEqual({item['root'] for item in plan['roots']},
+                         {'api/generated/target/generated-sources/openapi/src/gen/java/main'})
+        self.assertEqual(plan['suites'], ['api/generated', 'app', 'service'])
+        self.assertFalse(plan['tests_executed'])
+
     def test_inherited_generated_build_directory_and_unknown_suffix(self):
         pom = self.repo / 'pom.xml'
         original = pom.read_text()

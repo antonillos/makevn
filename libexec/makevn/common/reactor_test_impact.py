@@ -105,8 +105,9 @@ def additional_roots_preview(base, owners):
                     if '${' in suffix:
                         unresolved.append({'root': value, 'owner': None, 'declared_in': owner})
                         continue
-                    consumers = descendants(owner)
-                    if consumers and all(models[child].findtext('packaging', 'jar') != 'pom' for child in consumers):
+                    consumers = {child for child in descendants(owner)
+                                 if models[child].findtext('packaging', 'jar') != 'pom'}
+                    if consumers:
                         resolved_inherited = True
                         for child in sorted(consumers):
                             root = (base / child / suffix).resolve()
