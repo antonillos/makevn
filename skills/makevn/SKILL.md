@@ -103,6 +103,12 @@ processes or reset Docker after a timeout. See the common reference for details.
 
 ## Build, Java and configuration
 
+Maven settings `${env.NAME}` references use inherited values first, then the
+native secret store. Follow [native Maven secret setup](../../docs/maven-secrets.md)
+for missing-variable diagnostics. Never request secret values in chat or save
+them in project configuration. Repository HTTP 401/403 responses alone do not
+establish whether a variable is missing or credentials lack permissions.
+
 After doctor/setup, use `makevn compile`, `makevn test-compile`, `makevn package`
 (`build` alias), or `makevn validate` for the requested goal. MCP names are
 `compile`, `test_compile`, `package`, `validate`. Build success proves only that
