@@ -68,6 +68,15 @@ class MavenSecretsTest(unittest.TestCase):
             self.assertEqual(secrets.lookup("TOKEN"), "test-value")
             self.assertIn("personal-service", call.call_args.args[0])
 
+    def test_account_only_lookup_follows_namespaced_services(self):
+        missing = subprocess.CompletedProcess([], 1, b"", b"duplicate or missing")
+        found = subprocess.CompletedProcess([], 0, b"test-value\n", b"")
+        with patch.object(sys, "platform", "darwin"), patch.object(secrets, "SERVICE", "personal-service"), \
+                patch.object(subprocess, "run", side_effect=[missing, missing, found]) as call:
+            self.assertEqual(secrets.lookup("TOKEN"), "test-value")
+            self.assertEqual(len(call.call_args_list), 3)
+            self.assertNotIn("-s", call.call_args_list[-1].args[0])
+
     def test_inherited_value_is_redacted_and_http_failure_is_preserved(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

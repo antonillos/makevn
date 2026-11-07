@@ -10,7 +10,8 @@ import sys
 import xml.etree.ElementTree as ET
 
 
-SERVICE = os.environ.get("MAKEVN_MAVEN_SECRET_SERVICE") or "makevn.maven.environment"
+DEFAULT_SERVICE = "makevn.maven.environment"
+SERVICE = os.environ.get("MAKEVN_MAVEN_SECRET_SERVICE") or DEFAULT_SERVICE
 REFERENCE = re.compile(r"\$\{env\.([A-Za-z_][A-Za-z0-9_]*)\}")
 
 
@@ -63,24 +64,43 @@ def references(paths):
 
 def lookup(name):
     if sys.platform == "darwin":
-        command = ["/usr/bin/security", "find-generic-password", "-s", SERVICE, "-a", name, "-w"]
+        services = [SERVICE]
+        if SERVICE != DEFAULT_SERVICE:
+            services.append(DEFAULT_SERVICE)
+        # Without a service, security returns errSecDuplicateItem on ambiguous matches.
+        services.append("")
+        for service in dict.fromkeys(services):
+            command = ["/usr/bin/security", "find-generic-password", "-a", name]
+            if service:
+                command += ["-s", service]
+            command.append("-w")
+            result = run_secret_lookup(command)
+            if result is not None:
+                return result
+        raise SecretUnavailable(f"Native secret unavailable or ambiguous for Maven settings variable {name}. "
+                                "Use MAKEVN_MAVEN_SECRET_SERVICE to choose a service; see the installed MakeVN skill.")
     elif sys.platform.startswith("linux") and shutil.which("secret-tool"):
         command = ["secret-tool", "lookup", "service", SERVICE, "account", name]
     else:
         raise SecretUnavailable(f"Maven settings variable {name} is missing; native secret store unavailable. "
                          "See https://github.com/antonillos/makevn/blob/develop/skills/makevn/SKILL.md#native-secrets-for-maven-settings; never send secrets in chat or project config.")
+    value = run_secret_lookup(command)
+    if value is None:
+        raise SecretUnavailable(f"Native secret unavailable for Maven settings variable {name}. "
+                         f"Configure service {SERVICE}, account {name}; see the installed MakeVN skill.")
+    return value
+
+
+def run_secret_lookup(command):
     try:
         result = subprocess.run(command, capture_output=True, timeout=15, check=False)
     except (OSError, subprocess.TimeoutExpired):
-        raise SecretUnavailable(f"Cannot access native secret store for Maven settings variable {name}. "
-                         "Unlock/configure the store; see https://github.com/antonillos/makevn/blob/develop/skills/makevn/SKILL.md#native-secrets-for-maven-settings.") from None
+        return None
     if result.returncode or not result.stdout:
-        raise SecretUnavailable(f"Native secret unavailable for Maven settings variable {name}. "
-                         f"Configure service {SERVICE}, account {name}; see https://github.com/antonillos/makevn/blob/develop/skills/makevn/SKILL.md#native-secrets-for-maven-settings.")
+        return None
     value = result.stdout.decode().removesuffix("\n")
     if not value or "\0" in value:
-        raise SecretUnavailable(f"Native secret for Maven settings variable {name} is empty or invalid. "
-                                "Update it locally; see https://github.com/antonillos/makevn/blob/develop/skills/makevn/SKILL.md#native-secrets-for-maven-settings.")
+        return None
     return value
 
 
