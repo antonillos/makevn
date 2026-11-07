@@ -17,6 +17,7 @@ import xml.etree.ElementTree as ET
 DEFAULT_SERVICE = "makevn.maven.environment"
 SERVICE = os.environ.get("MAKEVN_MAVEN_SECRET_SERVICE") or DEFAULT_SERVICE
 REFERENCE = re.compile(r"\$\{env\.([A-Za-z_][A-Za-z0-9_]*)\}")
+MAVEN_CORE_VERSION = re.compile(r"^maven-core-(\d+(?:\.\d+)+)(?:[-.].*)?\.jar$")
 
 
 class SecretUnavailable(Exception):
@@ -69,11 +70,62 @@ def keychain_match_count(account, service):
                 core.CFRelease(value)
 
 
+def selected_project_directory(arguments, cwd, environment):
+    args = shlex.split(environment.get("MAVEN_ARGS", "")) + list(arguments[1:])
+    selected = None
+    iterator = iter(args)
+    for argument in iterator:
+        if argument in {"-f", "--file"}:
+            selected = next(iterator, "")
+        elif argument.startswith("--file="):
+            selected = argument.partition("=")[2]
+        elif argument.startswith("-f") and len(argument) > 2:
+            selected = argument[2:]
+    if selected:
+        pom = Path(selected)
+        if not pom.is_absolute():
+            pom = Path(cwd) / pom
+        return pom.parent
+    return Path(environment.get("MAVEN_PROJECTBASEDIR", cwd))
+
+
+def selected_maven_home(executable, environment):
+    if Path(executable).name == "mvnw":
+        return None
+    resolved = shutil.which(executable)
+    if resolved:
+        binary = Path(resolved).resolve()
+        if binary.parent.name == "bin":
+            return binary.parent.parent
+    if environment.get("MAVEN_HOME"):
+        return Path(environment["MAVEN_HOME"])
+    return None
+
+
+def maven_version(home):
+    if home is None:
+        return None
+    for jar in (Path(home) / "lib").glob("maven-core-*.jar"):
+        match = MAVEN_CORE_VERSION.match(jar.name)
+        if match:
+            return tuple(int(part) for part in match.group(1).split("."))
+    return None
+
+
+def maven_config_arguments(config, version):
+    text = config.read_text()
+    if version is None or version >= (3, 9):
+        return [line for line in text.splitlines() if line and not line.startswith("#")]
+    return shlex.split(text, comments=True)
+
+
 def settings_paths(arguments, cwd, environment):
-    directory = Path(environment.get("MAVEN_PROJECTBASEDIR", cwd))
+    directory = selected_project_directory(arguments, cwd, environment)
     project = next((p for p in (directory, *directory.parents) if (p / ".mvn").is_dir()), directory)
     config = project / ".mvn/maven.config"
-    defaults = shlex.split(config.read_text(), comments=True) if config.is_file() else []
+    home = selected_maven_home(arguments[0], environment) if arguments else None
+    version = maven_version(home)
+    defaults = maven_config_arguments(config, version) if config.is_file() else []
     args = defaults + shlex.split(environment.get("MAVEN_ARGS", "")) + list(arguments)
     selected = {}
     aliases = {"-s": "user", "--settings": "user", "-gs": "global", "--global-settings": "global"}
@@ -91,12 +143,8 @@ def settings_paths(arguments, cwd, environment):
     paths = [Path(selected.get("user", str(Path.home() / ".m2/settings.xml")))]
     if "global" in selected:
         paths.append(Path(selected["global"]))
-    elif environment.get("MAVEN_HOME"):
-        paths.append(Path(environment["MAVEN_HOME"]) / "conf/settings.xml")
-    else:
-        executable = shutil.which(arguments[0]) if arguments else None
-        if executable and Path(executable).name == "mvn":
-            paths.append(Path(executable).resolve().parent.parent / "conf/settings.xml")
+    elif home:
+        paths.append(home / "conf/settings.xml")
     return [path if path.is_absolute() else Path(cwd) / path for path in paths]
 
 

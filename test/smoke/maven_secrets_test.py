@@ -85,6 +85,59 @@ class MavenSecretsTest(unittest.TestCase):
                                            root, {"MAVEN_ARGS": "--settings environment.xml"})
             self.assertEqual(paths, [root / "selected.xml", root / "global.xml"])
 
+    def test_maven_39_config_treats_each_line_as_one_argument(self):
+        with tempfile.TemporaryDirectory() as directory:
+            config = Path(directory) / "maven.config"
+            config.write_text("-Dlabel=it's-valid\n--settings\nsettings with spaces.xml\n")
+            self.assertEqual(secrets.maven_config_arguments(config, (3, 9, 10)),
+                             ["-Dlabel=it's-valid", "--settings", "settings with spaces.xml"])
+
+    def test_legacy_maven_config_keeps_shell_style_argument_splitting(self):
+        with tempfile.TemporaryDirectory() as directory:
+            config = Path(directory) / "maven.config"
+            config.write_text("--settings legacy.xml -Dlabel='quoted value'\n")
+            self.assertEqual(secrets.maven_config_arguments(config, (3, 8, 8)),
+                             ["--settings", "legacy.xml", "-Dlabel=quoted value"])
+
+    def test_nested_selected_pom_finds_its_maven_config(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            nested = root / "code"
+            (nested / ".mvn").mkdir(parents=True)
+            (root / ".mvn").mkdir()
+            (nested / ".mvn/maven.config").write_text("--settings\nnested-settings.xml\n")
+            (root / ".mvn/maven.config").write_text("--settings\nroot.xml\n")
+            paths = secrets.settings_paths(["mvn", "-f", "code/pom.xml"], root, {})
+            self.assertEqual(paths[0], root / "nested-settings.xml")
+
+    def test_selected_maven_installation_overrides_inherited_maven_home(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            selected = root / "selected-maven"
+            inherited = root / "inherited-maven"
+            (selected / "bin").mkdir(parents=True)
+            (selected / "lib").mkdir()
+            (selected / "conf").mkdir()
+            (inherited / "conf").mkdir(parents=True)
+            executable = selected / "bin/mvn"
+            executable.write_text("#!/bin/sh\n")
+            executable.chmod(0o755)
+            (selected / "lib/maven-core-3.9.10.jar").touch()
+            (selected / "conf/settings.xml").touch()
+            (inherited / "conf/settings.xml").write_text("stale")
+            with patch.dict(os.environ, {"PATH": str(selected / "bin")}):
+                paths = secrets.settings_paths([str(executable)], root, {"MAVEN_HOME": str(inherited)})
+            self.assertEqual(paths[1], (selected / "conf/settings.xml").resolve())
+
+    def test_selected_pom_can_be_given_as_long_option(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            pom = root / "module/pom.xml"
+            (root / "module/.mvn").mkdir(parents=True)
+            (root / "module/.mvn/maven.config").write_text("--settings=module-settings.xml\n")
+            paths = secrets.settings_paths(["mvn", f"--file={pom}"], root, {})
+            self.assertEqual(paths[0], root / "module-settings.xml")
+
     def test_native_command_and_failure_do_not_disclose_output(self):
         response = subprocess.CompletedProcess([], 1, b"fake-sensitive-output", b"fake-error")
         with patch.object(sys, "platform", "darwin"), patch.object(subprocess, "run", return_value=response) as call:
