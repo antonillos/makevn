@@ -122,7 +122,7 @@ print_boot_docker_service_issues() {
     compose_args+=" -f ${compose_override_file}"
   fi
 
-  output="$(cd "${repo_root}" && COMPOSE_ARGS="${compose_args}" SERVICES="${services}" DOCKER_COMPOSE="${docker_compose_cmd}" bash "${docker_ps_script}" || true)"
+  output="$(cd "${repo_root}" && MAKEVN_EXECUTION_COMPOSE_FILE="${compose_file}" COMPOSE_ARGS="${compose_args}" SERVICES="${services}" DOCKER_COMPOSE="${docker_compose_cmd}" bash "${docker_ps_script}" || true)"
   if [[ -n "${output}" ]]; then
     printf '%s\n' "${output}"
   fi
@@ -210,7 +210,7 @@ cmd_docker_ps_required() {
 
   readiness_started_epoch="$(date +%s)"
   while true; do
-    output="$(cd "${repo_root}" && COMPOSE_ARGS="${compose_args}" SERVICES="${services}" DOCKER_COMPOSE="${docker_compose_cmd}" bash "${docker_ps_script}" || true)"
+    output="$(cd "${repo_root}" && MAKEVN_EXECUTION_COMPOSE_FILE="${compose_file}" COMPOSE_ARGS="${compose_args}" SERVICES="${services}" DOCKER_COMPOSE="${docker_compose_cmd}" bash "${docker_ps_script}" || true)"
     if [[ -z "${output}" ]]; then
       break
     fi

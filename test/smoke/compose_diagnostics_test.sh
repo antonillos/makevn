@@ -2,6 +2,7 @@
 set -euo pipefail
 ROOT="$(CDPATH= cd -- "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 tmp="$(mktemp -d)"
+tmp="$(cd "${tmp}" && pwd -P)"
 trap 'rm -rf "${tmp}"' EXIT
 mkdir -p "${tmp}/bin" "${tmp}/project with spaces"
 export MAKEVN_EXECUTION_COMPOSE_FILE="${tmp}/project with spaces/compose.yaml"
@@ -68,6 +69,12 @@ ln -s "${tmp}/linked-source" "${tmp}/repository/e2e"
 ln -s "${tmp}/linked-source" "${tmp}/repository/karate"
 discovered="$(python3 "${ROOT}/libexec/makevn/common/compose_discovery.py" "${tmp}/repository" e2e)"
 [[ "${discovered}" == "${tmp}/repository/e2e/docker-compose.yml" ]]
+source "${ROOT}/libexec/makevn/docker/compose_args.sh"
+real_args="$(makevn_collect_compose_args "${tmp}/linked-source/docker-compose.yml" '')"
+linked_args="$(makevn_collect_compose_args "${discovered}" '')"
+[[ "${real_args}" == "${linked_args}" ]]
+ln -s "${tmp}/linked-source/docker-compose.yml" "${tmp}/repository/linked-compose.yml"
+[[ "$(makevn_collect_compose_args "${tmp}/repository/linked-compose.yml" '')" == "${real_args}" ]]
 ln -s "${tmp}/missing" "${tmp}/repository/broken"
 python3 "${ROOT}/libexec/makevn/common/compose_discovery.py" "${tmp}/repository" boot 2> "${tmp}/discovery-error" > /dev/null
 grep -Fq 'Broken Compose link:' "${tmp}/discovery-error"
