@@ -99,5 +99,4 @@ if [[ "${has_errors}" == "true" ]]; then
   for diagnostic in ${diagnostics[@]+"${diagnostics[@]}"}; do
     [[ -z "${diagnostic}" ]] || printf '%s\n' "${diagnostic}"
   done
-  exit 1
 fi

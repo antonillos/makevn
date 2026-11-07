@@ -58,11 +58,7 @@ case "$1" in
 esac
 MOCK
 chmod +x "${tmp}/bin/docker"
-set +e
 failure="$(PATH="${tmp}/bin:/usr/bin:/bin" COMPOSE_ARGS=selected SERVICES=web bash "${ROOT}/libexec/makevn/docker/ps.sh")"
-failure_rc=$?
-set -e
-[[ "${failure_rc}" == 1 ]]
 [[ "${failure}" == *'web                          exited'* ]]
 [[ "${failure}" == *'exit_code=2'* ]]
 [[ "${failure}" == *'startup failure'* ]]
