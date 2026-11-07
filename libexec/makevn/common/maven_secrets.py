@@ -78,7 +78,8 @@ def lookup(name):
             if result is not None:
                 return result
         raise SecretUnavailable(f"Native secret unavailable or ambiguous for Maven settings variable {name}. "
-                                "Use MAKEVN_MAVEN_SECRET_SERVICE to choose a service; see the installed MakeVN skill.")
+                                f"In Keychain Access, inspect Service for account {name}, then set "
+                                "MAKEVN_MAVEN_SECRET_SERVICE in the MakeVN process environment; see the installed skill.")
     elif sys.platform.startswith("linux") and shutil.which("secret-tool"):
         command = ["secret-tool", "lookup", "service", SERVICE, "account", name]
     else:

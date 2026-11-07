@@ -216,6 +216,12 @@ password in the native application. MakeVN uses `security find-generic-password`
 and honors the keychain's access controls. Unlock the login keychain and authorize
 access locally when prompted.
 
+If the account matches multiple entries, open Keychain Access, search for the
+variable name, and inspect the **Service** field of the intended entry. Set
+`MAKEVN_MAVEN_SECRET_SERVICE` to that service in the environment of the MakeVN
+process (the terminal or MCP host), then retry. This selects an entry without
+copying its password into project configuration or chat.
+
 On Linux, install libsecret's `secret-tool` and store the account under the selected
 service; run this in your own terminal:
 
