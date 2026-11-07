@@ -1613,7 +1613,7 @@ test_docker_commands() {
 #!/usr/bin/env bash
 set -euo pipefail
 printf 'docker-compose %s\n' "$*" >> .docker-compose.log
-if [[ "$*" == *" ps -q db" ]]; then
+if [[ "$*" == *" ps -aq db" ]]; then
   printf 'abc123def456\n'
 fi
 EOF
@@ -1661,7 +1661,7 @@ EOF
 
   PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" init >/dev/null
   PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" docker-up >/dev/null
-  assert_not_contains "${repo}/.docker-compose.log" " ps -q "
+  assert_not_contains "${repo}/.docker-compose.log" " ps -aq "
   PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" docker-down >/dev/null
   output="$(PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" docker-ps)"
   stats_output="$(PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" docker-stats)"
@@ -1914,7 +1914,7 @@ EOF
 #!/usr/bin/env bash
 set -euo pipefail
 printf 'docker-compose %s\n' "$*" >> .docker-compose.log
-if [[ "$*" == *" ps -q "* ]]; then
+if [[ "$*" == *" ps -aq "* ]]; then
   printf 'fake-service-id\n'
 fi
 EOF
@@ -1971,7 +1971,7 @@ MAKEVN_RUN_CMD=""
 EOF
 
   PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" karate-docker-up >/dev/null
-  assert_not_contains "${repo}/.docker-compose.log" " ps -q "
+  assert_not_contains "${repo}/.docker-compose.log" " ps -aq "
   PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" karate-docker-down >/dev/null
   PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" docker-ps-required --compose karate >/dev/null
   printf 'not-a-real-jar\n' > "${repo}/code/boot/target/app.jar"
@@ -1982,7 +1982,7 @@ EOF
 
   assert_matches "${repo}/.docker-compose.log" '^docker-compose -f .*/e2e/karate/src/test/resources/compose/docker-compose\.yml -f .*/e2e/karate/src/test/resources/compose/docker-compose\.override\.yml down$'
   assert_matches "${repo}/.docker-compose.log" '^docker-compose -f .*/e2e/karate/src/test/resources/compose/docker-compose\.yml -f .*/e2e/karate/src/test/resources/compose/docker-compose\.override\.yml up --detach$'
-  assert_matches "${repo}/.docker-compose.log" '^docker-compose -f .*/e2e/karate/src/test/resources/compose/docker-compose\.yml -f .*/e2e/karate/src/test/resources/compose/docker-compose\.override\.yml ps -q db$'
+  assert_matches "${repo}/.docker-compose.log" '^docker-compose -f .*/e2e/karate/src/test/resources/compose/docker-compose\.yml -f .*/e2e/karate/src/test/resources/compose/docker-compose\.override\.yml ps -aq db$'
   assert_matches "${repo}/.mvnw.log" '^ARGS=-nsu -f .*/e2e/karate/pom\.xml test -Dkarate\.env=local -Dkarate\.report\.options=--showLog true -Dkarate\.options=-t@smoke$'
   assert_matches "${repo}/.mvnw.log" '^ARGS=-f .*/code/pom\.xml package -DskipTests -Dmaven\.build\.cache\.enabled=false$'
   assert_contains "${repo}/.mvnw.log" "JAVA_HOME=${java_home}"
@@ -2412,7 +2412,7 @@ EOF
   cat > "${repo}/fake-bin/docker-compose" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
-if [[ "$*" == *" ps -q "* ]]; then
+if [[ "$*" == *" ps -aq "* ]]; then
   printf 'fake-service-id\n'
 fi
 EOF
@@ -2554,7 +2554,7 @@ EOF
   assert_matches "${repo}/.mvnw.log" '^ARGS=-f .*/pom\.xml verify -Djacoco\.skip=false -DskipUTs -Dskip\.unit\.tests=true -DfailIfNoTests=false -Dmaven\.test\.failure\.ignore=false -Dmaven\.build\.cache\.enabled=false$'
   assert_matches "${repo}/.mvnw.log" '^ARGS=-B -nsu -f .*/pom\.xml clean verify -Djacoco\.skip=false -DskipITs -DfailIfNoTests=false -Dmaven\.test\.failure\.ignore=false -Dmaven\.build\.cache\.enabled=false$'
   assert_contains "${repo}/.mvnw.log" "JAVA_HOME=${java_home}"
-  assert_matches "${repo}/.docker-compose.log" '^docker-compose -f .*/code/boot/src/test/resources/compose/docker-compose\.yml -f .*/code/boot/src/test/resources/compose/docker-compose\.override\.yml ps -q db$'
+  assert_matches "${repo}/.docker-compose.log" '^docker-compose -f .*/code/boot/src/test/resources/compose/docker-compose\.yml -f .*/code/boot/src/test/resources/compose/docker-compose\.override\.yml ps -aq db$'
   [[ "${output}" == *"[ok] "* ]] || fail "expected verify-ut output to include success summary"
   [[ "${pr_output}" == *"[ok] "* ]] || fail "expected pr-verify output to include success summary"
 

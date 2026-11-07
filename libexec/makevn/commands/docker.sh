@@ -122,7 +122,7 @@ print_boot_docker_service_issues() {
     compose_args+=" -f ${compose_override_file}"
   fi
 
-  output="$(cd "${repo_root}" && COMPOSE_ARGS="${compose_args}" SERVICES="${services}" DOCKER_COMPOSE="${docker_compose_cmd}" bash "${docker_ps_script}" || true)"
+  output="$(cd "${repo_root}" && MAKEVN_EXECUTION_COMPOSE_FILE="${compose_file}" COMPOSE_ARGS="${compose_args}" SERVICES="${services}" DOCKER_COMPOSE="${docker_compose_cmd}" bash "${docker_ps_script}" || true)"
   if [[ -n "${output}" ]]; then
     printf '%s\n' "${output}"
   fi
@@ -165,6 +165,7 @@ cmd_docker_ps_required() {
   local compose_args=""
   local output=""
   local elapsed=0
+  local readiness_started_epoch=0
 
   shift
   while [[ $# -gt 0 ]]; do
@@ -207,8 +208,9 @@ cmd_docker_ps_required() {
 
   makevn_publish_compose_resources "${repo_root}" "${docker_compose_cmd}" "${compose_file}" "${compose_override_file}"
 
+  readiness_started_epoch="$(date +%s)"
   while true; do
-    output="$(cd "${repo_root}" && COMPOSE_ARGS="${compose_args}" SERVICES="${services}" DOCKER_COMPOSE="${docker_compose_cmd}" bash "${docker_ps_script}" || true)"
+    output="$(cd "${repo_root}" && MAKEVN_EXECUTION_COMPOSE_FILE="${compose_file}" COMPOSE_ARGS="${compose_args}" SERVICES="${services}" DOCKER_COMPOSE="${docker_compose_cmd}" bash "${docker_ps_script}" || true)"
     if [[ -z "${output}" ]]; then
       break
     fi
@@ -227,7 +229,7 @@ cmd_docker_ps_required() {
       output="${mount_output:-Bind mount validation failed without diagnostics.}"
     fi
   fi
-  if ! makevn_run_logged "${repo_root}" docker-ps-required docker-ps-required docker-ps-required bash -c '
+  if ! MAKEVN_LOG_STARTED_EPOCH="${readiness_started_epoch}" makevn_run_logged "${repo_root}" docker-ps-required docker-ps-required docker-ps-required bash -c '
     output="$1"
     wait_seconds="$2"
     elapsed="$3"
@@ -236,10 +238,11 @@ cmd_docker_ps_required() {
       if (( wait_seconds > 0 )); then
         printf "Waited %ss for required Docker services.\n" "${elapsed}"
       fi
+      printf "%s\n" "Required Docker services are not running or healthy, or bind mounts failed validation. Inspect diagnostics before retrying; do not repeat tests until prerequisites are corrected."
       exit 1
     fi
   ' bash "${output}" "${wait_seconds}" "${elapsed}"; then
-    makevn_die "Required Docker services are not running or healthy, or bind mounts failed validation. Inspect diagnostics before retrying; do not repeat tests until prerequisites are corrected."
+    return 1
   fi
 }
 
