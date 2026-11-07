@@ -238,6 +238,7 @@ cmd_docker_ps_required() {
       if (( wait_seconds > 0 )); then
         printf "Waited %ss for required Docker services.\n" "${elapsed}"
       fi
+      printf "%s\n" "Required Docker services are not running or healthy, or bind mounts failed validation. Inspect diagnostics before retrying; do not repeat tests until prerequisites are corrected."
       exit 1
     fi
   ' bash "${output}" "${wait_seconds}" "${elapsed}"; then
