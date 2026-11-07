@@ -894,23 +894,12 @@ makevn_detect_app_http_signal() {
 
 makevn_find_compose_files() {
   local repo_root="$1"
-  find "${repo_root}" \
-    \( -name ".git" -o -name ".makevn" -o -name "target" -o -name "e2e" -o -name "karate" \) -prune \
-    -o -name "docker-compose.yml" -print \
-    2>/dev/null | LC_ALL=C sort
+  python3 "${MAKEVN_LIBEXEC_DIR}/common/compose_discovery.py" "${repo_root}" boot
 }
 
 makevn_find_e2e_compose_files() {
   local repo_root="$1"
-  local _dir
-  for _dir in "${repo_root}/e2e" "${repo_root}/karate"; do
-    if [[ -d "${_dir}" ]]; then
-      find "${_dir}" \
-        \( -name ".git" -o -name ".makevn" -o -name "target" \) -prune \
-        -o -name "docker-compose.yml" -print \
-        2>/dev/null
-    fi
-  done | LC_ALL=C sort
+  python3 "${MAKEVN_LIBEXEC_DIR}/common/compose_discovery.py" "${repo_root}" e2e
 }
 
 makevn_boot_compose_file_path() {

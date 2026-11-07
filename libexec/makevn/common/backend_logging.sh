@@ -474,7 +474,7 @@ makevn_run_logged() {
   makevn_prepare_logfile "${logfile}" || return $?
   relative_log_path=".makevn/logs/${log_name}.log"
 
-  start_epoch="$(date +%s)"
+  start_epoch="${MAKEVN_LOG_STARTED_EPOCH:-$(date +%s)}"
   command_display="$(makevn_quote_command "$@")"
   makevn_write_backend_metadata \
     "${metadata_out}" \
@@ -507,6 +507,10 @@ makevn_run_logged() {
     set -e
     end_epoch="$(date +%s)"
     duration_seconds=$((end_epoch - start_epoch))
+    if [[ "${command_key}" == docker-ps-required ]]; then
+      printf 'finished: %s | exit_code: %s | duration_seconds: %s\n' \
+        "$(date '+%Y-%m-%d %H:%M:%S')" "${exit_code}" "${duration_seconds}" >> "${logfile}"
+    fi
     duration_display="$(makevn_format_duration "${duration_seconds}")"
     if [[ ${exit_code} -eq 0 ]]; then
       printf '%s %s\n' "$(makevn_accent '[ok]')" "$(makevn_accent "${duration_display}")"
