@@ -200,31 +200,30 @@ To change a saved selection, use interactive `makevn doctor --reset-config`
 ## Native secrets for Maven settings
 
 MakeVN resolves `${env.NAME}` references in Maven user and installation settings
-immediately before invoking Maven. An existing nonempty environment variable wins.
-Missing variables use account `NAME`. Lookup checks the configured service first,
-then `makevn.maven.environment` on macOS. `MAKEVN_MAVEN_SECRET_SERVICE` selects
-a specific user-owned service when needed.
-Linux Secret Service lookup remains scoped to the configured service to avoid
-choosing among matching entries. No secret values belong in
+immediately before invoking Maven. It first looks in the native store for service
+`NAME` and the current operating-system user as the account. It then uses the
+inherited environment, followed by exported values from the user's default login
+shell. For compatibility, unresolved names also use account `NAME` under the
+configured service or `makevn.maven.environment`. The shell fallback executes
+the user's login and interactive startup files; output is discarded and only
+referenced values are passed privately to the Maven child. No secret values belong in
 `.makevn/config`, command arguments, source control or agent chat.
 
-On macOS, use Keychain Access to add a generic password with the account matching
-the variable name and the selected service. Enter its
+On macOS, use Keychain Access to add a generic password with the system username
+as the account and the variable name as the service. Enter its
 password in the native application. MakeVN uses `security find-generic-password`
 and honors the keychain's access controls. Unlock the login keychain and authorize
 access locally when prompted.
 
-If the account matches multiple entries, open Keychain Access, search for the
-variable name, and inspect the **Service** field of the intended entry. Set
-`MAKEVN_MAVEN_SECRET_SERVICE` to that service in the environment of the MakeVN
-process (the terminal or MCP host), then retry. This selects an entry without
-copying its password into project configuration or chat.
+For an existing legacy entry whose account is the variable name, set
+`MAKEVN_MAVEN_SECRET_SERVICE` in the MakeVN process environment to its service.
+Do not copy the password into project configuration or chat.
 
 On Linux, install libsecret's `secret-tool` and store the account under the selected
 service; run this in your own terminal:
 
 ```sh
-secret-tool store --label='MakeVN Maven credential' service makevn.maven.environment account REPOSITORY_TOKEN
+secret-tool store --label='Maven credential' service REPOSITORY_TOKEN account "$(id -un)"
 ```
 
 Enter the value at the native prompt. A running, unlocked Secret Service is

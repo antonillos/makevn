@@ -1,12 +1,16 @@
 """Resolve settings environment references without passing secrets in arguments."""
 import os
+import json
+import ctypes
 from pathlib import Path
+import pwd
 import re
 import shlex
 import shutil
 import signal
 import subprocess
 import sys
+import uuid
 import xml.etree.ElementTree as ET
 
 
@@ -17,6 +21,52 @@ REFERENCE = re.compile(r"\$\{env\.([A-Za-z_][A-Za-z0-9_]*)\}")
 
 class SecretUnavailable(Exception):
     """A safe diagnostic containing names, never secret values."""
+
+
+def keychain_match_count(account, service):
+    """Count matching Keychain attributes without requesting password data."""
+    security = ctypes.CDLL('/System/Library/Frameworks/Security.framework/Security')
+    core = ctypes.CDLL('/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation')
+    pointer = ctypes.c_void_p
+    core.CFDictionaryCreateMutable.argtypes = [pointer, ctypes.c_long, pointer, pointer]
+    core.CFDictionaryCreateMutable.restype = pointer
+    core.CFDictionarySetValue.argtypes = [pointer, pointer, pointer]
+    core.CFStringCreateWithCString.argtypes = [pointer, ctypes.c_char_p, ctypes.c_uint32]
+    core.CFStringCreateWithCString.restype = pointer
+    core.CFArrayGetCount.argtypes = [pointer]
+    core.CFArrayGetCount.restype = ctypes.c_long
+    core.CFRelease.argtypes = [pointer]
+    security.SecItemCopyMatching.argtypes = [pointer, ctypes.POINTER(pointer)]
+    security.SecItemCopyMatching.restype = ctypes.c_int32
+    query = core.CFDictionaryCreateMutable(None, 0, None, None)
+    account_value = core.CFStringCreateWithCString(None, account.encode(), 0x08000100)
+    service_value = core.CFStringCreateWithCString(None, service.encode(), 0x08000100)
+    result = pointer()
+    if not query or not account_value or not service_value:
+        raise SecretUnavailable("Cannot inspect Keychain entries safely; configure the inherited environment instead.")
+    try:
+        def symbol(library, name):
+            return pointer.in_dll(library, name)
+
+        for key, value in [
+            ("kSecClass", symbol(security, "kSecClassGenericPassword")),
+            ("kSecAttrAccount", account_value), ("kSecAttrService", service_value),
+            ("kSecReturnAttributes", symbol(core, "kCFBooleanTrue")),
+            ("kSecMatchLimit", symbol(security, "kSecMatchLimitAll")),
+        ]:
+            core.CFDictionarySetValue(query, symbol(security, key), value)
+        status = security.SecItemCopyMatching(query, ctypes.byref(result))
+        if status == -25300:
+            return 0
+        if status != 0 or not result.value:
+            raise SecretUnavailable("Cannot inspect Keychain entries safely; unlock Keychain and retry.")
+        return core.CFArrayGetCount(result)
+    finally:
+        if result.value:
+            core.CFRelease(result)
+        for value in (query, account_value, service_value):
+            if value:
+                core.CFRelease(value)
 
 
 def settings_paths(arguments, cwd, environment):
@@ -62,6 +112,57 @@ def references(paths):
     return sorted(names)
 
 
+def lookup_user_account(name):
+    """Resolve a native entry whose service is the variable and account is the OS user."""
+    try:
+        account = pwd.getpwuid(os.getuid()).pw_name
+    except KeyError:
+        return None
+    if sys.platform == "darwin":
+        try:
+            count = keychain_match_count(account, name)
+        except (SecretUnavailable, OSError, AttributeError):
+            return None
+        if count > 1:
+            raise SecretUnavailable(f"Multiple Keychain entries match service {name} and the current user. "
+                                    "Resolve the duplicate entries locally in Keychain Access before retrying.")
+        if count == 0:
+            return None
+        return run_secret_lookup(["/usr/bin/security", "find-generic-password", "-a", account, "-s", name, "-w"])
+    if sys.platform.startswith("linux") and shutil.which("secret-tool"):
+        return run_secret_lookup(["secret-tool", "lookup", "service", name, "account", account])
+    return None
+
+
+def shell_values(names):
+    """Read selected exported variables from the user's login shell without logging output."""
+    if not names:
+        return {}
+    try:
+        shell = pwd.getpwuid(os.getuid()).pw_shell
+        if not shell or not Path(shell).is_absolute():
+            return {}
+        marker = uuid.uuid4().hex
+        script = ('import json,os,sys; '
+                  'print(sys.argv[1]+json.dumps({n:os.environ[n] for n in sys.argv[2:] '
+                  'if os.environ.get(n)}))')
+        command = "exec " + " ".join(shlex.quote(arg) for arg in
+                                     [sys.executable, "-c", script, marker, *names])
+        result = subprocess.run([shell, "-lic", command], cwd=str(Path.home()),
+                                stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                                stderr=subprocess.DEVNULL, timeout=15, check=False)
+        if result.returncode or len(result.stdout) > 1024 * 1024:
+            return {}
+        position = result.stdout.rfind(marker.encode())
+        if position < 0:
+            return {}
+        values = json.loads(result.stdout[position + len(marker):].splitlines()[0])
+        return {name: values[name] for name in names
+                if isinstance(values.get(name), str) and values[name]}
+    except (OSError, KeyError, ValueError, subprocess.TimeoutExpired):
+        return {}
+
+
 def lookup(name):
     if sys.platform == "darwin":
         services = [SERVICE]
@@ -76,8 +177,8 @@ def lookup(name):
             if result is not None:
                 return result
         raise SecretUnavailable(f"Native secret unavailable or ambiguous for Maven settings variable {name}. "
-                                f"In Keychain Access, inspect Service for account {name}, then set "
-                                "MAKEVN_MAVEN_SECRET_SERVICE in the MakeVN process environment; see the installed skill.")
+                                f"Use service {name} with the current system user as the Keychain account, "
+                                "or export the variable in the default shell; see the installed MakeVN skill.")
     elif sys.platform.startswith("linux") and shutil.which("secret-tool"):
         command = ["secret-tool", "lookup", "service", SERVICE, "account", name]
     else:
@@ -115,7 +216,15 @@ def run(arguments):
     if not command or Path(command[0]).name not in {"mvn", "mvnw"}:
         os.execvpe(arguments[0], arguments, environment)
     names = references(settings_paths(command, Path.cwd(), environment))
+    missing = []
     for name in names:
+        value = lookup_user_account(name)
+        if value:
+            environment[name] = value
+        elif not environment.get(name):
+            missing.append(name)
+    environment.update(shell_values(missing))
+    for name in missing:
         if not environment.get(name):
             environment[name] = lookup(name)
     values = sorted({environment[name] for name in names if environment.get(name)}, key=len, reverse=True)
