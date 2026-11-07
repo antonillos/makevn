@@ -299,8 +299,11 @@ The preview lists a dependency-preparation phase and the exact per-owner test
 scope. Preparation uses `install -am` with UT/IT execution disabled but test
 compilation retained (test-jar dependencies can be necessary); it updates local
 Maven artifacts so the following phases use this checkout's snapshots.
-Verification then runs **without `-am`**: full suites for production/POM consumer
-owners, selected changed test classes for test-only owners. Test helpers and deleted
+Verification then runs **without `-am`**: static dependencies enriched by runtime
+observations where supported, otherwise full production/POM consumer owner suites
+with a fallback reason; selected changed test classes for test-only owners. See
+[precise test selection](precise-test-selection.md) for static initialization, optional isolated capture,
+compatibility checks, consumer expansion and supported single-module layouts. Test helpers and deleted
 tests expand to the complete owner suite. Unknown/root impact rejects focused
 execution; choose `--exhaustive` to run all selected owner/dependency suites.
 Default invocation is focused. Explicit CLI --exhaustive or MCP focused:false
@@ -339,6 +342,17 @@ then execute the reviewed focused plan. Do not automatically prepend `clean`, wh
 forces rebuilding. Use `fail-fast: true` for dependent verification/coverage/CRAP
 steps so failed prerequisite runs cannot be treated as fresh evidence. False is
 only appropriate when continued independent diagnostics are explicitly wanted.
-Use verify_changes → coverage_changes → crap_changes for focused changed-code
+When effective JaCoCo instrumentation is configured,
+use verify_changes → coverage_changes → crap_changes for focused changed-code
 gates: one fresh UT/IT snapshot, no repeated tests. Overall-project coverage still
 requires the separate full coverage-producing flow.
+When JaCoCo is confirmed absent after inspecting parents and active profiles, run
+verify_changes only and report metrics unavailable. Do not queue predictable
+coverage/CRAP failures or skips. Missing data from a configured agent still fails.
+
+For explicit project-wide test-impact preparation, including a clean checkout,
+run doctor/setup, inspect `test-impact-preview`, then run `test-impact-init`.
+Initialization writes a static map without Maven/tests. Normal executions enrich
+it with conservative runtime dependencies. Use `--isolated` explicitly for costly
+complete-suite and isolated-class capture; compatible partial captures resume. See [precise selection](precise-test-selection.md)
+for cost, invalidation, CLI/MCP parity and current layout limits.

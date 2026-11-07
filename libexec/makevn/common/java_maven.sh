@@ -112,7 +112,7 @@ makevn_effective_java_home() {
 
   if [[ -n "${tool_versions_file}" ]]; then
     makevn_resolve_tool_versions_home "${tool_versions_file}"
-    return 0
+    return $?
   fi
 
   if [[ -n "${MAKEVN_JAVA_HOME:-}" ]]; then
@@ -199,6 +199,7 @@ makevn_run_in_context() {
   fi
 
   makevn_check_maven_command "${maven_base_path}" "${command_cwd}" "${java_home}" "$@" || return $?
+  set -- python3 "${MAKEVN_LIBEXEC_DIR}/common/maven_secrets.py" "$@"
   makevn_trace_command exec env JAVA_HOME="${java_home}" "$@"
 
   (
@@ -427,7 +428,7 @@ makevn_run_selected_test() {
   prop_flags_value="$(makevn_append_word "${prop_flags_value}" "${test_param}")"
   prop_flags_value="$(makevn_append_word "${prop_flags_value}" "-Dfailsafe.failIfNoSpecifiedTests=false")"
   prop_flags_value="$(makevn_append_word "${prop_flags_value}" "-Dsurefire.failIfNoSpecifiedTests=false")"
-  prop_flags_value="$(makevn_append_word "${prop_flags_value}" "-Dmaven.build.cache.enabled=true")"
+  prop_flags_value="$(makevn_append_word "${prop_flags_value}" "-Dmaven.build.cache.enabled=false")"
 
   if [[ "${test_mode}" == "integration" ]]; then
     boot_module="$(makevn_detect_boot_module_name "${repo_root}")"

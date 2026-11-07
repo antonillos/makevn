@@ -50,7 +50,7 @@ execution; do not preview focused and execute exhaustive mode.
   UT/IT execution disabled, while retaining test compilation/test jars. It updates
   local Maven artifacts. Its `-am install` reactor may still list 34 modules:
   that is not evidence that all their suites ran.
-- Verification runs without `-am`: full production/POM-consumer owner suites,
+- Verification runs without `-am`: validated evidence-selected tests when available, otherwise full production/POM-consumer owner suites,
   selected changed test classes in other owners. A categories change plus a boot
   IT therefore does not require the complete boot suite in this mode.
 - UT and IT selectors are separated; selected tests must have fresh non-skipped
@@ -91,6 +91,13 @@ that external/E2E/global gates are not evaluated; unknown models still reject.
 Impact state is internal only; do not create or maintain root impact overrides.
 Keep required external checks separate.
 
+If preparation adds shared test fixtures and focused verification stops because
+the current plan lacks complete consumer suites, inspect the changed files.
+Keep applicable prepared fixtures present and run `verify-changes-preview` again
+in the same mode so the new resources participate in planning. Explain the new
+scope before retrying verification under existing authorization. Do not delete or
+stage fixtures merely to bypass this check, and do not repeat the unchanged plan.
+
 ### Preview scope outcomes
 
 When focused impact is unknown, `verify-changes-preview` completes with exit 0
@@ -114,3 +121,47 @@ never infer owners from company/module/schema names or ignore fixtures.
 Impact state is internal only: do not create or maintain root impact overrides.
 Keep required external checks separate; automatic Maven scope does not prove them.
 See Focused impact (see the selection rules above).
+
+### Progressive test impact within one module
+
+Focused selection starts with static transitive Java dependencies and conservative
+framework/interface consumers, without test execution. `test_impact_preview` is
+read-only; `test_impact_init` writes a static map. Neither runs Maven or tests.
+Normal selected tests and complete suites add runtime dependencies from successful
+fresh reports and JVM traces. Shared executions supply loaded-class supersets;
+never claim per-test attribution from aggregate traces or JaCoCo. Missing evidence
+cannot remove static edges. Unknown effects retain complete suites.
+Literal local reactors use module-qualified class identities and include downstream
+consumer owners before selecting tests. Dependency preparation installs all planned
+owners and their upstream dependencies once. Normal executions collect each
+module's fresh reports; duplicate class names do not merge report ownership.
+Profile-defined membership, custom source layouts and unresolved Maven models
+remain unsupported for class narrowing. Explicit isolated capture remains limited
+to single-module projects.
+
+Explicit `test_impact_init` with `isolated: true` (CLI `--isolated`) retains the
+expensive full-suite plus isolated-class workflow. Unit replays use Maven's test
+phase to avoid package/Shade repetition; integration replays retain verify.
+Changed-code recording uses `record-test-impact: true` in both preview and
+verification. Do not disable coverage gates to make captures pass. Maps are
+managed state and never substitute for fresh verification or quality evidence.
+
+### Partial suites and global coverage gates
+
+A selected-suite `verify-changes` still executes Maven verify and can fail its
+project-wide JaCoCo threshold after all selected tests pass. Default behavior
+preserves that failure. For explicitly authorized local changed-code feedback:
+
+```bash
+makevn verify-changes-preview --defer-global-coverage
+makevn verify-changes --defer-global-coverage
+makevn coverage-changes
+makevn crap-changes
+```
+
+MCP uses `defer-global-coverage: true` in both preview and verification, then the
+usual fail-fast composite. This defers only property-based standard/Apache Commons
+JaCoCo failure, keeping instrumentation, warnings, tests and other gates. Custom
+literal configurations can still reject the run. Do not use the flag for
+exhaustive verification or impact capture. Full verify/CI coverage is a separate
+required result. Report the scope and deferral explicitly.

@@ -8,6 +8,15 @@ use std::process;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 #[test]
+fn invalid_execution_status_explains_how_to_find_the_id() {
+    let result = super::ToolCallResult::failure("invalid executionId".into());
+    let suggestion = super::tool_next_suggestion("execution_status", &result);
+    assert!(suggestion.contains("execution_list"));
+    assert!(suggestion.contains("includeFinished: true"));
+    assert!(suggestion.contains("do not rerun it"));
+}
+
+#[test]
 fn resolves_sibling_makevn_or_current_binary() {
     let dir = std::env::temp_dir().join(format!("makevn-mcp-bin-test-{}", process::id()));
     fs::create_dir_all(&dir).unwrap();
@@ -79,6 +88,22 @@ fn crap_tool_has_typed_schema_and_forwards_flags() {
             "3"
         ]
     );
+}
+
+#[test]
+fn crap_install_analyzer_tool_maps_to_explicit_installer() {
+    let spec = TOOL_SPECS
+        .iter()
+        .find(|s| s.name == "crap_install_analyzer")
+        .unwrap();
+    assert_eq!(spec.command, &["crap", "install-analyzer"]);
+    assert_eq!(
+        super::tool(spec)["inputSchema"]["properties"]["repo"]["type"],
+        "string"
+    );
+    let mut args = Vec::from_iter(spec.command.iter().map(|s| s.to_string()));
+    push_tool_flags(&mut args, spec, &Map::new()).unwrap();
+    assert_eq!(args, ["crap", "install-analyzer"]);
 }
 
 #[test]
@@ -866,7 +891,7 @@ fn workflows_preserve_server_authored_step_guidance() {
             ("docker_up", "Before running tests", 0),
             ("docker_ps", "If Docker services are required", 0),
             ("docker_ps_required", "Inspect untrustedData", 1),
-            ("verify_changes", "Inspect the first root cause", 1),
+            ("verify_changes", "If the error reports prepared shared fixtures", 1),
         ] {
             let params = json!({"name": workflow_tool, "arguments": {"steps": [{"tool": tool}]}});
             let result = super::handle_tool_call(&bin, &params).unwrap();
@@ -955,9 +980,19 @@ fn focused_changes_option_is_exposed_in_both_tools() {
     for name in ["verify_changes", "verify_changes_preview"] {
         let spec = super::TOOL_SPECS.iter().find(|spec| spec.name == name).unwrap();
         assert!(spec.options.iter().any(|option| option.name == "focused"));
+        assert!(spec.options.iter().any(|option| option.name == "record-test-impact"));
         assert!(spec.description.contains("focused"));
         assert!(spec.description.contains("gate"));
     }
+}
+
+#[test]
+fn test_impact_capture_flag_is_forwarded_without_changing_focused_mode() {
+    let mut args = Vec::new();
+    super::push_tool_option(&mut args, "record-test-impact", &json!(true)).unwrap();
+    assert_eq!(args, ["--record-test-impact"]);
+    assert!(super::validate_workflow_step(&json!({"tool":"verify_changes", "arguments":{
+        "focused":true, "record-test-impact":true}})).is_ok());
 }
 
 #[test]
@@ -1010,6 +1045,21 @@ fn changed_code_preview_requires_docker_readiness_before_execution() {
         assert!(spec.description.contains("reuse healthy services"));
         assert!(spec.description.contains("volume-preserving docker_up"));
         assert!(spec.description.contains("docker_reset"));
+    }
+}
+
+#[test]
+fn changed_verification_guidance_omits_metrics_without_jacoco() {
+    for tool in ["verify_changes_preview", "verify_changes"] {
+        let result = super::ToolCallResult {
+            output: String::new(), exit_code: 0, duration_ms: 1,
+            doctor_snapshot: None, next_suggestion: None,
+        };
+        let response = super::standard_tool_result(&result, &json!({"name": tool}));
+        let guidance = response["structuredContent"]["nextSuggestion"].as_str().unwrap();
+        assert!(guidance.contains("JaCoCo is confirmed absent"));
+        assert!(guidance.contains("inherited"));
+        assert!(guidance.contains("missing/stale data"));
     }
 }
 
@@ -1338,4 +1388,45 @@ fn testcontainers_guidance_distinguishes_engine_from_compose() {
         assert!(guidance.contains("not the engine"));
     }
     assert_eq!(super::docker_interface_guidance("compile", "Build."), "Build.");
+}
+
+#[test]
+fn test_impact_initialization_tools_share_public_cli_contract() {
+    for (tool, command) in [("test_impact_preview", "test-impact-preview"), ("test_impact_init", "test-impact-init")] {
+        let spec = super::TOOL_SPECS.iter().find(|spec| spec.name == tool).unwrap();
+        assert_eq!(spec.command, &[command]);
+        assert!(!spec.options.iter().any(|option| option.name == "record-test-impact"));
+    }
+    assert!(crate::mcp_execution::inspection("test_impact_preview"));
+    assert!(!crate::mcp_execution::inspection("test_impact_init"));
+}
+
+#[test]
+fn deferred_global_coverage_is_explicit_and_limited_to_changed_verification() {
+    for name in ["verify_changes", "verify_changes_preview"] {
+        let spec = super::TOOL_SPECS.iter().find(|spec| spec.name == name).unwrap();
+        assert!(spec.options.iter().any(|option| option.name == "defer-global-coverage"));
+        assert!(super::validate_workflow_step(&json!({"tool":name,
+            "arguments":{"focused":true,"defer-global-coverage":true}})).is_ok());
+    }
+    for name in ["verify", "test_impact_init"] {
+        assert!(super::validate_workflow_step(&json!({"tool":name,
+            "arguments":{"defer-global-coverage":true}})).is_err());
+    }
+    let mut args = Vec::new();
+    super::push_tool_option(&mut args, "defer-global-coverage", &json!(false)).unwrap();
+    assert!(args.is_empty());
+    super::push_tool_option(&mut args, "defer-global-coverage", &json!(true)).unwrap();
+    assert_eq!(args, ["--defer-global-coverage"]);
+}
+
+#[test]
+fn isolated_capture_is_explicit_and_forwarded_only_on_initialization() {
+    let spec = super::TOOL_SPECS.iter().find(|spec| spec.name == "test_impact_init").unwrap();
+    assert!(spec.options.iter().any(|option| option.name == "isolated"));
+    let preview = super::TOOL_SPECS.iter().find(|spec| spec.name == "test_impact_preview").unwrap();
+    assert!(!preview.options.iter().any(|option| option.name == "isolated"));
+    let mut args = Vec::new();
+    super::push_tool_option(&mut args, "isolated", &json!(true)).unwrap();
+    assert_eq!(args, ["--isolated"]);
 }

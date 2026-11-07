@@ -1,29 +1,53 @@
 #!/usr/bin/env bash
 
+source "${SCRIPT_DIR}/commands/test_impact.sh"
+source "${SCRIPT_DIR}/commands/focused_coverage_gate.sh"
+
 makevn_collect_focused_plan() {
   local changed_paths="$1" git_root="$2" comparison_base="$3" purpose="$4" rc=0
+  local java_home
+  java_home="$(makevn_effective_java_home "${git_root}" code "${MAKEVN_VERIFY_CHANGES_MAVEN_BASE_PATH}")" || java_home=''
+  export MAKEVN_TEST_IMPACT_JAVA="${java_home}/bin/java"
   MAKEVN_VERIFY_CHANGES_FOCUSED_PLAN="$(printf '%s\n' "${changed_paths}" | python3 "${SCRIPT_DIR}/common/changes_scope.py" "${git_root}" "${MAKEVN_VERIFY_CHANGES_MAVEN_BASE_PATH}" "${comparison_base}" --focused-plan)" || rc=$?
   if [[ "${rc}" == 3 && "${purpose}" == preview ]]; then
     MAKEVN_VERIFY_CHANGES_SCOPE_REQUIRED=true
     return 0
   fi
   [[ "${rc}" == 0 ]] || makevn_die "Focused planning did not produce a safe plan; inspect diagnostics before verification."
+  if [[ -n "${MAKEVN_VERIFY_CHANGES_FOCUSED_PLAN}" ]]; then
+    MAKEVN_VERIFY_CHANGES_MODULE_SELECTION="$(printf '%s\n' "${MAKEVN_VERIFY_CHANGES_FOCUSED_PLAN}" | cut -f1 | paste -sd, -)"
+  fi
 }
 
 makevn_changes_mode() {
   MAKEVN_VERIFY_CHANGES_MODE=focused
   MAKEVN_VERIFY_CHANGES_MODE_ARGS=0
-  case "${1:-}" in
-    --focused|--exhaustive)
+  export MAKEVN_TEST_IMPACT_CAPTURE=false
+  MAKEVN_DEFER_GLOBAL_COVERAGE=false
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --record-test-impact) MAKEVN_TEST_IMPACT_CAPTURE=true ;;
+      --defer-global-coverage) MAKEVN_DEFER_GLOBAL_COVERAGE=true ;;
+      --focused|--exhaustive)
       MAKEVN_VERIFY_CHANGES_MODE="${1#--}"
-      MAKEVN_VERIFY_CHANGES_MODE_ARGS=1
       ;;
-  esac
+      *) break ;;
+    esac
+    MAKEVN_VERIFY_CHANGES_MODE_ARGS=$((MAKEVN_VERIFY_CHANGES_MODE_ARGS + 1))
+    shift
+  done
+  [[ "${MAKEVN_TEST_IMPACT_CAPTURE}" != true || "${MAKEVN_VERIFY_CHANGES_MODE}" == focused ]] || makevn_die "--record-test-impact requires focused mode"
+  makevn_validate_deferred_global_coverage
 }
 
 makevn_print_focused_changes_plan() {
   local owner tests
   makevn_print_item "mode" "focused (not a full integration or global coverage gate)"
+  makevn_print_deferred_global_coverage
+  makevn_print_item "selection" "static dependencies enriched by real executions; complete owner suites when impact is uncertain"
+  if [[ "${MAKEVN_TEST_IMPACT_CAPTURE:-false}" == true ]]; then
+    makevn_print_item "test impact capture" "complete suite followed by isolated per-test-class verification; JDK 17+ and standard single-module Java layout required"
+  fi
   makevn_print_item "prepare" "${MAKEVN_VERIFY_CHANGES_MODULE_SELECTION} plus dependencies: install without UT/IT; updates local Maven artifacts"
   while IFS=$'\t' read -r owner tests; do
     [[ -n "${owner}" ]] || continue
@@ -45,20 +69,26 @@ makevn_focused_changes_phase() (
   exit "${rc}"
 )
 
-makevn_run_focused_changes() {
+makevn_run_focused_changes() (
   local repo_root="$1" owner tests
   local MAKEVN_FOCUSED_PHASE_INDEX=1
-  local -a base_args=("${verify_args[@]}" ${cli_flags[@]+"${cli_flags[@]}"} -f "${MAKEVN_VERIFY_CHANGES_MAVEN_BASE_PATH}/pom.xml" ${prop_flags[@]+"${prop_flags[@]}"} -Dmaven.build.cache.enabled=false -Dmaven.test.failure.ignore=false)
+  makevn_focused_coverage_gate_flags
+  local -a base_args=("${verify_args[@]}" ${cli_flags[@]+"${cli_flags[@]}"} -f "${MAKEVN_VERIFY_CHANGES_MAVEN_BASE_PATH}/pom.xml" ${prop_flags[@]+"${prop_flags[@]}"} -Dmaven.build.cache.enabled=false -Dmaven.test.failure.ignore=false ${MAKEVN_FOCUSED_COVERAGE_GATE_FLAGS[@]+"${MAKEVN_FOCUSED_COVERAGE_GATE_FLAGS[@]}"})
   # Install is necessary: verification without -am must consume this checkout's
   # freshly built dependencies, not older snapshots from another worktree.
   makevn_focused_changes_phase "${repo_root}" "prepare dependencies (no tests)" "${base_args[@]}" -pl "${MAKEVN_VERIFY_CHANGES_MODULE_SELECTION}" -am install -DskipTests=true -DskipUTs=true -DskipITs=true || return $?
   makevn_scoped_coverage_checkpoint "${repo_root}" || return $?
+  makevn_validate_prepared_impact "${repo_root}" || return $?
+  local capture_stamp
+  capture_stamp="$(mktemp "$(makevn_state_dir "${repo_root}")/impact-suite.XXXXXX")"
+  trap 'rm -f "${capture_stamp}"' EXIT
   while IFS=$'\t' read -r owner tests; do
     [[ -n "${owner}" ]] || continue
     MAKEVN_FOCUSED_PHASE_INDEX=$((MAKEVN_FOCUSED_PHASE_INDEX + 1))
     makevn_verify_focused_owner "${repo_root}" "${owner}" "${tests}" "${base_args[@]}" || return $?
   done <<< "${MAKEVN_VERIFY_CHANGES_FOCUSED_PLAN}"
-}
+  makevn_finish_test_impact_capture "${repo_root}" "${capture_stamp}" "${base_args[@]}"
+)
 
 makevn_verify_focused_owner() {
   local repo_root="$1" owner="$2" tests="$3"
@@ -70,7 +100,7 @@ makevn_verify_focused_owner() {
   if [[ "${tests}" != '*' ]]; then
     MAKEVN_FOCUSED_SELECTED_TESTS="${tests}"
   fi
-  if makevn_focused_changes_phase "${repo_root}" "verify ${owner} (${tests})" "$@" -pl "${owner}" verify -DskipTests=false -DskipUTs=false -DskipITs=false ${MAKEVN_FOCUSED_SELECTION[@]+"${MAKEVN_FOCUSED_SELECTION[@]}"}; then rc=0; else rc=$?; fi
+  if makevn_focused_changes_phase "${repo_root}" "verify ${owner} (${tests})" "$@" -pl "${owner}" "${MAKEVN_TEST_IMPACT_REPLAY_GOAL:-verify}" -DskipTests=false -DskipUTs=false -DskipITs=false ${MAKEVN_FOCUSED_SELECTION[@]+"${MAKEVN_FOCUSED_SELECTION[@]}"}; then rc=0; else rc=$?; fi
   rm -f "${stamp}"
   return "${rc}"
 }
@@ -85,7 +115,7 @@ makevn_focused_test_selection() {
 
 makevn_require_focused_test_reports() {
   [[ -n "${MAKEVN_FOCUSED_SELECTED_TESTS:-}" ]] || return 0
-  python3 "${SCRIPT_DIR}/common/selected_test_reports.py" "${MAKEVN_FOCUSED_REPORT_MODULE}" "${MAKEVN_FOCUSED_SELECTED_TESTS}" "${MAKEVN_FOCUSED_REPORT_STAMP}"
+  python3 "${SCRIPT_DIR}/common/selected_test_reports.py" "${MAKEVN_FOCUSED_REPORT_MODULE}" "${MAKEVN_FOCUSED_SELECTED_TESTS}" "${MAKEVN_FOCUSED_REPORT_STAMP}" "${repo_root}"
 }
 
 makevn_validate_focused_flags() {

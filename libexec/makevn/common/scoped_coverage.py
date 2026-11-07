@@ -14,6 +14,15 @@ import xml.etree.ElementTree as ET
 VERSION = '0.8.14'
 
 
+def comparison_commit(repo, reference):
+    return subprocess.check_output(['git', '-C', str(repo), 'merge-base',
+                                    reference.removesuffix('...HEAD'), 'HEAD']).decode().strip()
+
+
+def evidence_comparison_commit(repo, manifest):
+    return manifest.get('comparison_base') or comparison_commit(repo, manifest['comparison_head'])
+
+
 def fingerprint(repo, base=None, inputs=None):
     head = subprocess.check_output(['git', '-C', str(repo), 'rev-parse', 'HEAD'])
     git_root = Path(subprocess.check_output(['git', '-C', str(repo), 'rev-parse', '--show-toplevel']).decode().strip()).resolve()
@@ -73,7 +82,8 @@ def prepare(repo, state, base, owners, sources, reference="HEAD"):
     state.mkdir(parents=True, exist_ok=True)
     inputs = {}
     manifest = {'status': 'pending', 'fingerprint': fingerprint(repo, base, inputs), 'inputs': inputs, 'base': str(base),
-                'owners': owners, 'sources': sources, 'comparison': comparison, 'comparison_head': comparison_head}
+                'owners': owners, 'sources': sources, 'comparison': comparison, 'comparison_head': comparison_head,
+                'comparison_base': comparison_commit(repo, reference)}
     (state / 'run.json').write_text(json.dumps(manifest))
     for evidence in state.glob('evidence-*'):
         if evidence.is_dir() and not evidence.is_symlink():
@@ -120,8 +130,14 @@ def checkpoint(repo, state, plan):
         rules = automatic_resource_rules(repo, base, modules, parse)
         full = {line.split('\t')[0] for line in plan.splitlines()
                 if line.split('\t')[1:] == ['*']}
-        if not rules or not rules[0][1].issubset(full & set(manifest['owners'])):
+        if not rules:
             raise drift_error(changed)
+        missing = rules[0][1] - (full & set(manifest['owners']))
+        if missing:
+            raise ValueError('Prepared shared fixtures changed, but the current plan does not run all consumer suites. '
+                             'Inspect the changed files, then run verify-changes-preview again with these files present '
+                             'and review its scope before retrying verification. Missing complete suites: ' +
+                             ', '.join(sorted(missing)) + '. Changed inputs: ' + ', '.join(changed))
         print('Prepared shared fixtures changed; all consumer Maven suites will verify these inputs: ' + ', '.join(changed[:20]))
     # Preparation must not contribute execution data to test evidence.
     for path in data_files(base, manifest['owners']):
@@ -154,7 +170,11 @@ def finish(repo, state):
         path = repo / source
         if not path.is_file():
             continue
-        owner, relative = path.relative_to(base).as_posix().split('/src/main/java/', 1)
+        source_path = path.relative_to(base).as_posix()
+        if source_path.startswith('src/main/java/'):
+            owner, relative = '.', source_path[len('src/main/java/'):]
+        else:
+            owner, relative = source_path.split('/src/main/java/', 1)
         stem = relative[:-5]
         compiled = base / owner / 'target/classes' / (stem + '.class')
         if stem in class_owners:
@@ -177,11 +197,14 @@ def finish(repo, state):
 
 def load(repo, state):
     manifest = json.loads((state / 'run.json').read_text())
-    comparison_head = subprocess.check_output(['git', '-C', str(repo), 'rev-parse', manifest['comparison']]).decode().strip()
-    if comparison_head != manifest['comparison_head']:
+    if comparison_commit(repo, manifest['comparison']) != evidence_comparison_commit(repo, manifest):
         raise ValueError('Comparison base changed; rerun verify-changes')
     if manifest['status'] != 'success':
-        raise ValueError('Focused coverage is incomplete; rerun verify-changes')
+        raise ValueError('Focused coverage is incomplete: the last verification did not complete successfully '
+                         '(failed, interrupted or still running). No valid focused evidence is available. '
+                         'Inspect ' + str(repo / '.makevn/logs/verify-changes-*.log') +
+                         ' and selected modules\' target/surefire-reports or target/failsafe-reports; '
+                         'resolve the cause before rerunning verify-changes')
     inputs = {}
     if manifest['fingerprint'] != fingerprint(repo, Path(manifest['base']), inputs):
         paths = ', '.join(changed_inputs(manifest, inputs)[:20])
@@ -189,7 +212,11 @@ def load(repo, state):
     if manifest.get('missing'):
         raise ValueError('Missing changed-class bytecode; rerun verify-changes: ' + ', '.join(manifest['missing']))
     if manifest['expected'] and not manifest['data']:
-        raise ValueError('Changed production classes require fresh JaCoCo execution data, but none was captured. Enable coverage agents and rerun verify-changes; existing global reports are not reused')
+        raise ValueError('Changed production classes require fresh JaCoCo execution data, but none was captured. '
+                         'Check that the effective Maven build binds a JaCoCo prepare-agent goal for the selected tests; '
+                         'jacoco.skip=false alone does not activate an undeclared agent. '
+                         'If the agent ran, check its execution-data path under the selected module target directory. '
+                         'Then rerun verify-changes; existing global reports are not reused')
     for name, digest in manifest['hashes'].items():
         if hashlib.sha256(Path(name).read_bytes()).hexdigest() != digest:
             raise ValueError('Focused evidence changed; rerun verify-changes')
@@ -198,8 +225,9 @@ def load(repo, state):
 
 def report(repo, state, maven, java, reference=""):
     if reference:
-        requested = subprocess.check_output(["git", "-C", str(repo), "rev-parse", reference.removesuffix("...HEAD")]).decode().strip()
-        if requested != load(repo, state)["comparison_head"]:
+        requested = comparison_commit(repo, reference)
+        manifest = load(repo, state)
+        if requested != evidence_comparison_commit(repo, manifest):
             raise ValueError("Requested base differs from focused verification; rerun matching verification")
     manifest = load(repo, state)
     if not manifest['expected']:
@@ -218,7 +246,7 @@ def report(repo, state, maven, java, reference=""):
             environment = dict(os.environ, JAVA_HOME=str(Path(java).parent.parent))
             subprocess.run([maven, '-f', str(pom), 'org.apache.maven.plugins:maven-dependency-plugin:3.8.1:copy',
                             '-Dartifact=org.jacoco:org.jacoco.cli:' + VERSION + ':jar:nodeps',
-                            '-DoutputDirectory=' + str(state)], check=True, cwd=directory, env=environment)
+                            '-DoutputDirectory=' + str(state)], check=True, cwd=repo, env=environment)
     command = [java, '-jar', str(jar), 'report', *manifest['data'], '--classfiles', manifest['classes'],
                '--name', 'makevn focused changes (not global coverage)', '--xml', str(output / 'jacoco.xml'),
                '--csv', str(output / 'jacoco.csv'), '--html', str(output)]
@@ -262,8 +290,8 @@ def main():
     elif action == 'applicability':
         manifest = load(repo, state)
         if args and args[0]:
-            requested = subprocess.check_output(['git', '-C', str(repo), 'rev-parse', args[0].removesuffix('...HEAD')]).decode().strip()
-            if requested != manifest['comparison_head']:
+            requested = comparison_commit(repo, args[0])
+            if requested != evidence_comparison_commit(repo, manifest):
                 raise ValueError('Requested base differs from focused verification; rerun matching verification')
         print('applicable' if manifest['expected'] else 'not-applicable')
     else:

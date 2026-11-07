@@ -894,23 +894,12 @@ makevn_detect_app_http_signal() {
 
 makevn_find_compose_files() {
   local repo_root="$1"
-  find "${repo_root}" \
-    \( -name ".git" -o -name ".makevn" -o -name "target" -o -name "e2e" -o -name "karate" \) -prune \
-    -o -name "docker-compose.yml" -print \
-    2>/dev/null | LC_ALL=C sort
+  python3 "${MAKEVN_LIBEXEC_DIR}/common/compose_discovery.py" "${repo_root}" boot
 }
 
 makevn_find_e2e_compose_files() {
   local repo_root="$1"
-  local _dir
-  for _dir in "${repo_root}/e2e" "${repo_root}/karate"; do
-    if [[ -d "${_dir}" ]]; then
-      find "${_dir}" \
-        \( -name ".git" -o -name ".makevn" -o -name "target" \) -prune \
-        -o -name "docker-compose.yml" -print \
-        2>/dev/null
-    fi
-  done | LC_ALL=C sort
+  python3 "${MAKEVN_LIBEXEC_DIR}/common/compose_discovery.py" "${repo_root}" e2e
 }
 
 makevn_boot_compose_file_path() {
@@ -1326,7 +1315,7 @@ makevn_detect_parent_branch_spec() {
 
   current_branch="$(git -C "${repo_root}" rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
   case "${current_branch}" in
-    develop|main|master|HEAD)
+    develop|main|master)
       printf '%s\n' HEAD
       return 0
       ;;
@@ -1730,5 +1719,6 @@ makevn_refresh_impact() {
   fi
   git_root="$(git -C "${repo_root}" rev-parse --show-toplevel 2>/dev/null || printf '%s' "${repo_root}")"
   summary="$(python3 "${MAKEVN_LIBEXEC_DIR}/common/changes_scope.py" "${git_root}" "${base}" HEAD --impact-state "${git_root}/.makevn/impact.json")" || return $?
+  [[ "${3:-}" != init ]] || return 0
   makevn_print_item "Impact analysis" "${summary}"
 }

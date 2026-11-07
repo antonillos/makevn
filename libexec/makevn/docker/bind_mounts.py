@@ -23,9 +23,9 @@ def compose_command(repo, compose, override):
         if version is None or version.returncode:
             return None
         command = ["docker", "compose"]
-    command += ["-f", compose]
+    command += ["-f", str(Path(compose).resolve())]
     if override and Path(override).is_file():
-        command += ["-f", override]
+        command += ["-f", str(Path(override).resolve())]
     return command
 
 

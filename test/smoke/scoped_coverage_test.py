@@ -47,6 +47,8 @@ class ScopedTests(unittest.TestCase):
         plan = 'client\t*\nboot\t*'
         with self.assertRaisesRegex(ValueError, 'schema.avsc'):
             scoped.checkpoint(self.repo, self.state, 'client\t*\nboot\texample.Test')
+        with self.assertRaisesRegex(ValueError, 'verify-changes-preview.*Missing complete suites: boot'):
+            scoped.checkpoint(self.repo, self.state, 'client\t*\nboot\texample.Test')
         self.ut.write_bytes(b'preparation data')
         scoped.checkpoint(self.repo, self.state, plan)
         self.assertFalse(self.ut.exists())
@@ -87,8 +89,24 @@ class ScopedTests(unittest.TestCase):
         self.ut.write_bytes(b'other execution')
         scoped.load(self.repo, self.state)  # Independent snapshot.
         scoped.prepare(self.repo, self.state, self.repo, ['client', 'boot'], [self.source])
-        with self.assertRaisesRegex(ValueError, 'incomplete'):
+        with self.assertRaisesRegex(ValueError, 'last verification did not complete successfully.*verify-changes-\\*.log'):
             scoped.load(self.repo, self.state)
+
+    def test_root_module_changed_class_is_snapshotted(self):
+        source = 'src/main/java/example/Root.java'
+        source_path = self.repo / source
+        source_path.parent.mkdir(parents=True)
+        source_path.write_text('class Root {}')
+        compiled = self.repo / 'target/classes/example/Root.class'
+        compiled.parent.mkdir(parents=True)
+        compiled.write_bytes(b'root bytecode')
+        scoped.prepare(self.repo, self.state, self.repo, ['.'], [source])
+        data = self.repo / 'target/jacoco.exec'
+        data.write_bytes(b'fresh coverage')
+        scoped.finish(self.repo, self.state)
+        manifest = scoped.load(self.repo, self.state)
+        self.assertEqual(manifest['class_owners'], {'example/Root': '.'})
+        self.assertEqual((Path(manifest['classes']) / 'example/Root.class').read_bytes(), b'root bytecode')
 
     def test_source_and_snapshot_changes_reject_stale_evidence(self):
         manifest = self.ready()
@@ -137,7 +155,7 @@ class ScopedTests(unittest.TestCase):
     def test_no_data_and_missing_classes_fail_not_fall_back(self):
         scoped.prepare(self.repo, self.state, self.repo, ['client', 'boot'], [self.source])
         scoped.finish(self.repo, self.state)
-        with self.assertRaisesRegex(ValueError, 'require fresh JaCoCo execution data'):
+        with self.assertRaisesRegex(ValueError, 'prepare-agent goal.*jacoco.skip=false alone.*selected module target'):
             scoped.load(self.repo, self.state)
         self.compiled.unlink()
         self.ready_without_load()
@@ -189,6 +207,44 @@ class ScopedTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'Comparison base changed'):
             scoped.load(self.repo, self.state)
 
+    def test_comparison_tip_can_advance_without_changing_diff_base(self):
+        subprocess.run(['git', '-C', str(self.repo), 'branch', 'comparison'], check=True)
+        base_tip = subprocess.check_output([
+            'git', '-C', str(self.repo), '-c', 'user.name=Test', '-c', 'user.email=test@example.com',
+            'commit-tree', 'HEAD^{tree}', '-p', 'HEAD', '-m', 'base branch work']).decode().strip()
+        subprocess.run(['git', '-C', str(self.repo), 'branch', '-f', 'comparison', base_tip], check=True)
+        scoped.prepare(self.repo, self.state, self.repo, ['client', 'boot'], [], 'comparison...HEAD')
+        scoped.finish(self.repo, self.state)
+        new_tip = subprocess.check_output([
+            'git', '-C', str(self.repo), '-c', 'user.name=Test', '-c', 'user.email=test@example.com',
+            'commit-tree', 'HEAD^{tree}', '-p', 'comparison', '-m', 'unrelated base advancement']).decode().strip()
+        subprocess.run(['git', '-C', str(self.repo), 'branch', '-f', 'comparison', new_tip], check=True)
+        manifest = scoped.load(self.repo, self.state)
+        self.assertNotEqual(manifest['comparison_head'], new_tip)
+        scoped.report(self.repo, self.state, 'unused-maven', 'unused-java', 'comparison')
+        del manifest['comparison_base']
+        (self.state / 'run.json').write_text(json.dumps(manifest))
+        scoped.load(self.repo, self.state)
+        scoped.report(self.repo, self.state, 'unused-maven', 'unused-java', 'comparison')
+
+    def test_merge_base_change_is_rejected_without_head_change(self):
+        subprocess.run(['git', '-C', str(self.repo), 'branch', 'comparison'], check=True)
+        feature = subprocess.check_output([
+            'git', '-C', str(self.repo), '-c', 'user.name=Test', '-c', 'user.email=test@example.com',
+            'commit-tree', 'HEAD^{tree}', '-p', 'HEAD', '-m', 'feature']).decode().strip()
+        subprocess.run(['git', '-C', str(self.repo), 'checkout', '--detach', feature], check=True, capture_output=True)
+        scoped.prepare(self.repo, self.state, self.repo, ['client', 'boot'], [], 'comparison...HEAD')
+        scoped.finish(self.repo, self.state)
+        subprocess.run(['git', '-C', str(self.repo), 'branch', '-f', 'comparison', feature], check=True)
+        with self.assertRaisesRegex(ValueError, 'Comparison base changed'):
+            scoped.load(self.repo, self.state)
+
+        manifest = json.loads((self.state / 'run.json').read_text())
+        del manifest['comparison_base']
+        (self.state / 'run.json').write_text(json.dumps(manifest))
+        with self.assertRaisesRegex(ValueError, 'Comparison base changed'):
+            scoped.load(self.repo, self.state)
+
     def test_report_is_direct_cli_and_reused_by_second_gate(self):
         manifest = self.ready()
         output = Path(manifest['report'])
@@ -199,6 +255,7 @@ class ScopedTests(unittest.TestCase):
             if command[0] == 'mvn':
                 self.assertIn('org.apache.maven.plugins:maven-dependency-plugin:3.8.1:copy', command)
                 self.assertFalse(Path(command[2]).is_relative_to(self.repo))
+                self.assertEqual(kwargs['cwd'], self.repo)
                 self.assertNotIn('-am', command)
                 self.assertNotIn('verify', command)
                 (self.state / ('org.jacoco.cli-' + scoped.VERSION + '-nodeps.jar')).touch()

@@ -40,6 +40,29 @@ class ReportTests(unittest.TestCase):
             self.assertEqual(reports.selection_flags(pathlib.Path('/nonexistent'), [name])[:2],
                              ['-Dtest=!%regex[.*]', '-Dit.test=' + name])
 
+    def test_optional_class_requires_fresh_report_and_rejects_failures(self):
+        with tempfile.TemporaryDirectory() as directory:
+            module = pathlib.Path(directory)
+            stamp = module / 'stamp'
+            stamp.touch()
+            target = module / 'target/surefire-reports'
+            target.mkdir(parents=True)
+            report = target / 'TEST-example.OptionalTest.xml'
+            names = ['example.OptionalTest']
+            self.assertEqual(reports.missing_tests(module, names, stamp, names), names)
+            for outcome in ['<skipped/>', '']:
+                report.write_text('<testsuite><testcase classname="example.OptionalTest">' +
+                                  outcome + '</testcase></testsuite>')
+                self.assertEqual(reports.missing_tests(module, names, stamp, names), [])
+            for outcome in ['<failure/>', '<error/>']:
+                report.write_text('<testsuite><testcase classname="example.OptionalTest">' +
+                                  outcome + '</testcase></testsuite>')
+                with self.assertRaisesRegex(ValueError, 'Selected test failed'):
+                    reports.missing_tests(module, names, stamp, names)
+            report.write_text('<testsuite><testcase classname="example.OptionalTest"><skipped/></testcase></testsuite>')
+            os.utime(report, ns=(stamp.stat().st_mtime_ns - 1_000_000_000,) * 2)
+            self.assertEqual(reports.missing_tests(module, names, stamp, names), names)
+
     def test_requires_fresh_non_skipped_case_for_every_class(self):
         with tempfile.TemporaryDirectory() as directory:
             module = pathlib.Path(directory)
@@ -59,6 +82,18 @@ class ReportTests(unittest.TestCase):
             report.write_text('<testsuite><testcase classname="example.OwnerIT" name="test"/></testsuite>')
             os.utime(report, ns=(stamp.stat().st_mtime_ns - 1_000_000_000,) * 2)
             self.assertEqual(reports.missing_tests(module, ["example.OwnerIT"], stamp), ["example.OwnerIT"])
+
+    def test_nested_surefire_directory_requires_fresh_evidence(self):
+        with tempfile.TemporaryDirectory() as directory:
+            module = pathlib.Path(directory)
+            stamp = module / 'stamp'
+            stamp.touch()
+            report = module / 'target/surefire-reports/default/TEST-example.OwnerTest.xml'
+            report.parent.mkdir(parents=True)
+            report.write_text('<testsuite><testcase classname="example.OwnerTest" name="test"/></testsuite>')
+            self.assertEqual(reports.missing_tests(module, ['example.OwnerTest'], stamp), [])
+            os.utime(report, ns=(stamp.stat().st_mtime_ns - 1_000_000_000,) * 2)
+            self.assertEqual(reports.missing_tests(module, ['example.OwnerTest'], stamp), ['example.OwnerTest'])
 
 
 if __name__ == "__main__":

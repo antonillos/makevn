@@ -14,6 +14,30 @@ spec.loader.exec_module(scope)
 
 
 class ScopeTests(unittest.TestCase):
+    def test_changed_code_preview_reports_local_jacoco_signal_without_maven(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repo = pathlib.Path(directory)
+            pom = repo / 'pom.xml'
+            script = r'''
+set -euo pipefail
+SCRIPT_DIR="$1/libexec/makevn"
+source "${SCRIPT_DIR}/common.sh"
+source "${SCRIPT_DIR}/commands/changes.sh"
+makevn_print_changes_coverage_signal "$2"
+'''
+            command = ['bash', '-c', script, 'test', str(ROOT), directory]
+            pom.write_text('<project/>')
+            absent = subprocess.run(command, text=True, capture_output=True)
+            self.assertEqual(absent.returncode, 0, absent.stderr)
+            self.assertIn('no local declaration; inherited agent possible', absent.stdout)
+            self.assertIn('jacoco.skip=false alone is insufficient', absent.stdout)
+            pom.write_text('<project><build><plugins><plugin><artifactId>jacoco-maven-plugin'
+                           '</artifactId></plugin></plugins></build></project>')
+            declared = subprocess.run(command, text=True, capture_output=True)
+            self.assertEqual(declared.returncode, 0, declared.stderr)
+            self.assertIn('plugin declared locally; execution not verified', declared.stdout)
+            self.assertNotIn('jacoco.skip=false alone is insufficient', declared.stdout)
+
     def test_preview_distinguishes_scope_outcome_from_planner_errors(self):
         with tempfile.TemporaryDirectory() as directory:
             repo = pathlib.Path(directory)
@@ -94,6 +118,40 @@ fi
     def test_focused_unknown_root_change_fails_closed(self):
         with tempfile.TemporaryDirectory() as directory:
             repo = pathlib.Path(directory)
+            with self.assertRaises(ValueError):
+                scope.focused_plan(repo, repo, "HEAD", ["src/main/java/Owner.java"])
+
+    def test_single_module_root_changes_select_the_correct_suite(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repo = pathlib.Path(directory)
+            repo.joinpath("pom.xml").write_text("<project/>")
+            for path in ("src/main/java/Owner.java", "src/main/resources/settings.properties",
+                         "src/test/resources/input.csv"):
+                self.assertEqual(scope.focused_plan(repo, repo, "HEAD", [path]), ".\t*")
+            test_path = repo / "src/test/java/OwnerTest.java"
+            test_path.parent.mkdir(parents=True)
+            test_path.touch()
+            self.assertEqual(scope.focused_plan(repo, repo, "HEAD", ["src/test/java/OwnerTest.java"]), ".\tOwnerTest")
+            with self.assertRaises(ValueError):
+                scope.focused_plan(repo, repo, "HEAD", ["build.sh"])
+
+    def test_nested_single_module_root_sources_use_root_owner(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repo = pathlib.Path(directory)
+            base = repo / "code"
+            base.mkdir()
+            base.joinpath("pom.xml").write_text("<project/>")
+            self.assertEqual(scope.focused_plan(repo, base, "HEAD", [
+                "code/src/main/java/Owner.java", "code/src/test/java/OwnerTest.java"]), ".\t*")
+            for path in ("code/src/main/resources/settings.properties", "code/src/test/resources/input.csv"):
+                self.assertEqual(scope.focused_plan(repo, base, "HEAD", [path]), ".\t*")
+
+    def test_profile_modules_keep_root_sources_exhaustive(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repo = pathlib.Path(directory)
+            repo.joinpath("pom.xml").write_text(
+                "<project><profiles><profile><modules><module>child</module>"
+                "</modules></profile></profiles></project>")
             with self.assertRaises(ValueError):
                 scope.focused_plan(repo, repo, "HEAD", ["src/main/java/Owner.java"])
 

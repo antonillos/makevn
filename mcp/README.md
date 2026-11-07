@@ -263,6 +263,7 @@ Tool mapping for common commands:
 - `makevn coverage-changes` -> `makevn_coverage_changes`
 - `makevn crap` -> `makevn_crap`
 - `makevn crap-changes` -> `makevn_crap_changes` (`base` optional; uses existing JaCoCo XML)
+- `makevn crap install-analyzer` -> `makevn_crap_install_analyzer` (downloads the pinned analyzer and verifies its SHA-256 checksum)
 - `makevn docker-up` -> `makevn_docker_up`
 - `makevn docker-reset` -> `makevn_docker_reset`
 - `makevn karate-docker-reset` -> `makevn_karate_docker_reset`
@@ -599,3 +600,36 @@ file to startup, readiness, verification and cleanup; selection alone does not
 start services or authorize a destructive reset. `--compose boot|karate` still
 selects the readiness kind; `--compose-file` supplies its file. A per-execution
 override wins over saved `none` and is never persisted.
+
+### Progressive test impact and optional capture
+
+`test_impact_preview` inspects static dependencies without writes. `test_impact_init`
+writes a static map without Maven/tests/containers. Both require doctor/setup and
+JDK 17+ for syntax parsing. Normal test/verify executions enrich dependencies using
+fresh successful reports and JVM traces, without reruns. Shared JVM executions
+contribute conservative loaded-class supersets; observations never delete static
+edges. Unknown impact retains complete owner suites. See
+[precise selection](../docs/precise-test-selection.md).
+Literal local reactors include transitive consumer modules and scope class
+identities, reports and observations by module. Profile-dependent reactor
+membership, custom Java layouts and unresolved models retain conservative scope.
+
+`test_impact_init` accepts `isolated: true` for explicit expensive full-suite and
+isolated-class capture for single-module projects, including clean checkouts. Required container readiness
+applies to this execution. Unit replays avoid packaging via the test phase;
+integration replays retain verify. Compatible sealed checkpoints resume. Changed
+verification still accepts `record-test-impact: true` in BOTH preview and execution.
+Neither static maps nor runtime observations establish fresh coverage/CRAP or replace
+full verification and CI gates.
+
+### Explicit focused JaCoCo deferral
+
+`verify_changes_preview` and `verify_changes` accept the boolean
+`defer-global-coverage` (default false). Use true in BOTH only for explicitly
+authorized local changed-code feedback, followed by coverage_changes/crap_changes
+in a fail-fast composite. It sets the standard and Apache Commons JaCoCo
+halt-on-failure properties false while retaining instrumentation, warnings, tests
+and other Maven gates. Literal/custom configurations may still fail. It is
+rejected with focused=false or record-test-impact=true and is not exposed on
+verify or test_impact_init. A successful local run does not establish global
+coverage; complete verification and CI remain required.

@@ -15,9 +15,30 @@ mkdir -p "${JAVA_HOME}/bin" "${TMP}/repo/code" "${TMP}/repo/e2e/karate"
 printf '#!/usr/bin/env bash\necho '\''openjdk version "26.0.2.1"'\'' >&2\n' > "${JAVA_HOME}/bin/java"
 chmod +x "${JAVA_HOME}/bin/java"
 printf '<project/>\n' > "${TMP}/repo/code/pom.xml"
+printf 'ivm-java openjdk-21.0.4+tzdata2024b\n' > "${TMP}/repo/.tool-versions"
 printf 'ivm-java openjdk-21.0.10' > "${TMP}/repo/code/.tool-versions"
 printf 'ivm-java openjdk-21.0.4+tzdata2024b\n' > "${TMP}/repo/e2e/karate/.tool-versions"
 manager="${ROOT_DIR}/libexec/makevn/jdk/manager.sh"
+# A missing code JDK must propagate failure instead of becoming an empty home.
+(
+  source "${ROOT_DIR}/libexec/makevn/common/java_maven.sh"
+  makevn_load_config() { :; }
+  makevn_detect_code_tool_versions() { printf '%s\n' "${TMP}/repo/code/.tool-versions"; }
+  makevn_resolve_tool_versions_home() {
+    [[ "$1" == "${TMP}/repo/code/.tool-versions" ]] || exit 2
+    return 1
+  }
+  if makevn_effective_java_home "${TMP}/repo" code "${TMP}/repo/code" > "${TMP}/missing-home"; then
+    echo 'missing code JDK unexpectedly resolved'; exit 1
+  fi
+  [[ ! -s "${TMP}/missing-home" ]]
+  source "${ROOT_DIR}/libexec/makevn/commands/init.sh"
+  makevn_load_profile() { :; }
+  makevn_detect_maven_base_path() { printf '%s\n' "${TMP}/repo/code"; }
+  makevn_print_item() { printf '%s: %s\n' "$1" "$2"; }
+  output="$(makevn_init_static_impact "${TMP}/repo")"
+  [[ "${output}" == *'deferred: run makevn doctor to select a compatible JDK'* ]]
+)
 for context in code e2e/karate; do
   version="$(awk '{print $2}' "${TMP}/repo/${context}/.tool-versions")"
   actual="$(bash "${manager}" resolve-tool-versions "${TMP}/repo/${context}/.tool-versions")"
@@ -28,6 +49,7 @@ output="$(bash "${manager}" list)"
 output="$("${ROOT_DIR}/bin/makevn" --repo "${TMP}/repo" jdk current)"
 [[ "${output}" == *"Effective code JDK: ${ASDF_DATA_DIR}/installs/ivm-java/openjdk-21.0.10"* ]]
 [[ "${output}" == *"Effective karate JDK: ${ASDF_DATA_DIR}/installs/ivm-java/openjdk-21.0.4+tzdata2024b"* ]]
+rm "${TMP}/repo/.tool-versions"
 # Windows JDKs discovered under WSL may expose only java.exe.
 for version in 21.0.10 '21.0.4+tzdata2024b'; do
   home="${ASDF_DATA_DIR}/installs/ivm-java/openjdk-${version}"

@@ -1526,10 +1526,10 @@ EOF
   assert_matches "${repo}/.mvnw.log" '^ARGS=-B -nsu -f .*/pom\.xml test -Dsurefire\.failIfNoSpecifiedTests=false$'
   assert_matches "${repo}/.mvnw.log" '^ARGS=-B -nsu -f .*/pom\.xml com\.example\.format:custom-javaformat-maven-plugin:apply$'
   assert_matches "${repo}/.mvnw.log" '^ARGS=-B -nsu -f .*/pom\.xml -pl module-a org\.apache\.maven\.plugins:maven-checkstyle-plugin:check -Dcheckstyle\.consoleOutput=true$'
-  assert_matches "${repo}/.mvnw.log" '^ARGS=-B -nsu -f .*/pom\.xml -pl module-a -am test -Dsurefire\.failIfNoSpecifiedTests=false -Dtest=com\.example\.UserRepositoryTest -Dfailsafe\.failIfNoSpecifiedTests=false -Dmaven\.build\.cache\.enabled=true -Dsurefire\.testFailureIgnore=false$'
-  assert_matches "${repo}/.mvnw.log" '^ARGS=-B -nsu -f .*/pom\.xml -pl module-a -am test -Dsurefire\.failIfNoSpecifiedTests=false -Dtest=com\.example\.OrderRepositoryTest -Dfailsafe\.failIfNoSpecifiedTests=false -Dmaven\.build\.cache\.enabled=true -Dsurefire\.testFailureIgnore=false$'
-  assert_matches "${repo}/.mvnw.log" '^ARGS=-B -nsu -f .*/pom\.xml -pl module-a -am surefire:test -Dsurefire\.failIfNoSpecifiedTests=false -Dtest=com\.example\.UserRepositoryTest -Dfailsafe\.failIfNoSpecifiedTests=false -Dmaven\.build\.cache\.enabled=true -Dsurefire\.testFailureIgnore=false$'
-  assert_matches "${repo}/.mvnw.log" '^ARGS=-B -nsu -f .*/pom\.xml -pl module-a -am test-compile failsafe:integration-test -Dsurefire\.failIfNoSpecifiedTests=false -Dit\.test=com\.example\.UserFlowIT -Dfailsafe\.failIfNoSpecifiedTests=false -Dmaven\.build\.cache\.enabled=true$'
+  assert_matches "${repo}/.mvnw.log" '^ARGS=-B -nsu -f .*/pom\.xml -pl module-a -am test -Dsurefire\.failIfNoSpecifiedTests=false -Dtest=com\.example\.UserRepositoryTest -Dfailsafe\.failIfNoSpecifiedTests=false -Dmaven\.build\.cache\.enabled=false -Dsurefire\.testFailureIgnore=false$'
+  assert_matches "${repo}/.mvnw.log" '^ARGS=-B -nsu -f .*/pom\.xml -pl module-a -am test -Dsurefire\.failIfNoSpecifiedTests=false -Dtest=com\.example\.OrderRepositoryTest -Dfailsafe\.failIfNoSpecifiedTests=false -Dmaven\.build\.cache\.enabled=false -Dsurefire\.testFailureIgnore=false$'
+  assert_matches "${repo}/.mvnw.log" '^ARGS=-B -nsu -f .*/pom\.xml -pl module-a -am surefire:test -Dsurefire\.failIfNoSpecifiedTests=false -Dtest=com\.example\.UserRepositoryTest -Dfailsafe\.failIfNoSpecifiedTests=false -Dmaven\.build\.cache\.enabled=false -Dsurefire\.testFailureIgnore=false$'
+  assert_matches "${repo}/.mvnw.log" '^ARGS=-B -nsu -f .*/pom\.xml -pl module-a -am test-compile failsafe:integration-test -Dsurefire\.failIfNoSpecifiedTests=false -Dit\.test=com\.example\.UserFlowIT -Dfailsafe\.failIfNoSpecifiedTests=false -Dmaven\.build\.cache\.enabled=false$'
   assert_matches "${repo}/.mvnw.log" '^ARGS=-B -nsu -f .*/pom\.xml verify -DfailIfNoTests=false -Dmaven\.build\.cache\.enabled=false$'
   assert_contains "${repo}/.mvnw.log" "JAVA_HOME=${java_home}"
   assert_contains "${repo}/.mvnw.log" "LOCAL_CONTAINERS="
@@ -1591,7 +1591,7 @@ EOF
   ${CLI} --repo "${repo}" checkstyle --module cataloger-cli --verbose >/dev/null
 
   assert_matches "${repo}/cataloger-cli/.mvnw.log" '^CWD=.*/nested-single-maven-project-routing/cataloger-cli$'
-  assert_matches "${repo}/cataloger-cli/.mvnw.log" '^ARGS=-nsu -f .*/cataloger-cli/pom\.xml test -Dtest=com\.example\.NestedTest -Dfailsafe\.failIfNoSpecifiedTests=false -Dsurefire\.failIfNoSpecifiedTests=false -Dmaven\.build\.cache\.enabled=true -Dsurefire\.testFailureIgnore=false$'
+  assert_matches "${repo}/cataloger-cli/.mvnw.log" '^ARGS=-nsu -f .*/cataloger-cli/pom\.xml test -Dtest=com\.example\.NestedTest -Dfailsafe\.failIfNoSpecifiedTests=false -Dsurefire\.failIfNoSpecifiedTests=false -Dmaven\.build\.cache\.enabled=false -Dsurefire\.testFailureIgnore=false$'
   assert_matches "${repo}/cataloger-cli/.mvnw.log" '^ARGS=-f .*/cataloger-cli/pom\.xml org\.apache\.maven\.plugins:maven-checkstyle-plugin:check -Dcheckstyle\.consoleOutput=true$'
   assert_not_contains "${repo}/cataloger-cli/.mvnw.log" '-pl cataloger-cli'
   assert_contains "${repo}/cataloger-cli/.mvnw.log" "JAVA_HOME=${java_home}"
@@ -1613,7 +1613,7 @@ test_docker_commands() {
 #!/usr/bin/env bash
 set -euo pipefail
 printf 'docker-compose %s\n' "$*" >> .docker-compose.log
-if [[ "$*" == *" ps -q db" ]]; then
+if [[ "$*" == *" ps -aq db" ]]; then
   printf 'abc123def456\n'
 fi
 EOF
@@ -1661,7 +1661,7 @@ EOF
 
   PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" init >/dev/null
   PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" docker-up >/dev/null
-  assert_not_contains "${repo}/.docker-compose.log" " ps -q "
+  assert_not_contains "${repo}/.docker-compose.log" " ps -aq "
   PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" docker-down >/dev/null
   output="$(PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" docker-ps)"
   stats_output="$(PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" docker-stats)"
@@ -1914,7 +1914,7 @@ EOF
 #!/usr/bin/env bash
 set -euo pipefail
 printf 'docker-compose %s\n' "$*" >> .docker-compose.log
-if [[ "$*" == *" ps -q "* ]]; then
+if [[ "$*" == *" ps -aq "* ]]; then
   printf 'fake-service-id\n'
 fi
 EOF
@@ -1971,7 +1971,7 @@ MAKEVN_RUN_CMD=""
 EOF
 
   PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" karate-docker-up >/dev/null
-  assert_not_contains "${repo}/.docker-compose.log" " ps -q "
+  assert_not_contains "${repo}/.docker-compose.log" " ps -aq "
   PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" karate-docker-down >/dev/null
   PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" docker-ps-required --compose karate >/dev/null
   printf 'not-a-real-jar\n' > "${repo}/code/boot/target/app.jar"
@@ -1982,7 +1982,7 @@ EOF
 
   assert_matches "${repo}/.docker-compose.log" '^docker-compose -f .*/e2e/karate/src/test/resources/compose/docker-compose\.yml -f .*/e2e/karate/src/test/resources/compose/docker-compose\.override\.yml down$'
   assert_matches "${repo}/.docker-compose.log" '^docker-compose -f .*/e2e/karate/src/test/resources/compose/docker-compose\.yml -f .*/e2e/karate/src/test/resources/compose/docker-compose\.override\.yml up --detach$'
-  assert_matches "${repo}/.docker-compose.log" '^docker-compose -f .*/e2e/karate/src/test/resources/compose/docker-compose\.yml -f .*/e2e/karate/src/test/resources/compose/docker-compose\.override\.yml ps -q db$'
+  assert_matches "${repo}/.docker-compose.log" '^docker-compose -f .*/e2e/karate/src/test/resources/compose/docker-compose\.yml -f .*/e2e/karate/src/test/resources/compose/docker-compose\.override\.yml ps -aq db$'
   assert_matches "${repo}/.mvnw.log" '^ARGS=-nsu -f .*/e2e/karate/pom\.xml test -Dkarate\.env=local -Dkarate\.report\.options=--showLog true -Dkarate\.options=-t@smoke$'
   assert_matches "${repo}/.mvnw.log" '^ARGS=-f .*/code/pom\.xml package -DskipTests -Dmaven\.build\.cache\.enabled=false$'
   assert_contains "${repo}/.mvnw.log" "JAVA_HOME=${java_home}"
@@ -2412,7 +2412,7 @@ EOF
   cat > "${repo}/fake-bin/docker-compose" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
-if [[ "$*" == *" ps -q "* ]]; then
+if [[ "$*" == *" ps -aq "* ]]; then
   printf 'fake-service-id\n'
 fi
 EOF
@@ -2554,7 +2554,7 @@ EOF
   assert_matches "${repo}/.mvnw.log" '^ARGS=-f .*/pom\.xml verify -Djacoco\.skip=false -DskipUTs -Dskip\.unit\.tests=true -DfailIfNoTests=false -Dmaven\.test\.failure\.ignore=false -Dmaven\.build\.cache\.enabled=false$'
   assert_matches "${repo}/.mvnw.log" '^ARGS=-B -nsu -f .*/pom\.xml clean verify -Djacoco\.skip=false -DskipITs -DfailIfNoTests=false -Dmaven\.test\.failure\.ignore=false -Dmaven\.build\.cache\.enabled=false$'
   assert_contains "${repo}/.mvnw.log" "JAVA_HOME=${java_home}"
-  assert_matches "${repo}/.docker-compose.log" '^docker-compose -f .*/code/boot/src/test/resources/compose/docker-compose\.yml -f .*/code/boot/src/test/resources/compose/docker-compose\.override\.yml ps -q db$'
+  assert_matches "${repo}/.docker-compose.log" '^docker-compose -f .*/code/boot/src/test/resources/compose/docker-compose\.yml -f .*/code/boot/src/test/resources/compose/docker-compose\.override\.yml ps -aq db$'
   [[ "${output}" == *"[ok] "* ]] || fail "expected verify-ut output to include success summary"
   [[ "${pr_output}" == *"[ok] "* ]] || fail "expected pr-verify output to include success summary"
 
@@ -3128,6 +3128,35 @@ test_verify_changes_excludes_checked_out_release_candidate() {
   ${CLI} --repo "${repo}" uninstall >/dev/null
 }
 
+test_verify_changes_detached_worktree_scope() {
+  local repo="${TMP_ROOT}/verify-changes-detached"
+  local worktree="${TMP_ROOT}/verify-changes-detached-worktree"
+  local output
+
+  mkdir -p "${repo}/src/main/java/com/example"
+  printf '<project/>\n' > "${repo}/pom.xml"
+  printf 'class Baseline {}\n' > "${repo}/src/main/java/com/example/Baseline.java"
+  git init --initial-branch=develop "${repo}" >/dev/null
+  git -C "${repo}" add .
+  git -C "${repo}" -c user.name='Smoke Test' -c user.email='smoke@example.com' commit -m 'baseline' >/dev/null
+  git -C "${repo}" checkout -b feature >/dev/null
+  printf 'class Feature {}\n' > "${repo}/src/main/java/com/example/Feature.java"
+  git -C "${repo}" add .
+  git -C "${repo}" -c user.name='Smoke Test' -c user.email='smoke@example.com' commit -m 'feature' >/dev/null
+  git -C "${repo}" worktree add --detach "${worktree}" HEAD >/dev/null
+  ${CLI} --repo "${worktree}" init >/dev/null
+  output="$(${CLI} --repo "${worktree}" verify-changes-preview --exhaustive)"
+  [[ "${output}" == *"compare against: develop...HEAD"* && "${output}" == *"production files: 1"* ]] \
+    || fail "expected detached worktree to include committed feature change: ${output}"
+
+  git -C "${repo}" branch -D develop >/dev/null
+  if output="$(${CLI} --repo "${worktree}" verify-changes-preview --exhaustive 2>&1)"; then
+    fail "expected detached worktree without parent ref to reject unknown scope: ${output}"
+  fi
+  [[ "${output}" == *"Cannot determine changed-code scope"* ]] \
+    || fail "expected unknown detached scope diagnostic: ${output}"
+}
+
 test_verify_changes_uses_hotfix_parent_branch() {
   local repo="${TMP_ROOT}/verify-changes-hotfix-parent"
   local output
@@ -3421,9 +3450,9 @@ EOF
 test_verify_changes_focused_command() {
   local repo="${TMP_ROOT}/verify-changes-focused" java_home output
   mkdir -p "${repo}/client/src/main/java/example" "${repo}/boot/src/test/java/example"
-  printf '<project><modules><module>client</module><module>boot</module></modules></project>\n' > "${repo}/pom.xml"
-  printf '<project/>\n' > "${repo}/client/pom.xml"
-  printf '<project/>\n' > "${repo}/boot/pom.xml"
+  printf '<project><groupId>example</groupId><artifactId>root</artifactId><version>1</version><packaging>pom</packaging><modules><module>client</module><module>boot</module></modules></project>\n' > "${repo}/pom.xml"
+  printf '<project><parent><groupId>example</groupId><artifactId>root</artifactId><version>1</version></parent><artifactId>client</artifactId></project>\n' > "${repo}/client/pom.xml"
+  printf '<project><parent><groupId>example</groupId><artifactId>root</artifactId><version>1</version></parent><artifactId>boot</artifactId></project>\n' > "${repo}/boot/pom.xml"
   printf 'class Owner {}\n' > "${repo}/client/src/main/java/example/Owner.java"
   printf 'class OwnersIT {}\n' > "${repo}/boot/src/test/java/example/OwnersIT.java"
   git init --initial-branch=main "${repo}" >/dev/null
@@ -3686,6 +3715,28 @@ EOF
     || fail "expected coverage-changes output to pass incremental coverage"
   [[ "${output}" == *"Quality gate conditions met"* ]] \
     || fail "expected coverage-changes output to include overall quality gate"
+}
+
+test_coverage_changes_root_module() {
+  local repo="${TMP_ROOT}/coverage-changes-root" output report
+  report="${repo}/jacoco-report-aggregate/target/site/jacoco-aggregate"
+  mkdir -p "${repo}/src/main/java/com/example" "${report}/com.example"
+  printf '<project/>\n' > "${repo}/pom.xml"
+  printf 'package com.example;\nclass Root {\n  int value() { return 0; }\n}\n' > "${repo}/src/main/java/com/example/Root.java"
+  printf '<span class="fc" id="L3">  int value() { return 1; }</span>\n' > "${report}/com.example/Root.java.html"
+  printf 'GROUP,PACKAGE,CLASS,INSTRUCTION_MISSED,INSTRUCTION_COVERED,BRANCH_MISSED,BRANCH_COVERED,LINE_MISSED,LINE_COVERED,COMPLEXITY_MISSED,COMPLEXITY_COVERED,METHOD_MISSED,METHOD_COVERED\nmakevn,com.example,Root,0,10,0,0,0,1,0,1,0,1\n' > "${report}/jacoco.csv"
+  printf 'class DefaultRoot {\n  int value() { return 0; }\n}\n' > "${repo}/src/main/java/DefaultRoot.java"
+  printf '<span class="fc" id="L2">  int value() { return 1; }</span>\n' > "${report}/DefaultRoot.java.html"
+  printf 'makevn,,DefaultRoot,0,10,0,0,0,1,0,1,0,1\n' >> "${report}/jacoco.csv"
+  printf '<html></html>\n' > "${report}/index.html"
+  git init --initial-branch=main "${repo}" >/dev/null
+  git -C "${repo}" add .
+  git -C "${repo}" -c user.name='Smoke Test' -c user.email='smoke@example.com' commit -m init >/dev/null
+  perl -0pi -e 's/return 0;/return 1;/' "${repo}/src/main/java/com/example/Root.java"
+  perl -0pi -e 's/return 0;/return 1;/' "${repo}/src/main/java/DefaultRoot.java"
+  output="$(${CLI} --repo "${repo}" coverage-changes --threshold 90)"
+  [[ "${output}" == *"✓  changed lines    100.00%  2/2"* ]] || fail "expected coverage for root module changed lines"
+  [[ "${output}" == *"classes 2"* ]] || fail "expected coverage for both packaged and default-package classes"
 }
 
 test_coverage_changes_fails_changed_module_gate() {
@@ -4886,6 +4937,7 @@ main() {
   test_verify_leaves_local_containers_unset_without_repo_signal
   test_verify_changes_preview_command
   test_verify_changes_excludes_checked_out_release_candidate
+  test_verify_changes_detached_worktree_scope
   test_verify_changes_uses_hotfix_parent_branch
   test_verify_changes_uses_develop_after_it_advances
   test_verify_changes_preserves_first_parent_after_sync_merge
@@ -4897,6 +4949,7 @@ main() {
   test_verify_changes_nested_maven_base_strips_git_prefix
   test_coverage_changes_ignores_reverted_first_parent_paths
   test_coverage_changes_command
+  test_coverage_changes_root_module
   test_coverage_changes_fails_changed_module_gate
   test_coverage_changes_fails_empty_jacoco_report
   test_coverage_changes_report_generation_uses_coverage_flags
@@ -4950,6 +5003,7 @@ main() {
   bash "${ROOT_DIR}/test/smoke/maven_resolution_test.sh"
   bash "${ROOT_DIR}/test/smoke/maven_system_test.sh"
   python3 "${ROOT_DIR}/test/smoke/maven_inspection_test.py"
+  python3 "${ROOT_DIR}/test/smoke/maven_secrets_test.py"
   bash "${ROOT_DIR}/test/smoke/maven_validation_test.sh"
   bash "${ROOT_DIR}/test/smoke/jdk_discovery_test.sh"
   bash "${ROOT_DIR}/test/smoke/jdk_brew_test.sh"
@@ -4998,11 +5052,19 @@ python3 "${ROOT_DIR}/test/smoke/install_build_test.py"
 bash "${ROOT_DIR}/test/smoke/reset_config_test.sh"
 bash "${ROOT_DIR}/test/smoke/log_reuse_test.sh"
 bash "${ROOT_DIR}/test/smoke/focused_changes_test.sh"
+bash "${ROOT_DIR}/test/smoke/focused_coverage_gate_test.sh"
 python3 "${ROOT_DIR}/test/smoke/selected_test_reports_test.py"
 python3 "${ROOT_DIR}/test/smoke/changes_scope_test.py"
 python3 "${ROOT_DIR}/test/smoke/reactor_impact_test.py"
 bash "${ROOT_DIR}/test/smoke/impact_state_shell_test.sh"
 python3 "${ROOT_DIR}/test/smoke/scoped_coverage_test.py"
+python3 "${ROOT_DIR}/test/smoke/test_impact_test.py"
+python3 "${ROOT_DIR}/test/smoke/progressive_impact_test.py"
+python3 "${ROOT_DIR}/test/smoke/reactor_progressive_impact_test.py"
+python3 "${ROOT_DIR}/test/smoke/test_inventory_test.py"
+bash "${ROOT_DIR}/test/smoke/test_impact_shell_test.sh"
+bash "${ROOT_DIR}/test/smoke/test_impact_init_test.sh"
+bash "${ROOT_DIR}/test/smoke/test_impact_replay_test.sh"
 bash "${ROOT_DIR}/test/smoke/scoped_coverage_shell_test.sh"
 bash "${ROOT_DIR}/test/smoke/crap_cwd_test.sh"
 python3 "${ROOT_DIR}/test/smoke/crap_non_executable_test.py"

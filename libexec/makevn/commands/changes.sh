@@ -292,15 +292,22 @@ makevn_collect_verify_changes_scope() {
     strip_prefix="${maven_git_rel}/"
   fi
 
+  if [[ "${MAKEVN_TEST_IMPACT_INITIALIZE:-false}" == true ]]; then
+    makevn_test_impact_scope
+    return 0
+  fi
+
   MAKEVN_VERIFY_CHANGES_PARENT_SPEC="$(makevn_detect_parent_branch_spec "${repo_root}")"
+  diff_local="$(
+    git -C "${git_root}" diff --name-only HEAD
+    git -C "${git_root}" ls-files --others --exclude-standard -- "${strip_prefix}src/test/resources/"
+  )"
   if [[ "${MAKEVN_VERIFY_CHANGES_PARENT_SPEC}" == "HEAD" ]]; then
-    diff_local="$(git -C "${git_root}" diff --name-only HEAD || true)"
     MAKEVN_VERIFY_CHANGES_DIFF_LOCAL="${diff_local}"
     MAKEVN_VERIFY_CHANGES_SRC_FILES="$(printf '%s\n' "${diff_local}" | grep -E "${path_prefix_regex}.*src/main/java/.*\.java$" || true)"
     MAKEVN_VERIFY_CHANGES_TEST_FILES="$(printf '%s\n' "${diff_local}" | grep -E "${path_prefix_regex}.*src/test/java/.*\.java$" || true)"
   else
     diff_base="$(makevn_first_parent_diff_names "${git_root}" "${MAKEVN_VERIFY_CHANGES_PARENT_SPEC}")"
-    diff_local="$(git -C "${git_root}" diff --name-only HEAD || true)"
     MAKEVN_VERIFY_CHANGES_DIFF_LOCAL="${diff_local}"
     MAKEVN_VERIFY_CHANGES_SRC_FILES="$(printf '%s\n%s\n' "${diff_base}" "${diff_local}" | grep -E "${path_prefix_regex}.*src/main/java/.*\.java$" | LC_ALL=C sort -u || true)"
     MAKEVN_VERIFY_CHANGES_TEST_FILES="$(printf '%s\n%s\n' "${diff_base}" "${diff_local}" | grep -E "${path_prefix_regex}.*src/test/java/.*\.java$" | LC_ALL=C sort -u || true)"
@@ -309,6 +316,11 @@ makevn_collect_verify_changes_scope() {
   local changed_paths=""
   local comparison_base="HEAD"
   changed_paths="$(printf '%s\n%s\n' "${diff_base:-}" "${diff_local}" | LC_ALL=C sort -u | sed '/^$/d')"
+  if [[ "${MAKEVN_VERIFY_CHANGES_PARENT_SPEC}" == HEAD \
+    && "$(git -C "${git_root}" rev-parse --abbrev-ref HEAD)" == HEAD \
+    && -z "${changed_paths}" ]]; then
+    makevn_die "Cannot determine changed-code scope in a clean detached worktree: no parent branch is available. Fetch the parent branch or run makevn verify for the whole project."
+  fi
   if [[ "${MAKEVN_VERIFY_CHANGES_PARENT_SPEC}" != HEAD ]]; then
     comparison_base="$(git -C "${git_root}" merge-base "${MAKEVN_VERIFY_CHANGES_PARENT_SPEC%...HEAD}" HEAD)"
   fi
@@ -325,7 +337,18 @@ makevn_collect_verify_changes_scope() {
 
   MAKEVN_VERIFY_CHANGES_TEST_LIST=''
   if [[ -n "${MAKEVN_VERIFY_CHANGES_TEST_FILES}" ]]; then
-    MAKEVN_VERIFY_CHANGES_TEST_LIST="$(printf '%s\n' "${MAKEVN_VERIFY_CHANGES_TEST_FILES}" | sed "s|^${strip_prefix}||" | sed 's|^.*/src/test/java/||' | sed 's|\.java$||' | tr '/' '.' | paste -sd, -)"
+    MAKEVN_VERIFY_CHANGES_TEST_LIST="$(printf '%s\n' "${MAKEVN_VERIFY_CHANGES_TEST_FILES}" | sed "s|^${strip_prefix}||" | sed 's|^.*src/test/java/||' | sed 's|\.java$||' | tr '/' '.' | paste -sd, -)"
+  fi
+}
+
+makevn_print_changes_coverage_signal() {
+  local maven_base_path="$1"
+
+  if makevn_repo_declares_jacoco_plugin "${maven_base_path}"; then
+    makevn_print_item "JaCoCo instrumentation" "plugin declared locally; execution not verified"
+  else
+    makevn_print_item "JaCoCo instrumentation" "no local declaration; inherited agent possible; execution not verified"
+    makevn_print_detail_line "Confirm effective agent binding before queuing coverage-changes/crap-changes; omit both when JaCoCo is confirmed absent. Missing local declarations alone are inconclusive; jacoco.skip=false alone is insufficient."
   fi
 }
 
@@ -343,6 +366,7 @@ makevn_print_verify_changes_preflight() {
 
   if [[ -n "${MAKEVN_VERIFY_CHANGES_SRC_FILES}" ]]; then
     makevn_print_item "production files" "$(makevn_count_non_empty_lines "${MAKEVN_VERIFY_CHANGES_SRC_FILES}")"
+    makevn_print_changes_coverage_signal "${MAKEVN_VERIFY_CHANGES_MAVEN_BASE_PATH}"
   fi
   if [[ -n "${MAKEVN_VERIFY_CHANGES_TEST_FILES}" ]]; then
     makevn_print_item "test files" "$(makevn_count_non_empty_lines "${MAKEVN_VERIFY_CHANGES_TEST_FILES}")"
@@ -382,7 +406,7 @@ cmd_verify_changes_preview() {
   shift
   makevn_changes_mode "$@"
   shift "${MAKEVN_VERIFY_CHANGES_MODE_ARGS}"
-  [[ $# -eq 0 ]] || makevn_die "Usage: verify-changes-preview [--focused|--exhaustive]"
+  [[ $# -eq 0 ]] || makevn_die "Usage: verify-changes-preview [--focused|--exhaustive] [--record-test-impact] [--defer-global-coverage]"
 
   if ! makevn_frontend_owns_loader; then
     print_command_intro "${repo_root}" verify-changes-preview
@@ -558,6 +582,10 @@ cmd_verify_changes() {
   # Always re-plan: a preview cache cannot detect content-only local edits.
   makevn_collect_verify_changes_scope "${repo_root}"
   makevn_print_verify_changes_preflight "verify-changes"
+  if [[ "${MAKEVN_TEST_IMPACT_CAPTURE}" == true ]]; then
+    [[ "${MAKEVN_VERIFY_CHANGES_FOCUSED_PLAN}" == $'.\t*' ]] || makevn_die "Test impact capture requires a complete single-module owner suite"
+    makevn_retire_test_impact "${repo_root}" || return $?
+  fi
 
   if [[ -z "${MAKEVN_VERIFY_CHANGES_MODULE_SELECTION}" && -z "${MAKEVN_VERIFY_CHANGES_TEST_FILES}" ]]; then
     makevn_clear_verify_changes_plan "${repo_root}"
@@ -604,7 +632,7 @@ No modified Java or POM files detected. Skipping verify-changes."
     makevn_validate_focused_flags ${cli_flags[@]+"${cli_flags[@]}"} ${prop_flags[@]+"${prop_flags[@]}"}
     makevn_scoped_coverage_prepare "${repo_root}" || return $?
     if makevn_run_focused_changes "${repo_root}"; then
-      makevn_scoped_coverage_finish "${repo_root}" || return $?
+      [[ "${MAKEVN_TEST_IMPACT_CAPTURE:-false}" == true ]] || makevn_scoped_coverage_finish "${repo_root}" || return $?
       rc=0
     else rc=$?; fi
     makevn_clear_verify_changes_plan "${repo_root}"

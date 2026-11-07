@@ -6,6 +6,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / 'libexec/makevn/common'))
@@ -138,6 +139,34 @@ fi
         self.assertEqual(self.plan(path, 'workspace/src/test/resources/shared/examples.yml', 'workspace/src/test/resources/shared/src/nested.avsc'), self.all_suites())
         self.assertEqual(self.plan('workspace/src/test/resources/shared-other/schema.avsc'), self.all_suites())
 
+    def test_shared_resources_keep_full_suites_despite_test_narrowing(self):
+        with patch('progressive_impact.narrow', return_value={'example.SelectedTest'}) as narrow:
+            self.assertEqual(self.plan('workspace/src/test/resources/shared/schema.avsc'), self.all_suites())
+        narrow.assert_not_called()
+
+    def test_scope_collection_includes_new_shared_fixtures(self):
+        fixture = self.base / 'src/test/resources/shared/generated.json'
+        fixture.parent.mkdir(parents=True)
+        fixture.write_text('{}')
+        script = r'''
+set -euo pipefail
+SCRIPT_DIR="$1/libexec/makevn"
+source "${SCRIPT_DIR}/common.sh"
+source "${SCRIPT_DIR}/commands/changes.sh"
+makevn_detect_maven_base_path() { printf '%s/workspace' "$1"; }
+makevn_maven_executable() { printf unused; }
+makevn_effective_local_containers() { :; }
+makevn_effective_java_home() { printf /unused; }
+makevn_detect_parent_branch_spec() { printf HEAD; }
+makevn_refresh_impact() { :; }
+makevn_collect_verify_changes_scope "$2" preview
+printf '%s\n' "$MAKEVN_VERIFY_CHANGES_FOCUSED_PLAN"
+'''
+        result = subprocess.run(['bash', '-c', script, 'test', str(ROOT), str(self.repo)],
+                                text=True, capture_output=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout.strip(), self.all_suites())
+
     def test_legacy_external_declaration_cannot_change_automatic_scope(self):
         self.legacy_mapping(externalChecks=['external integration suite'])
         self.assertEqual(self.plan('workspace/src/test/resources/shared/schema.avsc'), self.all_suites())
@@ -257,10 +286,9 @@ fi
         self.assertIn('additional\t*', self.plan('workspace/src/test/resources/shared/schema.avsc'))
 
     def test_unclassifiable_root_still_rejects_automatic_resource_scope(self):
-        for body in [ '<artifactId>root</artifactId><packaging>jar</packaging>', '<artifactId>root</artifactId><packaging>pom</packaging><profiles><profile><modules><module>adapter</module></modules></profile></profiles>' ]:
-            self.write('pom.xml', body)
-            with self.assertRaises(ValueError):
-                self.plan('workspace/src/test/resources/shared/schema.avsc')
+        self.write('pom.xml', '<artifactId>root</artifactId><packaging>pom</packaging><profiles><profile><modules><module>adapter</module></modules></profile></profiles>')
+        with self.assertRaises(ValueError):
+            self.plan('workspace/src/test/resources/shared/schema.avsc')
 
     def test_root_test_code_cannot_be_skipped_by_automatic_scope(self):
         path = self.base / 'src/test/custom/RootTests.txt'

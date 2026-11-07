@@ -25,6 +25,14 @@ Container teardown is a separate authorized operation. Do not stop an externally
 managed application. Standalone process liveness is not HTTP readiness, and HTTP
 readiness does not prove application semantics, JSON health status or Kafka readiness.
 
+If a container prerequisite fails, inspect the returned diagnostics and follow the
+[Docker prerequisite decision table](../makevn-docker/references/workflows.md#docker-prerequisite).
+For a failed or partial Karate stack, when diagnosis justifies recovery and stopping
+the selected project is authorized, use volume-preserving `karate_docker_down`,
+then `karate_docker_up`, then `docker_ps_required` with `compose: "karate"` and an
+appropriate wait. Resume the original scenario only after readiness succeeds.
+Reset deletes the project's volume data and requires separate explicit authorization.
+
 ### Disabling Compose discovery
 
 Compose answers also accept an absolute path to an existing file outside the

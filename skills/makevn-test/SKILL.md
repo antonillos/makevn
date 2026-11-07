@@ -37,6 +37,52 @@ Exhaustive selected suites still differ from whole-project `verify`. Unknown imp
 requires another exhaustive preview and explanation; never silently broaden.
 A successful preview runs no tests. Preserve existing authorization when broadening.
 
+If preparation adds shared fixtures and verification reports missing complete
+consumer suites, inspect the named files, preserve applicable prepared fixtures
+and repeat the preview in the same worktree and mode. Review and explain its new
+scope before retrying under existing authorization. Do not delete or stage the
+fixtures to bypass this check or repeat the unchanged plan. Preparation's Maven
+`BUILD SUCCESS` does not establish that any tests ran.
+
+Production changes start with conservative static dependency selection. Standard
+single-module and literal local reactor Java projects on JDK 17+ are supported; unknown impact retains complete
+owner suites. Static selection does not require a prior test run or compiled code.
+Reactor plans include transitive module consumers. Class identities and fresh
+runtime evidence are scoped to each module; explicit isolated capture remains
+single-module only. Profile-dependent membership and unresolved models retain
+complete suites or require exhaustive verification.
+Inspect selected classes and fallback reasons; focused does not promise few tests.
+
+After doctor/setup, `test-impact-preview` is read-only and `test-impact-init` writes
+a static map without Maven/tests/containers. Normal selected tests and complete
+verification runs add dependencies observed in successful fresh reports and JVM
+traces without reruns. Shared executions contribute conservative loaded-class
+supersets, not precise per-test attribution. Observations only add edges; missing
+observations never remove static dependencies. Changed context, declarations,
+resources or dependencies invalidate observations. Maps are managed state.
+
+Use `test-impact-init --isolated` (MCP `isolated: true`) only when explicitly asked
+for expensive isolated evidence. It runs a complete suite, then missing active
+classes. Unit replays use `test` to avoid repeated packaging; integration replays
+retain `verify`. Compatible sealed checkpoints resume. Changed-code recording
+still uses `--record-test-impact` in BOTH preview and verification. Failed/skipped
+cases supply no edges. Optional classes remain selected with fresh reports required;
+activation must pass. Full/CI coverage and CRAP gates remain separate.
+
+Repository-wide Maven coverage rules remain enforced by default and during
+impact capture. They can reject a partial verification despite passing tests.
+For explicitly authorized local changed-code feedback, inspect another preview
+with `defer-global-coverage: true`, then use the same flag in `verify_changes`.
+CLI uses `--defer-global-coverage` in both commands. This defers failure through
+JaCoCo's standard/Apache Commons halt-on-failure properties, preserving agents,
+rule warnings and other Maven gates. Custom literal/plugin configurations may
+still fail. Never enable it automatically, combine it with exhaustive/capture, or
+claim global coverage passed. After success, run coverage_changes and crap_changes
+only when effective JaCoCo instrumentation is configured. If JaCoCo is confirmed
+absent after inspecting inherited parents and active profiles, omit both calls and
+report metrics unavailable; missing/stale data from a configured agent still fails.
+Full verify/CI coverage remains required.
+
 Preparation uses `-am install` with UT/IT execution disabled and retains test
 compilation/test jars. A 34-module reactor does not mean 34 suites ran. Owner
 verification runs without `-am`, with separate UT/IT selectors and fresh non-skipped

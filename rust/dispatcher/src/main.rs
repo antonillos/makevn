@@ -662,6 +662,8 @@ fn validate_command(
         | "verify-it"
         | "verify-it-coverage"
         | "verify"
+        | "test-impact-preview"
+        | "test-impact-init"
         | "verify-changes-preview"
         | "verify-changes"
         | "pr-verify"
@@ -871,7 +873,9 @@ fn is_top_level_command(arg: &OsString) -> bool {
             | "verify-it"
             | "verify-it-coverage"
             | "verify"
-            | "verify-changes-preview"
+            | "test-impact-preview"
+        | "test-impact-init"
+        | "verify-changes-preview"
             | "verify-changes"
             | "coverage"
             | "coverage-changes"
@@ -1003,7 +1007,9 @@ fn command_supports_frontend_loader(command: &OsString) -> bool {
             | "verify-it"
             | "verify-it-coverage"
             | "verify"
-            | "verify-changes-preview"
+            | "test-impact-preview"
+        | "test-impact-init"
+        | "verify-changes-preview"
             | "verify-changes"
             | "coverage"
             | "coverage-changes"
@@ -1114,7 +1120,7 @@ fn dispatch_backend_invocations(
             None
         };
 
-        let phase_files = if matches!(fallback_title.as_str(), "karate-all" | "test" | "verify-changes")
+        let phase_files = if matches!(fallback_title.as_str(), "karate-all" | "test" | "verify-changes" | "test-impact-init")
             || (use_frontend_loader && fallback_title == "doctor")
         {
             Some(BackendPhaseFiles::new()?)
@@ -1270,7 +1276,8 @@ fn dispatch_backend_invocations(
             detail_lines: stderr_details,
             ..summary.clone()
         };
-        if fallback_title == "verify-changes" && has_phases {
+        if matches!(fallback_title.as_str(), "verify-changes" | "test-impact-init") && has_phases {
+            summary.title = fallback_title.clone();
             completed_summaries.push(focused_summary(summary, phases));
         } else {
             completed_summaries.extend(phases);
@@ -1280,7 +1287,7 @@ fn dispatch_backend_invocations(
         }
         append_command_diagnostics(
             &mut completed_summaries, diagnostics,
-            has_phases && fallback_title != "verify-changes",
+            has_phases && !matches!(fallback_title.as_str(), "verify-changes" | "test-impact-init"),
         );
 
         if last_exit_code != 0 {
@@ -1600,7 +1607,7 @@ fn run_backend_with_loader(
         }
         let mut live_summaries = completed_summaries.to_vec();
         if let Some(phases) = phase_files {
-            if fallback_title == "verify-changes" {
+            if matches!(fallback_title, "verify-changes" | "test-impact-init") {
                 let parent = summary_from_backend_metadata(
                     0, format_duration(started_at.elapsed()), fallback_title, None,
                 );
@@ -1970,7 +1977,8 @@ fn backend_header_line(metadata: &BackendMetadata) -> String {
 }
 
 fn backend_tail_notice_line(metadata: &BackendMetadata) -> String {
-    dim_text(&format!(" └ tailing log: {}", metadata.relative_log_path))
+    let prefix = if metadata.command == "verify-changes" { "│    └" } else { " └" };
+    dim_text(&format!("{prefix} tailing log: {}", metadata.relative_log_path))
 }
 
 fn print_final_dashboard(
@@ -2068,7 +2076,9 @@ fn focused_summary(mut parent: CommandSummary, phases: Vec<CommandSummary>) -> C
         details.extend(phase.detail_lines.iter().map(|line| format!("│    {line}")));
     }
     details.extend(parent.detail_lines);
-    parent.title = "verify-changes".to_owned();
+    if parent.title != "test-impact-init" {
+        parent.title = "verify-changes".to_owned();
+    }
     parent.relative_log_path = None;
     parent.detail_lines = details;
     parent
@@ -2079,9 +2089,9 @@ fn live_summary_lines(summaries: &[CommandSummary], metadata: &BackendMetadata) 
     for (index, summary) in summaries.iter().enumerate() {
         if metadata.command == "verify-changes"
             && index + 1 == summaries.len()
-            && summary.title == "verify-changes"
+            && matches!(summary.title.as_str(), "verify-changes" | "test-impact-init")
         {
-            lines.push(format!("{} {}", active_action_text("[•]"), active_action_text("makevn verify-changes")));
+            lines.push(format!("{} {}", active_action_text("[•]"), active_action_text(&format!("makevn {}", summary.title))));
             lines.extend(summary.detail_lines.iter().map(|line| detail_line(line)));
         } else {
             lines.extend(completed_summary_lines(std::slice::from_ref(summary)));

@@ -3,7 +3,7 @@ use crate::agent_transaction::error_text;
 use crate::agent_transaction::{self, Changes};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -142,7 +142,7 @@ fn validate_owned(
     if actual == expected {
         return Ok(());
     }
-    let paths: Vec<_> = actual
+    let paths: BTreeSet<_> = actual
         .keys()
         .chain(expected.keys())
         .filter(|key| actual.get(*key) != expected.get(*key))
@@ -150,20 +150,58 @@ fn validate_owned(
         .collect();
     Err(format!(
         "Unmanaged or locally modified skills; no files changed: {}",
-        paths.join(", ")
+        paths.into_iter().collect::<Vec<_>>().join(", ")
     ))
+}
+
+fn modified_owned(
+    target: &Path,
+    current: &Inventory,
+    owner: Option<&Manifest>,
+) -> Result<Vec<String>, String> {
+    let Some(owner) = owner else {
+        reject_unmanaged_directories(target)?;
+        return Ok(Vec::new());
+    };
+    let actual = hashes(current);
+    if actual.keys().ne(owner.files.keys()) {
+        return Err("Missing or unmanaged skill resources; no files changed".into());
+    }
+    Ok(actual
+        .iter()
+        .filter(|(name, hash)| owner.files.get(*name) != Some(*hash))
+        .map(|(name, _)| name.clone())
+        .collect())
 }
 
 pub fn prepare(source: &Path, target: &Path, version: &str) -> Result<Changes, String> {
     let desired = inventory(source, true)?;
     let current = inventory(target, false)?;
     let owner = manifest(target)?;
-    validate_owned(target, &current, owner.as_ref())?;
-    // Empty directories without a manifest are also user-owned.
-    if owner.is_none() {
-        reject_unmanaged_directories(target)?;
+    let modified = modified_owned(target, &current, owner.as_ref())?;
+    let mut changes = build_changes(target, current.clone(), desired, version)?;
+    changes.extend(backups(target, &current, modified)?);
+    Ok(changes)
+}
+
+fn backups(target: &Path, current: &Inventory, modified: Vec<String>) -> Result<Changes, String> {
+    let actual = hashes(current);
+    let mut changes = Changes::new();
+    for name in modified {
+        let bytes = current.get(&name).expect("modified resource exists");
+        let backup = target
+            .with_file_name("makevn-skills-backup")
+            .join(format!("{}-{}", name, actual[&name]));
+        agent_transaction::reject_links(&backup)?;
+        if let Some(existing) = agent_transaction::read(&backup)? {
+            if existing != *bytes {
+                return Err(format!("Skill backup conflicts: {}", backup.display()));
+            }
+        } else {
+            changes.insert(backup, Some(bytes.clone()));
+        }
     }
-    build_changes(target, current, desired, version)
+    Ok(changes)
 }
 
 fn build_changes(

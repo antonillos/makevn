@@ -138,9 +138,12 @@ fn preflight_failures_do_not_change_configuration_or_skills() {
     fs::write(&config, "").unwrap();
     install(Client::Codex, &config, &source, &target, "1").unwrap();
     fs::write(target.join("makevn/SKILL.md"), "local").unwrap();
+    fs::write(&config, "invalid[").unwrap();
     let before = fs::read(&config).unwrap();
     assert!(install(Client::Codex, &config, &source, &target, "2").is_err());
     assert_eq!(fs::read(&config).unwrap(), before);
+    assert_eq!(fs::read(target.join("makevn/SKILL.md")).unwrap(), b"local");
+    assert!(!fixture.0.join("makevn-skills-backup").exists());
 }
 
 #[test]

@@ -7,7 +7,7 @@ import os
 import tempfile
 import xml.etree.ElementTree as ET
 
-from reactor_impact import ExhaustiveScopeRequired, automatic_resource_rules, leaf_bump_owners, shared_resource_owners
+from reactor_impact import ExhaustiveScopeRequired, automatic_resource_rules, leaf_bump_owners, shared_resource_owners, reactor_consumers
 
 
 def parse(text):
@@ -193,29 +193,66 @@ def selection(repo, base, reference, paths):
 
 def focused_plan(repo, base, reference, paths):
     """Full suites for production/POM owners, changed tests in other owners."""
-    production = [path for path in paths if "/src/test/java/" not in path]
+    repo, base = repo.resolve(), base.resolve()
+    paths = [path for path in paths if path]
+    root_pom = base / "pom.xml"
+    test_paths = {path for path in paths if "/src/test/java/" in f"/{path}"}
+    root_sources = set()
+    if root_pom.is_file() and declared_modules(base, parse(root_pom.read_text())) == set():
+        root_sources = {path for path in paths if path not in test_paths and (repo / path).is_relative_to(base)
+                        and (repo / path).relative_to(base).as_posix().startswith("src/")}
+    production = [path for path in paths if path not in test_paths and path not in root_sources]
     full = selection(repo, base, reference, production)
     if full == ".":
         blockers = [path for path in production if selection(repo, base, reference, [path]) == "."]
         raise ExhaustiveScopeRequired("Unknown or root-level impact in " + ", ".join(blockers) + "; use --exhaustive")
     suites = set(filter(None, full.split(",")))
+    if root_sources:
+        suites.add(".")
     tests = {}
     for path in paths:
-        if "/src/test/java/" not in path:
+        if path in root_sources or path not in test_paths:
             continue
         absolute = repo / path
         if not absolute.is_relative_to(base):
             continue
-        owner, name = absolute.relative_to(base).as_posix().split("/src/test/java/", 1)
+        relative = absolute.relative_to(base).as_posix()
+        if relative.startswith("src/test/java/"):
+            owner, name = ".", relative[len("src/test/java/"):]
+        else:
+            owner, name = relative.split("/src/test/java/", 1)
         if not absolute.is_file() or not name.endswith(("Test.java", "IT.java", "Tests.java", "TestCase.java")):
             suites.add(owner)  # Helpers/deletions require the owner's entire suite.
         else:
             tests.setdefault(owner, set()).add(name[:-5].replace("/", "."))
-    records = []
+    reactor = declared_modules(base, parse(root_pom.read_text())) if root_pom.is_file() else set()
+    shared_suites = set()
+    if reactor:
+        for path in production:
+            if (repo / path).is_relative_to(base / 'src/test/resources'):
+                shared_suites.update(shared_resource_owners(repo, base, reactor, repo / path, parse))
+    source_owners = {(repo / path).relative_to(base).as_posix().split('/src/', 1)[0]
+                     for path in paths if path and not non_verification_path(path)
+                     and (repo / path).is_relative_to(base)
+                     and '/src/' in (repo / path).relative_to(base).as_posix()}
+    if reactor and source_owners and reactor - suites:
+        try:
+            for owner in source_owners:
+                consumers = reactor_consumers(base, reactor, owner, parse)
+                suites.update(consumers - {owner})
+        except (OSError, ValueError, ET.ParseError) as error:
+            raise ExhaustiveScopeRequired('Unresolved reactor consumers: ' + str(error) + '; use --exhaustive') from error
+    records, impact_cache = [], {}
+    from progressive_impact import narrow, report_fallbacks
     for owner in sorted(suites | tests.keys()):
         if not (base / owner / "pom.xml").is_file():
             raise ExhaustiveScopeRequired("No owner POM for " + owner + "; use --exhaustive")
-        records.append(owner + "\t" + ("*" if owner in suites else ",".join(sorted(tests[owner]))))
+        chosen = None
+        if owner in suites and owner not in shared_suites and os.environ.get('MAKEVN_TEST_IMPACT_CAPTURE') != 'true':
+            chosen = narrow(repo, base, owner, paths, tests.get(owner, set()), reference, impact_cache)
+        records.append(owner + "\t" + (",".join(sorted(chosen)) if chosen else
+                       "*" if owner in suites else ",".join(sorted(tests[owner]))))
+    report_fallbacks(impact_cache)
     return "\n".join(records)
 
 

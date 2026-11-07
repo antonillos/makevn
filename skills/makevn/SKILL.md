@@ -69,7 +69,7 @@ preference, not engine startup or proof of readiness.
 
 | Intent | Load next |
 | --- | --- |
-| Selected tests, UT/IT, whole-project or changed-code verification | [makevn-test](../makevn-test/SKILL.md) |
+| Selected tests, UT/IT, test-impact initialization or changed-code verification | [makevn-test](../makevn-test/SKILL.md) |
 | Container prerequisites, readiness, diagnosis or lifecycle | [makevn-docker](../makevn-docker/SKILL.md) |
 | Managed application E2E or an externally managed application | [makevn-karate](../makevn-karate/SKILL.md) |
 | Format, Checkstyle, coverage, CRAP or mutation | [makevn-quality](../makevn-quality/SKILL.md) |
@@ -142,7 +142,8 @@ for offline and mirrored-repository limits; do not suggest installing another
 JDK when parent metadata could not be resolved. Execution
 `skip` properties matter only when that execution has a Java rule (including
 plugin-level rules). An unresolved skip in a snapshots-only execution must not
-block JDK selection. An unresolved property affecting a Java rule does block it;
+block JDK selection. An unresolved skip retains the Java version constraint;
+an unresolved version property blocks selection;
 do not bypass Enforcer or alter the POM to hide a detection failure. See the
 [JDK selection reference](references/workflows.md#stable-automatic-jdk-selection)
 for supported ranges and effective-POM limitations.
@@ -177,8 +178,9 @@ terminal, multiple choices or linked configurations prompt for a selection,
 showing resolved destinations and preserving links. Noninteractive use selects
 project integration before global integration and rejects linked paths.
 Use `--scope global|project` only to override scope detection.
-Existing foreign skills or local edits block replacement; inspect conflicts rather
-than deleting user content. Agent selection remains model-dependent.
+Local edits to managed skills are backed up before replacement. Foreign skills,
+extra resources and linked paths still block replacement. Agent selection remains
+model-dependent.
 
 ### Disabling Compose discovery
 
@@ -194,3 +196,55 @@ Testcontainers engine requirements still apply. Explicit Compose lifecycle and
 readiness commands require an actual selected file and cannot use `none`.
 To change a saved selection, use interactive `makevn doctor --reset-config`
 (which resets other preferences too), then answer setup again. Reset is CLI-only.
+
+## Native secrets for Maven settings
+
+MakeVN resolves `${env.NAME}` references in Maven user and installation settings
+immediately before invoking Maven. It first looks in the native store for service
+`NAME` and the current operating-system user as the account. It then uses the
+inherited environment, followed by exported values from the user's default login
+shell. For compatibility, unresolved names also use account `NAME` under the
+configured service or `makevn.maven.environment`. The shell fallback executes
+the user's login and interactive startup files; output is discarded and only
+referenced values are passed privately to the Maven child. No secret values belong in
+`.makevn/config`, command arguments, source control or agent chat.
+
+On macOS, use Keychain Access to add a generic password with the system username
+as the account and the variable name as the service. Enter its
+password in the native application. MakeVN uses `security find-generic-password`
+and honors the keychain's access controls. Unlock the login keychain and authorize
+access locally when prompted.
+
+For an existing legacy entry whose account is the variable name, set
+`MAKEVN_MAVEN_SECRET_SERVICE` in the MakeVN process environment to its service.
+Do not copy the password into project configuration or chat.
+
+On Linux, install libsecret's `secret-tool` and store the account under the selected
+service; run this in your own terminal:
+
+```sh
+secret-tool store --label='Maven credential' service REPOSITORY_TOKEN account "$(id -un)"
+```
+
+Enter the value at the native prompt. A running, unlocked Secret Service is
+required. Headless CI should supply the variable from its existing CI secret
+facility. Other operating systems can also supply inherited environment variables;
+native lookup is unavailable there.
+
+MakeVN inspects the default `~/.m2/settings.xml`, an installation settings file
+located through `MAVEN_HOME` or the installed `mvn` executable, and explicit
+`-s`/`--settings` and `-gs`/`--global-settings` selections. Arguments in
+`.mvn/maven.config` and `MAVEN_ARGS` are considered before explicit command
+arguments. A wrapper's private downloaded installation settings cannot be located
+before the wrapper starts; use explicit global settings for those references.
+Custom `user.home` overrides and Maven 4 project settings are not inspected yet.
+
+Resolved values exist only in the Maven child environment and in MakeVN memory.
+MakeVN replaces their exact values in captured Maven output with `[REDACTED]`.
+Build plugins still control files they create; do not configure plugins to write
+credentials to reports. No setup operation reads secret values into chat.
+
+Missing variables or unavailable stores stop execution with the variable name and
+setup guidance. Once Maven runs, its exit code and HTTP diagnostics are preserved:
+401 and 403 remain distinct server responses. A response alone does not prove
+whether a credential is absent, expired or lacks repository permission.
