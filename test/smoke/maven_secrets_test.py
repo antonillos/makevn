@@ -61,6 +61,13 @@ class MavenSecretsTest(unittest.TestCase):
             self.assertNotIn("fake-sensitive", str(error.exception))
             self.assertEqual(call.call_args.args[0][-3:], ["-a", "TOKEN", "-w"])
 
+    def test_user_selected_service_is_used(self):
+        response = subprocess.CompletedProcess([], 0, b"test-value\n", b"")
+        with patch.object(sys, "platform", "darwin"), patch.object(secrets, "SERVICE", "personal-service"), \
+                patch.object(subprocess, "run", return_value=response) as call:
+            self.assertEqual(secrets.lookup("TOKEN"), "test-value")
+            self.assertIn("personal-service", call.call_args.args[0])
+
     def test_inherited_value_is_redacted_and_http_failure_is_preserved(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

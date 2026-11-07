@@ -3,7 +3,9 @@
 MakeVN resolves `${env.NAME}` references in Maven user and installation settings
 immediately before invoking Maven. An existing nonempty environment variable wins.
 Missing variables are read from the native store under service
-`makevn.maven.environment`, account `NAME`. No secret values belong in
+`makevn.maven.environment`, account `NAME`. Set `MAKEVN_MAVEN_SECRET_SERVICE` in the MakeVN process
+environment to select a different service owned by the user. The same service
+name must be used in the native store. No secret values belong in
 `.makevn/config`, command arguments, source control or agent chat.
 
 On macOS, use Keychain Access to add a generic password with the service/name

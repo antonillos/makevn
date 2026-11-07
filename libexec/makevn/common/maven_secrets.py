@@ -10,7 +10,7 @@ import sys
 import xml.etree.ElementTree as ET
 
 
-SERVICE = "makevn.maven.environment"
+SERVICE = os.environ.get("MAKEVN_MAVEN_SECRET_SERVICE") or "makevn.maven.environment"
 REFERENCE = re.compile(r"\$\{env\.([A-Za-z_][A-Za-z0-9_]*)\}")
 
 
@@ -68,19 +68,19 @@ def lookup(name):
         command = ["secret-tool", "lookup", "service", SERVICE, "account", name]
     else:
         raise SecretUnavailable(f"Maven settings variable {name} is missing; native secret store unavailable. "
-                         "See docs/maven-secrets.md; never send secrets in chat or project config.")
+                         "See https://github.com/antonillos/makevn/blob/develop/skills/makevn/references/maven-secrets.md; never send secrets in chat or project config.")
     try:
         result = subprocess.run(command, capture_output=True, timeout=15, check=False)
     except (OSError, subprocess.TimeoutExpired):
         raise SecretUnavailable(f"Cannot access native secret store for Maven settings variable {name}. "
-                         "Unlock/configure the store; see docs/maven-secrets.md.") from None
+                         "Unlock/configure the store; see https://github.com/antonillos/makevn/blob/develop/skills/makevn/references/maven-secrets.md.") from None
     if result.returncode or not result.stdout:
         raise SecretUnavailable(f"Native secret unavailable for Maven settings variable {name}. "
-                         f"Configure service {SERVICE}, account {name}; see docs/maven-secrets.md.")
+                         f"Configure service {SERVICE}, account {name}; see https://github.com/antonillos/makevn/blob/develop/skills/makevn/references/maven-secrets.md.")
     value = result.stdout.decode().removesuffix("\n")
     if not value or "\0" in value:
         raise SecretUnavailable(f"Native secret for Maven settings variable {name} is empty or invalid. "
-                                "Update it locally; see docs/maven-secrets.md.")
+                                "Update it locally; see https://github.com/antonillos/makevn/blob/develop/skills/makevn/references/maven-secrets.md.")
     return value
 
 
@@ -133,5 +133,5 @@ if __name__ == "__main__":
     except (OSError, ValueError, ET.ParseError):
         # Parser and operating-system exceptions may include sensitive XML or values.
         print("Maven settings secret resolution failed. Check settings and native-store setup; "
-              "see docs/maven-secrets.md.", file=sys.stderr)
+              "see https://github.com/antonillos/makevn/blob/develop/skills/makevn/references/maven-secrets.md.", file=sys.stderr)
         sys.exit(1)
