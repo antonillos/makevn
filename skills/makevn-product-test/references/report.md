@@ -2,6 +2,9 @@
 
 Copy this template to the campaign's report location. Use portable public data
 for committed reports; keep local paths and environment details local as needed.
+For fixture campaigns, place it and all campaign-generated supporting artifacts
+under `<fixture>/.makevn/product-test/<campaign-id>/`, never in the fixture root.
+Purge that campaign directory after its handoff is no longer needed.
 
 ## Campaign
 
