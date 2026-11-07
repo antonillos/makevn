@@ -165,17 +165,26 @@ fix or PR does not authorize merging or publishing a release.
 
 ## Preserve a handoff
 
-Write a campaign report at a user-visible path and report that path. Use the
+Keep campaign-generated reports and supporting evidence out of the fixture's
+project root. Store them under
+`<fixture>/.makevn/product-test/<campaign-id>/`, with the campaign report and
+any `verification_artifacts/` directory together. Use a stable, concise campaign
+ID and report the report's full path. Use the
 [report template](references/report.md), including exact revisions, evidence
 paths, unresolved blockers, owned resources and a concrete next action. Keep
 secrets and machine-specific credentials out of shared/committed reports. Do not
 claim cross-platform support from one runtime's success.
 
 Clean up only resources created by this campaign, using MakeVN for all container
-operations. Preserve clones and evidence unless their removal is authorized.
-Report cleanup failures. A new session should read the report, confirm the active
-MakeVN/server version and current execution/resource state, then resume the next
-action without repeating completed work or trusting stale reports.
+operations. Preserve clones and evidence while they are needed to resume or
+review the campaign. Once the handoff is no longer needed, purge its
+`.makevn/product-test/<campaign-id>/` directory as one unit; do not leave copies
+in the fixture root. Never purge another campaign's directory or Maven `target`
+outputs. The repo-sweep harness has its own guarded `--cleanup` command for its
+temporary clones and reports. Report cleanup failures. A new session should read
+the report, confirm the active MakeVN/server version and current
+execution/resource state, then resume the next action without repeating
+completed work or trusting stale reports.
 
 ### Disabling Compose discovery
 
