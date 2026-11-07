@@ -199,6 +199,7 @@ makevn_run_in_context() {
   fi
 
   makevn_check_maven_command "${maven_base_path}" "${command_cwd}" "${java_home}" "$@" || return $?
+  set -- python3 "${MAKEVN_LIBEXEC_DIR}/common/maven_secrets.py" "$@"
   makevn_trace_command exec env JAVA_HOME="${java_home}" "$@"
 
   (

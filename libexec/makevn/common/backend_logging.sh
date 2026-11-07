@@ -297,6 +297,7 @@ makevn_run_logged_in_context() {
   fi
 
   makevn_check_maven_command "${maven_base_path}" "${command_cwd}" "${java_home}" "$@" || return $?
+  set -- python3 "${MAKEVN_LIBEXEC_DIR}/common/maven_secrets.py" "$@"
   if makevn_testcontainers_command "${maven_base_path}" "${command_key}"; then
     set -- python3 "${MAKEVN_LIBEXEC_DIR}/docker/testcontainers.py" "$@"
   fi
