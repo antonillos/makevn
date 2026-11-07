@@ -5003,6 +5003,7 @@ main() {
   bash "${ROOT_DIR}/test/smoke/maven_resolution_test.sh"
   bash "${ROOT_DIR}/test/smoke/maven_system_test.sh"
   python3 "${ROOT_DIR}/test/smoke/maven_inspection_test.py"
+  python3 "${ROOT_DIR}/test/smoke/maven_secrets_test.py"
   bash "${ROOT_DIR}/test/smoke/maven_validation_test.sh"
   bash "${ROOT_DIR}/test/smoke/jdk_discovery_test.sh"
   bash "${ROOT_DIR}/test/smoke/jdk_brew_test.sh"

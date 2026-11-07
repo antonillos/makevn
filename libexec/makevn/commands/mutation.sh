@@ -104,6 +104,7 @@ cmd_mutation() {
   fi
 
   java_home="$(makevn_effective_java_home "${repo_root}" code "${maven_base_path}" || true)"
+  maven_args=(python3 "${MAKEVN_LIBEXEC_DIR}/common/maven_secrets.py" "${maven_args[@]}")
   [[ -n "${java_home}" ]] || makevn_die "Could not resolve code JDK."
 
   logs_dir="$(makevn_logs_dir "${repo_root}")"
