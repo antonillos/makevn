@@ -202,16 +202,14 @@ To change a saved selection, use interactive `makevn doctor --reset-config`
 MakeVN resolves `${env.NAME}` references in Maven user and installation settings
 immediately before invoking Maven. An existing nonempty environment variable wins.
 Missing variables use account `NAME`. Lookup checks the configured service first,
-then `makevn.maven.environment`, then a unique account-only Keychain entry on
-macOS. Keychain reports with duplicate matches are treated as unavailable;
-`MAKEVN_MAVEN_SECRET_SERVICE` selects a specific user-owned service when needed.
+then `makevn.maven.environment` on macOS. `MAKEVN_MAVEN_SECRET_SERVICE` selects
+a specific user-owned service when needed.
 Linux Secret Service lookup remains scoped to the configured service to avoid
 choosing among matching entries. No secret values belong in
 `.makevn/config`, command arguments, source control or agent chat.
 
 On macOS, use Keychain Access to add a generic password with the account matching
-the variable name. MakeVN can reuse a uniquely matching existing account even if
-its service has another name. Enter its
+the variable name and the selected service. Enter its
 password in the native application. MakeVN uses `security find-generic-password`
 and honors the keychain's access controls. Unlock the login keychain and authorize
 access locally when prompted.

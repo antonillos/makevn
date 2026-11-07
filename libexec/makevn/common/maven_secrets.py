@@ -67,8 +67,6 @@ def lookup(name):
         services = [SERVICE]
         if SERVICE != DEFAULT_SERVICE:
             services.append(DEFAULT_SERVICE)
-        # Without a service, security returns errSecDuplicateItem on ambiguous matches.
-        services.append("")
         for service in dict.fromkeys(services):
             command = ["/usr/bin/security", "find-generic-password", "-a", name]
             if service:
