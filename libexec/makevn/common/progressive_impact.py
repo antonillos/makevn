@@ -328,6 +328,33 @@ def absorb_isolated(repo, base, java, evidence):
         impact.sealed_save(path(repo), current)
 
 
+def init_diagnostic(base, error):
+    reason = str(error)
+    details = 'Affected modules and source paths could not be determined during init.'
+    if reason == 'generated Java sources have no validated impact graph':
+        try:
+            owners = reactor.modules(base) or ['.']
+            generated = []
+            for owner in owners:
+                directory = base / owner
+                for name in ['generated-sources', 'generated-test-sources']:
+                    root = directory / 'target' / name
+                    if root.is_dir() and any(root.rglob('*.java')):
+                        generated.append((owner, root.relative_to(base).as_posix()))
+            if generated:
+                details = 'Generated Java sources detected: ' + ', '.join(
+                    (owner if owner != '.' else 'root') + ' (' + path + ')'
+                    for owner, path in generated) + '.'
+            else:
+                details = 'Generated Java sources could not be attributed to a module or path.'
+        except (OSError, ValueError, ET.ParseError):
+            details = 'Generated Java source modules and paths could not be determined during init.'
+    return ('Cannot initialize static impact: ' + reason + '; ' + details + ' ' +
+            'Class-level test selection is unavailable; changed-code verification will retain complete ' +
+            'suites for affected modules. Run makevn test-impact-preview to review the available scope. ' +
+            'No tests were executed.')
+
+
 if __name__ == '__main__':
     try:
         command, repo, base, java = sys.argv[1:]
@@ -342,6 +369,9 @@ if __name__ == '__main__':
                   '; ' + str(len(tests(value['facts']))) + ' candidate test classes; no Maven or tests executed; ' +
                   str(len(value['observations'])) + ' observed classes retained')
     except (OSError, ValueError, KeyError, subprocess.SubprocessError, ET.ParseError) as error:
+        if command == 'init-summary':
+            print(init_diagnostic(Path(base).resolve(), error), file=sys.stderr)
+            sys.exit(1)
         if command == 'preview':
             try:
                 base_path = Path(base).resolve()
