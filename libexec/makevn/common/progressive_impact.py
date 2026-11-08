@@ -334,17 +334,19 @@ def init_diagnostic(base, error):
     if reason == 'generated Java sources have no validated impact graph':
         try:
             owners = reactor.modules(base) or ['.']
-            generated = []
+            generated = {}
             for owner in owners:
                 directory = base / owner
                 for name in ['generated-sources', 'generated-test-sources']:
                     root = directory / 'target' / name
                     if root.is_dir() and any(root.rglob('*.java')):
-                        generated.append((owner, root.relative_to(base).as_posix()))
+                        generated.setdefault(name, []).append(owner)
             if generated:
-                details = 'Generated Java sources detected: ' + ', '.join(
-                    (owner if owner != '.' else 'root') + ' (' + path + ')'
-                    for owner, path in generated) + '.'
+                details = 'Generated Java sources detected: ' + '; '.join(
+                    'target/' + name + ' in ' + str(len(modules)) + ' module' +
+                    ('s' if len(modules) != 1 else '') + ': ' + ', '.join(
+                        'root' if owner == '.' else owner for owner in modules)
+                    for name, modules in sorted(generated.items())) + '.'
             else:
                 details = 'Generated Java sources could not be attributed to a module or path.'
         except (OSError, ValueError, ET.ParseError):
