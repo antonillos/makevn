@@ -347,7 +347,9 @@ makevn_print_changes_coverage_signal() {
   if makevn_repo_declares_jacoco_plugin "${maven_base_path}"; then
     makevn_print_item "JaCoCo instrumentation" "plugin declared locally; execution not verified"
   else
-    makevn_print_item "JaCoCo instrumentation" "no local declaration; inherited agent possible; execution not verified"
+    local inherited_signal
+    inherited_signal="$(python3 "${SCRIPT_DIR}/common/jacoco_signal.py" "${maven_base_path}")"
+    makevn_print_item "JaCoCo instrumentation" "${inherited_signal:-no local declaration; inherited agent possible; execution not verified}"
     makevn_print_detail_line "Confirm effective agent binding before queuing coverage-changes/crap-changes; omit both when JaCoCo is confirmed absent. Missing local declarations alone are inconclusive; jacoco.skip=false alone is insufficient."
   fi
 }
@@ -635,6 +637,7 @@ No modified Java or POM files detected. Skipping verify-changes."
       [[ "${MAKEVN_TEST_IMPACT_CAPTURE:-false}" == true ]] || makevn_scoped_coverage_finish "${repo_root}" || return $?
       rc=0
     else rc=$?; fi
+    python3 "${SCRIPT_DIR}/common/changes_summary.py" "${repo_root}" "${MAKEVN_VERIFY_CHANGES_MAVEN_BASE_PATH}" "$(makevn_state_dir "${repo_root}")/verify-changes-started" "${rc}" || return $?
     makevn_clear_verify_changes_plan "${repo_root}"
     return "${rc}"
   fi

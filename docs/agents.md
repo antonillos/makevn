@@ -113,3 +113,19 @@ Testcontainers engine requirements still apply. Explicit Compose lifecycle and
 readiness commands require an actual selected file and cannot use `none`.
 To change a saved selection, use interactive `makevn doctor --reset-config`
 (which resets other preferences too), then answer setup again. Reset is CLI-only.
+
+## Changed-code diagnostics
+
+Focused verification writes `.makevn/reports/verify-changes/summary.json` with
+its exit status and fresh Surefire/Failsafe counts per module. Coverage and CRAP
+are separate operations; the verification summary does not claim those gates.
+Tests that require dependencies at reactor-local `target` paths can fail when
+focused owner verification resolves installed artifacts. Use `makevn verify`
+for a complete reactor comparison; do not bypass the assertion or silently
+repeat focused verification with a broader scope.
+
+Changed-code CRAP supplements the source analyzer's missing explicit constructors
+with JaCoCo method instruction and complexity counters and an enclosing source
+range. Incomplete or ambiguous evidence must still fail. A parent plugin signal
+identifies a declaration only; profile activation and agent execution remain
+separate evidence requirements.
