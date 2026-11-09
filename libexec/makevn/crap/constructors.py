@@ -29,7 +29,8 @@ def constructor_entries(xml_path, source_root, existing):
                 if not total:
                     raise ValueError(f'empty constructor instruction count: {name}:{line}')
                 try:
-                    start, end = method_range(source.read_text(), line, None)
+                    start, end = method_range(source.read_text(), line, None,
+                                              constructor_name=name.rsplit('.', 1)[-1].rsplit('$', 1)[-1])
                 except ValueError:
                     # Implicit constructors have no explicit declaration to associate.
                     continue

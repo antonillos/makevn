@@ -237,7 +237,7 @@ def method_identity(label):
     return match.group(1), count
 
 
-def method_range(source, anchor_line, reported_method):
+def method_range(source, anchor_line, reported_method, *, constructor_name=None):
     """Locate the enclosing method declaration and body around a JaCoCo line."""
     code = masked_java(source)
     stack = []
@@ -266,6 +266,9 @@ def method_range(source, anchor_line, reported_method):
         open_paren += 1
         name = re.search(r"([A-Za-z_$][\w$]*)\s*$", prefix[:open_paren])
         if not name or name.group(1) in ignored:
+            continue
+        if constructor_name is not None and (name.group(1) != constructor_name or
+                not re.fullmatch(r"\s*(?:(?:public|protected|private)\s+)*", prefix[:name.start()])):
             continue
         start_offset = boundary + 1 + len(prefix) - len(prefix.lstrip())
         start_line = code.count("\n", 0, start_offset) + 1
