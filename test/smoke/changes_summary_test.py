@@ -72,6 +72,34 @@ class SummaryTests(unittest.TestCase):
             self.assertEqual(result['coverage']['status'], 'not_run')
             self.assertEqual(result['crap']['status'], 'not_run')
 
+    def test_failed_capture_without_evidence_replaces_previous_success(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Path(directory)
+            state = repo / '.makevn/focused-coverage/run.json'
+            state.parent.mkdir(parents=True)
+            state.write_text(json.dumps({'classes': 'previous-run'}))
+            stamp = repo / 'started'
+            stamp.touch()
+            summary.main([str(repo), str(repo), str(stamp), '0'])
+            output = summary.summary_path(repo)
+            previous = json.loads(output.read_text())
+            previous['coverage'] = {'status': 'passed', 'exitCode': 0}
+            previous['crap'] = {'status': 'passed', 'exitCode': 0}
+            output.write_text(json.dumps(previous))
+            state.unlink()
+            summary.main([str(repo), str(repo), str(stamp), '17'])
+            result = json.loads(output.read_text())
+            self.assertIsNone(result['runId'])
+            self.assertEqual(result['exitCode'], 17)
+            self.assertEqual(result['verification'], {'status': 'failed', 'exitCode': 17})
+            self.assertEqual(result['coverage']['status'], 'not_run')
+            self.assertEqual(result['crap']['status'], 'not_run')
+            with self.assertRaises(FileNotFoundError):
+                summary.main([str(repo), str(repo), str(stamp), '0'])
+            state.write_text(json.dumps({'classes': 'new-run'}))
+            summary.update_stage(repo, 'coverage-changes', 1)
+            self.assertEqual(json.loads(output.read_text()), result)
+
     def test_no_changed_classes_are_not_applicable(self):
         with tempfile.TemporaryDirectory() as directory:
             repo = Path(directory)

@@ -81,7 +81,13 @@ def main(args):
     repo, base, stamp, code = args
     output = summary_path(Path(repo))
     summary = summarize(Path(base), Path(stamp).stat().st_mtime, int(code))
-    summary.update(runId=run_identity(Path(repo)),
+    try:
+        run_id = run_identity(Path(repo))
+    except FileNotFoundError:
+        if code == '0':
+            raise
+        run_id = None
+    summary.update(runId=run_id,
                    verification=dict(status='passed' if code == '0' else 'failed', exitCode=int(code)),
                    coverage=dict(status='not_run', reason='awaiting coverage-changes' if code == '0' else 'verification did not pass'),
                    crap=dict(status='not_run', reason='awaiting crap-changes' if code == '0' else 'verification did not pass'))
