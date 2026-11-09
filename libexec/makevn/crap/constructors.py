@@ -2,18 +2,23 @@
 from pathlib import Path
 import xml.etree.ElementTree as ET
 
-from jacoco_html import method_range
+from jacoco_html import method_range, source_roots
 
 
 def constructor_entries(xml_path, source_root, existing):
     entries = []
-    for package in ET.parse(xml_path).getroot().findall('package'):
+    roots = source_roots(Path(source_root))
+    for package in ET.parse(xml_path).getroot().findall('.//package'):
         for node in package.findall('class'):
             name = node.get('name', '').replace('/', '.')
-            relative = Path('src/main/java') / package.get('name', '') / node.get('sourcefilename', '')
-            source = Path(source_root) / relative
-            if not source.is_file():
+            relative = Path(package.get('name', '')) / node.get('sourcefilename', '')
+            matches = [root / relative for root in roots if (root / relative).is_file()]
+            if len(matches) > 1:
+                raise ValueError(f'ambiguous constructor source for {name}: ' + ', '.join(map(str, matches)))
+            if not matches:
                 continue
+            source = matches[0]
+            relative = source.relative_to(source_root)
             for method in node.findall('method'):
                 if method.get('name') != '<init>':
                     continue
