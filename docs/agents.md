@@ -117,8 +117,15 @@ To change a saved selection, use interactive `makevn doctor --reset-config`
 ## Changed-code diagnostics
 
 Focused verification writes `.makevn/reports/verify-changes/summary.json` with
-its exit status and fresh Surefire/Failsafe counts per module. Coverage and CRAP
-are separate operations; the verification summary does not claim those gates.
+its exit status and fresh Surefire/Failsafe counts per module. Subsequent
+`coverage-changes` and `crap-changes` update their own status, exit code and report
+paths in that summary for the same focused evidence. Coverage includes JaCoCo
+counters; CRAP includes method/warning counts and its gate mode. `passed` means
+the command succeeded; a CRAP gate of `reported` is not a warning-count gate.
+`not_run` and `not_applicable` distinguish unexecuted steps from a run with no
+changed production classes. A new verification resets both metric statuses;
+commands for a different evidence snapshot cannot update the previous summary.
+These local outcomes do not establish global coverage, CRAP or CI gates.
 Tests that require dependencies at reactor-local `target` paths can fail when
 focused owner verification resolves installed artifacts. Use `makevn verify`
 for a complete reactor comparison; do not bypass the assertion or silently

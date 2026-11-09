@@ -383,12 +383,14 @@ case "${COMMAND}" in
     cmd_coverage "${REPO_ROOT}" "$@"
     ;;
   coverage-changes)
+    trap 'python3 "${SCRIPT_DIR}/common/changes_summary.py" update "${REPO_ROOT}" "${COMMAND}" "$?" || printf "%s\n" "Warning: could not update changed-code summary" >&2' EXIT
     cmd_coverage_changes "${REPO_ROOT}" "$@"
     ;;
   crap)
     cmd_crap "${REPO_ROOT}" crap "$@"
     ;;
   crap-changes)
+    trap 'python3 "${SCRIPT_DIR}/common/changes_summary.py" update "${REPO_ROOT}" "${COMMAND}" "$?" || printf "%s\n" "Warning: could not update changed-code summary" >&2' EXIT
     cmd_crap "${REPO_ROOT}" crap-changes "$@"
     ;;
   pr-verify)
