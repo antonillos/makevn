@@ -253,8 +253,8 @@ makevn agent status codex --scope project
 Status prints distributed-resource and destination paths, skill registration
 (absent/current/outdated/conflict), and MCP configuration status. A completed
 status command is a diagnostic, not proof of healthy configuration or client loading.
-After setup restart/reload the client, inspect its skills catalog and explicitly
-load all six skills. Then evaluate representative workflow requests using the
+After setup restart/reload the client, inspect its skills catalog and evaluate
+representative workflow requests without explicitly naming skills using the
 [client validation checklist](agent-skills-validation.md). A model can choose not
 to load an available skill; installation cannot guarantee implicit selection.
 

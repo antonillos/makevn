@@ -1,7 +1,7 @@
 ---
 name: makevn-docker
 description: >-
-  Use for MakeVN container prerequisites, Compose selection, readiness, diagnostics, logs and authorized boot or Karate container lifecycle. All Docker operations must use MakeVN.
+  Use after makevn for container prerequisites, Compose selection, docker_ps_required, readiness, diagnostics, logs and authorized container lifecycle. All Docker operations must use MakeVN.
 ---
 
 # MakeVN Docker

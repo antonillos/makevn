@@ -38,8 +38,10 @@ resolved destination of linked configurations before any write. Noninteractive
 use selects project integration first, falling back to global scope, and rejects
 linked paths.
 
-Restart/reload the client. Check its available skills, explicitly load each skill,
-then try representative requests. Installed files, available metadata, loaded
+Restart/reload the client. Check its available skills, then try representative
+requests without explicitly naming skills and inspect which instructions were loaded.
+Load the base and applicable specialties; product testing applies only to validation
+of MakeVN itself. Installed files, available metadata, loaded
 instructions and correct workflow selection are four distinct checks. Neither
 `agent status` nor successful MCP startup proves a session loaded a skill.
 Codex project configuration is read only for trusted projects.
