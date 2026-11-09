@@ -1,7 +1,7 @@
 ---
 name: makevn-test
 description: >-
-  Use after makevn for Java tests, UT/IT, verify_changes_preview, verify_changes, full verification and test failure diagnosis. Also load makevn-docker when container prerequisites are involved.
+  Expertise in Java tests, UT/IT, changed-code verification and test failure diagnosis. Load the makevn skill first, then this skill before using test tools such as verify_changes_preview or verify_changes. Also load the makevn-docker skill for container prerequisites.
 ---
 
 # MakeVN tests
