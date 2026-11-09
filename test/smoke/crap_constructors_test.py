@@ -48,6 +48,24 @@ class ConstructorTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'ambiguous constructor source'):
                 constructor_entries(xml, root, [])
 
+    def test_annotated_explicit_constructors_keep_their_metrics(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / 'src/main/java/demo/Owner.java'
+            source.parent.mkdir(parents=True)
+            xml = root / 'jacoco.xml'
+            xml.write_text('''<report><package name="demo"><class name="demo/Owner" sourcefilename="Owner.java">
+<method name="&lt;init&gt;" desc="()V" line="4"><counter type="INSTRUCTION" covered="3" missed="0"/><counter type="COMPLEXITY" covered="1" missed="0"/></method>
+</class></package></report>''')
+            for annotation in ('@Inject', '@demo.Inject', '@Inject @Deprecated',
+                               '@Inject(value = @Nested(names = {"a", "b"}))'):
+                source.write_text('package demo;\nclass Owner {\n ' + annotation + '\n public Owner() {}\n}\n')
+                with self.subTest(annotation=annotation):
+                    entries = constructor_entries(xml, root, [])
+                    self.assertEqual(len(entries), 1)
+                    self.assertEqual((entries[0]['line'], entries[0]['end_line']), (3, 4))
+                    self.assertEqual(entries[0]['crap'], 1)
+
     def test_same_name_method_and_new_expression_are_not_constructors(self):
         for source in ('class Owner { void Owner() {} }',
                        'class Example { Object value = new Owner() {}; }'):
