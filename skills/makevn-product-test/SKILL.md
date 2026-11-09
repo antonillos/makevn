@@ -1,7 +1,7 @@
 ---
 name: makevn-product-test
 description: >-
-  Use to validate MakeVN itself against real GitHub Java/Maven repositories: choose and clone fixtures, exercise MCP workflows, classify failures, reproduce fixes and preserve evidence for a new session. Not ordinary project test execution.
+  Use only to validate MakeVN itself against real GitHub Java/Maven fixtures. Do not load for ordinary application testing or verification.
 ---
 
 # MakeVN product testing

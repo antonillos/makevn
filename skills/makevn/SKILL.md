@@ -1,7 +1,7 @@
 ---
 name: makevn
 description: >-
-  Use for Java/Maven repository setup, doctor, initialization, JDK selection, builds and choosing MakeVN test, Docker, Karate or quality workflows. Load before a MakeVN specialty.
+  Load before using MakeVN tools or working on Java/Maven setup, builds, tests, Docker, Karate or quality workflows. Select the applicable MakeVN specialties afterward.
 ---
 
 # MakeVN
