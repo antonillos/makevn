@@ -251,12 +251,22 @@ def constructor_declaration_start(code, opening):
 
 
 def constructor_prefix(prefix):
-    """Accept access modifiers and balanced annotations, never a return type/new."""
+    """Accept constructor modifiers, annotations and balanced type parameters."""
     while prefix.strip():
         prefix = prefix.lstrip()
         modifier = re.match(r'(?:public|protected|private)\b', prefix)
         if modifier:
             prefix = prefix[modifier.end():]
+            continue
+        if prefix.startswith('<'):
+            depth = 0
+            for index, char in enumerate(prefix):
+                depth += (char == '<') - (char == '>')
+                if depth == 0:
+                    prefix = prefix[index + 1:]
+                    break
+            else:
+                return False
             continue
         annotation = re.match(r'@[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*', prefix)
         if not annotation:

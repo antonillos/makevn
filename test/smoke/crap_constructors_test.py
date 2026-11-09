@@ -1,5 +1,7 @@
 """Constructor recovery uses actual per-method counters and source ranges."""
 import sys
+import json
+import subprocess
 from pathlib import Path
 import tempfile
 import unittest
@@ -66,8 +68,45 @@ class ConstructorTests(unittest.TestCase):
                     self.assertEqual((entries[0]['line'], entries[0]['end_line']), (3, 4))
                     self.assertEqual(entries[0]['crap'], 1)
 
+    def test_generic_constructor_is_measured_and_enforces_warning_gate(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / 'src/main/java/demo/Owner.java'
+            source.parent.mkdir(parents=True)
+            xml = root / 'jacoco.xml'
+            xml.write_text('''<report><package name="demo"><class name="demo/Owner" sourcefilename="Owner.java">
+<method name="&lt;init&gt;" desc="(Ljava/lang/Object;)V" line="3"><counter type="INSTRUCTION" covered="0" missed="10"/><counter type="COMPLEXITY" covered="0" missed="4"/></method>
+</class></package></report>''')
+            for prefix in ('public <T>', '@Inject public <T>',
+                           'public <T extends Comparable<? super T>, U extends java.util.List<T>>'):
+                source.write_text('package demo;\nclass Owner {\n ' + prefix + ' Owner(T value) {}\n void other() {}\n}\n')
+                with self.subTest(prefix=prefix):
+                    entries = constructor_entries(xml, root, [])
+                    self.assertEqual(len(entries), 1)
+                    self.assertEqual(entries[0]['crap'], 20)
+            raw = root / 'raw.json'
+            raw.write_text(json.dumps({'entries': [{'file': 'src/main/java/demo/Owner.java',
+                'class': 'demo.Owner', 'method': 'other', 'line': 4, 'end_line': 4,
+                'complexity': 1, 'coverage_percent': 100, 'crap': 1}]}))
+            changes = root / 'changes.json'
+            changes.write_text(json.dumps({'base': 'HEAD', 'merge_base': 'HEAD',
+                'files': {'src/main/java/demo/Owner.java': [[3, 3]]}}))
+            output = root / 'report'
+            result = subprocess.run([sys.executable, str(Path(__file__).resolve().parents[2] / 'libexec/makevn/crap/report.py'),
+                '--input', str(raw), '--jacoco-xml', str(xml), '--source-root', str(root),
+                '--changes-file', str(changes), '--repo-root', str(root),
+                '--output-dir', str(output), '--max-warnings', '0'], capture_output=True, text=True)
+            self.assertEqual(result.returncode, 1, result.stderr)
+            report = json.loads((output / 'report.json').read_text())
+            self.assertEqual(report['gate']['status'], 'failed')
+            self.assertEqual(report['gate']['warnings'], 1)
+            self.assertEqual(len(report['entries']), 1)
+            self.assertTrue(report['entries'][0]['symbol'].startswith('demo.Owner#<init>'))
+
     def test_same_name_method_and_new_expression_are_not_constructors(self):
         for source in ('class Owner { void Owner() {} }',
+                       'class Owner { public <T> T Owner() { return null; } }',
+                       'class Owner { public <T Owner() {} }',
                        'class Example { Object value = new Owner() {}; }'):
             with self.subTest(source=source), self.assertRaises(ValueError):
                 method_range(source, 1, None, constructor_name='Owner')
