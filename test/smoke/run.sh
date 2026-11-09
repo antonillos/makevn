@@ -4970,6 +4970,9 @@ main() {
   test_crap_command_gate_and_explicit_xml
   test_crap_changes_filters_methods_and_includes_worktree
   python3 -m unittest discover -s "${ROOT_DIR}/libexec/makevn/crap" -p 'test_*.py' >/dev/null
+  python3 "${ROOT_DIR}/test/smoke/crap_constructors_test.py" >/dev/null
+  python3 "${ROOT_DIR}/test/smoke/changes_summary_test.py" >/dev/null
+  python3 "${ROOT_DIR}/test/smoke/jacoco_signal_test.py" >/dev/null
   test_crap_command_uses_maven_root_for_custom_xml_path
   test_crap_command_discovers_custom_xml_path
   test_crap_command_scopes_module_custom_xml_to_its_sources
