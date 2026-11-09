@@ -984,6 +984,7 @@ test_mcp_tool_listing() {
   python3 -m unittest discover -s "${ROOT_DIR}/test/smoke" -p demo_mcp_test.py
   python3 "${ROOT_DIR}/test/smoke/generated_contract_mcp_test.py" "${prefix}/bin/makevn-mcp"
   python3 "${ROOT_DIR}/test/smoke/structured_mcp_test.py" "${prefix}/bin/makevn-mcp"
+  python3 "${ROOT_DIR}/test/smoke/execution_locks_test.py"
   python3 "${ROOT_DIR}/test/smoke/execution_mcp_test.py" "${prefix}/bin/makevn-mcp"
 }
 
