@@ -508,12 +508,11 @@ repository with the **same** `focused` value:
 {"tool": "verify_changes", "arguments": {"repo": "/absolute/repository", "focused": true}}
 ```
 
-Read the planned owner suites/tests first. Preparation installs checkout dependencies
-without UT/IT execution; a large reactor here is normal. Owner verification has no
-`-am`: full production/POM-consumer suites, selected changed tests in other owners.
-Selected classes require fresh evidence from the expected test plugin. Unknown
-impact rejects focus instead of guessing. Report “focused checks passed” and the
-actual scope, not full integration/global coverage success. Keep full gates.
+Read the planned owner suites/tests first. Preparation packages without UT/IT
+execution and does not install project artifacts. Multimodule verification runs
+complete selected module/dependency suites together with `-am verify`, consuming
+reactor artifacts. Single-module verification retains selected tests. Inspect
+fresh reports and report actual scope; full CI and global gates remain separate.
 
 Omission or `focused: true` selects focused execution (the default).
 Explicit `focused: false` selects exhaustive owner/dependency suites, equivalent

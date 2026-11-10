@@ -96,7 +96,7 @@ def main(args):
     print('Changed-code verification: exit ' + code + '; ' + ', '.join(f'{key}={value}' for key, value in totals.items()))
     print('Summary: ' + str(output))
     if code != '0':
-        print('If tests require reactor-local artifacts, use makevn verify to preserve the complete reactor; focused owner verification resolves installed dependencies.')
+        print('Inspect the failed phase and fresh test reports; multimodule verification uses complete selected module/dependency suites together in the reactor.')
 
 
 if __name__ == '__main__':

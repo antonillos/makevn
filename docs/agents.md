@@ -141,10 +141,10 @@ the command succeeded; a CRAP gate of `reported` is not a warning-count gate.
 changed production classes. A new verification resets both metric statuses;
 commands for a different evidence snapshot cannot update the previous summary.
 These local outcomes do not establish global coverage, CRAP or CI gates.
-Tests that require dependencies at reactor-local `target` paths can fail when
-focused owner verification resolves installed artifacts. Use `makevn verify`
-for a complete reactor comparison; do not bypass the assertion or silently
-repeat focused verification with a broader scope.
+Changed-code verification packages without installing project artifacts. In a
+multimodule project it verifies complete selected module/dependency suites together
+in the reactor with `-am`, consuming current reactor artifacts. Inspect the preview's
+listed modules and scope; single-module projects retain focused test selection.
 
 Changed-code CRAP supplements the source analyzer's missing explicit constructors
 with JaCoCo method instruction and complexity counters and an enclosing source

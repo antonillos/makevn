@@ -256,6 +256,17 @@ def focused_plan(repo, base, reference, paths):
     return "\n".join(records)
 
 
+def verification_plan(repo, base, reference, paths):
+    plan = focused_plan(repo, base, reference, paths)
+    reactor = declared_modules(base, parse((base / 'pom.xml').read_text()))
+    if not reactor or not plan:
+        return plan
+    owners = {line.split('\t')[0] for line in plan.splitlines()}
+    upstream = {owner for owner in reactor
+                if reactor_consumers(base, reactor, owner, parse) & owners}
+    return '\n'.join(owner + '\t*' for owner in sorted(owners | upstream))
+
+
 def write_generated_impact(repo, base, destination):
     """Inspectable state only: planning never trusts or reads this snapshot."""
     data = {'version': 1, 'origin': 'generated', 'scope': 'Maven module suites only; external/E2E and global gates not evaluated',
@@ -287,13 +298,15 @@ def write_generated_impact(repo, base, destination):
 
 
 if __name__ == "__main__":
-    focused = "--focused-plan" in sys.argv
+    focused = "--focused-plan" in sys.argv or "--selected-plan" in sys.argv
     try:
         if "--impact-state" in sys.argv:
             write_generated_impact(pathlib.Path(sys.argv[1]).resolve(), pathlib.Path(sys.argv[2]).resolve(),
                                    pathlib.Path(sys.argv[sys.argv.index("--impact-state") + 1]))
             sys.exit(0)
-        planner = focused_plan if focused else selection
+        planner = verification_plan if focused else selection
+        if "--selected-plan" in sys.argv:
+            planner = focused_plan
         print(planner(pathlib.Path(sys.argv[1]).resolve(), pathlib.Path(sys.argv[2]).resolve(),
                       sys.argv[3], sys.stdin.read().splitlines()))
     except ExhaustiveScopeRequired as error:

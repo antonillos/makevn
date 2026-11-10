@@ -250,7 +250,7 @@ printf '%s\n' "$MAKEVN_VERIFY_CHANGES_FOCUSED_PLAN"
         command = [sys.executable, str(ROOT / 'libexec/makevn/common/changes_scope.py'), str(self.repo), str(self.base), 'HEAD', '--focused-plan']
         result = subprocess.run(command, input='workspace/contracts/event/pom.xml\n', text=True, capture_output=True)
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(result.stdout.strip(), 'adapter\t*\ncontracts/event\t*\nrunner\t*')
+        self.assertEqual(result.stdout.strip(), 'adapter\t*\ncontracts\t*\ncontracts/event\t*\nrunner\t*')
         result = subprocess.run(command, input='workspace/src/test/resources/shared/schema.avsc\n', text=True, capture_output=True)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stdout.strip(), self.all_suites())

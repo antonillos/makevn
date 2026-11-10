@@ -111,8 +111,9 @@ prerequisites from doctor/config/profile/test signals, not a root Compose file.
 
 For a valid plan with configured JaCoCo, use fail-fast `composite_run`: `verify_changes` with the same
 focus mode, then `coverage_changes`, then `crap_changes`. Inspect preparation
-and owner-verification logs separately: dependency installation can cover many
-modules while the selected owner suites alone run tests. Confirm fresh non-skipped
+and verification logs separately: preparation packages without tests; multimodule
+verification runs complete selected module/dependency suites together in the
+reactor, while single-module verification retains focused selection. Confirm fresh non-skipped
 Surefire/Failsafe XML in each selected owner. Record each step's exit code and
 whether later steps were skipped by fail-fast; never describe skipped gates as
 passing.

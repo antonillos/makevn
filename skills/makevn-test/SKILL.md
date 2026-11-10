@@ -83,11 +83,13 @@ absent after inspecting inherited parents and active profiles, omit both calls a
 report metrics unavailable; missing/stale data from a configured agent still fails.
 Full verify/CI coverage remains required.
 
-Preparation uses `-am install` with UT/IT execution disabled and retains test
-compilation/test jars. A 34-module reactor does not mean 34 suites ran. Owner
-verification runs without `-am`, with separate UT/IT selectors and fresh non-skipped
-XML evidence. Maven exit zero alone is insufficient. Report “focused checks passed”
-with actual scope; full CI, coverage and CRAP gates remain separate.
+Preparation uses `-am package` with UT/IT execution disabled and retains test
+compilation/test jars. Multimodule verification then runs complete selected
+module/dependency suites together with `-am verify`, consuming reactor artifacts
+without installing them. Single-module verification retains focused selectors.
+Inspect the preview before execution and report the actual scope and fresh
+non-skipped XML evidence. Maven exit zero alone is insufficient. Full CI,
+coverage and CRAP gates remain separate.
 
 Omit `fast` on first runs or after source/test edits. For stale generated-source
 compilation failures, call MCP `clean` with `clean-generated-contract-targets: true`

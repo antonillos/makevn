@@ -46,13 +46,12 @@ execution; do not preview focused and execute exhaustive mode.
 
 **What the agent must understand and explain:**
 
-- Preparation compiles/packages/installs necessary checkout dependencies with
-  UT/IT execution disabled, while retaining test compilation/test jars. It updates
-  local Maven artifacts. Its `-am install` reactor may still list 34 modules:
-  that is not evidence that all their suites ran.
-- Verification runs without `-am`: validated evidence-selected tests when available, otherwise full production/POM-consumer owner suites,
-  selected changed test classes in other owners. A categories change plus a boot
-  IT therefore does not require the complete boot suite in this mode.
+- Preparation packages necessary checkout dependencies with UT/IT execution
+  disabled, retaining test compilation/test jars, without installing artifacts.
+- Multimodule verification runs complete selected module/dependency suites
+  together with `-am verify`, consuming current reactor artifacts. The preview
+  lists the selected modules and explains the complete-suite scope.
+- Single-module verification retains selected tests or complete owner suites.
 - UT and IT selectors are separated; selected tests must have fresh non-skipped
   XML evidence from the expected plugin. Maven exit zero is not enough.
 - Changed helpers/deleted tests expand to their complete owner suite. Unknown/root
@@ -61,10 +60,9 @@ execution; do not preview focused and execute exhaustive mode.
   coverage. Report “focused checks passed” with the tested scope, and retain
   mandatory full CI/coverage/CRAP gates.
 
-To diagnose a large reactor, read the **phase and Maven command**, not just the
-module list. Preparation must use `-am install` with skip flags; owner verification
-must not use `-am`. If preparation really executes dependency suites, investigate
-project configuration instead of blindly retrying.
+To diagnose a large reactor, inspect the phase: preparation uses `-am package`
+with skip flags; multimodule verification uses `-am verify` with complete suites.
+Single-module verification retains focused selectors.
 
 CLI `--exhaustive` runs complete selected owner/dependency suites; whole-project
 verification is `makevn verify`. No flag/MCP omission selects focused;
@@ -132,8 +130,9 @@ fresh reports and JVM traces. Shared executions supply loaded-class supersets;
 never claim per-test attribution from aggregate traces or JaCoCo. Missing evidence
 cannot remove static edges. Unknown effects retain complete suites.
 Literal local reactors use module-qualified class identities and include downstream
-consumer owners before selecting tests. Dependency preparation installs all planned
-owners and their upstream dependencies once. Normal executions collect each
+consumer owners before selecting tests. Dependency preparation packages planned
+owners and their upstream dependencies. Multimodule verification retains the
+reactor and executes their complete suites. Normal executions collect each
 module's fresh reports; duplicate class names do not merge report ownership.
 Profile-defined membership, custom source layouts and unresolved Maven models
 remain unsupported for class narrowing. Explicit isolated capture remains limited
