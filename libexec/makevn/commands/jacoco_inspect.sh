@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-cmd_jacoco_inspect() (
+cmd_jacoco_inspect() { (
   local repo_root="$1" base executable temporary flags props coverage coverage_cli flag expect_define=false rc=0
   local -a arguments=() cli_flags=() prop_flags=() coverage_flags=() coverage_cli_flags=() skip_flags=()
   [[ $# -eq 1 ]] || makevn_die "jacoco-inspect does not accept extra arguments"
@@ -43,3 +43,4 @@ cmd_jacoco_inspect() (
     return "${rc}"
   fi
 )
+}
