@@ -3468,9 +3468,9 @@ test_verify_changes_focused_command() {
 #!/usr/bin/env bash
 set -euo pipefail
 printf '%s\n' "$*" >> .mvnw.log
-if [[ "$*" == *' install '* ]]; then touch .fresh-artifacts; fi
+if [[ "$*" == *' package '* ]]; then touch .fresh-artifacts; fi
 if [[ "$*" == *' verify '* ]]; then [[ -f .fresh-artifacts ]] || exit 44; fi
-if [[ "$*" == *'-pl boot verify '* && ! -f .missing-reports ]]; then
+if [[ "$*" == *'-pl boot,client -am verify '* && ! -f .missing-reports ]]; then
   mkdir -p boot/target/failsafe-reports
   printf '<testsuite><testcase classname="example.OwnersIT" name="works"/></testsuite>' > boot/target/failsafe-reports/TEST-example.OwnersIT.xml
 fi
@@ -3478,16 +3478,15 @@ EOF
   chmod +x "${repo}/mvnw"
   output="$(${CLI} --repo "${repo}" verify-changes-preview)"
   [[ "${output}" == *'mode: focused'* ]] || fail 'missing focused preview label'
-  [[ "${output}" == *'verify boot: example.OwnersIT'* ]] || fail 'missing boot IT selection'
-  [[ "${output}" == *'verify client: entire module suite'* ]] || fail 'missing production suite'
+  [[ "${output}" == *'complete suites in selected modules and dependencies together with -am'* ]] || fail 'missing reactor suite scope'
+  [[ "${output}" == *'boot,client plus dependencies: package without UT/IT'* ]] || fail 'missing production suite'
   [[ ! -f "${repo}/.mvnw.log" ]] || fail 'focused preview executed Maven'
   mkdir -p "${repo}/.makevn/logs"
   printf 'previous prepare diagnostic\n' > "${repo}/.makevn/logs/verify-changes-1.log"
   chmod 444 "${repo}/.makevn/logs/verify-changes-1.log"
   ${CLI} --repo "${repo}" verify-changes >/dev/null
-  assert_contains "${repo}/.mvnw.log" '-pl boot,client -am install -DskipTests=true -DskipUTs=true -DskipITs=true'
-  assert_contains "${repo}/.mvnw.log" '-pl boot verify -DskipTests=false -DskipUTs=false -DskipITs=false -Dtest=!%regex[.*] -Dit.test=example.OwnersIT'
-  assert_matches "${repo}/.mvnw.log" '.*-pl client verify -DskipTests=false -DskipUTs=false -DskipITs=false$'
+  assert_contains "${repo}/.mvnw.log" '-pl boot,client -am package -DskipTests=true -DskipUTs=true -DskipITs=true'
+  assert_contains "${repo}/.mvnw.log" '-pl boot,client -am verify -DskipTests=false -DskipUTs=false -DskipITs=false'
   assert_contains "${repo}/.makevn/logs/verify-changes-1.log.previous" 'previous prepare diagnostic'
   local before_log_failure
   before_log_failure="$(wc -l < "${repo}/.mvnw.log")"
@@ -4870,6 +4869,7 @@ test_crap_install_analyzer_requires_cache_home() {
 }
 
 main() {
+  python3 "${ROOT_DIR}/test/smoke/reactor_verification_test.py"
   bash "${ROOT_DIR}/test/repo-sweep/results_test.sh"
   test_unclassified_build_change_requires_explicit_exhaustive
   test_coverage_rejects_old_global_after_scoped_verification

@@ -53,7 +53,7 @@ PREPARED_PLAN="${MAKEVN_VERIFY_CHANGES_FOCUSED_PLAN}"
 makevn_validate_prepared_impact "${tmp}"
 PREPARED_PLAN=$'.\t*'
 if makevn_validate_prepared_impact "${tmp}"; then exit 1; fi
-# Consumer owners must also be installed before verification without -am.
+# The prepared plan must retain every selected consumer owner.
 PREPARED_PLAN=$'app\texample.ApplicationTest\ncore\texample.OwnerTest\nservice\t*'
 makevn_collect_focused_plan src/main/java/Owner.java "${tmp}" HEAD preview
 [[ "${MAKEVN_VERIFY_CHANGES_MODULE_SELECTION}" == app,core,service ]]
