@@ -114,6 +114,21 @@ readiness commands require an actual selected file and cannot use `none`.
 To change a saved selection, use interactive `makevn doctor --reset-config`
 (which resets other preferences too), then answer setup again. Reset is CLI-only.
 
+## JaCoCo effective model inspection
+
+After doctor/setup, use MCP `jacoco_inspect` or CLI `makevn jacoco-inspect`
+when effective parent/profile configuration needs inspection. This explicit
+operation runs the Maven Help Plugin with the verify/coverage flags and a private
+short-lived effective POM; it may resolve Maven plugins and dependencies. It does
+not run tests and does not persist or print the effective POM. The JSON result
+lists each project as `configured` (an enabled prepare-agent binding), `absent`
+(no enabled prepare-agent binding), or `unknown` (unresolved skip, unsupported
+phase/scope, or ambiguous coordinates). `absent` applies to the plugin binding,
+not arbitrary Java agents or custom instrumentation. `configured` does not prove
+the agent ran, that Surefire/Failsafe used its argument, or that fresh data exists.
+When model generation or parsing fails, treat the outcome as unknown and inspect
+the command error. `verify-changes-preview` continues without Maven.
+
 ## Changed-code diagnostics
 
 Focused verification writes `.makevn/reports/verify-changes/summary.json` with

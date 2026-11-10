@@ -4974,6 +4974,8 @@ main() {
   python3 "${ROOT_DIR}/test/smoke/crap_constructors_test.py" >/dev/null
   python3 "${ROOT_DIR}/test/smoke/changes_summary_test.py" >/dev/null
   python3 "${ROOT_DIR}/test/smoke/jacoco_signal_test.py" >/dev/null
+  python3 "${ROOT_DIR}/test/smoke/jacoco_effective_test.py" >/dev/null
+  bash "${ROOT_DIR}/test/smoke/jacoco_inspect_test.sh"
   test_crap_command_uses_maven_root_for_custom_xml_path
   test_crap_command_discovers_custom_xml_path
   test_crap_command_scopes_module_custom_xml_to_its_sources

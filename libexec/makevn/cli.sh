@@ -38,6 +38,7 @@ Usage:
   makevn [--repo PATH] test-impact-init [--isolated]
   makevn [--repo PATH] verify-changes-preview [--focused|--exhaustive] [--record-test-impact] [--defer-global-coverage]
   makevn [--repo PATH] verify-changes [--focused|--exhaustive] [--record-test-impact] [--defer-global-coverage] [-- EXTRA_MAVEN_ARGS...]
+  makevn [--repo PATH] jacoco-inspect
   makevn [--repo PATH] coverage [--threshold PCT]
   makevn [--repo PATH] coverage-changes [--threshold PCT] [--overall-threshold PCT] [--verbose]
   makevn [--repo PATH] crap [--jacoco-xml PATH] [--threshold SCORE] [--max-warnings COUNT]
@@ -124,7 +125,7 @@ print_command_intro() {
 
 makevn_cli_is_top_level_command() {
   case "$1" in
-    help|doctor|init|uninstall|profile|compile|test-compile|compile-tests|validate|package|clean|build|test|verify-ut|verify-ut-coverage|verify-it|verify-it-coverage|verify|test-impact-preview|test-impact-init|verify-changes-preview|verify-changes|coverage|coverage-changes|crap|crap-changes|pr-verify|format|checkstyle|docker-up|docker-down|docker-reset|docker-ps|docker-stats|docker-ps-required|karate-docker-up|karate-docker-down|karate-docker-reset|karate-test|karate-all|run-app|run-app-bg|stop-app|run|jdk|mutation)
+    help|doctor|init|uninstall|profile|compile|test-compile|compile-tests|validate|package|clean|build|test|verify-ut|verify-ut-coverage|verify-it|verify-it-coverage|verify|test-impact-preview|test-impact-init|verify-changes-preview|verify-changes|coverage|jacoco-inspect|coverage-changes|crap|crap-changes|pr-verify|format|checkstyle|docker-up|docker-down|docker-reset|docker-ps|docker-stats|docker-ps-required|karate-docker-up|karate-docker-down|karate-docker-reset|karate-test|karate-all|run-app|run-app-bg|stop-app|run|jdk|mutation)
       return 0
       ;;
   esac
@@ -225,6 +226,7 @@ source "${SCRIPT_DIR}/commands/profile.sh"
 source "${SCRIPT_DIR}/commands/maven.sh"
 # shellcheck source=/dev/null
 source "${SCRIPT_DIR}/commands/changes.sh"
+source "${SCRIPT_DIR}/commands/jacoco_inspect.sh"
 # shellcheck source=/dev/null
 source "${SCRIPT_DIR}/commands/crap.sh"
 # shellcheck source=/dev/null
@@ -381,6 +383,9 @@ case "${COMMAND}" in
     ;;
   coverage)
     cmd_coverage "${REPO_ROOT}" "$@"
+    ;;
+  jacoco-inspect)
+    cmd_jacoco_inspect "${REPO_ROOT}" "$@"
     ;;
   coverage-changes)
     trap 'python3 "${SCRIPT_DIR}/common/changes_summary.py" update "${REPO_ROOT}" "${COMMAND}" "$?" || printf "%s\n" "Warning: could not update changed-code summary" >&2' EXIT

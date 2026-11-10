@@ -675,7 +675,7 @@ fn validate_command(
             validate_maven_passthrough_args(command, trailing_args)?;
             Ok(CommandValidation::Valid)
         }
-        "help" | "init" | "refresh" | "uninstall" | "test" | "coverage" | "coverage-changes"
+        "help" | "init" | "refresh" | "uninstall" | "test" | "coverage" | "coverage-changes" | "jacoco-inspect"
         | "crap" | "crap-changes" | "docker-up" | "docker-down" | "docker-reset" | "docker-ps" | "docker-stats"
         | "docker-ps-required" | "karate-docker-up" | "karate-docker-down" | "karate-docker-reset" | "run-app"
         | "run-app-bg" | "stop-app" | "run" => Ok(CommandValidation::Valid),
@@ -878,6 +878,7 @@ fn is_top_level_command(arg: &OsString) -> bool {
         | "verify-changes-preview"
             | "verify-changes"
             | "coverage"
+            | "jacoco-inspect"
             | "coverage-changes"
             | "crap"
             | "crap-changes"
@@ -1012,6 +1013,7 @@ fn command_supports_frontend_loader(command: &OsString) -> bool {
         | "verify-changes-preview"
             | "verify-changes"
             | "coverage"
+            | "jacoco-inspect"
             | "coverage-changes"
             | "crap"
             | "crap-changes"
