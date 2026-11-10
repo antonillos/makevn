@@ -11,6 +11,17 @@ from changes_scope import verification_plan
 
 
 class ReactorVerificationTests(unittest.TestCase):
+    def test_all_reactor_suites_do_not_require_resolving_profile_coordinates(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Path(directory)
+            repo.joinpath('pom.xml').write_text('<project><groupId>sample</groupId><artifactId>root</artifactId><version>1</version><packaging>pom</packaging><modules><module>a</module></modules></project>')
+            repo.joinpath('a').mkdir()
+            repo.joinpath('a/pom.xml').write_text('<project><groupId>sample</groupId><artifactId>a</artifactId><version>1</version><profiles><profile><id>default</id><activation><activeByDefault>true</activeByDefault></activation><properties><dependency.group>external</dependency.group></properties></profile></profiles><dependencies><dependency><groupId>${dependency.group}</groupId><artifactId>api</artifactId><version>1</version></dependency></dependencies></project>')
+            resource = 'src/test/resources/shared/input.csv'
+            repo.joinpath(resource).parent.mkdir(parents=True)
+            repo.joinpath(resource).write_text('fixture')
+            self.assertEqual(verification_plan(repo, repo, 'HEAD', [resource]), 'a\t*')
+
     def test_upstream_suites_are_visible_and_unrelated_modules_are_excluded(self):
         with tempfile.TemporaryDirectory() as directory:
             repo = Path(directory)

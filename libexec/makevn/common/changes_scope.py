@@ -262,6 +262,8 @@ def verification_plan(repo, base, reference, paths):
     if not reactor or not plan:
         return plan
     owners = {line.split('\t')[0] for line in plan.splitlines()}
+    if reactor <= owners:
+        return '\n'.join(owner + '\t*' for owner in sorted(owners))
     upstream = {owner for owner in reactor
                 if reactor_consumers(base, reactor, owner, parse) & owners}
     return '\n'.join(owner + '\t*' for owner in sorted(owners | upstream))
