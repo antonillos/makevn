@@ -114,6 +114,11 @@ requires Java and no usable compatible JDK is found, doctor reports a JDK error
 while completing diagnosis successfully. Resolve it before builds or verification.
 Missing executables are environment issues; do not bypass MakeVN with raw Maven.
 
+If a checkout-wide check rejects older generated focused JaCoCo HTML under
+`.makevn`, load makevn-quality and follow its diagnosed `clean` recovery. This
+archives manifest-owned HTML and runs Maven clean; explain that normal build
+outputs are removed. Preserve project gates and campaign evidence.
+
 For stale generated-source recovery, load makevn-test and use MCP `clean` with
 `clean-generated-contract-targets: true`, then retry the original scope only after
 cleanup succeeds. This option is exclusive to `clean`.

@@ -129,6 +129,12 @@ the agent ran, that Surefire/Failsafe used its argument, or that fresh data exis
 When model generation or parsing fails, treat the outcome as unknown and inspect
 the command error. `verify-changes-preview` continues without Maven.
 
+Focused JaCoCo HTML is stored as `jacoco-html.zip` beside the XML and CSV so
+checkout-wide checks do not scan generated markup. When a legacy uncompressed
+focused report causes such a check to fail, `makevn clean` archives its
+manifest-owned HTML before Maven clean. It preserves focused evidence; Maven
+clean still removes normal build outputs. Do not disable project checks.
+
 ## Changed-code diagnostics
 
 Focused verification writes `.makevn/reports/verify-changes/summary.json` with

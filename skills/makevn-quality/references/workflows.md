@@ -68,8 +68,13 @@ runs invalidate previous focused evidence. A new run replaces its old snapshot.
 `coverage-changes` merges fresh UT/IT data into a changed-class JaCoCo report
 without running Maven lifecycle phases or tests. Its first report may resolve
 pinned JaCoCo CLI 0.8.14 via Maven's dependency plugin against a standalone POM;
-subsequent `crap-changes` uses the same cached XML and method coverage. Source,
-configuration, comparison-ref and evidence hashes guard against stale reuse.
+subsequent `crap-changes` uses the same cached XML and method coverage.
+The focused report keeps XML/CSV directly and packages HTML as `jacoco-html.zip`;
+extract it outside the checkout for viewing. When checkout-wide project checks
+reject legacy uncompressed focused HTML under `.makevn`, `makevn clean` archives
+manifest-owned legacy HTML before running Maven clean. It preserves the snapshot,
+while Maven clean removes normal project build outputs. Keep project checks enabled.
+Source, configuration, comparison-ref and evidence hashes guard against stale reuse.
 No data, missing bytecode or mismatched data blocks the gate instead of falling
 back to an old global aggregate. Nonstandard data paths outside module `target`,
 and unsupported bytecode require the explicit full coverage flow; no automatic

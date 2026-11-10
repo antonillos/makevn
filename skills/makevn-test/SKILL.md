@@ -91,6 +91,11 @@ Inspect the preview before execution and report the actual scope and fresh
 non-skipped XML evidence. Maven exit zero alone is insufficient. Full CI,
 coverage and CRAP gates remain separate.
 
+If a project-wide check scans older focused JaCoCo HTML under `.makevn` and
+blocks a test, follow makevn-quality recovery: `clean` archives manifest-owned
+legacy HTML before Maven clean while preserving the focused snapshot. Maven clean
+also removes normal build outputs; preserve campaign evidence and project gates.
+
 Omit `fast` on first runs or after source/test edits. For stale generated-source
 compilation failures, call MCP `clean` with `clean-generated-contract-targets: true`
 and the same `repo`; for direct CLI use, run
