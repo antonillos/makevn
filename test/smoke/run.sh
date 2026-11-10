@@ -4869,6 +4869,7 @@ test_crap_install_analyzer_requires_cache_home() {
 }
 
 main() {
+  python3 "${ROOT_DIR}/test/smoke/docker_ps_scope_test.py"
   python3 "${ROOT_DIR}/test/smoke/reactor_verification_test.py"
   bash "${ROOT_DIR}/test/repo-sweep/results_test.sh"
   test_unclassified_build_change_requires_explicit_exhaustive

@@ -45,7 +45,7 @@ pub(super) fn command_help(
         "docker-up" => tail_command_help("docker-up", "Start boot Docker services while preserving volumes."),
         "docker-down" => tail_command_help("docker-down", "Stop boot Docker services while preserving volumes."),
         "docker-reset" => Some(("makevn [--repo PATH] docker-reset [--tail]", "Delete the selected boot Compose volumes and restart its services. Requires explicit reset authorization; never prunes global volumes.", &["--tail  Start in interactive log tail mode"])),
-        "docker-ps" => tail_command_help("docker-ps", "List boot Docker containers."),
+        "docker-ps" => tail_command_help("docker-ps", "List Docker containers; --compose-file none selects engine-wide diagnostics without Compose, not readiness or repository ownership."),
         "docker-stats" => tail_command_help("docker-stats", "Show Docker CPU and memory stats."),
         "docker-ps-required" => Some(("makevn [--repo PATH] docker-ps-required [--tail] [--compose boot|karate] [--wait-seconds N]", "Validate required Docker services are running and healthy.", &["--tail          Start in interactive log tail mode", "--compose       Compose profile: boot or karate", "--compose-file PATH|none  Override Compose for this execution only", "--wait-seconds  Seconds to wait for services"])),
         "karate-docker-up" => tail_command_help("karate-docker-up", "Start Karate E2E Docker services while preserving volumes."),

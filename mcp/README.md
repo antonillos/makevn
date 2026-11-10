@@ -644,3 +644,15 @@ and other Maven gates. Literal/custom configurations may still fail. It is
 rejected with focused=false or record-test-impact=true and is not exposed on
 verify or test_impact_init. A successful local run does not establish global
 coverage; complete verification and CI remain required.
+
+## Container listing without Compose
+
+Use `makevn docker-ps --compose-file none` (MCP `docker_ps` with
+`"compose-file": "none"`) for read-only diagnostics without Compose. It lists
+all containers, including stopped containers, on the selected Docker CLI engine.
+An explicit Compose file retains Compose-scoped listing. Engine query failures
+remain command failures; an empty successful listing is not a readiness gate.
+The listing does not establish repository ownership or attribute containers to
+a particular Testcontainers run. Preserve foreign containers; this operation
+never starts or removes containers. `docker_ps_required`, lifecycle operations
+and `docker_stats` retain their Compose requirements.
