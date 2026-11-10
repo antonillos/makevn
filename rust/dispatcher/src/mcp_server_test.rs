@@ -1391,6 +1391,15 @@ fn testcontainers_guidance_distinguishes_engine_from_compose() {
 }
 
 #[test]
+fn jacoco_inspection_is_an_explicit_maven_operation() {
+    let spec = super::TOOL_SPECS.iter().find(|spec| spec.name == "jacoco_inspect").unwrap();
+    assert_eq!(spec.command, &["jacoco-inspect"]);
+    assert!(!crate::mcp_execution::inspection("jacoco_inspect"));
+    assert!(super::validate_workflow_step(&json!({"tool":"jacoco_inspect"})).is_ok());
+    assert!(super::validate_workflow_step(&json!({"tool":"jacoco_inspect", "arguments":{"unknown":true}})).is_err());
+}
+
+#[test]
 fn test_impact_initialization_tools_share_public_cli_contract() {
     for (tool, command) in [("test_impact_preview", "test-impact-preview"), ("test_impact_init", "test-impact-init")] {
         let spec = super::TOOL_SPECS.iter().find(|spec| spec.name == tool).unwrap();

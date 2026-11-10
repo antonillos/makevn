@@ -34,7 +34,11 @@ rerun the appropriate coverage-producing flow. Do not switch to raw Maven.
 ### Changed-code checks
 
 Before queuing coverage/CRAP steps, inspect the fixture's effective JaCoCo
-agent configuration, including inherited parents and active profiles. When JaCoCo
+agent configuration, including inherited parents and active profiles. Use
+MCP `jacoco_inspect` (CLI `makevn jacoco-inspect`) for explicit Maven effective
+model inspection after doctor/setup. Its `configured`/`absent`/`unknown` statuses
+concern plugin bindings, not agent execution or custom instrumentation. It runs
+no tests and may resolve Maven plugins; the preview itself remains Maven-free. When JaCoCo
 is confirmed absent, run verification only: omit `coverage_changes` and
 `crap_changes` from the composite and report coverage/CRAP as unavailable because
 the project does not configure JaCoCo. Do not make calls merely to obtain an

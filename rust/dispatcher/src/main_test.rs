@@ -1242,6 +1242,7 @@ fn all_top_level_commands_have_command_help() {
         "verify-changes-preview",
         "verify-changes",
         "coverage",
+        "jacoco-inspect",
         "coverage-changes",
         "crap",
         "pr-verify",

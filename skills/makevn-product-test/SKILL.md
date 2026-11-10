@@ -85,7 +85,10 @@ availability alone does not validate the check.
 ### Changed-code product scenario
 
 Before queuing coverage/CRAP steps, inspect the fixture's effective JaCoCo
-agent configuration, including inherited parents and active profiles. When JaCoCo
+agent configuration, including inherited parents and active profiles. After
+setup, MCP `jacoco_inspect` provides an explicit Maven effective-model inspection;
+its binding statuses do not prove agent execution or exclude custom instrumentation.
+Keep the focused preview separate and Maven-free. When JaCoCo
 is confirmed absent, run verification only: omit `coverage_changes` and
 `crap_changes` from the composite and report coverage/CRAP as unavailable because
 the project does not configure JaCoCo. Do not make calls merely to obtain an

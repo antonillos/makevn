@@ -3,6 +3,18 @@
 `makevn-mcp` is the dedicated Rust MCP server for makevn. It has no Node.js or
 JavaScript runtime dependency.
 
+## JaCoCo inspection
+
+`jacoco_inspect` explicitly runs Maven's effective-POM goal with the configured
+verification/coverage flags, then reports per-project JaCoCo plugin bindings.
+It runs no tests and removes the private model on normal exit and handled signals.
+An uncatchable termination may leave the private temporary directory behind. A
+configured binding does not establish that a test JVM used the agent or produced
+fresh execution data; an absent binding does not exclude custom instrumentation.
+An unresolved phase, skip setting or unsupported integration-only scope is
+reported as unknown. The tool may resolve Maven plugins and dependencies.
+`verify_changes_preview` remains a static, Maven-free preview.
+
 ## Docker operations
 
 Use MakeVN exclusively for Docker, including read-only diagnostics. This takes
