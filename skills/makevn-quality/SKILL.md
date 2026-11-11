@@ -65,6 +65,19 @@ Inspect `verify_changes_preview` separately. For projects with configured JaCoCo
 
 Validated test-impact selection retains the same fresh focused snapshot contract;
 coverage and CRAP share that new run's data, never the baseline capture data.
+For focused JaCoCo reports, XML and CSV remain available directly; HTML is
+preserved as `jacoco-html.zip` in the same report directory. Extract HTML outside
+the checkout for viewing, avoiding another scan. If a subsequent project check
+fails because an older focused HTML report under `.makevn` is
+being scanned, use `makevn clean` (MCP `clean`) after confirming that diagnosis.
+It archives manifest-owned legacy HTML before running Maven clean, preserving
+its contents and the focused snapshot. Maven clean also removes project build
+outputs. Do not disable the project check or delete evidence by hand.
+Full `verify-ut-coverage` and `verify-it-coverage` also archive verified legacy
+HTML before their Maven phase, then retire focused evidence only after successful
+full coverage. If a report is already orphaned or its recorded hashes no longer
+match, preserve it and report the diagnostic; do not guess ownership or delete it.
+
 Do not prepend clean or rerun tests without a reason. A valid run with no changed
 production classes returns `not applicable` for changed-code metrics with exit zero:
 no global gate was evaluated. Missing/stale evidence for changed classes still fails.

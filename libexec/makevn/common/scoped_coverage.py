@@ -9,6 +9,7 @@ import subprocess
 import sys
 import tempfile
 import xml.etree.ElementTree as ET
+import zipfile
 
 
 VERSION = '0.8.14'
@@ -197,6 +198,8 @@ def finish(repo, state):
 
 def load(repo, state):
     manifest = json.loads((state / 'run.json').read_text())
+    if manifest.get('legacy_html_cleanup'):
+        raise ValueError('Focused HTML cleanup was interrupted; rerun makevn clean before using this evidence')
     if comparison_commit(repo, manifest['comparison']) != evidence_comparison_commit(repo, manifest):
         raise ValueError('Comparison base changed; rerun verify-changes')
     if manifest['status'] != 'success':
@@ -223,6 +226,93 @@ def load(repo, state):
     return manifest
 
 
+def archive_legacy_html(state):
+    manifest_path = state / 'run.json'
+    if manifest_path.is_symlink():
+        raise ValueError('Refusing linked focused coverage manifest: ' + str(manifest_path))
+    if not manifest_path.is_file():
+        if any(state.glob('evidence-*/report/index.html')):
+            raise ValueError('Legacy focused HTML exists without a manifest; preserve it and inspect the focused coverage state')
+        return
+    manifest = json.loads(manifest_path.read_text())
+    if not manifest.get('report') or not manifest.get('report_hashes'):
+        if any(state.glob('evidence-*/report/index.html')):
+            raise ValueError('Legacy focused HTML has no recorded report hashes; preserve it and inspect the focused coverage state')
+        return
+    output = Path(manifest['report'])
+    if output.is_symlink() or output.parent.is_symlink() or output.parent.parent.resolve() != state.resolve() or not output.parent.name.startswith('evidence-') or output.name != 'report':
+        raise ValueError('Invalid focused coverage report location')
+    if any(path.parent.resolve() != output.resolve() for path in state.glob('evidence-*/report/index.html')):
+        raise ValueError('Other legacy focused HTML is not covered by the current manifest; preserve it and inspect the focused coverage state')
+    archive = output / 'jacoco-html.zip'
+    if archive.is_symlink():
+        raise ValueError('Refusing linked focused HTML archive: ' + str(archive))
+    pending = manifest.get('legacy_html_cleanup')
+    if pending:
+        if not archive.is_file() or hashlib.sha256(archive.read_bytes()).hexdigest() != manifest['report_hashes'].get(str(archive)):
+            raise ValueError('Focused HTML archive changed during cleanup')
+        entries = {Path(name): digest for name, digest in pending.items()}
+    else:
+        entries = {Path(name): digest for name, digest in manifest['report_hashes'].items()
+                   if Path(name).name not in ('jacoco.xml', 'jacoco.csv', 'jacoco-html.zip')}
+        if not entries:
+            return
+    for path, digest in entries.items():
+        if not path.is_relative_to(output) or path.is_symlink() or path.resolve() != output.resolve() / path.relative_to(output):
+            raise ValueError('Invalid legacy coverage report entry: ' + str(path))
+        if path.exists() and hashlib.sha256(path.read_bytes()).hexdigest() != digest:
+            raise ValueError('Legacy coverage report changed: ' + str(path))
+        if not pending and not path.is_file():
+            raise ValueError('Legacy coverage report missing: ' + str(path))
+    if not pending:
+        if archive.exists():
+            with zipfile.ZipFile(archive) as bundle:
+                names = {path.relative_to(output).as_posix(): digest for path, digest in entries.items()}
+                if len(bundle.namelist()) != len(names) or set(bundle.namelist()) != set(names) or any(hashlib.sha256(bundle.read(name)).hexdigest() != digest for name, digest in names.items()):
+                    raise ValueError('Existing focused HTML archive does not match legacy report')
+        else:
+            with tempfile.NamedTemporaryFile(dir=output, prefix='.jacoco-html-', delete=False) as stream:
+                temporary = Path(stream.name)
+            try:
+                with zipfile.ZipFile(temporary, 'w', zipfile.ZIP_DEFLATED) as bundle:
+                    for path in sorted(entries):
+                        bundle.write(path, path.relative_to(output))
+                os.replace(temporary, archive)
+            finally:
+                temporary.unlink(missing_ok=True)
+        manifest['report_hashes'] = {name: digest for name, digest in manifest['report_hashes'].items() if Path(name) not in entries}
+        manifest['report_hashes'][str(archive)] = hashlib.sha256(archive.read_bytes()).hexdigest()
+        manifest['legacy_html_cleanup'] = {str(path): digest for path, digest in entries.items()}
+        save_manifest(manifest_path, manifest)
+    for path, digest in entries.items():
+        if path.exists() and (path.is_symlink() or hashlib.sha256(path.read_bytes()).hexdigest() != digest):
+            raise ValueError('Legacy coverage report changed during cleanup: ' + str(path))
+        path.unlink(missing_ok=True)
+    for directory in sorted((p for p in output.rglob('*') if p.is_dir()), key=lambda p: len(p.parts), reverse=True):
+        if not directory.is_symlink():
+            try:
+                directory.rmdir()
+            except OSError:
+                pass
+    manifest.pop('legacy_html_cleanup', None)
+    save_manifest(manifest_path, manifest)
+    print('Archived existing focused JaCoCo HTML: ' + str(archive))
+
+
+def save_manifest(path, manifest):
+    with tempfile.NamedTemporaryFile(mode='w', dir=path.parent, delete=False) as stream:
+        try:
+            json.dump(manifest, stream)
+            temporary = Path(stream.name)
+        except BaseException:
+            Path(stream.name).unlink(missing_ok=True)
+            raise
+    try:
+        os.replace(temporary, path)
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
 def report(repo, state, maven, java, reference=""):
     if reference:
         requested = comparison_commit(repo, reference)
@@ -247,12 +337,18 @@ def report(repo, state, maven, java, reference=""):
             subprocess.run([maven, '-f', str(pom), 'org.apache.maven.plugins:maven-dependency-plugin:3.8.1:copy',
                             '-Dartifact=org.jacoco:org.jacoco.cli:' + VERSION + ':jar:nodeps',
                             '-DoutputDirectory=' + str(state)], check=True, cwd=repo, env=environment)
-    command = [java, '-jar', str(jar), 'report', *manifest['data'], '--classfiles', manifest['classes'],
-               '--name', 'makevn focused changes (not global coverage)', '--xml', str(output / 'jacoco.xml'),
-               '--csv', str(output / 'jacoco.csv'), '--html', str(output)]
-    for owner in manifest['owners']:
-        command += ['--sourcefiles', str(Path(manifest['base']) / owner / 'src/main/java')]
-    result = subprocess.run(command, check=True, capture_output=True, text=True)
+    with tempfile.TemporaryDirectory(prefix='makevn-jacoco-html-') as directory:
+        html = Path(directory)
+        command = [java, '-jar', str(jar), 'report', *manifest['data'], '--classfiles', manifest['classes'],
+                   '--name', 'makevn focused changes (not global coverage)', '--xml', str(output / 'jacoco.xml'),
+                   '--csv', str(output / 'jacoco.csv'), '--html', str(html)]
+        for owner in manifest['owners']:
+            command += ['--sourcefiles', str(Path(manifest['base']) / owner / 'src/main/java')]
+        result = subprocess.run(command, check=True, capture_output=True, text=True)
+        with zipfile.ZipFile(output / 'jacoco-html.zip', 'w', zipfile.ZIP_DEFLATED) as bundle:
+            for item in sorted(html.rglob('*')):
+                if item.is_file():
+                    bundle.write(item, item.relative_to(html))
     if 'does not match' in result.stdout + result.stderr:
         raise ValueError('JaCoCo bytecode/data mismatch; rerun verify-changes')
     root = ET.parse(output / 'jacoco.xml').getroot()
@@ -279,12 +375,16 @@ def report(repo, state, maven, java, reference=""):
 def main():
     action, repo, state, *args = sys.argv[1:]
     repo, state = Path(repo).resolve(), Path(state).resolve()
+    if action == 'archive-html' and not state.is_relative_to(repo):
+        raise ValueError('Focused coverage state is outside the repository')
     if action == 'prepare':
         prepare(repo, state, Path(args[0]).resolve(), args[1].split(','), list(filter(None, args[2].splitlines())), args[3])
     elif action == 'checkpoint':
         checkpoint(repo, state, args[0])
     elif action == 'finish':
         finish(repo, state)
+    elif action == 'archive-html':
+        archive_legacy_html(state)
     elif action == 'report':
         report(repo, state, *args)
     elif action == 'applicability':
@@ -301,6 +401,6 @@ def main():
 if __name__ == '__main__':
     try:
         main()
-    except (OSError, ValueError, subprocess.CalledProcessError, ET.ParseError) as error:
+    except (OSError, ValueError, subprocess.CalledProcessError, ET.ParseError, zipfile.BadZipFile) as error:
         print('Error: focused coverage: ' + str(error), file=sys.stderr)
         sys.exit(1)
