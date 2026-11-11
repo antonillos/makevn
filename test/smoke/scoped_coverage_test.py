@@ -5,6 +5,8 @@ import subprocess
 import sys
 import tempfile
 import unittest
+import hashlib
+import zipfile
 from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -264,7 +266,7 @@ class ScopedTests(unittest.TestCase):
             self.assertNotIn('verify', command)
             (output / 'jacoco.xml').write_text('<report><package name="example"><class name="example/Owner"/></package></report>')
             (output / 'jacoco.csv').write_text('GROUP,PACKAGE,CLASS\nfocused,example,Owner\n')
-            (output / 'index.html').write_text('html')
+            (Path(command[command.index('--html') + 1]) / 'index.html').write_text('html')
             return subprocess.CompletedProcess(command, 0, '', '')
         with patch.object(scoped.subprocess, 'run', side_effect=run) as mocked:
             scoped.report(self.repo, self.state, 'mvn', 'java')
@@ -272,6 +274,176 @@ class ScopedTests(unittest.TestCase):
             calls = [call for call in mocked.call_args_list if call.args[0][0] == 'java']
             self.assertEqual(len(calls), 1)
             self.assertEqual(len([call for call in mocked.call_args_list if call.args[0][0] == 'mvn']), 1)
+            self.assertFalse((output / 'index.html').exists())
+            with zipfile.ZipFile(output / 'jacoco-html.zip') as bundle:
+                self.assertEqual(bundle.read('index.html'), b'html')
+
+    def test_legacy_html_is_archived_without_invalidating_focused_evidence(self):
+        manifest = self.ready()
+        output = Path(manifest['report'])
+        output.mkdir()
+        html = output / 'pkg/index.html'
+        html.parent.mkdir()
+        html.write_text('http://example.invalid')
+        xml = output / 'jacoco.xml'
+        xml.write_text('<report/>')
+        manifest['report_hashes'] = {str(p): hashlib.sha256(p.read_bytes()).hexdigest() for p in (html, xml)}
+        (self.state / 'run.json').write_text(json.dumps(manifest))
+        scoped.archive_legacy_html(self.state)
+        self.assertFalse(html.exists())
+        self.assertEqual(xml.read_text(), '<report/>')
+        with zipfile.ZipFile(output / 'jacoco-html.zip') as bundle:
+            self.assertEqual(bundle.read('pkg/index.html'), b'http://example.invalid')
+        scoped.load(self.repo, self.state)
+        scoped.archive_legacy_html(self.state)
+        self.assertTrue((output / 'jacoco-html.zip').exists())
+
+    def test_legacy_html_changed_by_user_is_never_removed(self):
+        manifest = self.ready()
+        output = Path(manifest['report'])
+        output.mkdir()
+        html = output / 'index.html'
+        html.write_text('original')
+        manifest['report_hashes'] = {str(html): hashlib.sha256(html.read_bytes()).hexdigest()}
+        (self.state / 'run.json').write_text(json.dumps(manifest))
+        html.write_text('user content')
+        with self.assertRaisesRegex(ValueError, 'changed'):
+            scoped.archive_legacy_html(self.state)
+        self.assertEqual(html.read_text(), 'user content')
+        self.assertFalse((output / 'jacoco-html.zip').exists())
+
+    def test_interrupted_legacy_cleanup_can_resume(self):
+        manifest = self.ready()
+        output = Path(manifest['report'])
+        output.mkdir()
+        html = output / 'index.html'
+        html.write_text('legacy')
+        manifest['report_hashes'] = {str(html): hashlib.sha256(html.read_bytes()).hexdigest()}
+        (self.state / 'run.json').write_text(json.dumps(manifest))
+        unlink = Path.unlink
+
+        def interrupted(path, *args, **kwargs):
+            if path == html:
+                raise OSError('interrupted cleanup')
+            return unlink(path, *args, **kwargs)
+
+        with patch.object(Path, 'unlink', interrupted):
+            with self.assertRaisesRegex(OSError, 'interrupted cleanup'):
+                scoped.archive_legacy_html(self.state)
+        self.assertTrue(html.exists())
+        with self.assertRaisesRegex(ValueError, 'cleanup was interrupted'):
+            scoped.load(self.repo, self.state)
+        scoped.archive_legacy_html(self.state)
+        self.assertFalse(html.exists())
+        self.assertNotIn('legacy_html_cleanup', json.loads((self.state / 'run.json').read_text()))
+        scoped.load(self.repo, self.state)
+
+    def test_interrupted_before_manifest_update_reuses_verified_archive(self):
+        manifest = self.ready()
+        output = Path(manifest['report'])
+        output.mkdir()
+        html = output / 'index.html'
+        html.write_text('legacy')
+        manifest['report_hashes'] = {str(html): hashlib.sha256(html.read_bytes()).hexdigest()}
+        (self.state / 'run.json').write_text(json.dumps(manifest))
+        with patch.object(scoped, 'save_manifest', side_effect=OSError('interrupted')):
+            with self.assertRaisesRegex(OSError, 'interrupted'):
+                scoped.archive_legacy_html(self.state)
+        self.assertTrue(html.exists())
+        self.assertTrue((output / 'jacoco-html.zip').exists())
+        scoped.archive_legacy_html(self.state)
+        self.assertFalse(html.exists())
+        scoped.load(self.repo, self.state)
+
+    def test_unrelated_existing_archive_is_not_overwritten(self):
+        manifest = self.ready()
+        output = Path(manifest['report'])
+        output.mkdir()
+        html = output / 'index.html'
+        html.write_text('legacy')
+        archive = output / 'jacoco-html.zip'
+        with zipfile.ZipFile(archive, 'w') as bundle:
+            bundle.writestr('user.txt', 'keep')
+        manifest['report_hashes'] = {str(html): hashlib.sha256(html.read_bytes()).hexdigest()}
+        (self.state / 'run.json').write_text(json.dumps(manifest))
+        with self.assertRaisesRegex(ValueError, 'does not match'):
+            scoped.archive_legacy_html(self.state)
+        self.assertTrue(html.exists())
+        with zipfile.ZipFile(archive) as bundle:
+            self.assertEqual(bundle.read('user.txt'), b'keep')
+
+    def test_linked_legacy_entries_do_not_touch_external_files(self):
+        manifest = self.ready()
+        output = Path(manifest['report'])
+        output.mkdir()
+        external = self.repo / 'external'
+        external.mkdir()
+        original = external / 'index.html'
+        original.write_text('keep')
+        (output / 'pkg').symlink_to(external, target_is_directory=True)
+        linked = output / 'pkg/index.html'
+        manifest['report_hashes'] = {str(linked): hashlib.sha256(original.read_bytes()).hexdigest()}
+        (self.state / 'run.json').write_text(json.dumps(manifest))
+        with self.assertRaisesRegex(ValueError, 'Invalid legacy'):
+            scoped.archive_legacy_html(self.state)
+        self.assertEqual(original.read_text(), 'keep')
+
+    def test_orphaned_legacy_html_without_manifest_is_preserved_and_reported(self):
+        output = self.state / 'evidence-orphan/report'
+        output.mkdir(parents=True)
+        html = output / 'index.html'
+        html.write_text('legacy')
+        with self.assertRaisesRegex(ValueError, 'without a manifest'):
+            scoped.archive_legacy_html(self.state)
+        self.assertEqual(html.read_text(), 'legacy')
+
+    def test_linked_manifest_is_not_replaced(self):
+        self.state.mkdir(parents=True)
+        target = self.repo / 'user-manifest.json'
+        target.write_text('{}')
+        (self.state / 'run.json').symlink_to(target)
+        with self.assertRaisesRegex(ValueError, 'linked focused coverage manifest'):
+            scoped.archive_legacy_html(self.state)
+        self.assertTrue((self.state / 'run.json').is_symlink())
+        self.assertEqual(target.read_text(), '{}')
+
+    def test_other_legacy_report_is_not_removed_by_clean(self):
+        manifest = self.ready()
+        output = Path(manifest['report'])
+        output.mkdir()
+        html = output / 'index.html'
+        html.write_text('current')
+        manifest['report_hashes'] = {str(html): hashlib.sha256(html.read_bytes()).hexdigest()}
+        (self.state / 'run.json').write_text(json.dumps(manifest))
+        other = self.state / 'evidence-other/report/index.html'
+        other.parent.mkdir(parents=True)
+        other.write_text('unowned')
+        with self.assertRaisesRegex(ValueError, 'not covered by the current manifest'):
+            scoped.archive_legacy_html(self.state)
+        self.assertEqual(other.read_text(), 'unowned')
+        self.assertEqual(html.read_text(), 'current')
+
+    def test_clean_archives_legacy_html_before_invoking_maven(self):
+        manifest = self.ready()
+        output = Path(manifest['report'])
+        output.mkdir()
+        html = output / 'index.html'
+        html.write_text('http://example.invalid')
+        manifest['report_hashes'] = {str(html): hashlib.sha256(html.read_bytes()).hexdigest()}
+        (self.state / 'run.json').write_text(json.dumps(manifest))
+        script = r'''
+set -euo pipefail
+MAKEVN_LIBEXEC_DIR="$1/libexec/makevn"
+source "${MAKEVN_LIBEXEC_DIR}/commands/maven.sh"
+makevn_state_dir() { printf '%s/.makevn/state' "$1"; }
+makevn_run_maven_goal() { [[ ! -e "$5/index.html" && -f "$5/jacoco-html.zip" ]]; }
+makevn_clean_generated_contract_if_needed() { :; }
+cmd_clean "$2" -- "$3"
+'''
+        result = subprocess.run(['bash', '-c', script, 'test', str(ROOT), str(self.repo), str(output)], text=True, capture_output=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertFalse(html.exists())
+        self.assertTrue((output / 'jacoco-html.zip').is_file())
 
 
 if __name__ == '__main__':

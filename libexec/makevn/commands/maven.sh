@@ -68,6 +68,9 @@ cmd_clean() {
   local repo_root="$1"
   shift
   [[ "${1:-}" == "--" ]] && shift
+  if [[ -d "$(makevn_state_dir "${repo_root}")/focused-coverage" ]]; then
+    python3 "${MAKEVN_LIBEXEC_DIR}/common/scoped_coverage.py" archive-html "${repo_root}" "$(makevn_state_dir "${repo_root}")/focused-coverage" || return $?
+  fi
   makevn_run_maven_goal "${repo_root}" clean clean "" "$@"
   makevn_clean_generated_contract_if_needed "${repo_root}"
 }

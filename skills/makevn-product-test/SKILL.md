@@ -169,6 +169,13 @@ fix or PR does not authorize merging or publishing a release.
 
 ## Preserve a handoff
 
+Some builds scan the entire checkout, including ignored `.makevn` files. Preserve
+copied generated HTML and verbose outputs in compressed archives inside the
+campaign directory when their contents can trigger project-wide checks. If an
+older MakeVN focused HTML report itself causes such a failure, follow the
+makevn-quality recovery: `clean` archives manifest-owned legacy HTML before
+Maven clean. Preserve evidence and never suppress project checks.
+
 Keep campaign-generated reports and supporting evidence out of the fixture's
 project root. Store them under
 `<fixture>/.makevn/product-test/<campaign-id>/`, with the campaign report and
