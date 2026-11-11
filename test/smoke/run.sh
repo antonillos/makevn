@@ -4134,7 +4134,12 @@ EOF
   set -e
 
   [[ ${rc} -eq 1 ]] || fail "expected coverage verification without XML to exit 1, got ${rc}"
-  [[ "${output}" == *"without generating a JaCoCo XML report"* ]] || fail "expected missing JaCoCo XML explanation"
+  [[ "${output}" == *"without finding a JaCoCo XML report under target"* ]] \
+    || fail "expected missing JaCoCo XML explanation"
+  [[ "${output}" == *"Ensure jacoco:report runs during or before verify"* ]] \
+    || fail "expected guidance to run the JaCoCo report goal"
+  [[ "${output}" == *"enables instrumentation but does not generate the XML report"* ]] \
+    || fail "expected explanation that the skip property does not generate a report"
 }
 
 test_verify_coverage_accepts_custom_jacoco_output_path() {

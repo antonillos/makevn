@@ -245,7 +245,7 @@ makevn_require_jacoco_xml_report() {
 
   jacoco_xml_count="$(find "${maven_base_path}" -path '*/target/*' -name 'jacoco.xml' -type f -print 2>/dev/null | wc -l | tr -d '[:space:]')"
   if [[ ! "${jacoco_xml_count}" =~ ^[1-9][0-9]*$ ]]; then
-    makevn_die "coverage verification completed without generating a JaCoCo XML report. Configure jacoco-maven-plugin (or its coverage profile); -Djacoco.skip=false alone does not generate coverage."
+    makevn_die "coverage verification completed without finding a JaCoCo XML report under target. Ensure jacoco:report runs during or before verify (for example, bind it to the verify phase); -Djacoco.skip=false enables instrumentation but does not generate the XML report."
   fi
 }
 
