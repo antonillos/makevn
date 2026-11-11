@@ -445,6 +445,79 @@ cmd_clean "$2" -- "$3"
         self.assertFalse(html.exists())
         self.assertTrue((output / 'jacoco-html.zip').is_file())
 
+    def test_full_coverage_archives_legacy_html_before_verification(self):
+        script = r'''
+set -euo pipefail
+MAKEVN_LIBEXEC_DIR="$1/libexec/makevn"
+source "${MAKEVN_LIBEXEC_DIR}/commands/maven.sh"
+CHECK_OUTPUT="$3" VERIFY_RC="$4" LOG_FILE="$5"
+makevn_state_dir() { printf '%s/.makevn/state' "$1"; }
+makevn_detect_maven_base_path() { printf '%s' "$1"; }
+makevn_remove_jacoco_xml_reports() { printf 'remove\n' >> "$LOG_FILE"; }
+makevn_require_jacoco_xml_report() { :; }
+makevn_print_jacoco_report_hint() { :; }
+cmd_verify_ut() { [[ ! -e "$CHECK_OUTPUT/index.html" && -f "$CHECK_OUTPUT/jacoco-html.zip" ]]; printf 'verify\n' >> "$LOG_FILE"; return "$VERIFY_RC"; }
+cmd_verify_it() { cmd_verify_ut "$@"; }
+makevn_run_maven_goal() { :; }
+makevn_clean_generated_contract_if_needed() { :; }
+"cmd_verify_${6}_coverage" "$2" "$3" "$4" "$5"
+if [[ "$4" == 0 ]]; then cmd_clean "$2"; fi
+'''
+        for mode in ('ut', 'it'):
+            for status in (0, 7):
+                with self.subTest(mode=mode, status=status):
+                    manifest = self.ready()
+                    output = Path(manifest['report'])
+                    output.mkdir()
+                    html = output / 'index.html'
+                    html.write_text('legacy')
+                    manifest['report_hashes'] = {str(html): hashlib.sha256(html.read_bytes()).hexdigest()}
+                    (self.state / 'run.json').write_text(json.dumps(manifest))
+                    log = self.repo / 'calls.log'
+                    log.unlink(missing_ok=True)
+                    result = subprocess.run(['bash', '-c', script, 'test', str(ROOT), str(self.repo), str(output),
+                                             str(status), str(log), mode], text=True, capture_output=True)
+                    self.assertEqual(result.returncode, status, result.stderr)
+                    self.assertEqual(log.read_text(), 'remove\nverify\n')
+                    self.assertFalse(html.exists())
+                    with zipfile.ZipFile(output / 'jacoco-html.zip') as bundle:
+                        self.assertEqual(bundle.read('index.html'), b'legacy')
+                    self.assertEqual((self.state / 'run.json').exists(), status != 0)
+                    if status:
+                        scoped.load(self.repo, self.state)
+
+    def test_full_coverage_does_not_start_if_legacy_report_was_modified(self):
+        script = r'''
+set -euo pipefail
+MAKEVN_LIBEXEC_DIR="$1/libexec/makevn"
+source "${MAKEVN_LIBEXEC_DIR}/commands/maven.sh"
+CALLS="$3"
+makevn_state_dir() { printf '%s/.makevn/state' "$1"; }
+makevn_detect_maven_base_path() { printf '%s' "$1"; }
+makevn_remove_jacoco_xml_reports() { touch "$CALLS"; }
+cmd_verify_ut() { touch "$CALLS"; }
+cmd_verify_it() { touch "$CALLS"; }
+"cmd_verify_${4}_coverage" "$2"
+'''
+        for mode in ('ut', 'it'):
+            with self.subTest(mode=mode):
+                manifest = self.ready()
+                output = Path(manifest['report'])
+                output.mkdir()
+                html = output / 'index.html'
+                html.write_text('original')
+                manifest['report_hashes'] = {str(html): hashlib.sha256(html.read_bytes()).hexdigest()}
+                (self.state / 'run.json').write_text(json.dumps(manifest))
+                html.write_text('user content')
+                calls = self.repo / 'started'
+                result = subprocess.run(['bash', '-c', script, 'test', str(ROOT), str(self.repo),
+                                         str(calls), mode], text=True, capture_output=True)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn('Legacy coverage report changed', result.stderr)
+                self.assertFalse(calls.exists())
+                self.assertEqual(html.read_text(), 'user content')
+                self.assertTrue((self.state / 'run.json').exists())
+
 
 if __name__ == '__main__':
     unittest.main()
