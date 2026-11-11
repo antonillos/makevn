@@ -64,13 +64,18 @@ cmd_package() {
   makevn_run_maven_goal "${repo_root}" package package build -DskipTests -Dmaven.build.cache.enabled=false "$@"
 }
 
+makevn_archive_focused_html_if_needed() {
+  local repo_root="$1"
+  if [[ -d "$(makevn_state_dir "${repo_root}")/focused-coverage" ]]; then
+    python3 "${MAKEVN_LIBEXEC_DIR}/common/scoped_coverage.py" archive-html "${repo_root}" "$(makevn_state_dir "${repo_root}")/focused-coverage" || return $?
+  fi
+}
+
 cmd_clean() {
   local repo_root="$1"
   shift
   [[ "${1:-}" == "--" ]] && shift
-  if [[ -d "$(makevn_state_dir "${repo_root}")/focused-coverage" ]]; then
-    python3 "${MAKEVN_LIBEXEC_DIR}/common/scoped_coverage.py" archive-html "${repo_root}" "$(makevn_state_dir "${repo_root}")/focused-coverage" || return $?
-  fi
+  makevn_archive_focused_html_if_needed "${repo_root}" || return $?
   makevn_run_maven_goal "${repo_root}" clean clean "" "$@"
   makevn_clean_generated_contract_if_needed "${repo_root}"
 }
@@ -266,6 +271,7 @@ cmd_verify_ut_coverage() {
 
   maven_base_path="$(makevn_detect_maven_base_path "${repo_root}" || true)"
   [[ -n "${maven_base_path}" ]] || makevn_die "No Maven project detected in ${repo_root}"
+  makevn_archive_focused_html_if_needed "${repo_root}" || return $?
   makevn_remove_jacoco_xml_reports "${maven_base_path}"
   if cmd_verify_ut "${repo_root}" "${@:2}"; then
     rc=0
@@ -297,6 +303,7 @@ cmd_verify_it_coverage() {
 
   maven_base_path="$(makevn_detect_maven_base_path "${repo_root}" || true)"
   [[ -n "${maven_base_path}" ]] || makevn_die "No Maven project detected in ${repo_root}"
+  makevn_archive_focused_html_if_needed "${repo_root}" || return $?
   makevn_remove_jacoco_xml_reports "${maven_base_path}"
   if cmd_verify_it "${repo_root}" "${@:2}"; then
     rc=0
