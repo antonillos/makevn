@@ -74,6 +74,10 @@ extract it outside the checkout for viewing. When checkout-wide project checks
 reject legacy uncompressed focused HTML under `.makevn`, `makevn clean` archives
 manifest-owned legacy HTML before running Maven clean. It preserves the snapshot,
 while Maven clean removes normal project build outputs. Keep project checks enabled.
+Full UT/IT coverage likewise archives verified legacy HTML before Maven starts,
+so successful full coverage can retire its focused manifest safely. A failed full
+coverage run keeps the manifest. If an existing report is orphaned or changed,
+preserve it and investigate rather than deleting files whose ownership is unclear.
 Source, configuration, comparison-ref and evidence hashes guard against stale reuse.
 No data, missing bytecode or mismatched data blocks the gate instead of falling
 back to an old global aggregate. Nonstandard data paths outside module `target`,

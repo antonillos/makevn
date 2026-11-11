@@ -73,6 +73,10 @@ being scanned, use `makevn clean` (MCP `clean`) after confirming that diagnosis.
 It archives manifest-owned legacy HTML before running Maven clean, preserving
 its contents and the focused snapshot. Maven clean also removes project build
 outputs. Do not disable the project check or delete evidence by hand.
+Full `verify-ut-coverage` and `verify-it-coverage` also archive verified legacy
+HTML before their Maven phase, then retire focused evidence only after successful
+full coverage. If a report is already orphaned or its recorded hashes no longer
+match, preserve it and report the diagnostic; do not guess ownership or delete it.
 
 Do not prepend clean or rerun tests without a reason. A valid run with no changed
 production classes returns `not applicable` for changed-code metrics with exit zero:
