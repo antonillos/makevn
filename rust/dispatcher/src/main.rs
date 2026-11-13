@@ -754,6 +754,7 @@ fn command_local_option_takes_value(command: &OsString, arg: &OsString) -> bool 
         ),
         ("karate-test" | "karate-all", "--tag")
             | ("verify" | "verify-it" | "verify-it-coverage", "--compose-file")
+            | ("verify-changes-preview" | "verify-changes", "--base")
     )
 }
 
