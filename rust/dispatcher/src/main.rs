@@ -2947,6 +2947,7 @@ struct SpinnerRenderer {
     frame_interval: Duration,
     next_frame_at: Instant,
     second_escape_deadline: Option<Instant>,
+    input_sequence: SpinnerInputSequence,
     resource_sampler: ResourceSampler,
     resource_history: ResourceHistory,
     resource_history_revision: u64,
@@ -2986,6 +2987,7 @@ impl SpinnerRenderer {
             frame_interval: Duration::from_millis(33),
             next_frame_at: Instant::now(),
             second_escape_deadline: None,
+            input_sequence: SpinnerInputSequence::Ground,
             resource_sampler: ResourceSampler::new(),
             resource_history: ResourceHistory::new(),
             resource_history_revision: 0,
@@ -2999,6 +3001,7 @@ impl SpinnerRenderer {
     // Reset command-local state without erasing the retained terminal block.
     fn begin_backend(&mut self) {
         self.second_escape_deadline = None;
+        self.input_sequence = SpinnerInputSequence::Ground;
         self.resource_sampler = ResourceSampler::new();
         self.resource_history = ResourceHistory::new();
         self.resource_history_revision = 0;
@@ -3030,15 +3033,17 @@ impl SpinnerRenderer {
             return Ok(InputEvent::None);
         }
         let mut buffer = [0_u8; 1];
-        match self.tty.read(&mut buffer) {
-            Ok(1) => Ok(decode_spinner_input(
-                buffer[0],
-                &mut self.second_escape_deadline,
-            )),
-            Ok(_) => Ok(InputEvent::None),
-            Err(error) if error.kind() == io::ErrorKind::WouldBlock => Ok(InputEvent::None),
-            Err(error) => Err(error),
-        }
+        let byte = match self.tty.read(&mut buffer) {
+            Ok(1) => Some(buffer[0]),
+            Ok(_) => None,
+            Err(error) if error.kind() == io::ErrorKind::WouldBlock => None,
+            Err(error) => return Err(error),
+        };
+        Ok(self.input_sequence.decode(
+            byte,
+            Instant::now(),
+            &mut self.second_escape_deadline,
+        ))
     }
 
     fn current_spinner_hint(&mut self) -> String {
@@ -3275,6 +3280,75 @@ impl SpinnerRenderer {
         }
         self.rendered_block_line_widths.clear();
         Ok(())
+    }
+}
+
+// Terminal keys use ESC-prefixed CSI/SS3 sequences. Wait briefly before
+// treating a lone ESC as a key, including when reads split a sequence.
+#[derive(Default)]
+enum SpinnerInputSequence {
+    #[default]
+    Ground,
+    Escape(Instant),
+    Control,
+}
+
+impl SpinnerInputSequence {
+    fn decode(
+        &mut self,
+        byte: Option<u8>,
+        now: Instant,
+        escape_deadline: &mut Option<Instant>,
+    ) -> InputEvent {
+        let mut event = self.expire_escape(now, escape_deadline);
+        let Some(byte) = byte else {
+            return event;
+        };
+        match self {
+            Self::Escape(_) if matches!(byte, b'[' | b'O') => {
+                *self = Self::Control;
+                return event;
+            }
+            Self::Control if byte != 0x1b => {
+                if (0x40..=0x7e).contains(&byte) {
+                    *self = Self::Ground;
+                }
+                return event;
+            }
+            Self::Escape(_) => {
+                event = decode_spinner_input(0x1b, escape_deadline);
+            }
+            _ => {}
+        }
+        self.decode_key(byte, now, escape_deadline, event)
+    }
+
+    fn decode_key(
+        &mut self,
+        byte: u8,
+        now: Instant,
+        escape_deadline: &mut Option<Instant>,
+        mut event: InputEvent,
+    ) -> InputEvent {
+        *self = if byte == 0x1b {
+            Self::Escape(now)
+        } else {
+            Self::Ground
+        };
+        if byte != 0x1b && !matches!(event, InputEvent::Interrupt) {
+            event = decode_spinner_input(byte, escape_deadline);
+        }
+        event
+    }
+
+    fn expire_escape(&mut self, now: Instant, escape_deadline: &mut Option<Instant>) -> InputEvent {
+        if matches!(self, Self::Escape(started) if now.duration_since(*started) >= Duration::from_millis(100))
+        {
+            *self = Self::Ground;
+            decode_spinner_input(0x1b, escape_deadline)
+        } else {
+            InputEvent::None
+        }
     }
 }
 

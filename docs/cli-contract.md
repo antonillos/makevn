@@ -528,6 +528,7 @@ Rules:
 - successful interactive completion can be summarized compactly as `[ok] <duration>`
 - the spinner line may include lightweight CPU and RAM telemetry for the running backend process tree
 - the double-escape interruption window is 3 seconds
+- only standalone Escape presses count toward interruption; cursor and function key escape sequences must not arm or confirm cancellation
 
 Example lifecycle for a successful tailed command:
 
