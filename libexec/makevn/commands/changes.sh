@@ -5,6 +5,14 @@ set -euo pipefail
 source "${SCRIPT_DIR}/commands/focused_changes.sh"
 source "${SCRIPT_DIR}/commands/scoped_coverage.sh"
 
+makevn_print_changes_base() {
+  local repo_root="$1" parent_spec="$2" source=git-heuristic comparison
+  [[ -z "${MAKEVN_CHANGES_BASE:-}" ]] || source=explicit
+  comparison="$(git -C "${repo_root}" merge-base "${parent_spec%...HEAD}" HEAD)" || return $?
+  makevn_print_detail_line "base source: ${source}"
+  makevn_print_detail_line "comparison merge base: ${comparison}"
+}
+
 makevn_effective_coverage_threshold() {
   local repo_root="$1"
 
@@ -297,7 +305,7 @@ makevn_collect_verify_changes_scope() {
     return 0
   fi
 
-  MAKEVN_VERIFY_CHANGES_PARENT_SPEC="$(makevn_detect_parent_branch_spec "${repo_root}")"
+  MAKEVN_VERIFY_CHANGES_PARENT_SPEC="$(makevn_detect_parent_branch_spec "${repo_root}")" || return $?
   diff_local="$(
     git -C "${git_root}" diff --name-only HEAD
     git -C "${git_root}" ls-files --others --exclude-standard -- "${strip_prefix}src/test/resources/"
@@ -359,6 +367,7 @@ makevn_print_verify_changes_preflight() {
   local strategy=""
 
   makevn_print_item "compare against" "${MAKEVN_VERIFY_CHANGES_PARENT_SPEC}"
+  makevn_print_changes_base "${MAKEVN_VERIFY_CHANGES_MAVEN_BASE_PATH}" "${MAKEVN_VERIFY_CHANGES_PARENT_SPEC}"
 
   if [[ -z "${MAKEVN_VERIFY_CHANGES_MODULE_SELECTION}" && -z "${MAKEVN_VERIFY_CHANGES_TEST_FILES}" ]]; then
     makevn_print_item "strategy" "skip"
@@ -381,7 +390,7 @@ makevn_print_verify_changes_preflight() {
   fi
   makevn_print_item "mode" "exhaustive"
 
-  if [[ -n "${MAKEVN_VERIFY_CHANGES_SRC_FILES}" || -n "${MAKEVN_VERIFY_CHANGES_POM_FILES:-}" || -z "${MAKEVN_VERIFY_CHANGES_TEST_FILES}" || "${MAKEVN_VERIFY_CHANGES_MODE:-}:${MAKEVN_VERIFY_CHANGES_MODE_ARGS:-0}" == exhaustive:1 ]]; then
+  if [[ -n "${MAKEVN_VERIFY_CHANGES_SRC_FILES}" || -n "${MAKEVN_VERIFY_CHANGES_POM_FILES:-}" || -z "${MAKEVN_VERIFY_CHANGES_TEST_FILES}" || "${MAKEVN_VERIFY_CHANGES_MODE:-}" == exhaustive ]]; then
     if [[ -n "${MAKEVN_VERIFY_CHANGES_MODULES}" && "${MAKEVN_VERIFY_CHANGES_MODULES}" != . ]]; then
       strategy="run verify for affected modules"
       makevn_print_item "modules" "${MAKEVN_VERIFY_CHANGES_MODULES}"
@@ -404,11 +413,12 @@ makevn_print_verify_changes_preflight() {
 
 cmd_verify_changes_preview() {
   local repo_root="$1"
+  local MAKEVN_CHANGES_BASE=""
 
   shift
   makevn_changes_mode "$@"
   shift "${MAKEVN_VERIFY_CHANGES_MODE_ARGS}"
-  [[ $# -eq 0 ]] || makevn_die "Usage: verify-changes-preview [--focused|--exhaustive] [--record-test-impact] [--defer-global-coverage]"
+  [[ $# -eq 0 ]] || makevn_die "Usage: verify-changes-preview [--base REF] [--focused|--exhaustive] [--record-test-impact] [--defer-global-coverage]"
 
   if ! makevn_frontend_owns_loader; then
     print_command_intro "${repo_root}" verify-changes-preview
@@ -417,6 +427,8 @@ cmd_verify_changes_preview() {
   makevn_load_profile "${repo_root}"
   makevn_collect_verify_changes_scope "${repo_root}" preview
   if [[ "${MAKEVN_VERIFY_CHANGES_SCOPE_REQUIRED}" == true ]]; then
+    makevn_print_item "compare against" "${MAKEVN_VERIFY_CHANGES_PARENT_SPEC}"
+    makevn_print_changes_base "${repo_root}" "${MAKEVN_VERIFY_CHANGES_PARENT_SPEC}"
     makevn_print_item "outcome" "requires exhaustive scope"
     makevn_print_detail_line "Analysis completed; no tests ran and no focused plan was produced."
     makevn_print_detail_line "Next: preview with --exhaustive (MCP focused: false), then inspect its scope before execution."
@@ -556,6 +568,7 @@ cmd_coverage() {
 
 cmd_verify_changes() {
   local repo_root="$1"
+  local MAKEVN_CHANGES_BASE=""
   local cli_flags_value=""
   local prop_flags_value=""
   local log_name="verify-changes"
@@ -642,7 +655,7 @@ No modified Java or POM files detected. Skipping verify-changes."
     return "${rc}"
   fi
 
-  if [[ -n "${MAKEVN_VERIFY_CHANGES_SRC_FILES}" || -n "${MAKEVN_VERIFY_CHANGES_POM_FILES:-}" || -z "${MAKEVN_VERIFY_CHANGES_TEST_FILES}" || "${MAKEVN_VERIFY_CHANGES_MODE:-}:${MAKEVN_VERIFY_CHANGES_MODE_ARGS:-0}" == exhaustive:1 ]]; then
+  if [[ -n "${MAKEVN_VERIFY_CHANGES_SRC_FILES}" || -n "${MAKEVN_VERIFY_CHANGES_POM_FILES:-}" || -z "${MAKEVN_VERIFY_CHANGES_TEST_FILES}" || "${MAKEVN_VERIFY_CHANGES_MODE:-}" == exhaustive ]]; then
     if [[ -z "${MAKEVN_VERIFY_CHANGES_MODULES}" || "${MAKEVN_VERIFY_CHANGES_MODULES}" == . ]]; then
       makevn_clear_verify_changes_plan "${repo_root}"
       cmd_verify "${repo_root}"
@@ -687,6 +700,7 @@ No modified Java or POM files detected. Skipping verify-changes."
 
 cmd_coverage_changes() {
   local repo_root="$1"
+  local MAKEVN_CHANGES_BASE=""
   local maven_base_path=""
   local maven_base_rel=""
   local git_root=""
@@ -716,6 +730,11 @@ cmd_coverage_changes() {
   overall_threshold="$(makevn_effective_coverage_threshold "${repo_root}")"
   while [[ $# -gt 0 ]]; do
     case "$1" in
+      --base)
+        [[ $# -ge 2 && -n "$2" ]] || makevn_die "--base requires a commit reference"
+        MAKEVN_CHANGES_BASE="$2"
+        shift 2
+        ;;
       --threshold)
         [[ $# -ge 2 ]] || makevn_die "Missing value for --threshold"
         threshold="$2"
@@ -757,10 +776,12 @@ cmd_coverage_changes() {
     maven_base_rel="${physical_maven_base_path#${physical_git_root}/}"
   fi
 
+  parent_spec="$(makevn_detect_parent_branch_spec "${repo_root}")" || return $?
+  makevn_print_changes_base "${repo_root}" "${parent_spec}"
   local focused_state="$(makevn_scoped_coverage_state "${repo_root}")"
   if [[ -f "${focused_state}/run.json" ]]; then
     [[ "${explicit_overall}" == false ]] || makevn_die "--overall-threshold requires a full coverage report; run verify-ut-coverage or verify-it-coverage first."
-    report_dir="$(makevn_scoped_coverage_report "${repo_root}" "${maven_base_path}")" || return $?
+    report_dir="$(makevn_scoped_coverage_report "${repo_root}" "${maven_base_path}" "${parent_spec}")" || return $?
     if [[ "${report_dir}" == not-applicable ]]; then
       makevn_print_detail_line "Coverage changes: not applicable — no changed production classes to measure. JaCoCo data may exist; global coverage was not evaluated."
       return 0
@@ -812,8 +833,6 @@ cmd_coverage_changes() {
   fi
 
   makevn_require_jacoco_csv_classes "${report_dir}/jacoco.csv"
-
-  parent_spec="$(makevn_detect_parent_branch_spec "${repo_root}")"
 
   coverage_script="$(makevn_internal_make_script_path coverage/changes.sh || true)"
   [[ -n "${coverage_script}" ]] || makevn_die "Internal coverage changes runtime script not found"

@@ -126,6 +126,27 @@ fn crap_changes_tool_has_typed_schema_and_forwards_base() {
 }
 
 #[test]
+fn changed_code_tools_share_typed_base_and_forward_it_before_mode() {
+    for name in ["verify_changes_preview", "verify_changes", "coverage_changes", "crap_changes"] {
+        let spec = TOOL_SPECS.iter().find(|spec| spec.name == name).unwrap();
+        assert_eq!(super::tool(spec)["inputSchema"]["properties"]["base"]["type"], "string");
+        let mut args = Map::new();
+        args.insert("base".into(), json!("origin/develop"));
+        let verification = matches!(name, "verify_changes_preview" | "verify_changes");
+        if verification {
+            args.insert("focused".into(), json!(false));
+        }
+        let mut command = vec![];
+        push_tool_flags(&mut command, spec, &args).unwrap();
+        let mut expected = vec!["--base", "origin/develop"];
+        if verification {
+            expected.push("--exhaustive");
+        }
+        assert_eq!(command, expected);
+    }
+}
+
+#[test]
 fn parse_steps_rejects_empty_array() {
     let mut args = Map::new();
     args.insert("steps".into(), json!([]));

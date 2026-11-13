@@ -107,3 +107,13 @@ other Maven failures still stop the fail-fast workflow. Run coverage_changes and
 crap_changes from the fresh successful snapshot and report the actual incremental
 gates. Retain the separate complete-suite/global coverage requirement; a local
 success is not global approval. Never change POM rules or enable this implicitly.
+
+### Explicit comparison base
+
+For changed-code workflows with a known destination, use `--base REF` (MCP
+`base`) consistently in preview, verification, coverage and CRAP. This overrides
+offline ancestry inference, including detached worktrees. MakeVN does not fetch or
+query PR metadata. Ambiguous inference requires an explicit local reference.
+The base does not enable exhaustive mode or relax safety rules. Metric commands
+reuse only compatible successful evidence; changed merge bases require new
+verification. Equivalent references sharing the merge base remain compatible.

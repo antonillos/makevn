@@ -138,10 +138,52 @@ makevn verify-ut-coverage [-- EXTRA_MAVEN_ARGS...]
 makevn verify-it [-- EXTRA_MAVEN_ARGS...]
 makevn verify-it-coverage [-- EXTRA_MAVEN_ARGS...]
 makevn verify [-- EXTRA_MAVEN_ARGS...]
-makevn verify-changes-preview
-makevn verify-changes [-- EXTRA_MAVEN_ARGS...]
+makevn verify-changes-preview [--base REF]
+makevn verify-changes [--base REF] [-- EXTRA_MAVEN_ARGS...]
 makevn pr-verify [-- EXTRA_MAVEN_ARGS...]
 ```
+
+### Changed-code comparison base
+
+`verify-changes-preview`, `verify-changes`, `coverage-changes`, and `crap-changes`
+accept `--base REF`. The reference must resolve locally to a commit with exactly
+one merge base with HEAD. Invalid references, revision ranges, unrelated or
+insufficient history, and multiple merge bases fail before planning or metrics.
+No branch checkout, fetch, or PR lookup is performed.
+
+An explicit base overrides offline parent inference, including detached worktrees
+and checkouts named main, develop, or master. Without it, named long-lived branches
+retain the existing HEAD/local-changes behavior. Other checkouts rank main,
+develop, master, and release candidates by first-parent distance and ancestry.
+Equally ranked candidates with different merge-base commits require an explicit
+base; aliases and independently advanced tips sharing a merge base do not.
+The heuristic describes ancestry, not a PR destination. Remote HEAD is not a PR
+base signal. An agent with an authorized PR context should pass the locally
+available destination reference explicitly; automatic PR-context resolution is
+reserved for a future integration contract.
+
+Use the same base in preview, verification and metrics:
+
+```bash
+makevn verify-changes-preview --base origin/develop
+makevn verify-changes --base origin/develop
+makevn coverage-changes --base origin/develop
+makevn crap-changes --base origin/develop
+```
+
+The output includes the base source and comparison merge-base commit. Execution
+replans from current inputs, so a moved reference is reflected in the new scope.
+This preserves first-parent replay semantics (including merge-resolution changes),
+committed and local changes, and the existing supported untracked inputs;
+it does not redefine scope as a plain three-dot Git diff. `--base` neither enables
+exhaustive mode nor relaxes unknown-impact safety checks.
+
+Focused evidence records the reference, resolved tip, merge base, and source;
+the verification summary exposes these as comparison metadata. Metric commands
+reject a requested merge base that differs from the successful verification.
+Aliases and tip advances with the same merge base reuse the successful snapshot;
+source/config freshness checks still apply. Metrics never rerun tests to repair
+incompatible evidence. Full verification and CI gates remain separate.
 
 ### Karate Commands
 
@@ -166,7 +208,7 @@ makevn stop-app
 
 ```bash
 makevn coverage [--threshold PCT]
-makevn coverage-changes [--threshold PCT] [--overall-threshold PCT] [--verbose]
+makevn coverage-changes [--base REF] [--threshold PCT] [--overall-threshold PCT] [--verbose]
 makevn crap [--jacoco-xml PATH] [--threshold SCORE] [--max-warnings COUNT]
 makevn crap-changes [--base REF]
 makevn crap install-analyzer
