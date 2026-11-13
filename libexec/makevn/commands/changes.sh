@@ -9,6 +9,7 @@ makevn_print_changes_base() {
   local repo_root="$1" parent_spec="$2" source=git-heuristic comparison
   [[ -z "${MAKEVN_CHANGES_BASE:-}" ]] || source=explicit
   comparison="$(git -C "${repo_root}" merge-base "${parent_spec%...HEAD}" HEAD)" || return $?
+  makevn_print_detail_line "comparison reference: ${parent_spec%...HEAD}"
   makevn_print_detail_line "base source: ${source}"
   makevn_print_detail_line "comparison merge base: ${comparison}"
 }
