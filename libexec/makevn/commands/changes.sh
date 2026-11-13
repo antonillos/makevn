@@ -415,6 +415,7 @@ makevn_print_verify_changes_preflight() {
 cmd_verify_changes_preview() {
   local repo_root="$1"
   local MAKEVN_CHANGES_BASE=""
+  local next_base=""
 
   shift
   makevn_changes_mode "$@"
@@ -432,7 +433,8 @@ cmd_verify_changes_preview() {
     makevn_print_changes_base "${repo_root}" "${MAKEVN_VERIFY_CHANGES_PARENT_SPEC}"
     makevn_print_item "outcome" "requires exhaustive scope"
     makevn_print_detail_line "Analysis completed; no tests ran and no focused plan was produced."
-    makevn_print_detail_line "Next: preview with --exhaustive (MCP focused: false), then inspect its scope before execution."
+    [[ -z "${MAKEVN_CHANGES_BASE}" ]] || printf -v next_base ' --base %q' "${MAKEVN_CHANGES_BASE}"
+    makevn_print_detail_line "Next: makevn verify-changes-preview${next_base} --exhaustive (MCP focused: false; preserve the same explicit base), then inspect its scope before execution."
     return 0
   fi
   makevn_write_verify_changes_plan "${repo_root}"

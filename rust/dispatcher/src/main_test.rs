@@ -286,6 +286,19 @@ fn maven_passthrough_rejects_bare_commands_before_separator() {
 }
 
 #[test]
+fn native_changed_code_commands_preserve_explicit_base_values() {
+    for command in ["verify-changes-preview", "verify-changes", "coverage-changes", "crap-changes"] {
+        for reference in ["develop", "origin/develop", "verify"] {
+            let action = parse_invocation([command, "--base", reference].into_iter().map(OsString::from).collect()).unwrap();
+            let Action::DispatchToBackend(invocations) = action else { panic!("expected backend dispatch") };
+            assert_eq!(invocations.len(), 1);
+            assert_eq!(invocations[0].args[0], command);
+            assert_eq!(&invocations[0].args[3..], &[OsString::from("--base"), OsString::from(reference)]);
+        }
+    }
+}
+
+#[test]
 fn install_root_honors_explicit_environment_override() {
     let _guard = ENV_LOCK.lock().unwrap();
     let original = env::var_os("MAKEVN_INSTALL_ROOT");
