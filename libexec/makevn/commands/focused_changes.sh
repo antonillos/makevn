@@ -21,12 +21,20 @@ makevn_collect_focused_plan() {
 }
 
 makevn_changes_mode() {
+  MAKEVN_CHANGES_BASE=''
   MAKEVN_VERIFY_CHANGES_MODE=focused
   MAKEVN_VERIFY_CHANGES_MODE_ARGS=0
   export MAKEVN_TEST_IMPACT_CAPTURE=false
   MAKEVN_DEFER_GLOBAL_COVERAGE=false
   while [[ $# -gt 0 ]]; do
     case "$1" in
+      --base)
+        [[ $# -ge 2 && -n "$2" ]] || makevn_die "--base requires a commit reference"
+        MAKEVN_CHANGES_BASE="$2"
+        MAKEVN_VERIFY_CHANGES_MODE_ARGS=$((MAKEVN_VERIFY_CHANGES_MODE_ARGS + 2))
+        shift 2
+        continue
+        ;;
       --record-test-impact) MAKEVN_TEST_IMPACT_CAPTURE=true ;;
       --defer-global-coverage) MAKEVN_DEFER_GLOBAL_COVERAGE=true ;;
       --focused|--exhaustive)

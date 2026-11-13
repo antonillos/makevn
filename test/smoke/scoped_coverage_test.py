@@ -247,6 +247,20 @@ class ScopedTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'Comparison base changed'):
             scoped.load(self.repo, self.state)
 
+    def test_metric_base_alias_reuses_evidence_but_another_scope_is_rejected(self):
+        base = subprocess.check_output(['git', '-C', str(self.repo), 'rev-parse', 'HEAD']).decode().strip()
+        feature = subprocess.check_output([
+            'git', '-C', str(self.repo), '-c', 'user.name=Test', '-c', 'user.email=test@example.com',
+            'commit-tree', 'HEAD^{tree}', '-p', base, '-m', 'feature']).decode().strip()
+        subprocess.run(['git', '-C', str(self.repo), 'branch', 'destination', base], check=True)
+        subprocess.run(['git', '-C', str(self.repo), 'branch', 'alias', base], check=True)
+        subprocess.run(['git', '-C', str(self.repo), 'checkout', '--detach', feature], check=True, capture_output=True)
+        scoped.prepare(self.repo, self.state, self.repo, ['client'], [], 'destination...HEAD')
+        scoped.finish(self.repo, self.state)
+        scoped.report(self.repo, self.state, 'unused-maven', 'unused-java', 'alias')
+        with self.assertRaisesRegex(ValueError, 'Requested base differs'):
+            scoped.report(self.repo, self.state, 'unused-maven', 'unused-java', 'HEAD')
+
     def test_report_is_direct_cli_and_reused_by_second_gate(self):
         manifest = self.ready()
         output = Path(manifest['report'])

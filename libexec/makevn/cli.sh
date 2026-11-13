@@ -36,11 +36,11 @@ Usage:
   makevn [--repo PATH] verify [-- EXTRA_MAVEN_ARGS...]
   makevn [--repo PATH] test-impact-preview
   makevn [--repo PATH] test-impact-init [--isolated]
-  makevn [--repo PATH] verify-changes-preview [--focused|--exhaustive] [--record-test-impact] [--defer-global-coverage]
-  makevn [--repo PATH] verify-changes [--focused|--exhaustive] [--record-test-impact] [--defer-global-coverage] [-- EXTRA_MAVEN_ARGS...]
+  makevn [--repo PATH] verify-changes-preview [--base REF] [--focused|--exhaustive] [--record-test-impact] [--defer-global-coverage]
+  makevn [--repo PATH] verify-changes [--base REF] [--focused|--exhaustive] [--record-test-impact] [--defer-global-coverage] [-- EXTRA_MAVEN_ARGS...]
   makevn [--repo PATH] jacoco-inspect
   makevn [--repo PATH] coverage [--threshold PCT]
-  makevn [--repo PATH] coverage-changes [--threshold PCT] [--overall-threshold PCT] [--verbose]
+  makevn [--repo PATH] coverage-changes [--base REF] [--threshold PCT] [--overall-threshold PCT] [--verbose]
   makevn [--repo PATH] crap [--jacoco-xml PATH] [--threshold SCORE] [--max-warnings COUNT]
   makevn [--repo PATH] crap-changes [--base REF]
   makevn [--repo PATH] crap install-analyzer

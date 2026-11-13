@@ -91,6 +91,11 @@ def main(args):
                    verification=dict(status='passed' if code == '0' else 'failed', exitCode=int(code)),
                    coverage=dict(status='not_run', reason='awaiting coverage-changes' if code == '0' else 'verification did not pass'),
                    crap=dict(status='not_run', reason='awaiting crap-changes' if code == '0' else 'verification did not pass'))
+    manifest_path = Path(repo) / '.makevn/focused-coverage/run.json'
+    if manifest_path.is_file():
+        manifest = json.loads(manifest_path.read_text())
+        summary['comparison'] = {key: manifest.get(key) for key in
+                                 ('comparison', 'comparison_head', 'comparison_base', 'base_source')}
     save_summary(output, summary)
     totals = {key: sum(m[key] for m in summary['modules'].values()) for key in ('tests', 'failures', 'errors', 'skipped')}
     print('Changed-code verification: exit ' + code + '; ' + ', '.join(f'{key}={value}' for key, value in totals.items()))

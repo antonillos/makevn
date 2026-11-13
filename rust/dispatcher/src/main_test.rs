@@ -28,6 +28,22 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 pub(super) static ENV_LOCK: Mutex<()> = Mutex::new(());
 
+#[test]
+fn repository_candidate_rejects_missing_paths_and_files() {
+    let directory = env::temp_dir().join(format!("makevn-repo-candidate-{}", process::id()));
+    fs::create_dir_all(&directory).unwrap();
+    let missing = directory.join("missing").into_os_string();
+    assert_eq!(super::canonical_repo_candidate(Some(&missing)).unwrap_err(),
+               format!("Repository path does not exist: {}", Path::new(&missing).display()));
+    let file = directory.join("file");
+    fs::write(&file, "not a directory").unwrap();
+    assert_eq!(super::canonical_repo_candidate(Some(&file.clone().into_os_string())).unwrap_err(),
+               format!("Repository path does not exist: {}", file.display()));
+    let candidate = directory.join(".").into_os_string();
+    assert_eq!(super::canonical_repo_candidate(Some(&candidate)).unwrap(), directory.canonicalize().unwrap());
+    fs::remove_dir_all(directory).unwrap();
+}
+
 fn format_resource_sample(sample: &ResourceSample, history: &ResourceHistory) -> String {
     format!(
         "{} | {}",

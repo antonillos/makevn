@@ -12,12 +12,14 @@ import xml.etree.ElementTree as ET
 import zipfile
 
 
+from changes_base import resolve
+
+
 VERSION = '0.8.14'
 
 
 def comparison_commit(repo, reference):
-    return subprocess.check_output(['git', '-C', str(repo), 'merge-base',
-                                    reference.removesuffix('...HEAD'), 'HEAD']).decode().strip()
+    return resolve(repo, reference.removesuffix('...HEAD'))[1]
 
 
 def evidence_comparison_commit(repo, manifest):
@@ -84,7 +86,8 @@ def prepare(repo, state, base, owners, sources, reference="HEAD"):
     inputs = {}
     manifest = {'status': 'pending', 'fingerprint': fingerprint(repo, base, inputs), 'inputs': inputs, 'base': str(base),
                 'owners': owners, 'sources': sources, 'comparison': comparison, 'comparison_head': comparison_head,
-                'comparison_base': comparison_commit(repo, reference)}
+                'comparison_base': comparison_commit(repo, reference),
+                'base_source': 'explicit' if os.environ.get('MAKEVN_CHANGES_BASE') else 'git-heuristic'}
     (state / 'run.json').write_text(json.dumps(manifest))
     for evidence in state.glob('evidence-*'):
         if evidence.is_dir() and not evidence.is_symlink():

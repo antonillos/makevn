@@ -633,6 +633,18 @@ verification still accepts `record-test-impact: true` in BOTH preview and execut
 Neither static maps nor runtime observations establish fresh coverage/CRAP or replace
 full verification and CI gates.
 
+### Explicit changed-code base
+
+`verify_changes_preview`, `verify_changes`, `coverage_changes`, and `crap_changes`
+share the optional string `base`, mapped to CLI `--base REF`. Pass the same local
+reference to every step, including inside composite `arguments`. Explicit input
+overrides offline ancestry inference. Invalid references, missing or multiple merge
+bases and ambiguous heuristic comparisons fail without fetching or looking up PRs.
+Use an authorized PR's destination as an explicit locally available reference;
+there is no automatic PR-context argument in this release. The argument does not
+change focused/exhaustive mode or relax planning and evidence checks. See the
+[comparison contract](../docs/cli-contract.md#changed-code-comparison-base).
+
 ### Explicit focused JaCoCo deferral
 
 `verify_changes_preview` and `verify_changes` accept the boolean
