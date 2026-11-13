@@ -1,6 +1,7 @@
 """Static selection regressions; no Maven/network required."""
 import importlib.util
 import pathlib
+import shlex
 import tempfile
 import unittest
 import subprocess
@@ -61,7 +62,7 @@ makevn_load_profile() { :; }
 makevn_frontend_owns_loader() { return 0; }
 makevn_write_verify_changes_plan() { touch "$1/plan-written"; }
 if [[ "$3" == preview ]]; then
-  cmd_verify_changes_preview "$2"
+  cmd_verify_changes_preview "$2" "${@:4}"
 else
   makevn_collect_verify_changes_scope "$2"
 fi
@@ -80,6 +81,16 @@ fi
             self.assertIn('no tests ran', result.stdout)
             self.assertIn('build.sh', result.stderr)
             self.assertFalse(repo.joinpath('plan-written').exists())
+            self.assertIn('Next: makevn verify-changes-preview --exhaustive', result.stdout)
+            for reference in ['origin/develop', "topic/it's"]:
+                result = subprocess.run(command + ['preview', '--base', reference], text=True, capture_output=True)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                next_line = next(line for line in result.stdout.splitlines() if 'Next: ' in line)
+                suggested = next_line.split('Next: ', 1)[1].split(' (MCP', 1)[0]
+                self.assertEqual(shlex.split(suggested),
+                                 ['makevn', 'verify-changes-preview', '--base', reference, '--exhaustive'])
+                self.assertIn('preserve the same explicit base', next_line)
+                self.assertFalse(repo.joinpath('plan-written').exists())
             result = subprocess.run(command + ['execute'], text=True, capture_output=True)
             self.assertNotEqual(result.returncode, 0)
             repo.joinpath('build.sh').write_text('echo build')

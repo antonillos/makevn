@@ -1050,7 +1050,7 @@ fn focused_agent_guidance_is_visible_without_loading_the_skill() {
         output: String::new(), exit_code: 0, duration_ms: 1, doctor_snapshot: None, next_suggestion: None,
     };
     let preview = super::tool_next_suggestion("verify_changes_preview", &result);
-    for text in ["BOTH", "user need not name the flag", "complete selected module/dependency suites", "required full"] {
+    for text in ["BOTH", "user need not name the flag", "complete selected module/dependency suites", "required full", "same repository and any explicit base", "same explicit base in verification, coverage and CRAP"] {
         assert!(preview.contains(text));
     }
     let verification = super::tool_next_suggestion("verify_changes", &result);
