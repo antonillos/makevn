@@ -147,6 +147,34 @@ fn changed_code_tools_share_typed_base_and_forward_it_before_mode() {
 }
 
 #[test]
+fn changed_code_composite_preserves_each_steps_base_and_repository() {
+    let args = json!({"repo":"/global", "steps":[
+        {"tool":"verify_changes_preview", "arguments":{"repo":"/review", "base":"origin/develop"}},
+        {"tool":"verify_changes", "arguments":{"base":"origin/develop"}},
+        {"tool":"coverage_changes", "arguments":{"base":"origin/develop"}},
+        {"tool":"crap_changes", "arguments":{"base":"origin/develop"}}
+    ]});
+    let output = super::handle_composite_run(Path::new("/bin/echo"), args.as_object().unwrap()).unwrap();
+    let summary: serde_json::Value = serde_json::from_str(&output).unwrap();
+    assert_eq!(summary["executedSteps"], 4);
+    assert_eq!(summary["exitCode"], 0);
+    for (index, command) in ["verify-changes-preview", "verify-changes", "coverage-changes", "crap-changes"].iter().enumerate() {
+        let repo = if index == 0 { "/review" } else { "/global" };
+        assert_eq!(summary["steps"][index]["output"],
+                   format!("--repo {repo} --compact {command} --base origin/develop"));
+    }
+}
+
+#[test]
+fn workflow_step_rejects_missing_or_unknown_tool_before_starting_process() {
+    let missing_binary = Path::new("/missing-makevn-binary");
+    let error = super::execute_single_step(missing_binary, &json!({}), None, false).err().unwrap();
+    assert_eq!(error, "each step must have a 'tool' field");
+    let error = super::execute_single_step(missing_binary, &json!({"tool":"unknown"}), None, false).err().unwrap();
+    assert_eq!(error, "unknown makevn tool in step: unknown");
+}
+
+#[test]
 fn parse_steps_rejects_empty_array() {
     let mut args = Map::new();
     args.insert("steps".into(), json!([]));
