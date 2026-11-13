@@ -3300,12 +3300,7 @@ impl SpinnerInputSequence {
         now: Instant,
         escape_deadline: &mut Option<Instant>,
     ) -> InputEvent {
-        let mut event = InputEvent::None;
-        if matches!(self, Self::Escape(started) if now.duration_since(*started) >= Duration::from_millis(100))
-        {
-            *self = Self::Ground;
-            event = decode_spinner_input(0x1b, escape_deadline);
-        }
+        let mut event = self.expire_escape(now, escape_deadline);
         let Some(byte) = byte else {
             return event;
         };
@@ -3325,6 +3320,16 @@ impl SpinnerInputSequence {
             }
             _ => {}
         }
+        self.decode_key(byte, now, escape_deadline, event)
+    }
+
+    fn decode_key(
+        &mut self,
+        byte: u8,
+        now: Instant,
+        escape_deadline: &mut Option<Instant>,
+        mut event: InputEvent,
+    ) -> InputEvent {
         *self = if byte == 0x1b {
             Self::Escape(now)
         } else {
@@ -3334,6 +3339,16 @@ impl SpinnerInputSequence {
             event = decode_spinner_input(byte, escape_deadline);
         }
         event
+    }
+
+    fn expire_escape(&mut self, now: Instant, escape_deadline: &mut Option<Instant>) -> InputEvent {
+        if matches!(self, Self::Escape(started) if now.duration_since(*started) >= Duration::from_millis(100))
+        {
+            *self = Self::Ground;
+            decode_spinner_input(0x1b, escape_deadline)
+        } else {
+            InputEvent::None
+        }
     }
 }
 
