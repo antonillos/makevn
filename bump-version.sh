@@ -30,7 +30,8 @@ printf 'Current makevn version: %s\n' "${current_version}"
 printf 'New makevn version:     %s\n' "${VERSION}"
 
 # Bump Cargo.toml
-sed -i '' -E 's/^version = "[^"]+"/version = "'"${VERSION}"'"/' "${CARGO_MANIFEST}"
+sed -i.bak -E 's/^version = "[^"]+"/version = "'"${VERSION}"'"/' "${CARGO_MANIFEST}"
+rm -f "${CARGO_MANIFEST}.bak"
 printf '  ✔ Updated Cargo.toml\n'
 
 printf '\n✔ Bumped to %s\n' "${VERSION}"
