@@ -33,6 +33,7 @@ def describe(value, index, focus=None, observation_status='none', depth=3, limit
                          else 'Class not found: ' + focus)
     root = matches[0]
     queue, depths = deque([root]), {root: 0}
+    parents = {root: None}
     displayed, omitted = [], 0
     while queue:
         source = queue.popleft()
@@ -45,6 +46,7 @@ def describe(value, index, focus=None, observation_status='none', depth=3, limit
             repeat = target in depths
             if not repeat:
                 depths[target] = depths[source] + 1
+                parents[target] = source
                 queue.append(target)
             displayed.append({'source': source, 'target': target,
                               'static': target in edges.get(source, ()),
@@ -62,6 +64,7 @@ def describe(value, index, focus=None, observation_status='none', depth=3, limit
             repeat = target in depths
             if not repeat:
                 depths[target] = depths[source] + 1
+                parents[target] = source
             displayed.append({'source': source, 'target': target, 'static': False,
                               'observed': True, 'ambiguous': False,
                               'conservative_reverse': False, 'repeated': repeat})
@@ -74,6 +77,11 @@ def describe(value, index, focus=None, observation_status='none', depth=3, limit
     visible = {root}
     for names in buckets.values():
         visible.update(sorted(names) if show_all else sorted(names)[:limit])
+    for name in list(visible):
+        ancestor = parents[name]
+        while ancestor is not None and ancestor not in visible:
+            visible.add(ancestor)
+            ancestor = parents[ancestor]
     visible_edges = [edge for edge in displayed
                      if edge['source'] in visible and edge['target'] in visible]
     evidence = defaultdict(set)
@@ -82,7 +90,7 @@ def describe(value, index, focus=None, observation_status='none', depth=3, limit
             if edge[flag]:
                 evidence[edge['target']].add(flag)
     result.update(focus=root,
-                  nodes=[nodes[name] | {'depth': distance, 'evidence': sorted(evidence[name])}
+                  nodes=[nodes[name] | {'depth': distance, 'parent': parents[name], 'evidence': sorted(evidence[name])}
                          for name, distance in depths.items() if name in visible],
                   edges=visible_edges, truncated=bool(omitted or len(visible) < len(depths)),
                   omitted=omitted + len(displayed) - len(visible_edges),
@@ -103,35 +111,40 @@ def render(graph):
         for name in nodes:
             labels[name.rsplit('.', 1)[-1]].append(name)
         lines.append(f"Reachable classes within {graph['depth']} hops: {graph['reached_nodes'] - 1}")
-        layers = list(graph['layers'].items())
-        for layer_index, (distance, counts) in enumerate(layers):
-            last_layer = layer_index == len(layers) - 1
-            lines.append(('└── ' if last_layer else '├── ') + f'Hop {distance}:')
-            layer_prefix = '    ' if last_layer else '│   '
-            categories = [(kind, title) for kind, title in [
-                ('test', 'Tests'), ('production', 'Production classes'),
-                ('helper', 'Helpers and benchmarks')] if counts[kind]]
-            for category_index, (kind, title) in enumerate(categories):
-                last_category = category_index == len(categories) - 1
-                lines.append(layer_prefix + ('└── ' if last_category else '├── ') + f'{title}: {counts[kind]}')
-                item_prefix = layer_prefix + ('    ' if last_category else '│   ')
-                names = sorted(name for name, node in nodes.items()
-                               if node['depth'] == int(distance) and node['kind'] == kind)
-                entries = []
-                for name in names:
-                    short = name.rsplit('.', 1)[-1]
-                    label = short if len(labels[short]) == 1 else name
-                    flags = [flag for flag in ('observed', 'ambiguous')
-                             if flag in nodes[name]['evidence']]
-                    if 'conservative_reverse' in nodes[name]['evidence']:
-                        flags.append('conservative')
-                    suffix = ' [' + ', '.join(flags) + ']' if flags else ''
-                    entries.append(label + suffix)
-                if counts[kind] > len(names):
-                    entries.append(f"… {counts[kind] - len(names)} more (use --limit or --all)")
-                for entry_index, entry in enumerate(entries):
-                    branch = '└── ' if entry_index == len(entries) - 1 else '├── '
-                    lines.append(item_prefix + branch + entry)
+        children = defaultdict(list)
+        references = defaultdict(int)
+        tree_edges = {}
+        for node in nodes.values():
+            if node['parent'] is not None:
+                children[node['parent']].append(node['id'])
+        for edge in graph['edges']:
+            if nodes[edge['target']]['parent'] == edge['source']:
+                tree_edges[edge['target']] = edge
+            elif edge['target'] != edge['source']:
+                references[edge['source']] += 1
+        lines.append(graph['focus'] + ' [L0]')
+        stack = []
+        def schedule(parent, prefix):
+            names = sorted(children[parent])
+            for index in range(len(names) - 1, -1, -1):
+                stack.append((names[index], prefix, index == len(names) - 1))
+        schedule(graph['focus'], '')
+        while stack:
+            name, prefix, last = stack.pop()
+            node = nodes[name]
+            short = name.rsplit('.', 1)[-1]
+            label = short if len(labels[short]) == 1 else name
+            flags = [f"L{node['depth']}", node['kind']]
+            edge = tree_edges[name]
+            flags.extend(flag for flag in ('observed', 'ambiguous') if edge[flag])
+            if edge['conservative_reverse']:
+                flags.append('conservative')
+            if references[name]:
+                flags.append(f"{references[name]} cross-references")
+            lines.append(prefix + ('└── ' if last else '├── ') + label + ' [' + ', '.join(flags) + ']')
+            schedule(name, prefix + ('    ' if last else '│   '))
+        if references[graph['focus']]:
+            lines.append('Root cross-references: ' + str(references[graph['focus']]))
         if graph['hidden_nodes']:
             lines.append('Hidden classes due to display limit: ' + str(graph['hidden_nodes']))
         if graph['depth_boundary_relations']:

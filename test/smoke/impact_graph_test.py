@@ -37,8 +37,8 @@ class GraphTests(unittest.TestCase):
         self.assertTrue(graph['truncated'])
         self.assertGreater(graph['omitted'], 0)
         rendered = impact_graph.render(graph)
-        self.assertIn('Tests: 120', rendered)
-        self.assertIn('110 more', rendered)
+        self.assertEqual(graph['layers'][1]['test'], 120)
+        self.assertIn('Hidden classes due to display limit: 110', rendered)
         self.assertNotIn('Root ->', rendered)
         self.assertLess(len(rendered.splitlines()), 25)
 
@@ -52,7 +52,7 @@ class GraphTests(unittest.TestCase):
         full = impact_graph.describe(value, index, 'A', depth=2, show_all=True)
         self.assertEqual(len(full['nodes']), 152)
         limited = impact_graph.describe(value, index, 'A', depth=2, limit=50)
-        self.assertIn('100 more', impact_graph.render(limited))
+        self.assertIn('Hidden classes due to display limit: 100', impact_graph.render(limited))
         with self.assertRaises(ValueError):
             impact_graph.describe(value, index, 'A', depth=0)
 
@@ -66,11 +66,12 @@ class GraphTests(unittest.TestCase):
         three = impact_graph.describe(value, index, 'Root', depth=3, limit=1)
         self.assertEqual(two['reached_nodes'] + 1, three['reached_nodes'])
         self.assertEqual(three['layers'][3]['test'], 1)
-        self.assertIn('Hop 3:', impact_graph.render(three))
+        self.assertIn('[L3, test', impact_graph.render(three))
         self.assertIn('DeepTest', impact_graph.render(three))
-        self.assertIn('├── Hop 1:', impact_graph.render(three))
-        self.assertIn('└── Hop 3:', impact_graph.render(three))
-        self.assertIn('    └── Tests: 1', impact_graph.render(three))
+        by_name = {node['id']: node for node in three['nodes']}
+        self.assertEqual(by_name['DeepTest']['parent'], 'Deep')
+        self.assertEqual(by_name['Deep']['parent'], 'Wide149')
+        self.assertIn('└── DeepTest [L3, test]', impact_graph.render(three))
         self.assertNotIn('\t', impact_graph.render(three))
 
 

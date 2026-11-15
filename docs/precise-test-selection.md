@@ -34,6 +34,10 @@ Use `makevn test-impact-preview --graph` for a module summary, or add
 `--focus com.example.Class` to explore bounded class relationships.
 Use `--depth 2` for two hops (default: 3), `--limit 50` for fifty items per
 category and hop (default: 10), or `--all` to remove output caps within the chosen depth.
+The text view nests classes along a discovered impact path and labels depth as
+`L0`, `L1`, etc. Additional paths are counted as cross-references; MCP retains
+the visible edges and each node’s parent. Ancestors needed to connect displayed
+classes are retained even when a display limit applies.
 These options require a focus; MCP accepts `depth`, `limit`, and `all` as well. In MCP,
 `test_impact_preview` accepts `graph: true` and an optional `focus`, and returns
 the same view with structured graph data. Multimodule identities can be qualified
