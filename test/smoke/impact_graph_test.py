@@ -66,12 +66,12 @@ class GraphTests(unittest.TestCase):
         three = impact_graph.describe(value, index, 'Root', depth=3, limit=1)
         self.assertEqual(two['reached_nodes'] + 1, three['reached_nodes'])
         self.assertEqual(three['layers'][3]['test'], 1)
-        self.assertIn('[L3, test', impact_graph.render(three))
+        self.assertNotIn('[L3, test', impact_graph.render(three))
         self.assertIn('DeepTest', impact_graph.render(three))
         by_name = {node['id']: node for node in three['nodes']}
         self.assertEqual(by_name['DeepTest']['parent'], 'Deep')
         self.assertEqual(by_name['Deep']['parent'], 'Wide149')
-        self.assertIn('└── DeepTest [L3, test]', impact_graph.render(three))
+        self.assertIn('└── DeepTest [test]', impact_graph.render(three))
         self.assertNotIn('\t', impact_graph.render(three))
 
 

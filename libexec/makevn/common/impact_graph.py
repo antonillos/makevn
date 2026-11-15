@@ -134,7 +134,7 @@ def render(graph):
             node = nodes[name]
             short = name.rsplit('.', 1)[-1]
             label = short if len(labels[short]) == 1 else name
-            flags = [f"L{node['depth']}", node['kind']]
+            flags = [node['kind']]
             edge = tree_edges[name]
             flags.extend(flag for flag in ('observed', 'ambiguous') if edge[flag])
             if edge['conservative_reverse']:
@@ -148,7 +148,7 @@ def render(graph):
         if graph['hidden_nodes']:
             lines.append('Hidden classes due to display limit: ' + str(graph['hidden_nodes']))
         if graph['depth_boundary_relations']:
-            lines.append('Relations not expanded at depth boundary: ' + str(graph['depth_boundary_relations']))
+            lines.append(f"Depth limit L{graph['depth']}: " + str(graph['depth_boundary_relations']) + ' relations not expanded')
         lines.append('Relationships are conservative; use verify-changes-preview for test selection.')
     lines.append('Conservative seeds: ' + str(graph['conservative_seed_count']) +
                  '; ambiguous identifiers: ' + str(graph['ambiguous_identifier_count']))
