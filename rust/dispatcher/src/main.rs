@@ -753,6 +753,7 @@ fn command_local_option_takes_value(command: &OsString, arg: &OsString) -> bool 
             arg.to_string_lossy().as_ref()
         ),
         ("karate-test" | "karate-all", "--tag")
+            | ("test-impact-preview", "--focus")
             | ("verify" | "verify-it" | "verify-it-coverage", "--compose-file")
             | ("verify-changes-preview" | "verify-changes", "--base")
     )
