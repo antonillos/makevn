@@ -55,7 +55,7 @@ Usage:
   makevn [--repo PATH] test [--name TEST]... [--fast] [-- EXTRA_MAVEN_ARGS...]
   makevn [--repo PATH] test-compile [-- EXTRA_MAVEN_ARGS...]
   makevn [--repo PATH] test-impact-init [--isolated]
-  makevn [--repo PATH] test-impact-preview
+  makevn [--repo PATH] test-impact-preview [--graph [--focus CLASS [--depth N] [--limit N] [--all]]]
   makevn [--repo PATH] [--compact] uninstall [--dry-run]
   makevn [--repo PATH] validate [-- EXTRA_MAVEN_ARGS...]
   makevn [--repo PATH] verify [-- EXTRA_MAVEN_ARGS...]

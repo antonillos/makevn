@@ -287,6 +287,14 @@ fn maven_passthrough_accepts_option_values_and_separator() {
 }
 
 #[test]
+fn test_impact_preview_accepts_focus_class() {
+    let command = OsString::from("test-impact-preview");
+    let args = ["--graph", "--focus", "org.apache.commons.lang3.StringUtils", "--depth", "2", "--limit", "50", "--all"]
+        .map(OsString::from);
+    assert!(validate_maven_passthrough_args(&command, &args).is_ok());
+}
+
+#[test]
 fn maven_passthrough_rejects_bare_commands_before_separator() {
     let command = OsString::from("verify");
     let error =

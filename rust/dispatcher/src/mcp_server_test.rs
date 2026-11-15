@@ -1488,3 +1488,39 @@ fn isolated_capture_is_explicit_and_forwarded_only_on_initialization() {
     super::push_tool_option(&mut args, "isolated", &json!(true)).unwrap();
     assert_eq!(args, ["--isolated"]);
 }
+
+#[test]
+fn test_impact_graph_options_and_structured_result() {
+    let spec = super::TOOL_SPECS.iter().find(|spec| spec.name == "test_impact_preview").unwrap();
+    assert!(spec.options.iter().any(|option| option.name == "graph"));
+    assert!(spec.options.iter().any(|option| option.name == "focus"));
+    let mut args = Vec::new();
+    super::push_tool_option(&mut args, "graph", &json!(true)).unwrap();
+    super::push_tool_option(&mut args, "focus", &json!("example.Foo")).unwrap();
+    assert_eq!(args, ["--graph", "--graph-json", "--focus", "example.Foo"]);
+    let result = super::ToolCallResult { output: json!({"text":"Graph", "graph":{"nodes":[]}}).to_string(),
+        exit_code: 0, duration_ms: 0, doctor_snapshot: None, next_suggestion: None };
+    let response = super::standard_tool_result(&result, &json!({"name":"test_impact_preview", "arguments":{"graph":true}}));
+    assert_eq!(response["structuredContent"]["graph"]["nodes"], json!([]));
+    assert_eq!(response["structuredContent"]["untrustedData"]["output"], "Graph");
+}
+
+#[test]
+fn graph_preview_preserves_non_graph_and_invalid_outputs() {
+    let params = json!({"arguments":{"graph":true}});
+    assert!(super::graph_preview_result("test", &params, "{}").is_none());
+    assert!(super::graph_preview_result("test_impact_preview", &json!({}), "{}").is_none());
+    for output in ["invalid JSON", "{}"] {
+        assert!(super::graph_preview_result("test_impact_preview", &params, output).is_none());
+    }
+}
+
+#[test]
+fn graph_display_options_forward_limits_and_all() {
+    let mut args = Vec::new();
+    for (name, value) in [("graph", json!(false)), ("depth", json!(2)),
+        ("limit", json!(50)), ("all", json!(true)), ("unknown", json!(true))] {
+        super::push_tool_option(&mut args, name, &value).unwrap();
+    }
+    assert_eq!(args, ["--depth", "2", "--limit", "50", "--all"]);
+}
