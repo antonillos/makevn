@@ -252,10 +252,11 @@ fn rows(output: &mut String, heading: &str, entries: &[&str], literal: &str, col
         return;
     }
     output.push_str(&format!("\n{}\n", paint(heading, "1", color)));
-    let entries: Vec<_> = entries
+    let mut entries: Vec<_> = entries
         .iter()
         .map(|entry| entry.split_once("  ").unwrap_or((entry, "")))
         .collect();
+    entries.sort_by_key(|(name, _)| name.trim_start_matches('-'));
     let width = entries
         .iter()
         .map(|(name, _)| name.len())
