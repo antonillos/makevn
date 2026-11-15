@@ -3,8 +3,6 @@ set -euo pipefail
 
 SCRIPT_DIR="$(CDPATH= cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CARGO_MANIFEST="${SCRIPT_DIR}/rust/dispatcher/Cargo.toml"
-TAP_FORMULA="${SCRIPT_DIR}/../homebrew-tap/Formula/makevn.rb"
-PACKAGING_FORMULA="${SCRIPT_DIR}/packaging/homebrew/makevn.rb"
 
 usage() {
   cat <<EOF
@@ -32,24 +30,9 @@ printf 'Current makevn version: %s\n' "${current_version}"
 printf 'New makevn version:     %s\n' "${VERSION}"
 
 # Bump Cargo.toml
-sed -i '' -E 's/^version = "[^"]+"/version = "'"${VERSION}"'"/' "${CARGO_MANIFEST}"
+sed -i.bak -E 's/^version = "[^"]+"/version = "'"${VERSION}"'"/' "${CARGO_MANIFEST}"
+rm -f "${CARGO_MANIFEST}.bak"
 printf '  ✔ Updated Cargo.toml\n'
-
-# Update Homebrew formula stable block if this looks like a release (not dev)
-if ! echo "${VERSION}" | grep -qE '\-'; then
-  tag="v${VERSION}"
-  archive_url="https://github.com/antonillos/makevn/releases/download/${tag}/makevn-${tag}.tar.gz"
-
-  for formula in "${TAP_FORMULA}" "${PACKAGING_FORMULA}"; do
-    if [[ -f "${formula}" ]]; then
-      sed -i '' -E 's|url ".*"|url "'"${archive_url}"'"|' "${formula}"
-      sed -i '' -E 's/sha256 ".*"/sha256 "TBD_AFTER_RELEASE"/' "${formula}"
-      printf '  ✔ Updated %s\n' "${formula}"
-    fi
-  done
-  printf '\n⚠  Update the SHA-256 in the formula after the GitHub release is created.\n'
-  printf '   Download the archive and run: shasum -a 256 <archive>\n'
-fi
 
 printf '\n✔ Bumped to %s\n' "${VERSION}"
 printf '\nNext steps:\n'
@@ -58,4 +41,4 @@ printf '  2. git tag v%s\n' "${VERSION}"
 printf '  3. git push origin main --tags\n'
 printf '  4. Run the release workflow on GitHub:\n'
 printf '     gh workflow run release.yml -f version=v%s -f target_ref=main\n' "${VERSION}"
-printf '  5. Update the Homebrew formula SHA-256\n'
+printf '  5. The release workflow updates Homebrew URLs and checksums.\n'
