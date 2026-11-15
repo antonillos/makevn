@@ -14,6 +14,8 @@ test("Verify runs for intermediate stack bases and Smart Merge consumes each lay
   assert.doesNotMatch(prTrigger[1], /branches(?:-ignore)?:/,
     "intermediate feature branches must receive automatic PR validation");
 
+  assert.match(prTrigger[1], /types: \[opened, synchronize, reopened, edited\]/);
+
   const functionStart = workflow.indexOf("async function findSuccessfulVerify(target) {");
   const functionEnd = workflow.indexOf("\n\n            // Reuse", functionStart);
   assert.ok(functionStart >= 0 && functionEnd > functionStart);
@@ -25,7 +27,9 @@ test("Verify runs for intermediate stack bases and Smart Merge consumes each lay
     requests.push(request);
     return { data: { workflow_runs: [
       { id: 1, head_sha: "stale" },
-      { id: 2, head_sha: request.branch + "-sha" },
+      { id: 2, head_sha: request.branch + "-sha", pull_requests: [
+        { number: 7, base: { ref: "develop", sha: "base-sha" } },
+      ] },
     ] } };
   } } } };
   const lookup = findSuccessfulVerify(github, async (id) => {
@@ -33,17 +37,50 @@ test("Verify runs for intermediate stack bases and Smart Merge consumes each lay
     return { invalid: [] };
   }, "example", "repo");
   for (const branch of ["codex/bottom", "codex/middle", "codex/top"]) {
-    const run = await lookup({ head: { ref: branch, sha: branch + "-sha" } });
+    const run = await lookup({ number: 7, base: { ref: "develop", sha: "base-sha" },
+      head: { ref: branch, sha: branch + "-sha" } });
     assert.equal(run.id, 2);
   }
+  for (const target of [
+    { number: 8, base: { ref: "develop", sha: "base-sha" } },
+    { number: 7, base: { ref: "codex/bottom", sha: "base-sha" } },
+    { number: 7, base: { ref: "develop", sha: "new-base-sha" } },
+  ]) {
+    assert.equal(await lookup({ ...target,
+      head: { ref: "codex/top", sha: "codex/top-sha" } }), null);
+  }
   assert.deepEqual(loaded, [2, 2, 2]);
-  assert.deepEqual(requests.map((request) => request.branch),
+  assert.deepEqual(requests.slice(0, 3).map((request) => request.branch),
     ["codex/bottom", "codex/middle", "codex/top"]);
   for (const request of requests) {
     assert.equal(request.workflow_id, "verify.yml");
     assert.equal(request.event, "pull_request");
     assert.equal(request.status, "success");
   }
+});
+
+test("missing intermediate verification stops the stack before merge", async () => {
+  const start = workflow.indexOf("for (const target of targetPulls) {",
+    workflow.indexOf("// Reuse a complete successful"));
+  const end = workflow.indexOf("let verifyRun = await findSuccessfulVerify(pull);", start);
+  assert.ok(start >= 0 && end > start);
+  const validate = new Function("targetPulls", "pullNumber", "findSuccessfulVerify",
+    "comment", "core", `return (async () => {
+      ${workflow.slice(start, end)}
+      return "merge-reached";
+    })();`);
+  const pulls = [1, 2, 3].map((number) => ({ number, head: { sha: "sha" + number } }));
+  const visited = [];
+  const failures = [];
+  const result = await validate(pulls, 3, async (target) => {
+    visited.push(target.number);
+    return target.number === 1 ? { id: 10 } : null;
+  }, async () => {}, { setFailed: (message) => failures.push(message) });
+  assert.equal(result, undefined);
+  assert.deepEqual(visited, [1, 2]);
+  assert.deepEqual(failures, ["Stack PR #2 is not verified."]);
+  assert.equal(await validate(pulls, 3, async () => ({ id: 10 }),
+    async () => {}, { setFailed: assert.fail }), "merge-reached");
 });
 
 test("squash merges use the validated conventional pull request title", () => {
