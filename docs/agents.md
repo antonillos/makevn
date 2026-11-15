@@ -96,8 +96,20 @@ for application commands.
 This Rust/Bash repository is the product implementation, not a Maven adoption
 fixture. Doctor may correctly report unsupported here. Use its development tests
 and [repo-sweep](repo-sweep.md) against isolated real Maven repository clones.
-Keep fixture failures separate from product defects. Open PRs against `develop`;
-the mandatory Rust/Bash CRAP ratchet is authoritative in CI before merging.
+Keep fixture failures separate from product defects. Open standalone PRs against
+`develop`, or use native GitHub stacked PRs with `develop` as the trunk and each
+higher PR targeting the preceding branch in the same repository. Verify the
+complete base chain before submitting a stack. Using `main` as a base or trunk
+requires explicit authorization for that request.
+
+For a coordinated series, prefer focused stack layers and merge the ready
+contiguous stack together when merging is authorized. Smart Merge on the highest
+included PR validates all included PRs before requesting the stack merge. Every
+included PR must have passing required checks, including the mandatory Rust/Bash
+CRAP gate, for its current revision. Rebase and rerun checks when revisions change
+or GitHub requires it. Avoid updating branches or rerunning checks solely in
+anticipation of merging a lower layer. Stacking can reduce sequential integration
+cycles. GitHub may still require fresh validation after the trunk changes.
 
 ### Disabling Compose discovery
 

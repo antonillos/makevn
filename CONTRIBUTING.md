@@ -39,6 +39,8 @@ For changes affecting release packaging, also review the scripts under `packagin
 
 ## Pull Requests
 
+- Target `develop` for standalone PRs. For a coordinated series, use a native GitHub stack rooted at `develop`, with each higher PR targeting the preceding branch in this repository. Keep each layer focused and reviewable.
+- Once every included PR has passing required checks and approvals, prefer merging the ready contiguous stack together. Smart Merge on the highest included PR validates the included PRs before merging. Changed revisions require fresh checks, including the CI CRAP gate.
 - Describe what changed and why.
 - Include verification steps and results.
 - Update documentation when user-facing behavior changes.
