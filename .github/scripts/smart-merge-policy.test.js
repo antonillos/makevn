@@ -7,6 +7,45 @@ const { resolve } = require("node:path");
 
 const workflow = readFileSync(resolve(__dirname, "../workflows/smart-merge.yml"), "utf8");
 
+test("Verify runs for intermediate stack bases and Smart Merge consumes each layer", async () => {
+  const verify = readFileSync(resolve(__dirname, "../workflows/verify.yml"), "utf8");
+  const prTrigger = verify.match(/^  pull_request:(.*(?:\n(?: {4,}.*|\s*))*)/m);
+  assert.ok(prTrigger, "Verify must run on pull_request events");
+  assert.doesNotMatch(prTrigger[1], /branches(?:-ignore)?:/,
+    "intermediate feature branches must receive automatic PR validation");
+
+  const functionStart = workflow.indexOf("async function findSuccessfulVerify(target) {");
+  const functionEnd = workflow.indexOf("\n\n            // Reuse", functionStart);
+  assert.ok(functionStart >= 0 && functionEnd > functionStart);
+  const findSuccessfulVerify = new Function("github", "loadRequiredJobs", "owner", "repo",
+    `${workflow.slice(functionStart, functionEnd)}; return findSuccessfulVerify;`);
+  const requests = [];
+  const loaded = [];
+  const github = { rest: { actions: { listWorkflowRuns: async (request) => {
+    requests.push(request);
+    return { data: { workflow_runs: [
+      { id: 1, head_sha: "stale" },
+      { id: 2, head_sha: request.branch + "-sha" },
+    ] } };
+  } } } };
+  const lookup = findSuccessfulVerify(github, async (id) => {
+    loaded.push(id);
+    return { invalid: [] };
+  }, "example", "repo");
+  for (const branch of ["codex/bottom", "codex/middle", "codex/top"]) {
+    const run = await lookup({ head: { ref: branch, sha: branch + "-sha" } });
+    assert.equal(run.id, 2);
+  }
+  assert.deepEqual(loaded, [2, 2, 2]);
+  assert.deepEqual(requests.map((request) => request.branch),
+    ["codex/bottom", "codex/middle", "codex/top"]);
+  for (const request of requests) {
+    assert.equal(request.workflow_id, "verify.yml");
+    assert.equal(request.event, "pull_request");
+    assert.equal(request.status, "success");
+  }
+});
+
 test("squash merges use the validated conventional pull request title", () => {
   assert.match(workflow, /mergeOptions\.commit_title = pull\.title;/);
   assert.doesNotMatch(workflow, /commit_title = `\$\{pull\.title\} \(#\$\{pullNumber\}\)`/);
