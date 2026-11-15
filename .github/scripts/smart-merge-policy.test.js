@@ -85,8 +85,8 @@ test("missing intermediate verification stops the stack before merge", async () 
 
 test("text edits skip expensive checks in a separate concurrency group", () => {
   const verify = readFileSync(resolve(__dirname, "../workflows/verify.yml"), "utf8");
-  const condition = verify.match(/  smoke:\n    if: (.*)/)[1];
-  assert.match(verify, new RegExp(`  crap:\\n    if: ${condition.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`));
+  const condition = verify.match(/  smoke:\n    name: .*\n    if: (.*)/)[1];
+  assert.match(verify, new RegExp(`  crap:\\n    name: .*\\n    if: ${condition.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`));
   const evaluate = (expression, github) => new Function("github", `return (${expression});`)(github);
   const group = verify.match(/  group: (.*)/)[1];
   const render = (github) => group.replace(/\$\{\{ (.*?) \}\}/g,
@@ -100,6 +100,13 @@ test("text edits skip expensive checks in a separate concurrency group", () => {
   assert.notEqual(render(textEdit), render(event));
   const baseEdit = { ...textEdit, event: { ...textEdit.event, changes: { base: {} } } };
   assert.ok(evaluate(condition, baseEdit));
+  for (const job of ["smoke", "crap"]) {
+    const name = verify.split("  " + job + ":\n    name: ")[1].split("\n")[0];
+    const expression = name.slice(3, -2);
+    assert.equal(evaluate(expression, event), job);
+    assert.equal(evaluate(expression, baseEdit), job);
+    assert.notEqual(evaluate(expression, textEdit), job);
+  }
   assert.equal(render(baseEdit), render(event));
 });
 
