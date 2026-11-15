@@ -103,12 +103,21 @@ def render(graph):
         for name in nodes:
             labels[name.rsplit('.', 1)[-1]].append(name)
         lines.append(f"Reachable classes within {graph['depth']} hops: {graph['reached_nodes'] - 1}")
-        for distance, counts in graph['layers'].items():
-            lines.append(f'Hop {distance}:')
-            for kind, title in [('test', 'Tests'), ('production', 'Production classes'), ('helper', 'Helpers and benchmarks')]:
-                lines.append(f'  {title}: {counts[kind]}')
+        layers = list(graph['layers'].items())
+        for layer_index, (distance, counts) in enumerate(layers):
+            last_layer = layer_index == len(layers) - 1
+            lines.append(('└── ' if last_layer else '├── ') + f'Hop {distance}:')
+            layer_prefix = '    ' if last_layer else '│   '
+            categories = [(kind, title) for kind, title in [
+                ('test', 'Tests'), ('production', 'Production classes'),
+                ('helper', 'Helpers and benchmarks')] if counts[kind]]
+            for category_index, (kind, title) in enumerate(categories):
+                last_category = category_index == len(categories) - 1
+                lines.append(layer_prefix + ('└── ' if last_category else '├── ') + f'{title}: {counts[kind]}')
+                item_prefix = layer_prefix + ('    ' if last_category else '│   ')
                 names = sorted(name for name, node in nodes.items()
                                if node['depth'] == int(distance) and node['kind'] == kind)
+                entries = []
                 for name in names:
                     short = name.rsplit('.', 1)[-1]
                     label = short if len(labels[short]) == 1 else name
@@ -117,9 +126,12 @@ def render(graph):
                     if 'conservative_reverse' in nodes[name]['evidence']:
                         flags.append('conservative')
                     suffix = ' [' + ', '.join(flags) + ']' if flags else ''
-                    lines.append('    ' + label + suffix)
+                    entries.append(label + suffix)
                 if counts[kind] > len(names):
-                    lines.append(f"    … {counts[kind] - len(names)} more (use --limit or --all)")
+                    entries.append(f"… {counts[kind] - len(names)} more (use --limit or --all)")
+                for entry_index, entry in enumerate(entries):
+                    branch = '└── ' if entry_index == len(entries) - 1 else '├── '
+                    lines.append(item_prefix + branch + entry)
         if graph['hidden_nodes']:
             lines.append('Hidden classes due to display limit: ' + str(graph['hidden_nodes']))
         if graph['depth_boundary_relations']:

@@ -68,6 +68,10 @@ class GraphTests(unittest.TestCase):
         self.assertEqual(three['layers'][3]['test'], 1)
         self.assertIn('Hop 3:', impact_graph.render(three))
         self.assertIn('DeepTest', impact_graph.render(three))
+        self.assertIn('├── Hop 1:', impact_graph.render(three))
+        self.assertIn('└── Hop 3:', impact_graph.render(three))
+        self.assertIn('    └── Tests: 1', impact_graph.render(three))
+        self.assertNotIn('\t', impact_graph.render(three))
 
 
 if __name__ == '__main__':
