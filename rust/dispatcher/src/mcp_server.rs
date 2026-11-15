@@ -100,13 +100,9 @@ pub(crate) fn standard_tool_result(result: &ToolCallResult, params: &Value) -> V
         "untrustedData": {"output": if workflow.is_some() { "" } else { &output }, "workflow": workflow},
         "nextSuggestion": docker_interface_guidance(tool, tool_next_suggestion(tool, result))
     });
-    if tool == "test_impact_preview" && params["arguments"]["graph"] == true {
-        if let Ok(graph_result) = serde_json::from_str::<Value>(&output) {
-            if let Some(graph) = graph_result.get("graph") {
-                structured["graph"] = graph.clone();
-                structured["untrustedData"]["output"] = graph_result["text"].clone();
-            }
-        }
+    if let Some(graph_result) = graph_preview_result(tool, params, &output) {
+        structured["graph"] = graph_result["graph"].clone();
+        structured["untrustedData"]["output"] = graph_result["text"].clone();
     }
     if let Some(snapshot) = &result.doctor_snapshot {
         structured["interactive_setup"] = snapshot["interactive_setup"].clone();
@@ -114,6 +110,15 @@ pub(crate) fn standard_tool_result(result: &ToolCallResult, params: &Value) -> V
     }
     json!({"content": [{"type": "text", "text": structured.to_string()}],
         "structuredContent": structured, "isError": failed})
+}
+
+fn graph_preview_result(tool: &str, params: &Value, output: &str) -> Option<Value> {
+    if tool != "test_impact_preview" || params["arguments"]["graph"] != true {
+        return None;
+    }
+    let result: Value = serde_json::from_str(output).ok()?;
+    result.get("graph")?;
+    Some(result)
 }
 
 const DOCKER_INTERFACE_GUIDANCE: &str = "Use MakeVN exclusively for all Docker work, including read-only diagnostics, inspection, container logs, Compose/worktree ownership, networks, volumes and lifecycle. Prefer MakeVN MCP tools, then supported makevn CLI commands if MCP is unavailable. This overrides generic RTK preferences: never fall back to docker, docker-compose, rtk docker, rtk run docker, scripts, SDKs or the Docker API. Read diagnostics and logPaths returned by MakeVN. If MakeVN lacks the required capability, report it and stop the dependent action instead of using an external workaround. Unknown resource ownership does not authorize resets or volume deletion; preserve existing authorization and readiness gates.";
@@ -1029,9 +1034,6 @@ fn push_tool_option(cmd_args: &mut Vec<String>, name: &str, value: &Value) -> Re
         "apply" | "clean-generated-contract-targets" | "dry-run" | "fast" | "force" | "verbose" | "isolated" | "record-test-impact" | "defer-global-coverage" => {
             push_boolean_option(cmd_args, name, value)
         }
-        "graph" => { if value.as_bool().unwrap_or(false) { cmd_args.extend(["--graph".into(), "--graph-json".into()]); } },
-        "depth" | "limit" => push_value_option(cmd_args, name, value.as_i64().map(|value| value.to_string())),
-        "all" => push_boolean_option(cmd_args, name, value),
         "focused" => push_focused_option(cmd_args, value)?,
         "threshold" | "overall-threshold" | "max-warnings" | "wait-seconds" => {
             push_value_option(cmd_args, name, value.as_f64().map(format_number))
@@ -1039,9 +1041,22 @@ fn push_tool_option(cmd_args: &mut Vec<String>, name: &str, value: &Value) -> Re
         "base" | "compose" | "compose-file" | "jacoco-xml" | "module" | "name" | "tag" | "focus" => {
             push_value_option(cmd_args, name, nonempty_option_text(value))
         }
-        _ => {}
+        _ => { push_graph_option(cmd_args, name, value); }
     }
     Ok(())
+}
+
+fn push_graph_option(cmd_args: &mut Vec<String>, name: &str, value: &Value) {
+    match name {
+        "graph" => {
+            if value.as_bool().unwrap_or(false) {
+                cmd_args.extend(["--graph".into(), "--graph-json".into()]);
+            }
+        }
+        "depth" | "limit" => push_value_option(cmd_args, name, value.as_i64().map(|value| value.to_string())),
+        "all" => push_boolean_option(cmd_args, name, value),
+        _ => {},
+    }
 }
 
 fn push_focused_option(cmd_args: &mut Vec<String>, value: &Value) -> Result<(), String> {

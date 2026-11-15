@@ -1504,3 +1504,23 @@ fn test_impact_graph_options_and_structured_result() {
     assert_eq!(response["structuredContent"]["graph"]["nodes"], json!([]));
     assert_eq!(response["structuredContent"]["untrustedData"]["output"], "Graph");
 }
+
+#[test]
+fn graph_preview_preserves_non_graph_and_invalid_outputs() {
+    let params = json!({"arguments":{"graph":true}});
+    assert!(super::graph_preview_result("test", &params, "{}").is_none());
+    assert!(super::graph_preview_result("test_impact_preview", &json!({}), "{}").is_none());
+    for output in ["invalid JSON", "{}"] {
+        assert!(super::graph_preview_result("test_impact_preview", &params, output).is_none());
+    }
+}
+
+#[test]
+fn graph_display_options_forward_limits_and_all() {
+    let mut args = Vec::new();
+    for (name, value) in [("graph", json!(false)), ("depth", json!(2)),
+        ("limit", json!(50)), ("all", json!(true)), ("unknown", json!(true))] {
+        super::push_tool_option(&mut args, name, &value).unwrap();
+    }
+    assert_eq!(args, ["--depth", "2", "--limit", "50", "--all"]);
+}
