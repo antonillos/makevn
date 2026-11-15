@@ -92,6 +92,14 @@ makevn_test_impact_status() {
   [[ "${MAKEVN_TEST_IMPACT_GRAPH:-false}" != true ]] || graph_args+=(--graph)
   [[ "${MAKEVN_TEST_IMPACT_GRAPH_JSON:-false}" != true ]] || graph_args+=(--graph-json)
   [[ -z "${MAKEVN_TEST_IMPACT_FOCUS:-}" ]] || graph_args+=(--focus "${MAKEVN_TEST_IMPACT_FOCUS}")
+  if [[ "${MAKEVN_TEST_IMPACT_GRAPH:-false}" == true && -n "${MAKEVN_BACKEND_DETAIL_OUT:-}" ]]; then
+    local graph_output
+    graph_output="$(python3 "${SCRIPT_DIR}/common/progressive_impact.py" "${2:-preview}" "${repo_root}" "${base}" "${java_home}/bin/java" "${graph_args[@]}")" || return $?
+    while IFS= read -r line; do
+      makevn_print_detail_line "${line}"
+    done <<< "${graph_output}"
+    return 0
+  fi
   python3 "${SCRIPT_DIR}/common/progressive_impact.py" "${2:-preview}" "${repo_root}" "${base}" "${java_home}/bin/java" "${graph_args[@]}"
 }
 
