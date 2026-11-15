@@ -408,7 +408,10 @@ if __name__ == '__main__':
                     status = 'unavailable'
             focus = options[options.index('--focus') + 1] if '--focus' in options else None
             try:
-                graph = impact_graph.describe(value, graph_index(value['facts'], value['observations']), focus, status)
+                graph = impact_graph.describe(value, graph_index(value['facts'], value['observations']), focus, status,
+                                              int(options[options.index('--depth') + 1]) if '--depth' in options else 3,
+                                              int(options[options.index('--limit') + 1]) if '--limit' in options else 10,
+                                              '--all' in options)
             except ValueError as error:
                 print(str(error), file=sys.stderr)
                 sys.exit(1)

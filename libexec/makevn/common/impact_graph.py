@@ -4,7 +4,9 @@ from collections import defaultdict, deque
 import reactor_test_impact as reactor
 
 
-def describe(value, index, focus=None, observation_status='none'):
+def describe(value, index, focus=None, observation_status='none', depth=3, limit=10, show_all=False):
+    if depth < 1 or limit < 1:
+        raise ValueError('depth and limit must be positive integers')
     facts = value['facts']
     nodes = {item['class']: {'id': item['class'], 'module': item.get('owner', '.'),
                              'kind': ('test' if item['class'] in index['tests'] else 'helper') if reactor.is_source(source, 'test') else 'production'}
@@ -20,7 +22,7 @@ def describe(value, index, focus=None, observation_status='none'):
         if source in nodes:
             modules[nodes[source]['module']]['observed'] += count
     result = {'modules': dict(sorted(modules.items())), 'observation_status': observation_status,
-              'nodes': [], 'edges': [], 'truncated': False, 'omitted': 0,
+              'depth': depth, 'limit': limit, 'show_all': show_all, 'nodes': [], 'edges': [], 'truncated': False, 'omitted': 0,
               'conservative_seed_count': len(index['seeds']),
               'ambiguous_identifier_count': len(index['ambiguous'])}
     if focus is None:
@@ -37,8 +39,8 @@ def describe(value, index, focus=None, observation_status='none'):
         for target in sorted(edges.get(source, set())):
             if target not in nodes:
                 continue
-            if (depths[source] >= 3 or len(displayed) >= 300 or
-                    (target not in depths and len(depths) >= 100)):
+            if (depths[source] >= depth or (not show_all and (len(displayed) >= max(300, limit * 30) or
+                    (target not in depths and len(depths) >= max(100, limit * 10))))):
                 omitted += 1
                 continue
             repeat = target in depths
@@ -55,8 +57,8 @@ def describe(value, index, focus=None, observation_status='none'):
         for target in sorted(observed.get(source, set()) - edges.get(source, set())):
             if target not in nodes:
                 continue
-            if (depths[source] >= 3 or len(displayed) >= 300 or
-                    (target not in depths and len(depths) >= 100)):
+            if (depths[source] >= depth or (not show_all and (len(displayed) >= max(300, limit * 30) or
+                    (target not in depths and len(depths) >= max(100, limit * 10))))):
                 omitted += 1
                 continue
             repeat = target in depths
@@ -102,11 +104,15 @@ def render(graph):
             target = edge['target']
             collection = direct if edge['source'] == graph['focus'] else indirect
             collection.setdefault(target, []).append(edge)
-        lines.append('Direct relationships (shown graph scope):')
+        transitive_count = len(set(indirect) - set(direct))
+        for name, evidence in indirect.items():
+            direct.setdefault(name, []).extend(evidence)
+        lines.append(f"Relationships within {graph['depth']} hops (shown graph scope):")
         for kind, title in [('test', 'Tests'), ('production', 'Production classes'), ('helper', 'Helpers and benchmarks')]:
             names = sorted(name for name in direct if nodes[name]['kind'] == kind)
             lines.append(f'  {title}: {len(names)}')
-            for name in names[:10]:
+            shown = len(names) if graph['show_all'] else graph['limit']
+            for name in names[:shown]:
                 short = name.rsplit('.', 1)[-1]
                 label = short if len(labels[short]) == 1 else name
                 evidence = direct[name]
@@ -119,9 +125,9 @@ def render(graph):
                     flags.append('conservative')
                 suffix = ' [' + ', '.join(flags) + ']' if flags else ''
                 lines.append('    ' + label + suffix)
-            if len(names) > 10:
-                lines.append(f'    … {len(names) - 10} more in displayed scope')
-        lines.append('Additional transitive nodes in displayed scope: ' + str(len(set(indirect) - set(direct))))
+            if len(names) > shown:
+                lines.append(f'    … {len(names) - shown} more in displayed scope')
+        lines.append('Additional transitive nodes in displayed scope: ' + str(transitive_count))
         if graph['truncated']:
             lines.append('Partial graph: omitted relations: ' + str(graph['omitted']))
         lines.append('Relationships are conservative; use verify-changes-preview for test selection.')

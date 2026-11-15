@@ -753,7 +753,7 @@ fn command_local_option_takes_value(command: &OsString, arg: &OsString) -> bool 
             arg.to_string_lossy().as_ref()
         ),
         ("karate-test" | "karate-all", "--tag")
-            | ("test-impact-preview", "--focus")
+            | ("test-impact-preview", "--focus" | "--depth" | "--limit")
             | ("verify" | "verify-it" | "verify-it-coverage", "--compose-file")
             | ("verify-changes-preview" | "verify-changes", "--base")
     )
@@ -912,6 +912,8 @@ fn command_option_takes_value(arg: &OsString) -> bool {
         arg.to_string_lossy().as_ref(),
         "--name"
             | "--focus"
+            | "--depth"
+            | "--limit"
             | "--threshold"
             | "--max-warnings"
             | "--jacoco-xml"

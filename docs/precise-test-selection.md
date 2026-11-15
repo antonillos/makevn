@@ -31,7 +31,10 @@ never writes a map. It compares changed sources with the Git comparison baseline
 including removed references, rather than assuming the edited graph is complete.
 
 Use `makevn test-impact-preview --graph` for a module summary, or add
-`--focus com.example.Class` to explore bounded class relationships. In MCP,
+`--focus com.example.Class` to explore bounded class relationships.
+Use `--depth 2` for two hops (default: 3), `--limit 50` for fifty items per
+category (default: 10), or `--all` to remove output caps within the chosen depth.
+These options require a focus; MCP accepts `depth`, `limit`, and `all` as well. In MCP,
 `test_impact_preview` accepts `graph: true` and an optional `focus`, and returns
 the same view with structured graph data. Multimodule identities can be qualified
 as `module::class`. Static relationships are conservative and observed relationships

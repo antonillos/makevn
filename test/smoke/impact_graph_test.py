@@ -41,6 +41,20 @@ class GraphTests(unittest.TestCase):
         self.assertNotIn('Root ->', rendered)
         self.assertLess(len(rendered.splitlines()), 25)
 
+    def test_depth_limit_and_all(self):
+        parsed = {'src/main/java/A.java': fact('A', []),
+                  'src/main/java/B.java': fact('B', ['A'])} | {
+            f'src/test/java/Test{i}.java': fact(f'Test{i}', ['B']) for i in range(150)}
+        value, index = {'facts': parsed}, impact.graph_index(parsed)
+        shallow = impact_graph.describe(value, index, 'A', depth=1, show_all=True)
+        self.assertEqual({node['id'] for node in shallow['nodes']}, {'A', 'B'})
+        full = impact_graph.describe(value, index, 'A', depth=2, show_all=True)
+        self.assertEqual(len(full['nodes']), 152)
+        limited = impact_graph.describe(value, index, 'A', depth=2, limit=50)
+        self.assertIn('100 more', impact_graph.render(limited))
+        with self.assertRaises(ValueError):
+            impact_graph.describe(value, index, 'A', depth=0)
+
 
 if __name__ == '__main__':
     unittest.main()
