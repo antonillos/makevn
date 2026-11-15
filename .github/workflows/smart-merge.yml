@@ -497,6 +497,7 @@ jobs:
                   })).data;
               if (current.head.sha !== target.head.sha ||
                   current.base.ref !== target.base.ref ||
+                  current.base.sha !== target.base.sha ||
                   current.state !== "open") {
                 await comment(
                   `⛔ Stack PR #${target.number} changed immediately before merging. ` +
