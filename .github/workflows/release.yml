@@ -94,7 +94,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          if gh release view "$VERSION" --json assets --jq '.assets[].name' > release-assets.txt; then
+          if gh release view "$VERSION" --json assets,isDraft --jq 'if .isDraft then "DRAFT" else .assets[].name end' > release-assets.txt; then
             complete=true
             for suffix in "" -x86_64-unknown-linux-gnu -x86_64-apple-darwin -aarch64-apple-darwin; do
               for extension in .tar.gz .tar.gz.sha256; do
