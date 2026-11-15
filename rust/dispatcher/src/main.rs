@@ -910,6 +910,7 @@ fn command_option_takes_value(arg: &OsString) -> bool {
     matches!(
         arg.to_string_lossy().as_ref(),
         "--name"
+            | "--focus"
             | "--threshold"
             | "--max-warnings"
             | "--jacoco-xml"

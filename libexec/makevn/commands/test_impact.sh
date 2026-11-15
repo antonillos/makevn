@@ -49,7 +49,19 @@ cmd_test_impact() (
   local repo_root="$1" mode="$2"
   shift 2
   local MAKEVN_TEST_IMPACT_ISOLATED=false
+  local MAKEVN_TEST_IMPACT_GRAPH=false MAKEVN_TEST_IMPACT_GRAPH_JSON=false MAKEVN_TEST_IMPACT_FOCUS=''
   local isolated_args=()
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --graph) MAKEVN_TEST_IMPACT_GRAPH=true; shift ;;
+      --graph-json) MAKEVN_TEST_IMPACT_GRAPH_JSON=true; shift ;;
+      --focus) [[ $# -ge 2 && -n "$2" ]] || makevn_die "--focus requires a class"; MAKEVN_TEST_IMPACT_FOCUS="$2"; shift 2 ;;
+      *) break ;;
+    esac
+  done
+  [[ "${MAKEVN_TEST_IMPACT_GRAPH}" != true || "${mode}" == preview ]] || makevn_die "--graph is only supported by test-impact-preview"
+  [[ -z "${MAKEVN_TEST_IMPACT_FOCUS}" || "${MAKEVN_TEST_IMPACT_GRAPH}" == true ]] || makevn_die "--focus requires --graph"
+  [[ "${MAKEVN_TEST_IMPACT_GRAPH_JSON}" != true || "${MAKEVN_TEST_IMPACT_GRAPH}" == true ]] || makevn_die "--graph-json requires --graph"
   if [[ "${1:-}" == --isolated ]]; then
     [[ "${mode}" == init ]] || makevn_die "--isolated is only supported by test-impact-init"
     MAKEVN_TEST_IMPACT_ISOLATED=true
@@ -76,7 +88,11 @@ makevn_test_impact_status() {
     python3 "${SCRIPT_DIR}/common/test_impact.py" status "${repo_root}" "${base}" "${java_home}/bin/java"
     return $?
   fi
-  python3 "${SCRIPT_DIR}/common/progressive_impact.py" "${2:-preview}" "${repo_root}" "${base}" "${java_home}/bin/java"
+  local graph_args=()
+  [[ "${MAKEVN_TEST_IMPACT_GRAPH:-false}" != true ]] || graph_args+=(--graph)
+  [[ "${MAKEVN_TEST_IMPACT_GRAPH_JSON:-false}" != true ]] || graph_args+=(--graph-json)
+  [[ -z "${MAKEVN_TEST_IMPACT_FOCUS:-}" ]] || graph_args+=(--focus "${MAKEVN_TEST_IMPACT_FOCUS}")
+  python3 "${SCRIPT_DIR}/common/progressive_impact.py" "${2:-preview}" "${repo_root}" "${base}" "${java_home}/bin/java" "${graph_args[@]}"
 }
 
 makevn_run_test_impact() {

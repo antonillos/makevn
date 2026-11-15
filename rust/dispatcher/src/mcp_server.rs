@@ -48,6 +48,7 @@ pub(crate) fn result_schema() -> Value {
             "nextSuggestion": {"type": "string"},
             "interactive_setup": crate::mcp_doctor::setup_schema(),
             "suggested_next_step": {"type": "object"},
+            "graph": {"type": "object"},
             "executionId": {"type": "string"},
             "executionState": {"enum": ["queued", "running", "cancelling", "succeeded", "failed", "cancelled"]}
         }
@@ -99,6 +100,14 @@ pub(crate) fn standard_tool_result(result: &ToolCallResult, params: &Value) -> V
         "untrustedData": {"output": if workflow.is_some() { "" } else { &output }, "workflow": workflow},
         "nextSuggestion": docker_interface_guidance(tool, tool_next_suggestion(tool, result))
     });
+    if tool == "test_impact_preview" && params["arguments"]["graph"] == true {
+        if let Ok(graph_result) = serde_json::from_str::<Value>(&output) {
+            if let Some(graph) = graph_result.get("graph") {
+                structured["graph"] = graph.clone();
+                structured["untrustedData"]["output"] = graph_result["text"].clone();
+            }
+        }
+    }
     if let Some(snapshot) = &result.doctor_snapshot {
         structured["interactive_setup"] = snapshot["interactive_setup"].clone();
         structured["suggested_next_step"] = snapshot["suggested_next_step"].clone();
@@ -396,7 +405,7 @@ const TOOL_SPECS: &[ToolSpec] = &[
     ToolSpec { name: "verify_it", description: "Run integration-test-only verification.", command: &["verify-it"], options: &[COMMON_REPO, COMPACT, COMPOSE_FILE] },
     ToolSpec { name: "verify_it_coverage", description: "Run integration-test-only verification with coverage.", command: &["verify-it-coverage"], options: &[COMMON_REPO, COMPACT, COMPOSE_FILE] },
     ToolSpec { name: "verify", description: "Run full combined verification (unit tests + integration tests).", command: &["verify"], options: &[COMMON_REPO, COMPACT, COMPOSE_FILE] },
-    ToolSpec { name: "test_impact_preview", description: "Preview static Java dependencies without writes, Maven or tests. Run doctor/setup first; a preview is not verification evidence.", command: &["test-impact-preview"], options: &[COMMON_REPO, COMPACT] },
+    ToolSpec { name: "test_impact_preview", description: "Preview static Java dependencies without writes, Maven or tests. Run doctor/setup first; a preview is not verification evidence.", command: &["test-impact-preview"], options: &[COMMON_REPO, COMPACT, ToolOption { name: "graph", ty: "boolean", description: "Show a bounded test-impact graph", required: false }, ToolOption { name: "focus", ty: "string", description: "Class identity to explore; requires graph", required: false }] },
     ToolSpec { name: "test_impact_init", description: "Initialize a static test-impact map without Maven or tests. Normal test executions add conservative runtime dependencies. Run doctor/setup first. Set isolated=true explicitly for expensive full-suite and isolated-class capture; required container readiness applies only to execution. No verification gates are disabled.", command: &["test-impact-init"], options: &[COMMON_REPO, COMPACT, ISOLATED] },
     ToolSpec { name: "verify_changes_preview", description: "Read-only changed-code plan; success does not establish Docker readiness. Before execution, inspect doctor/config/profile or the approved workflow for Docker prerequisites. If boot services are required, first run docker_ps_required with wait-seconds: 30 in the same repository and reuse healthy services. If readiness fails only because services are missing or stopped, with no probe errors or ownership conflict, use volume-preserving docker_up within existing startup authorization, without asking again; rerun docker_ps_required before verify_changes. Reserve docker_reset for a diagnosed need and explicit volume-deletion authorization. Focused by default; use focused=false explicitly for exhaustive suites in both preview and verify_changes. Explain scope; unknown impact stops instead of silently expanding. Inspect preparation versus owner verification phases; a large preparation reactor does not mean its suites run. Preserve required full gates.", command: &["verify-changes-preview"], options: &[COMMON_REPO, COMPACT, CHANGES_BASE, FOCUSED, RECORD_TEST_IMPACT, DEFER_GLOBAL_COVERAGE] },
     ToolSpec { name: "verify_changes", description: "Execute changed-code verification only after doctor/setup and any required Docker readiness gate. If boot services are required by doctor/config/profile or the approved workflow, first run docker_ps_required with wait-seconds: 30 in the same repository; reuse healthy services without docker_up. On readiness failure, inspect diagnostics. Missing or stopped services without probe errors or ownership conflicts can be started with volume-preserving docker_up under existing startup authorization, without asking again. Unhealthy services require diagnosis; docker_reset requires explicit volume-deletion authorization. Rerun docker_ps_required successfully before verification. A preview does not replace this prerequisite. Use the SAME mode as preview. Focused defaults to true; false explicitly selects exhaustive suites. Unknown focused impact stops. Focused=true packages without UT/IT, then verifies complete selected module/dependency suites together with -am in multimodule reactors; single-module projects retain selected tests or complete owner suites. Inspect the preview and require fresh reports. Focused success publishes fresh UT/IT and bytecode evidence for coverage_changes and crap_changes without repeating tests. It is not full integration or global coverage verification; report its scope and retain full gates.", command: &["verify-changes"], options: &[COMMON_REPO, COMPACT, CHANGES_BASE, FOCUSED, RECORD_TEST_IMPACT, DEFER_GLOBAL_COVERAGE] },
@@ -1020,11 +1029,12 @@ fn push_tool_option(cmd_args: &mut Vec<String>, name: &str, value: &Value) -> Re
         "apply" | "clean-generated-contract-targets" | "dry-run" | "fast" | "force" | "verbose" | "isolated" | "record-test-impact" | "defer-global-coverage" => {
             push_boolean_option(cmd_args, name, value)
         }
+        "graph" => { if value.as_bool().unwrap_or(false) { cmd_args.extend(["--graph".into(), "--graph-json".into()]); } },
         "focused" => push_focused_option(cmd_args, value)?,
         "threshold" | "overall-threshold" | "max-warnings" | "wait-seconds" => {
             push_value_option(cmd_args, name, value.as_f64().map(format_number))
         }
-        "base" | "compose" | "compose-file" | "jacoco-xml" | "module" | "name" | "tag" => {
+        "base" | "compose" | "compose-file" | "jacoco-xml" | "module" | "name" | "tag" | "focus" => {
             push_value_option(cmd_args, name, nonempty_option_text(value))
         }
         _ => {}

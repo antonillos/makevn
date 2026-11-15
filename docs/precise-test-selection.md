@@ -29,6 +29,14 @@ without Maven, compilation, packaging, tests or container startup. A JDK is used
 only to parse Java syntax. Focused planning also works without initialization and
 never writes a map. It compares changed sources with the Git comparison baseline,
 including removed references, rather than assuming the edited graph is complete.
+
+Use `makevn test-impact-preview --graph` for a module summary, or add
+`--focus com.example.Class` to explore bounded class relationships. In MCP,
+`test_impact_preview` accepts `graph: true` and an optional `focus`, and returns
+the same view with structured graph data. Multimodule identities can be qualified
+as `module::class`. Static relationships are conservative and observed relationships
+are execution-wide loaded-class supersets; neither is an exact call graph. The
+view reports truncation and does not replace the changed-code selection preview.
 When class-map initialization is unavailable, `test-impact-preview` reports the
 reason and whether module-level selection can still be planned. Run
 `verify-changes-preview` to see the affected complete module suites before any

@@ -22,6 +22,7 @@ python3() {
   if [[ "$1" == */progressive_impact.py ]]; then
     [[ "$2" == preview || "$2" == init ]]
     printf '%s\n' "$2" > "${tmp}/static-mode"
+    printf '%s\n' "$@" > "${tmp}/static-args"
     return "${STATIC_STATUS:-0}"
   fi
   [[ "$2" == status || "$2" == retire ]]
@@ -29,6 +30,9 @@ python3() {
 }
 cmd_test_impact "${tmp}" preview
 [[ ! -e "${tmp}/verified" && ! -e "${tmp}/locked" ]]
+cmd_test_impact "${tmp}" preview --graph --focus example.Foo
+[[ "$(tail -3 "${tmp}/static-args")" == $'--graph\n--focus\nexample.Foo' ]]
+if cmd_test_impact "${tmp}" preview --focus example.Foo; then exit 1; fi
 cmd_test_impact "${tmp}" init
 [[ -e "${tmp}/locked" && ! -e "${tmp}/verified" ]]
 MAKEVN_TEST_IMPACT_LOCK_HELD=true

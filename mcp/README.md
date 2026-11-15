@@ -614,7 +614,10 @@ override wins over saved `none` and is never persisted.
 
 ### Progressive test impact and optional capture
 
-`test_impact_preview` inspects static dependencies without writes. `test_impact_init`
+`test_impact_preview` inspects static dependencies without writes. Set `graph: true`
+for a module summary and `focus` to explore a class; the result includes bounded
+structured graph data and a textual view. Relationships are conservative, and
+observations are execution-wide supersets. `test_impact_init`
 writes a static map without Maven/tests/containers. Both require doctor/setup and
 JDK 17+ for syntax parsing. Normal test/verify executions enrich dependencies using
 fresh successful reports and JVM traces, without reruns. Shared JVM executions
