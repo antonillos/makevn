@@ -85,26 +85,46 @@ def describe(value, index, focus=None, observation_status='none'):
 
 
 def render(graph):
-    lines = ['Test impact graph (conservative; observations: ' + graph['observation_status'] + ')']
+    lines = ['Test impact graph (conservative; observations: ' + ('none' if graph['observation_status'] == 'compatible' and not any(counts['observed'] for counts in graph['modules'].values()) else graph['observation_status']) + ')']
     for module, counts in graph['modules'].items():
         lines.append(f"{module}: {counts['production']} production, {counts['tests']} test, "
                      f"{counts['static']} static, {counts['observed']} observed relations")
     if 'focus' in graph:
         lines.append('Focus: ' + graph['focus'])
-        for group in graph['production_groups']:
-            lines.append('Connected production group: ' + ', '.join(group))
-        depths = {node['id']: node['depth'] for node in graph['nodes']}
+        nodes = {node['id']: node for node in graph['nodes']}
+        labels = defaultdict(list)
+        for name in nodes:
+            labels[name.rsplit('.', 1)[-1]].append(name)
+        direct, indirect = {}, {}
         for edge in graph['edges']:
-            kinds = ' + '.join(kind for kind in ('static', 'observed') if edge[kind])
-            if edge['ambiguous']:
-                kinds += ', ambiguous'
-            if edge['conservative_reverse']:
-                kinds += ', conservative reverse'
-            suffix = ' (cycle or repeated)' if edge['repeated'] else ''
-            lines.append('  ' * (depths[edge['source']] + 1) + edge['source'] + ' -> ' +
-                         edge['target'] + ' [' + kinds + ']' + suffix)
+            if edge['target'] == edge['source'] or edge['target'] == graph['focus']:
+                continue
+            target = edge['target']
+            collection = direct if edge['source'] == graph['focus'] else indirect
+            collection.setdefault(target, []).append(edge)
+        lines.append('Direct relationships (shown graph scope):')
+        for kind, title in [('test', 'Tests'), ('production', 'Production classes'), ('helper', 'Helpers and benchmarks')]:
+            names = sorted(name for name in direct if nodes[name]['kind'] == kind)
+            lines.append(f'  {title}: {len(names)}')
+            for name in names[:10]:
+                short = name.rsplit('.', 1)[-1]
+                label = short if len(labels[short]) == 1 else name
+                evidence = direct[name]
+                flags = []
+                if any(edge['observed'] for edge in evidence):
+                    flags.append('observed')
+                if any(edge['ambiguous'] for edge in evidence):
+                    flags.append('ambiguous')
+                if any(edge['conservative_reverse'] for edge in evidence):
+                    flags.append('conservative')
+                suffix = ' [' + ', '.join(flags) + ']' if flags else ''
+                lines.append('    ' + label + suffix)
+            if len(names) > 10:
+                lines.append(f'    … {len(names) - 10} more in displayed scope')
+        lines.append('Additional transitive nodes in displayed scope: ' + str(len(set(indirect) - set(direct))))
         if graph['truncated']:
-            lines.append('Omitted relations: ' + str(graph['omitted']))
+            lines.append('Partial graph: omitted relations: ' + str(graph['omitted']))
+        lines.append('Relationships are conservative; use verify-changes-preview for test selection.')
     lines.append('Conservative seeds: ' + str(graph['conservative_seed_count']) +
                  '; ambiguous identifiers: ' + str(graph['ambiguous_identifier_count']))
     return '\n'.join(lines)

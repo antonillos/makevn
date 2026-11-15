@@ -35,6 +35,11 @@ class GraphTests(unittest.TestCase):
         self.assertEqual(len(graph['nodes']), 100)
         self.assertTrue(graph['truncated'])
         self.assertGreater(graph['omitted'], 0)
+        rendered = impact_graph.render(graph)
+        self.assertIn('Tests: 99', rendered)
+        self.assertIn('89 more', rendered)
+        self.assertNotIn('Root ->', rendered)
+        self.assertLess(len(rendered.splitlines()), 25)
 
 
 if __name__ == '__main__':
