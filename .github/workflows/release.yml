@@ -86,7 +86,7 @@ jobs:
           fi
           printf 'prerelease=%s\n' "$prerelease" >> "$GITHUB_OUTPUT"
           printf 'draft=%s\n' "${{ github.event_name == 'workflow_dispatch' && inputs.draft || false }}" >> "$GITHUB_OUTPUT"
-      - name: Skip existing release
+      - name: Check release completeness
         id: release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -94,9 +94,16 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          if gh release view "$VERSION" >/dev/null 2>&1; then
-            printf 'Release %s already exists. Nothing to publish.\n' "$VERSION"
-            printf 'exists=true\n' >> "$GITHUB_OUTPUT"
+          if gh release view "$VERSION" --json assets --jq '.assets[].name' > release-assets.txt; then
+            complete=true
+            for suffix in "" -x86_64-unknown-linux-gnu -x86_64-apple-darwin -aarch64-apple-darwin; do
+              for extension in .tar.gz .tar.gz.sha256; do
+                if ! grep -Fxq "makevn-${VERSION}${suffix}${extension}" release-assets.txt; then
+                  complete=false
+                fi
+              done
+            done
+            printf 'exists=%s\n' "$complete" >> "$GITHUB_OUTPUT"
           else
             printf 'exists=false\n' >> "$GITHUB_OUTPUT"
           fi
@@ -190,7 +197,7 @@ jobs:
     if: needs.validate-version.outputs.exists != 'true' && needs.validate-version.outputs.prerelease != 'true' && needs.validate-version.outputs.draft != 'true'
     runs-on: ubuntu-26.04
     timeout-minutes: 15
-    needs: [validate-version, build-runtime-archives, build-source-archive]
+    needs: [validate-version, build-runtime-archives, build-source-archive, finalize-release]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -366,10 +373,26 @@ jobs:
           if [[ "${{ needs.validate-version.outputs.prerelease }}" == "true" ]]; then
             args+=(--prerelease)
           fi
-          if [[ "${{ needs.validate-version.outputs.draft }}" == "true" ]]; then
-            args+=(--draft)
+          if ! gh release view "${{ needs.validate-version.outputs.version }}" >/dev/null 2>&1; then
+            gh release create "${args[@]}" --draft
           fi
-          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-            gh release delete "${{ needs.validate-version.outputs.version }}" --yes || true
-          fi
-          gh release create "${args[@]}"
+
+  finalize-release:
+    if: needs.validate-version.outputs.exists != 'true' && needs.validate-version.outputs.draft != 'true'
+    needs: [validate-version, build-runtime-archives, build-source-archive]
+    runs-on: ubuntu-26.04
+    timeout-minutes: 10
+    steps:
+      - name: Generate release app token
+        id: release-app-token
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3
+        with:
+          client-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          permission-contents: write
+      - name: Publish completed release
+        env:
+          GH_TOKEN: ${{ steps.release-app-token.outputs.token }}
+          GH_REPO: ${{ github.repository }}
+          VERSION: ${{ needs.validate-version.outputs.version }}
+        run: gh release edit "$VERSION" --draft=false
