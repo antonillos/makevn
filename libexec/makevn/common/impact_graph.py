@@ -7,18 +7,18 @@ import reactor_test_impact as reactor
 def describe(value, index, focus=None, observation_status='none'):
     facts = value['facts']
     nodes = {item['class']: {'id': item['class'], 'module': item.get('owner', '.'),
-                             'kind': 'test' if reactor.is_source(source, 'test') else 'production'}
+                             'kind': ('test' if item['class'] in index['tests'] else 'helper') if reactor.is_source(source, 'test') else 'production'}
              for source, item in facts.items()}
     edges, observed = index['edges'], index['observed']
     modules = defaultdict(lambda: {'production': 0, 'tests': 0, 'static': 0, 'observed': 0})
     for node in nodes.values():
-        modules[node['module']]['tests' if node['kind'] == 'test' else 'production'] += 1
-    for source, targets in edges.items():
-        for target in targets:
-            modules[nodes[source]['module']]['static'] += 1
-    for source, targets in observed.items():
+        if node['kind'] != 'helper':
+            modules[node['module']]['tests' if node['kind'] == 'test' else 'production'] += 1
+    for source, count in index['static_counts'].items():
+        modules[nodes[source]['module']]['static'] += count
+    for source, count in index['observed_counts'].items():
         if source in nodes:
-            modules[nodes[source]['module']]['observed'] += len(targets)
+            modules[nodes[source]['module']]['observed'] += count
     result = {'modules': dict(sorted(modules.items())), 'observation_status': observation_status,
               'nodes': [], 'edges': [], 'truncated': False, 'omitted': 0,
               'conservative_seed_count': len(index['seeds']),

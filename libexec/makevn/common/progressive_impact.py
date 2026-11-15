@@ -170,9 +170,12 @@ def graph_index(parsed, observations=None):
                 if name in production and target in production:
                     edges[name].add(target)
                     conservative_edges.add((name, target))
-    return {'edges': edges, 'seeds': seeds, 'observed': observation_index(observations or {}),
+    observed = observation_index(observations or {})
+    return {'edges': edges, 'seeds': seeds, 'observed': observed,
             'ambiguous': {name for name, targets in aliases.items() if len(targets) > 1},
-            'ambiguous_edges': ambiguous_edges, 'conservative_edges': conservative_edges}
+            'ambiguous_edges': ambiguous_edges, 'conservative_edges': conservative_edges,
+            'tests': tests(parsed), 'static_counts': {name: len(targets) for name, targets in edges.items()},
+            'observed_counts': {name: len(targets) for name, targets in observed.items()}}
 
 
 def observation_index(observations):
