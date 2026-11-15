@@ -137,6 +137,10 @@ def main():
             payload = json.loads(Path(source).read_text())
             if not isinstance(payload.get("entries"), list):
                 raise ValueError(f"missing entries array: {source}")
+            if args.jacoco_xml and args.source_root:
+                from constructors import constructor_entries
+                payload["entries"].extend(constructor_entries(
+                    args.jacoco_xml[index], args.source_root[index], payload["entries"]))
             selected = []
             for entry in payload["entries"]:
                 if changes:
@@ -174,7 +178,7 @@ def main():
             ignored_sources = non_executable_sources(unmatched_files, repo_root, args.focused_state, args.javap)
             unmatched_files -= ignored_sources
             if unmatched_files:
-                raise ValueError("changed Java source absent from analyzer output (stale coverage or uncompiled source): " + ", ".join(sorted(unmatched_files)))
+                raise ValueError("changed Java source absent from analyzer output; inspect analyzer support and matching fresh JaCoCo XML/bytecode: " + ", ".join(sorted(unmatched_files)))
     except (OSError, ElementTree.ParseError, json.JSONDecodeError, ValueError, subprocess.CalledProcessError) as exc:
         print(f"Error: invalid crap4java report: {exc}", file=sys.stderr)
         return 2

@@ -1,7 +1,7 @@
 ---
 name: makevn
 description: >-
-  Use for Java/Maven repository setup, doctor, initialization, JDK selection, builds and choosing MakeVN test, Docker, Karate or quality workflows. Load before a MakeVN specialty.
+  Load before using MakeVN tools or working on Java/Maven setup, builds, tests, Docker, Karate or quality workflows. Select the applicable MakeVN specialties afterward.
 ---
 
 # MakeVN
@@ -113,6 +113,11 @@ and `doctor_configure`; one candidate is selected automatically. If the reposito
 requires Java and no usable compatible JDK is found, doctor reports a JDK error
 while completing diagnosis successfully. Resolve it before builds or verification.
 Missing executables are environment issues; do not bypass MakeVN with raw Maven.
+
+If a checkout-wide check rejects older generated focused JaCoCo HTML under
+`.makevn`, load makevn-quality and follow its diagnosed `clean` recovery. This
+archives manifest-owned HTML and runs Maven clean; explain that normal build
+outputs are removed. Preserve project gates and campaign evidence.
 
 For stale generated-source recovery, load makevn-test and use MCP `clean` with
 `clean-generated-contract-targets: true`, then retry the original scope only after

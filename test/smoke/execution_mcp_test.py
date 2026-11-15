@@ -1,5 +1,6 @@
 """Exercise ownership, conflicts and cancellation through the real stdio server."""
 import json
+import fcntl
 import os
 from pathlib import Path
 import queue
@@ -30,6 +31,7 @@ def alive(pid):
 
 class Session:
     def __init__(self, executable, state):
+        self.state = state
         self.process = subprocess.Popen([str(executable)], stdin=subprocess.PIPE,
                                         stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                         text=True, bufsize=1,
@@ -160,12 +162,34 @@ def pids(repo, count=3):
     return eventually(read)
 
 
+def execution_locks_released(state, execution_id):
+    registry = state / 'makevn/executions'
+    paths = [registry / execution_id / 'lifetime.lock']
+    for path in (registry / 'locks').glob('*.lock'):
+        try:
+            if json.loads(path.read_text()).get('executionId') == execution_id:
+                paths.append(path)
+        except (OSError, ValueError):
+            continue
+    for path in paths:
+        with path.open('r') as stream:
+            try:
+                fcntl.flock(stream, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                return False
+            fcntl.flock(stream, fcntl.LOCK_UN)
+    return True
+
+
 def stopped(session, record, owned):
     terminal = eventually(lambda: (status if (status := session.status(record["executionId"]))["state"]
                                   in ["cancelled", "failed", "succeeded"] else None))
     assert terminal["state"] == "cancelled", terminal
     assert terminal["exitCode"] == 130
     eventually(lambda: all(not alive(pid) for pid in owned))
+    # Terminal metadata is saved before the supervisor releases its locks.
+    # Wait for that handoff before asserting that the repository is reusable.
+    eventually(lambda: execution_locks_released(session.state, record['executionId']))
     assert terminal["logPaths"] and all(Path(path).exists() for path in terminal["logPaths"] if Path(path).is_absolute())
     return terminal
 
@@ -326,7 +350,8 @@ def disconnect(executable, state, observer, repo, mode):
         client.close()
     stopped(observer, record, owned)
     (repo / "quick").touch()
-    assert observer.call("verify", repo=str(repo))["isError"] is False
+    restarted = observer.call("verify", repo=str(repo))
+    assert restarted["isError"] is False, restarted
 
 
 def transport_failure(executable, state, observer, repo):

@@ -23,7 +23,7 @@ pub(super) fn command_help(
         "validate" => maven_command_help("validate", "Validate the Maven project model.", false),
         "package" => maven_command_help("package", "Package the project without running tests.", false),
         "build" => maven_command_help("build", "Run the full Maven build.", false),
-        "clean" => maven_command_help("clean", "Clean Maven build output.", true),
+        "clean" => maven_command_help("clean", "Archive manifest-owned legacy focused JaCoCo HTML and clean Maven build output.", true),
         "test" => Some(("makevn [--repo PATH] [--compact] test [--tail] [--name TEST]... [--fast] [-- EXTRA_MAVEN_ARGS...]", "Run tests with optional filtering.", &["--tail                              Start in interactive log tail mode", "--compact                           Use compact non-interactive output", "--name TEST                         Test class name or comma-separated names", "--fast                              Skip compilation when sources have not changed"])),
         "verify-ut" => maven_command_help("verify-ut", "Run unit-test-only verification.", false),
         "verify-ut-coverage" => maven_command_help("verify-ut-coverage", "Run unit-test-only verification with coverage.", false),
@@ -32,10 +32,11 @@ pub(super) fn command_help(
         "verify" => maven_command_help("verify", "Run full combined verification.", false),
         "test-impact-preview" => Some(("makevn [--repo PATH] test-impact-preview", "Preview static dependencies without writes, Maven or tests.", &[])),
         "test-impact-init" => Some(("makevn [--repo PATH] test-impact-init [--isolated]", "Create a static map without Maven/tests; normal executions add runtime observations. Use --isolated explicitly for complete-suite verification and isolated replays.", &["--isolated  Explicit expensive full-suite and isolated-class capture"])),
-        "verify-changes-preview" => Some(("makevn [--repo PATH] verify-changes-preview [--focused|--exhaustive] [--record-test-impact] [--defer-global-coverage]", "Preview changed-code scope without Maven; focused by default. For user-requested faster local feedback, explain --focused limitations and use the same mode in preview and execution. A large preparation reactor does not mean its test suites run.", &["--focused  Preview focused owner suites and selected tests (default)", "--exhaustive  Preview exhaustive changed-code verification", "--defer-global-coverage  Explicitly defer property-based JaCoCo failures; changed-code metrics and full CI gates remain separate", "--record-test-impact  Preview full-suite and isolated per-test capture (expensive, JDK 17+, single module)"])),
-        "verify-changes" => maven_command_help("verify-changes", "Verify changed-code scope; focused by default, --exhaustive is explicit. --focused prepares dependencies without UT/IT then verifies static/runtime-selected tests or complete owner suites with a fallback reason, plus changed tests without -am; not a full integration/coverage gate. Use the same mode as preview and report its scope.", false),
+        "verify-changes-preview" => Some(("makevn [--repo PATH] verify-changes-preview [--base REF] [--focused|--exhaustive] [--record-test-impact] [--defer-global-coverage]", "Preview changed-code scope without Maven; focused by default. For user-requested faster local feedback, explain --focused limitations and use the same mode in preview and execution. A large preparation reactor does not mean its test suites run.", &["--base REF  Explicit local comparison reference; no fetch or PR lookup", "--focused  Preview focused owner suites and selected tests (default)", "--exhaustive  Preview exhaustive changed-code verification", "--defer-global-coverage  Explicitly defer property-based JaCoCo failures; changed-code metrics and full CI gates remain separate", "--record-test-impact  Preview full-suite and isolated per-test capture (expensive, JDK 17+, single module)"])),
+        "verify-changes" => maven_command_help("verify-changes", "Verify changed-code scope; focused by default, --exhaustive is explicit. --focused packages without UT/IT then verifies complete selected module/dependency suites together with -am in multimodule reactors; single-module projects retain selected tests or full owner suites; not a full integration/coverage gate. Use the same mode as preview and report its scope.", false),
         "coverage" => Some(("makevn [--repo PATH] coverage [--threshold PCT]", "Check the latest aggregate coverage report.", &["--threshold  Required coverage percentage"])),
-        "coverage-changes" => Some(("makevn [--repo PATH] coverage-changes [--threshold PCT] [--overall-threshold PCT] [--verbose]", "Check incremental and per-module coverage.", &["--threshold          Per-module coverage percentage", "--overall-threshold  Overall coverage percentage", "--verbose            Print detailed coverage output"])),
+        "jacoco-inspect" => Some(("makevn [--repo PATH] jacoco-inspect", "Inspect the effective JaCoCo model using Maven; no tests run.", &[])),
+        "coverage-changes" => Some(("makevn [--repo PATH] coverage-changes [--base REF] [--threshold PCT] [--overall-threshold PCT] [--verbose]", "Check incremental and per-module coverage.", &["--base REF           Explicit local comparison reference; reuse the verification base", "--threshold          Per-module coverage percentage", "--overall-threshold  Overall coverage percentage", "--verbose            Print detailed coverage output"])),
         "crap" => Some(("makevn [--repo PATH] crap [install-analyzer] [--jacoco-xml PATH] [--threshold SCORE] [--max-warnings COUNT]", "Calculate Java CRAP metrics from existing JaCoCo XML coverage.", &["install-analyzer  Download and verify the pinned crap4java release", "--jacoco-xml      Use a specific existing JaCoCo XML report", "--threshold       CRAP score warning threshold (default: 8)", "--max-warnings    Fail when the warning count exceeds this ratchet"])),
         "crap-changes" => Some(("makevn [--repo PATH] crap-changes [--base REF]", "Show CRAP for changed production Java methods using existing JaCoCo coverage.", &["--base  Override the detected base branch/ref"])),
         "pr-verify" => maven_command_help("pr-verify", "Run a local PR-style verification flow.", false),
@@ -44,7 +45,7 @@ pub(super) fn command_help(
         "docker-up" => tail_command_help("docker-up", "Start boot Docker services while preserving volumes."),
         "docker-down" => tail_command_help("docker-down", "Stop boot Docker services while preserving volumes."),
         "docker-reset" => Some(("makevn [--repo PATH] docker-reset [--tail]", "Delete the selected boot Compose volumes and restart its services. Requires explicit reset authorization; never prunes global volumes.", &["--tail  Start in interactive log tail mode"])),
-        "docker-ps" => tail_command_help("docker-ps", "List boot Docker containers."),
+        "docker-ps" => tail_command_help("docker-ps", "List Docker containers; --compose-file none selects engine-wide diagnostics without Compose, not readiness or repository ownership."),
         "docker-stats" => tail_command_help("docker-stats", "Show Docker CPU and memory stats."),
         "docker-ps-required" => Some(("makevn [--repo PATH] docker-ps-required [--tail] [--compose boot|karate] [--wait-seconds N]", "Validate required Docker services are running and healthy.", &["--tail          Start in interactive log tail mode", "--compose       Compose profile: boot or karate", "--compose-file PATH|none  Override Compose for this execution only", "--wait-seconds  Seconds to wait for services"])),
         "karate-docker-up" => tail_command_help("karate-docker-up", "Start Karate E2E Docker services while preserving volumes."),
@@ -80,7 +81,7 @@ pub(super) fn maven_command_help(
         ("verify-it", "makevn [--repo PATH] [--compact] verify-it [--tail] [-- EXTRA_MAVEN_ARGS...]"),
         ("verify-it-coverage", "makevn [--repo PATH] [--compact] verify-it-coverage [--tail] [-- EXTRA_MAVEN_ARGS...]"),
         ("verify", "makevn [--repo PATH] [--compact] verify [--tail] [-- EXTRA_MAVEN_ARGS...]"),
-        ("verify-changes", "makevn [--repo PATH] [--compact] verify-changes [--tail] [--focused|--exhaustive] [--record-test-impact] [--defer-global-coverage] [-- EXTRA_MAVEN_ARGS...]"),
+        ("verify-changes", "makevn [--repo PATH] [--compact] verify-changes [--tail] [--base REF] [--focused|--exhaustive] [--record-test-impact] [--defer-global-coverage] [-- EXTRA_MAVEN_ARGS...]"),
         ("pr-verify", "makevn [--repo PATH] [--compact] pr-verify [--tail] [-- EXTRA_MAVEN_ARGS...]"),
     ];
     let usage = usages.iter().find(|(name, _)| *name == command)?.1;
@@ -157,6 +158,7 @@ const COMMANDS: &[&str] = &[
     "verify-changes-preview",
     "verify-changes",
     "coverage",
+    "jacoco-inspect",
     "coverage-changes",
     "crap",
     "crap-changes",
@@ -324,6 +326,7 @@ fn render_command(command: &str, color: bool) -> Option<String> {
         .collect();
     if command == "verify-changes" {
         flags.extend([
+            "--base REF  Explicit local comparison reference; use the same base in preview and metrics",
             "--focused  Verify owner suites and selected tests (default)",
             "--exhaustive  Run exhaustive changed-code verification",
             "--defer-global-coverage  Explicitly defer property-based JaCoCo failures, retaining instrumentation and warnings; requires focused mode without capture",

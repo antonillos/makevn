@@ -1,7 +1,7 @@
 ---
 name: makevn-test
 description: >-
-  Use for selected Java tests, UT/IT suites, focused changed-code checks, exhaustive or full verification, test evidence and build/test failure diagnosis through MakeVN.
+  Expertise in Java tests, UT/IT, changed-code verification and test failure diagnosis. Load the makevn skill first, then this skill before using test tools such as verify_changes_preview or verify_changes. Also load the makevn-docker skill for container prerequisites.
 ---
 
 # MakeVN tests
@@ -83,11 +83,18 @@ absent after inspecting inherited parents and active profiles, omit both calls a
 report metrics unavailable; missing/stale data from a configured agent still fails.
 Full verify/CI coverage remains required.
 
-Preparation uses `-am install` with UT/IT execution disabled and retains test
-compilation/test jars. A 34-module reactor does not mean 34 suites ran. Owner
-verification runs without `-am`, with separate UT/IT selectors and fresh non-skipped
-XML evidence. Maven exit zero alone is insufficient. Report “focused checks passed”
-with actual scope; full CI, coverage and CRAP gates remain separate.
+Preparation uses `-am package` with UT/IT execution disabled and retains test
+compilation/test jars. Multimodule verification then runs complete selected
+module/dependency suites together with `-am verify`, consuming reactor artifacts
+without installing them. Single-module verification retains focused selectors.
+Inspect the preview before execution and report the actual scope and fresh
+non-skipped XML evidence. Maven exit zero alone is insufficient. Full CI,
+coverage and CRAP gates remain separate.
+
+If a project-wide check scans older focused JaCoCo HTML under `.makevn` and
+blocks a test, follow makevn-quality recovery: `clean` archives manifest-owned
+legacy HTML before Maven clean while preserving the focused snapshot. Maven clean
+also removes normal build outputs; preserve campaign evidence and project gates.
 
 Omit `fast` on first runs or after source/test edits. For stale generated-source
 compilation failures, call MCP `clean` with `clean-generated-contract-targets: true`
@@ -120,3 +127,13 @@ file to startup, readiness, verification and cleanup; selection alone does not
 start services or authorize a destructive reset. `--compose boot|karate` still
 selects the readiness kind; `--compose-file` supplies its file. A per-execution
 override wins over saved `none` and is never persisted.
+
+### Explicit comparison base
+
+For changed-code workflows with a known destination, use `--base REF` (MCP
+`base`) consistently in preview, verification, coverage and CRAP. This overrides
+offline ancestry inference, including detached worktrees. MakeVN does not fetch or
+query PR metadata. Ambiguous inference requires an explicit local reference.
+The base does not enable exhaustive mode or relax safety rules. Metric commands
+reuse only compatible successful evidence; changed merge bases require new
+verification. Equivalent references sharing the merge base remain compatible.

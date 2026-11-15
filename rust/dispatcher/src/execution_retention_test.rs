@@ -137,6 +137,11 @@ fn validates_retention_and_cli_arguments() {
 fn automatic_cleanup_runs_before_admitting_new_work() {
     let fixture = Fixture::new();
     let (id, locks) = fixture.record("cancelled", now_ms() - 4 * DAY_MS);
+    // Concurrent test forks can inherit these descriptors until exec. Explicit
+    // unlock also releases those copies, keeping this cleanup assertion stable.
+    for lock in &locks {
+        assert_eq!(unsafe { libc::flock(lock.as_raw_fd(), libc::LOCK_UN) }, 0);
+    }
     drop(locks);
     automatic(&fixture.0);
     let (_, active) = fixture

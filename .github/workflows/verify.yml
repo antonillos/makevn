@@ -2,9 +2,7 @@ name: Verify
 
 on:
   pull_request:
-    branches:
-      - develop
-      - main
+    types: [opened, synchronize, reopened, edited]
   push:
     branches:
       - develop
@@ -24,7 +22,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: verify-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  group: verify-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}-${{ github.event.action == 'edited' && !github.event.changes.base && github.run_id || 'validation' }}
   cancel-in-progress: true
 
 env:
@@ -33,6 +31,8 @@ env:
 
 jobs:
   smoke:
+    name: ${{ github.event.action == 'edited' && !github.event.changes.base && 'smoke (metadata edit)' || 'smoke' }}
+    if: github.event.action != 'edited' || github.event.changes.base
     runs-on: ubuntu-26.04
     timeout-minutes: 30
     steps:
@@ -84,6 +84,8 @@ jobs:
           if-no-files-found: ignore
 
   crap:
+    name: ${{ github.event.action == 'edited' && !github.event.changes.base && 'crap (metadata edit)' || 'crap' }}
+    if: github.event.action != 'edited' || github.event.changes.base
     runs-on: ubuntu-26.04
     timeout-minutes: 30
     steps:
@@ -103,7 +105,7 @@ jobs:
       - name: Run CRAP reporter tests
         shell: bash
         run: python3 -m unittest tools.crap.test_report
-      - uses: ruby/setup-ruby@7f797815d8adceb1c412e7abefdd1ab4abc47a5f # v1.335.0
+      - uses: ruby/setup-ruby@b3aaceaef7e0ee231b499e7b5f49c03fc1d32199 # v1.338.0
         with:
           ruby-version: '3.3'
       - name: Install CRAP analysis tools

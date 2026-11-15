@@ -76,9 +76,6 @@ if [[ "$DO_PULL" -eq 1 ]]; then
   run git -C "$SCRIPT_DIR" pull --ff-only
 fi
 
-info "Building Rust frontend"
-run bash "$SCRIPT_DIR/build-rust-dispatcher.sh"
-
 info "Installing Rust frontend"
 run bash "$SCRIPT_DIR/install.sh" --rust
 run cp "$BIN_DIR/makevn" "$RUST_BIN"

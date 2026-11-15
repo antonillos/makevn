@@ -28,6 +28,22 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 pub(super) static ENV_LOCK: Mutex<()> = Mutex::new(());
 
+#[test]
+fn repository_candidate_rejects_missing_paths_and_files() {
+    let directory = env::temp_dir().join(format!("makevn-repo-candidate-{}", process::id()));
+    fs::create_dir_all(&directory).unwrap();
+    let missing = directory.join("missing").into_os_string();
+    assert_eq!(super::canonical_repo_candidate(Some(&missing)).unwrap_err(),
+               format!("Repository path does not exist: {}", Path::new(&missing).display()));
+    let file = directory.join("file");
+    fs::write(&file, "not a directory").unwrap();
+    assert_eq!(super::canonical_repo_candidate(Some(&file.clone().into_os_string())).unwrap_err(),
+               format!("Repository path does not exist: {}", file.display()));
+    let candidate = directory.join(".").into_os_string();
+    assert_eq!(super::canonical_repo_candidate(Some(&candidate)).unwrap(), directory.canonicalize().unwrap());
+    fs::remove_dir_all(directory).unwrap();
+}
+
 fn format_resource_sample(sample: &ResourceSample, history: &ResourceHistory) -> String {
     format!(
         "{} | {}",
@@ -84,6 +100,7 @@ fn spinner_renderer_handles_tty_input_and_dashboard_lifecycle() {
         frame_interval: Duration::ZERO,
         next_frame_at: Instant::now(),
         second_escape_deadline: None,
+        input_sequence: super::SpinnerInputSequence::Ground,
         resource_sampler: ResourceSampler::new(),
         resource_history: ResourceHistory::new(),
         resource_history_revision: 0,
@@ -100,6 +117,13 @@ fn spinner_renderer_handles_tty_input_and_dashboard_lifecycle() {
     assert!(renderer.resource_history.cpu_percent.is_empty());
     renderer.configure_resource_source("verify", None);
     renderer.configure_resource_source("verify", None);
+
+    let cursor_keys = b"\x1b[A\x1b[B\x1b[C\x1b[D\x1bOA\x1bOB\x1bOC\x1bOD";
+    master.write_all(cursor_keys).unwrap();
+    for _ in cursor_keys {
+        assert!(matches!(renderer.poll_input().unwrap(), InputEvent::None));
+        assert!(renderer.second_escape_deadline.is_none());
+    }
 
     master.write_all(b"tT+-x\x1b\x1b").unwrap();
     assert!(matches!(
@@ -120,6 +144,8 @@ fn spinner_renderer_handles_tty_input_and_dashboard_lifecycle() {
     ));
     assert!(matches!(renderer.poll_input().unwrap(), InputEvent::None));
     assert!(matches!(renderer.poll_input().unwrap(), InputEvent::None));
+    assert!(matches!(renderer.poll_input().unwrap(), InputEvent::None));
+    std::thread::sleep(Duration::from_millis(110));
     assert!(matches!(
         renderer.poll_input().unwrap(),
         InputEvent::Interrupt
@@ -267,6 +293,19 @@ fn maven_passthrough_rejects_bare_commands_before_separator() {
         validate_maven_passthrough_args(&command, &[OsString::from("verity-ut")]).unwrap_err();
     assert!(error.contains("Extra Maven arguments for verify must follow '--'"));
     assert!(error.contains("Did you mean 'verify-ut'?"));
+}
+
+#[test]
+fn native_changed_code_commands_preserve_explicit_base_values() {
+    for command in ["verify-changes-preview", "verify-changes", "coverage-changes", "crap-changes"] {
+        for reference in ["develop", "origin/develop", "verify"] {
+            let action = parse_invocation([command, "--base", reference].into_iter().map(OsString::from).collect()).unwrap();
+            let Action::DispatchToBackend(invocations) = action else { panic!("expected backend dispatch") };
+            assert_eq!(invocations.len(), 1);
+            assert_eq!(invocations[0].args[0], command);
+            assert_eq!(&invocations[0].args[3..], &[OsString::from("--base"), OsString::from(reference)]);
+        }
+    }
 }
 
 #[test]
@@ -1242,6 +1281,7 @@ fn all_top_level_commands_have_command_help() {
         "verify-changes-preview",
         "verify-changes",
         "coverage",
+        "jacoco-inspect",
         "coverage-changes",
         "crap",
         "pr-verify",
@@ -2183,6 +2223,7 @@ fn paused_dashboard_does_not_overwrite_interactive_prompt() {
         frame_interval: std::time::Duration::ZERO,
         next_frame_at: std::time::Instant::now(),
         second_escape_deadline: None,
+        input_sequence: super::SpinnerInputSequence::Ground,
         resource_sampler: ResourceSampler::new(),
         resource_history: ResourceHistory::new(),
         resource_history_revision: 0,
@@ -2237,6 +2278,7 @@ fn resume_after_prompt_restores_loader_input_without_resetting_history() {
         frame_interval: std::time::Duration::ZERO,
         next_frame_at: std::time::Instant::now(),
         second_escape_deadline: None,
+        input_sequence: super::SpinnerInputSequence::Ground,
         resource_sampler: ResourceSampler::new(),
         resource_history: ResourceHistory::new(),
         resource_history_revision: 0,
@@ -2449,6 +2491,7 @@ fn renderer_for_backend_boundary() -> SpinnerRenderer {
         frame_interval: Duration::ZERO,
         next_frame_at: Instant::now(),
         second_escape_deadline: Some(Instant::now() + Duration::from_secs(3)),
+        input_sequence: super::SpinnerInputSequence::Ground,
         resource_sampler: ResourceSampler::new(),
         resource_history: ResourceHistory::new(),
         resource_history_revision: 0,
@@ -2751,4 +2794,119 @@ fn impact_initialization_preserves_its_title_and_nests_tail_under_active_phase()
     assert_eq!(tail.last().unwrap(), "│    └ tailing log: verify-changes-3.log");
     let final_lines = super::final_dashboard_lines(Duration::from_secs(5), &[group], false);
     assert_eq!(final_lines[1], "[✓] test-impact-init | 5s");
+}
+
+#[test]
+fn spinner_input_ignores_repeated_cursor_and_function_key_sequences() {
+    let mut decoder = super::SpinnerInputSequence::default();
+    let mut deadline = None;
+    let started = Instant::now();
+    let sequences: &[&[u8]] = &[
+        b"\x1b[A",
+        b"\x1b[B",
+        b"\x1b[C",
+        b"\x1b[D",
+        b"\x1bOA",
+        b"\x1bOB",
+        b"\x1bOC",
+        b"\x1bOD",
+        b"\x1b[1;5D",
+        b"\x1b[3~",
+        b"\x1bOP",
+        b"\x1b[15~",
+    ];
+    for sequence in sequences.iter().cycle().take(48) {
+        for byte in *sequence {
+            assert!(matches!(
+                decoder.decode(Some(*byte), started, &mut deadline),
+                InputEvent::None
+            ));
+            assert!(deadline.is_none());
+        }
+    }
+}
+
+#[test]
+fn spinner_input_waits_for_fragmented_cursor_sequence() {
+    let mut decoder = super::SpinnerInputSequence::default();
+    let mut deadline = None;
+    let started = Instant::now();
+    for (byte, millis) in [
+        (Some(0x1b), 0),
+        (None, 33),
+        (Some(b'['), 66),
+        (None, 150),
+        (Some(b'D'), 200),
+    ] {
+        assert!(matches!(
+            decoder.decode(byte, started + Duration::from_millis(millis), &mut deadline),
+            InputEvent::None
+        ));
+        assert!(deadline.is_none());
+    }
+}
+
+#[test]
+fn spinner_input_only_confirms_cancellation_with_standalone_escapes() {
+    let mut decoder = super::SpinnerInputSequence::default();
+    let mut deadline = None;
+    let started = Instant::now();
+    assert!(matches!(
+        decoder.decode(Some(0x1b), started, &mut deadline),
+        InputEvent::None
+    ));
+    assert!(matches!(
+        decoder.decode(None, started + Duration::from_millis(100), &mut deadline),
+        InputEvent::None
+    ));
+    assert!(deadline.is_some());
+    for byte in b"\x1b[A\x1bOB\x1b[1;5C" {
+        assert!(matches!(
+            decoder.decode(
+                Some(*byte),
+                started + Duration::from_millis(150),
+                &mut deadline
+            ),
+            InputEvent::None
+        ));
+    }
+    assert!(matches!(
+        decoder.decode(
+            Some(0x1b),
+            started + Duration::from_millis(200),
+            &mut deadline
+        ),
+        InputEvent::None
+    ));
+    assert!(matches!(
+        decoder.decode(None, started + Duration::from_millis(300), &mut deadline),
+        InputEvent::Interrupt
+    ));
+    assert!(deadline.is_none());
+}
+
+#[test]
+fn spinner_input_preserves_shortcuts_and_fast_double_escape() {
+    let started = Instant::now();
+    let mut decoder = super::SpinnerInputSequence::default();
+    let mut deadline = None;
+    for byte in b"tT+-" {
+        let event = decoder.decode(Some(*byte), started, &mut deadline);
+        assert!(matches!(
+            (*byte, event),
+            (b't' | b'T', InputEvent::ToggleTail)
+                | (b'+', InputEvent::IncreaseLines)
+                | (b'-', InputEvent::DecreaseLines)
+        ));
+    }
+    for byte in b"\x1b\x1b" {
+        assert!(matches!(
+            decoder.decode(Some(*byte), started, &mut deadline),
+            InputEvent::None
+        ));
+    }
+    assert!(matches!(
+        decoder.decode(None, started + Duration::from_millis(100), &mut deadline),
+        InputEvent::Interrupt
+    ));
 }

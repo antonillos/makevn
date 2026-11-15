@@ -28,6 +28,14 @@ impl Drop for Fixture {
     }
 }
 
+// Concurrent test subprocesses can retain forked descriptor copies until exec.
+// Explicitly release the fixture's shared lock before testing post-release state.
+fn release_fixture_locks(locks: Vec<File>) {
+    for lock in &locks {
+        assert_eq!(unsafe { libc::flock(lock.as_raw_fd(), libc::LOCK_UN) }, 0);
+    }
+}
+
 #[test]
 fn normalizes_pr_identity_without_network() {
     assert_eq!(
@@ -65,8 +73,8 @@ fn worktree_aliases_and_sessions_share_nonblocking_locks() {
     assert!(conflict.contains(&record.session_id));
     let (_, inspection_locks) = second.prepare(&fixture.params("doctor")).unwrap();
     assert_eq!(second.list(&json!({})).unwrap().len(), 2);
-    drop(locks);
-    drop(inspection_locks);
+    release_fixture_locks(locks);
+    release_fixture_locks(inspection_locks);
     assert!(second.prepare(&params).is_ok());
 }
 
@@ -83,7 +91,7 @@ fn pr_locks_span_worktrees_but_other_prs_remain_independent() {
     let (_, locks) = store.prepare(&params).unwrap();
     assert!(store.prepare(&json!({"name":"verify", "arguments":{"repo":second,"pr":"http://GITHUB.com/A/B/pull/01"}})).is_err());
     assert!(store.prepare(&json!({"name":"verify", "arguments":{"repo":second,"pr":"https://github.com/a/b/pull/2"}})).is_ok());
-    drop(locks);
+    release_fixture_locks(locks);
 }
 
 #[test]
@@ -101,7 +109,7 @@ fn workflow_acquires_every_worktree_and_pr_before_starting() {
     assert!(store
         .prepare(&json!({"name":"test","arguments":{"repo":other}}))
         .is_err());
-    drop(locks);
+    release_fixture_locks(locks);
     let (record, _) = store.prepare(&json!({"name":"parallel_run", "arguments":{"repo":fixture.0,"steps":[{"tool":"doctor"},{"tool":"verify_changes_preview"}]}})).unwrap();
     assert!(conflict_keys(&record, &json!({"arguments":{"steps":[{"tool":"doctor"}]}})).is_empty());
 }
@@ -143,7 +151,7 @@ fn admission_contention_is_bounded_without_starting_an_execution() {
     assert!(error.contains("admission is busy"));
     assert!(start.elapsed() < Duration::from_secs(1));
     assert!(store.list(&json!({})).unwrap().is_empty());
-    drop(admission);
+    release_fixture_locks(vec![admission]);
     assert!(store.prepare(&fixture.params("verify")).is_ok());
 }
 
@@ -156,7 +164,11 @@ fn abandoned_records_are_failed_without_reclaiming_processes() {
         record.state = state.into();
         save_record(&fixture.0, &record).unwrap();
         assert_eq!(store.get(&record.execution_id).unwrap().state, state);
-        drop(locks);
+        let _inherited = locks
+            .iter()
+            .map(|lock| lock.try_clone().unwrap())
+            .collect::<Vec<_>>();
+        release_fixture_locks(locks);
         let failed = store.get(&record.execution_id).unwrap();
         assert_eq!(failed.state, "failed");
         assert_eq!(failed.exit_code, None);
@@ -195,7 +207,7 @@ fn terminal_records_survive_concurrent_lifetime_release() {
         record.state = "cancelled".into();
         record.exit_code = Some(130);
         save_record(&fixture.0, &record).unwrap();
-        drop(locks);
+        release_fixture_locks(locks);
         let observed = reading.join().unwrap();
         assert_eq!(observed.state, "cancelled");
         assert_eq!(observed.exit_code, Some(130));

@@ -119,6 +119,7 @@ makevn_crap_run() {
   local source_file=""
   local rc=0
   local base_ref=""
+  local MAKEVN_CHANGES_BASE=""
   local -a xml_reports=()
   local -a html_reports=()
   local -a csv_reports=()
@@ -145,7 +146,8 @@ makevn_crap_run() {
     case "$1" in
       --base)
         [[ "${command_name}" == "crap-changes" && $# -ge 2 ]] || { printf 'Error: --base requires crap-changes and a value.\n' >&2; return 2; }
-        base_ref="$2"
+        [[ -n "$2" ]] || { printf 'Error: --base requires a commit reference.\n' >&2; return 2; }
+        MAKEVN_CHANGES_BASE="$2"
         shift 2
         ;;
       --jacoco-xml)
@@ -181,6 +183,12 @@ makevn_crap_run() {
 
   maven_base_path="$(makevn_detect_maven_base_path "${repo_root}" || true)"
   [[ -n "${maven_base_path}" ]] || { printf 'Error: No Maven project detected in %s.\n' "${repo_root}" >&2; return 2; }
+
+  if [[ "${command_name}" == crap-changes ]]; then
+    base_ref="$(makevn_detect_parent_branch_spec "${repo_root}")" || return $?
+    base_ref="${base_ref%...HEAD}"
+    makevn_print_changes_base "${repo_root}" "${base_ref}"
+  fi
 
   if [[ "${command_name}" == crap-changes && -f "$(makevn_scoped_coverage_state "${repo_root}")/run.json" ]]; then
     local scoped_report
@@ -258,10 +266,6 @@ makevn_crap_run() {
   fi
   if [[ "${command_name}" == "crap-changes" ]]; then
     command -v git >/dev/null 2>&1 || { printf 'Error: git is required by crap-changes.\n' >&2; return 2; }
-    if [[ -z "${base_ref}" ]]; then
-      base_ref="$(makevn_detect_parent_branch_spec "${repo_root}")"
-      base_ref="${base_ref%...HEAD}"
-    fi
     python3 "${MAKEVN_LIBEXEC_DIR}/crap/changes.py" --repo-root "${repo_root}" --base "${base_ref}" --output "${report_dir}/changes.json" || return 2
   fi
   rm -f "${report_dir}/report.json" "${report_dir}/report.md" "${report_dir}/report.sarif" "${report_dir}/summary.txt" "${report_dir}/coverage-gaps.txt"

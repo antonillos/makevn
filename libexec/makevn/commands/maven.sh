@@ -64,10 +64,18 @@ cmd_package() {
   makevn_run_maven_goal "${repo_root}" package package build -DskipTests -Dmaven.build.cache.enabled=false "$@"
 }
 
+makevn_archive_focused_html_if_needed() {
+  local repo_root="$1"
+  if [[ -d "$(makevn_state_dir "${repo_root}")/focused-coverage" ]]; then
+    python3 "${MAKEVN_LIBEXEC_DIR}/common/scoped_coverage.py" archive-html "${repo_root}" "$(makevn_state_dir "${repo_root}")/focused-coverage" || return $?
+  fi
+}
+
 cmd_clean() {
   local repo_root="$1"
   shift
   [[ "${1:-}" == "--" ]] && shift
+  makevn_archive_focused_html_if_needed "${repo_root}" || return $?
   makevn_run_maven_goal "${repo_root}" clean clean "" "$@"
   makevn_clean_generated_contract_if_needed "${repo_root}"
 }
@@ -242,7 +250,7 @@ makevn_require_jacoco_xml_report() {
 
   jacoco_xml_count="$(find "${maven_base_path}" -path '*/target/*' -name 'jacoco.xml' -type f -print 2>/dev/null | wc -l | tr -d '[:space:]')"
   if [[ ! "${jacoco_xml_count}" =~ ^[1-9][0-9]*$ ]]; then
-    makevn_die "coverage verification completed without generating a JaCoCo XML report. Configure jacoco-maven-plugin (or its coverage profile); -Djacoco.skip=false alone does not generate coverage."
+    makevn_die "coverage verification completed without finding a JaCoCo XML report under target. Ensure jacoco:report runs during or before verify (for example, bind it to the verify phase); -Djacoco.skip=false enables instrumentation but does not generate the XML report."
   fi
 }
 
@@ -263,6 +271,7 @@ cmd_verify_ut_coverage() {
 
   maven_base_path="$(makevn_detect_maven_base_path "${repo_root}" || true)"
   [[ -n "${maven_base_path}" ]] || makevn_die "No Maven project detected in ${repo_root}"
+  makevn_archive_focused_html_if_needed "${repo_root}" || return $?
   makevn_remove_jacoco_xml_reports "${maven_base_path}"
   if cmd_verify_ut "${repo_root}" "${@:2}"; then
     rc=0
@@ -294,6 +303,7 @@ cmd_verify_it_coverage() {
 
   maven_base_path="$(makevn_detect_maven_base_path "${repo_root}" || true)"
   [[ -n "${maven_base_path}" ]] || makevn_die "No Maven project detected in ${repo_root}"
+  makevn_archive_focused_html_if_needed "${repo_root}" || return $?
   makevn_remove_jacoco_xml_reports "${maven_base_path}"
   if cmd_verify_it "${repo_root}" "${@:2}"; then
     rc=0

@@ -38,8 +38,10 @@ resolved destination of linked configurations before any write. Noninteractive
 use selects project integration first, falling back to global scope, and rejects
 linked paths.
 
-Restart/reload the client. Check its available skills, explicitly load each skill,
-then try representative requests. Installed files, available metadata, loaded
+Restart/reload the client. Check its available skills, then try representative
+requests without explicitly naming skills and inspect which instructions were loaded.
+Load the base and applicable specialties; product testing applies only to validation
+of MakeVN itself. Installed files, available metadata, loaded
 instructions and correct workflow selection are four distinct checks. Neither
 `agent status` nor successful MCP startup proves a session loaded a skill.
 Codex project configuration is read only for trusted projects.
@@ -94,8 +96,20 @@ for application commands.
 This Rust/Bash repository is the product implementation, not a Maven adoption
 fixture. Doctor may correctly report unsupported here. Use its development tests
 and [repo-sweep](repo-sweep.md) against isolated real Maven repository clones.
-Keep fixture failures separate from product defects. Open PRs against `develop`;
-the mandatory Rust/Bash CRAP ratchet is authoritative in CI before merging.
+Keep fixture failures separate from product defects. Open standalone PRs against
+`develop`, or use native GitHub stacked PRs with `develop` as the trunk and each
+higher PR targeting the preceding branch in the same repository. Verify the
+complete base chain before submitting a stack. Using `main` as a base or trunk
+requires explicit authorization for that request.
+
+For a coordinated series, prefer focused stack layers and merge the ready
+contiguous stack together when merging is authorized. Smart Merge on the highest
+included PR validates all included PRs before requesting the stack merge. Every
+included PR must have passing required checks, including the mandatory Rust/Bash
+CRAP gate, for its current revision. Rebase and rerun checks when revisions change
+or GitHub requires it. Avoid updating branches or rerunning checks solely in
+anticipation of merging a lower layer. Stacking can reduce sequential integration
+cycles. GitHub may still require fresh validation after the trunk changes.
 
 ### Disabling Compose discovery
 
@@ -111,3 +125,47 @@ Testcontainers engine requirements still apply. Explicit Compose lifecycle and
 readiness commands require an actual selected file and cannot use `none`.
 To change a saved selection, use interactive `makevn doctor --reset-config`
 (which resets other preferences too), then answer setup again. Reset is CLI-only.
+
+## JaCoCo effective model inspection
+
+After doctor/setup, use MCP `jacoco_inspect` or CLI `makevn jacoco-inspect`
+when effective parent/profile configuration needs inspection. This explicit
+operation runs the Maven Help Plugin with the verify/coverage flags and a private
+short-lived effective POM; it may resolve Maven plugins and dependencies. It does
+not run tests and does not persist or print the effective POM. The JSON result
+lists each project as `configured` (an enabled prepare-agent binding), `absent`
+(no enabled prepare-agent binding), or `unknown` (unresolved skip, unsupported
+phase/scope, or ambiguous coordinates). `absent` applies to the plugin binding,
+not arbitrary Java agents or custom instrumentation. `configured` does not prove
+the agent ran, that Surefire/Failsafe used its argument, or that fresh data exists.
+When model generation or parsing fails, treat the outcome as unknown and inspect
+the command error. `verify-changes-preview` continues without Maven.
+
+Focused JaCoCo HTML is stored as `jacoco-html.zip` beside the XML and CSV so
+checkout-wide checks do not scan generated markup. When a legacy uncompressed
+focused report causes such a check to fail, `makevn clean` archives its
+manifest-owned HTML before Maven clean. It preserves focused evidence; Maven
+clean still removes normal build outputs. Do not disable project checks.
+
+## Changed-code diagnostics
+
+Focused verification writes `.makevn/reports/verify-changes/summary.json` with
+its exit status and fresh Surefire/Failsafe counts per module. Subsequent
+`coverage-changes` and `crap-changes` update their own status, exit code and report
+paths in that summary for the same focused evidence. Coverage includes JaCoCo
+counters; CRAP includes method/warning counts and its gate mode. `passed` means
+the command succeeded; a CRAP gate of `reported` is not a warning-count gate.
+`not_run` and `not_applicable` distinguish unexecuted steps from a run with no
+changed production classes. A new verification resets both metric statuses;
+commands for a different evidence snapshot cannot update the previous summary.
+These local outcomes do not establish global coverage, CRAP or CI gates.
+Changed-code verification packages without installing project artifacts. In a
+multimodule project it verifies complete selected module/dependency suites together
+in the reactor with `-am`, consuming current reactor artifacts. Inspect the preview's
+listed modules and scope; single-module projects retain focused test selection.
+
+Changed-code CRAP supplements the source analyzer's missing explicit constructors
+with JaCoCo method instruction and complexity counters and an enclosing source
+range. Incomplete or ambiguous evidence must still fail. A parent plugin signal
+identifies a declaration only; profile activation and agent execution remain
+separate evidence requirements.

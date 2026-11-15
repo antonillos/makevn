@@ -28,6 +28,7 @@ else
 fi
 
 JACOCO_BASE="${1:-}"
+JACOCO_REPORT_DISPLAY="$JACOCO_BASE"
 BASE_REF="${2:-}"
 MIN_COVERAGE_PCT="${3:-90}"
 MIN_OVERALL_COVERAGE_PCT="${4:-90}"
@@ -38,6 +39,14 @@ MIN_COVERAGE_DISPLAY="$(printf '%s' "$MIN_COVERAGE_PCT" | sed -E 's/[[:space:]]*
 if [ -z "$JACOCO_BASE" ] || [ ! -d "$JACOCO_BASE" ]; then
   echo "✗ Error: JaCoCo base directory not found or invalid: $JACOCO_BASE" 1>&2
   exit 1
+fi
+
+if [ "${MAKEVN_COVERAGE_SCOPED:-false}" = true ] && [ -f "$JACOCO_BASE/jacoco-html.zip" ]; then
+  COVERAGE_HTML_TEMP="$(mktemp -d "${TMPDIR:-/tmp}/makevn-coverage-html.XXXXXXXX")"
+  trap 'rm -rf "$COVERAGE_HTML_TEMP"' EXIT
+  python3 -m zipfile -e "$JACOCO_BASE/jacoco-html.zip" "$COVERAGE_HTML_TEMP"
+  cp "$JACOCO_BASE/jacoco.csv" "$COVERAGE_HTML_TEMP/jacoco.csv"
+  JACOCO_BASE="$COVERAGE_HTML_TEMP"
 fi
 
 if [ ! -f "$JACOCO_BASE/index.html" ]; then
@@ -493,7 +502,7 @@ echo ""
 echo "┌  Coverage summary"
 echo "│"
 echo "│  compare against  $BASE_REF"
-echo "│  report           $JACOCO_BASE"
+echo "│  report           $JACOCO_REPORT_DISPLAY"
 echo "│  threshold        $(printf '%.2f' "$MIN_COVERAGE_DISPLAY")%"
 echo "│"
 echo "├  Incremental lines"

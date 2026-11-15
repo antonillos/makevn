@@ -237,7 +237,54 @@ def method_identity(label):
     return match.group(1), count
 
 
-def method_range(source, anchor_line, reported_method):
+def constructor_declaration_start(code, opening):
+    depth = 0
+    for offset in range(opening - 1, -1, -1):
+        char = code[offset]
+        if char == ')':
+            depth += 1
+        elif char == '(':
+            depth -= 1
+        elif depth == 0 and char in ';{}':
+            return offset
+    return -1
+
+
+def constructor_prefix(prefix):
+    """Accept constructor modifiers, annotations and balanced type parameters."""
+    while prefix.strip():
+        prefix = prefix.lstrip()
+        modifier = re.match(r'(?:public|protected|private)\b', prefix)
+        if modifier:
+            prefix = prefix[modifier.end():]
+            continue
+        if prefix.startswith('<'):
+            depth = 0
+            for index, char in enumerate(prefix):
+                depth += (char == '<') - (char == '>')
+                if depth == 0:
+                    prefix = prefix[index + 1:]
+                    break
+            else:
+                return False
+            continue
+        annotation = re.match(r'@[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*', prefix)
+        if not annotation:
+            return False
+        prefix = prefix[annotation.end():].lstrip()
+        if prefix.startswith('('):
+            depth = 0
+            for index, char in enumerate(prefix):
+                depth += (char == '(') - (char == ')')
+                if depth == 0:
+                    prefix = prefix[index + 1:]
+                    break
+            else:
+                return False
+    return True
+
+
+def method_range(source, anchor_line, reported_method, *, constructor_name=None):
     """Locate the enclosing method declaration and body around a JaCoCo line."""
     code = masked_java(source)
     stack = []
@@ -251,6 +298,8 @@ def method_range(source, anchor_line, reported_method):
     candidates = []
     for opening, closing in blocks:
         boundary = max(code.rfind(";", 0, opening), code.rfind("{", 0, opening), code.rfind("}", 0, opening))
+        if constructor_name is not None:
+            boundary = constructor_declaration_start(code, opening)
         prefix = code[boundary + 1:opening]
         close_paren = prefix.rfind(")")
         if close_paren < 0:
@@ -266,6 +315,9 @@ def method_range(source, anchor_line, reported_method):
         open_paren += 1
         name = re.search(r"([A-Za-z_$][\w$]*)\s*$", prefix[:open_paren])
         if not name or name.group(1) in ignored:
+            continue
+        if constructor_name is not None and (name.group(1) != constructor_name or
+                not constructor_prefix(prefix[:name.start()])):
             continue
         start_offset = boundary + 1 + len(prefix) - len(prefix.lstrip())
         start_line = code.count("\n", 0, start_offset) + 1

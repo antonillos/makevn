@@ -215,6 +215,12 @@ jobs:
               });
               for (const candidate of runs.data.workflow_runs) {
                 if (candidate.head_sha !== target.head.sha) continue;
+                const matchesPull = candidate.pull_requests?.some((item) =>
+                  item.number === target.number &&
+                  item.base.ref === target.base.ref &&
+                  item.base.sha === target.base.sha
+                );
+                if (!matchesPull) continue;
                 const candidateJobs = await loadRequiredJobs(candidate.id);
                 if (!candidateJobs.invalid.length) return candidate;
               }
@@ -491,6 +497,7 @@ jobs:
                   })).data;
               if (current.head.sha !== target.head.sha ||
                   current.base.ref !== target.base.ref ||
+                  current.base.sha !== target.base.sha ||
                   current.state !== "open") {
                 await comment(
                   `⛔ Stack PR #${target.number} changed immediately before merging. ` +

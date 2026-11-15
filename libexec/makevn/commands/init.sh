@@ -16,7 +16,7 @@ makevn_init_static_impact() {
   if result="$(python3 "${SCRIPT_DIR}/common/progressive_impact.py" init-summary "${repo_root}" "${base}" "${java_home}/bin/java" 2>&1)"; then
     makevn_print_item "Test impact" "${result}"
   else
-    makevn_print_item "Test impact" "deferred: ${result}; inspect makevn test-impact-preview for available scope"
+    makevn_print_item "Test impact" "deferred: ${result}"
   fi
 }
 

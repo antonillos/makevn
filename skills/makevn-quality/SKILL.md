@@ -34,7 +34,11 @@ rerun the appropriate coverage-producing flow. Do not switch to raw Maven.
 ### Changed-code checks
 
 Before queuing coverage/CRAP steps, inspect the fixture's effective JaCoCo
-agent configuration, including inherited parents and active profiles. When JaCoCo
+agent configuration, including inherited parents and active profiles. Use
+MCP `jacoco_inspect` (CLI `makevn jacoco-inspect`) for explicit Maven effective
+model inspection after doctor/setup. Its `configured`/`absent`/`unknown` statuses
+concern plugin bindings, not agent execution or custom instrumentation. It runs
+no tests and may resolve Maven plugins; the preview itself remains Maven-free. When JaCoCo
 is confirmed absent, run verification only: omit `coverage_changes` and
 `crap_changes` from the composite and report coverage/CRAP as unavailable because
 the project does not configure JaCoCo. Do not make calls merely to obtain an
@@ -61,6 +65,19 @@ Inspect `verify_changes_preview` separately. For projects with configured JaCoCo
 
 Validated test-impact selection retains the same fresh focused snapshot contract;
 coverage and CRAP share that new run's data, never the baseline capture data.
+For focused JaCoCo reports, XML and CSV remain available directly; HTML is
+preserved as `jacoco-html.zip` in the same report directory. Extract HTML outside
+the checkout for viewing, avoiding another scan. If a subsequent project check
+fails because an older focused HTML report under `.makevn` is
+being scanned, use `makevn clean` (MCP `clean`) after confirming that diagnosis.
+It archives manifest-owned legacy HTML before running Maven clean, preserving
+its contents and the focused snapshot. Maven clean also removes project build
+outputs. Do not disable the project check or delete evidence by hand.
+Full `verify-ut-coverage` and `verify-it-coverage` also archive verified legacy
+HTML before their Maven phase, then retire focused evidence only after successful
+full coverage. If a report is already orphaned or its recorded hashes no longer
+match, preserve it and report the diagnostic; do not guess ownership or delete it.
+
 Do not prepend clean or rerun tests without a reason. A valid run with no changed
 production classes returns `not applicable` for changed-code metrics with exit zero:
 no global gate was evaluated. Missing/stale evidence for changed classes still fails.
@@ -90,3 +107,13 @@ other Maven failures still stop the fail-fast workflow. Run coverage_changes and
 crap_changes from the fresh successful snapshot and report the actual incremental
 gates. Retain the separate complete-suite/global coverage requirement; a local
 success is not global approval. Never change POM rules or enable this implicitly.
+
+### Explicit comparison base
+
+For changed-code workflows with a known destination, use `--base REF` (MCP
+`base`) consistently in preview, verification, coverage and CRAP. This overrides
+offline ancestry inference, including detached worktrees. MakeVN does not fetch or
+query PR metadata. Ambiguous inference requires an explicit local reference.
+The base does not enable exhaustive mode or relax safety rules. Metric commands
+reuse only compatible successful evidence; changed merge bases require new
+verification. Equivalent references sharing the merge base remain compatible.

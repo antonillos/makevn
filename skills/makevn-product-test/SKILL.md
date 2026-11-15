@@ -1,7 +1,7 @@
 ---
 name: makevn-product-test
 description: >-
-  Use to validate MakeVN itself against real GitHub Java/Maven repositories: choose and clone fixtures, exercise MCP workflows, classify failures, reproduce fixes and preserve evidence for a new session. Not ordinary project test execution.
+  Use only to validate MakeVN itself against real GitHub Java/Maven fixtures. Do not load for ordinary application testing or verification.
 ---
 
 # MakeVN product testing
@@ -85,7 +85,10 @@ availability alone does not validate the check.
 ### Changed-code product scenario
 
 Before queuing coverage/CRAP steps, inspect the fixture's effective JaCoCo
-agent configuration, including inherited parents and active profiles. When JaCoCo
+agent configuration, including inherited parents and active profiles. After
+setup, MCP `jacoco_inspect` provides an explicit Maven effective-model inspection;
+its binding statuses do not prove agent execution or exclude custom instrumentation.
+Keep the focused preview separate and Maven-free. When JaCoCo
 is confirmed absent, run verification only: omit `coverage_changes` and
 `crap_changes` from the composite and report coverage/CRAP as unavailable because
 the project does not configure JaCoCo. Do not make calls merely to obtain an
@@ -108,8 +111,9 @@ prerequisites from doctor/config/profile/test signals, not a root Compose file.
 
 For a valid plan with configured JaCoCo, use fail-fast `composite_run`: `verify_changes` with the same
 focus mode, then `coverage_changes`, then `crap_changes`. Inspect preparation
-and owner-verification logs separately: dependency installation can cover many
-modules while the selected owner suites alone run tests. Confirm fresh non-skipped
+and verification logs separately: preparation packages without tests; multimodule
+verification runs complete selected module/dependency suites together in the
+reactor, while single-module verification retains focused selection. Confirm fresh non-skipped
 Surefire/Failsafe XML in each selected owner. Record each step's exit code and
 whether later steps were skipped by fail-fast; never describe skipped gates as
 passing.
@@ -164,6 +168,13 @@ is fixed. Follow repository PR and CI requirements, including CRAP. Creating a
 fix or PR does not authorize merging or publishing a release.
 
 ## Preserve a handoff
+
+Some builds scan the entire checkout, including ignored `.makevn` files. Preserve
+copied generated HTML and verbose outputs in compressed archives inside the
+campaign directory when their contents can trigger project-wide checks. If an
+older MakeVN focused HTML report itself causes such a failure, follow the
+makevn-quality recovery: `clean` archives manifest-owned legacy HTML before
+Maven clean. Preserve evidence and never suppress project checks.
 
 Keep campaign-generated reports and supporting evidence out of the fixture's
 project root. Store them under

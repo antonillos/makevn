@@ -64,7 +64,7 @@ printf 'coordinated coverage gate\n'
 EOF
 # Restore source content so the original successful snapshot becomes valid.
 printf 'class Owner {}' > "${tmp}/${MAKEVN_VERIFY_CHANGES_SRC_FILES}"
-output="$(cmd_coverage_changes "${tmp}")"
+output="$(cmd_coverage_changes "${tmp}" --base HEAD)"
 [[ "${output}" == *'coordinated coverage gate'* ]]
 makevn_die() { printf '%s\n' "$*" >&2; exit 1; }
 if (cmd_coverage_changes "${tmp}" --overall-threshold 90) > "${tmp}/overall" 2>&1; then exit 1; fi
@@ -87,7 +87,7 @@ MAKEVN_VERIFY_CHANGES_SRC_FILES=''
 makevn_scoped_coverage_prepare "${tmp}"
 makevn_scoped_coverage_finish "${tmp}"
 [[ "$(makevn_scoped_coverage_report "${tmp}" "${tmp}")" == not-applicable ]]
-output="$(cmd_coverage_changes "${tmp}")"
+output="$(cmd_coverage_changes "${tmp}" --base HEAD)"
 [[ "${output}" == *'not applicable'* && "${output}" == *'global coverage was not evaluated'* ]]
 output="$(makevn_crap_run "${tmp}" crap-changes)"
 [[ "${output}" == *'not applicable'* && "${output}" == *'global CRAP was not evaluated'* ]]

@@ -76,3 +76,15 @@ dependencies and API configuration; starting Compose does not resolve it.
 successful list. Even a successful empty list does not prove Java can connect to
 Docker. Use the test execution's prerequisite result for that evidence. All
 container diagnostics and lifecycle operations remain within MakeVN.
+
+## Container listing without Compose
+
+Use `makevn docker-ps --compose-file none` (MCP `docker_ps` with
+`"compose-file": "none"`) for read-only diagnostics without Compose. It lists
+all containers, including stopped containers, on the selected Docker CLI engine.
+An explicit Compose file retains Compose-scoped listing. Engine query failures
+remain command failures; an empty successful listing is not a readiness gate.
+The listing does not establish repository ownership or attribute containers to
+a particular Testcontainers run. Preserve foreign containers; this operation
+never starts or removes containers. `docker_ps_required`, lifecycle operations
+and `docker_stats` retain their Compose requirements.

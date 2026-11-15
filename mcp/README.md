@@ -3,6 +3,18 @@
 `makevn-mcp` is the dedicated Rust MCP server for makevn. It has no Node.js or
 JavaScript runtime dependency.
 
+## JaCoCo inspection
+
+`jacoco_inspect` explicitly runs Maven's effective-POM goal with the configured
+verification/coverage flags, then reports per-project JaCoCo plugin bindings.
+It runs no tests and removes the private model on normal exit and handled signals.
+An uncatchable termination may leave the private temporary directory behind. A
+configured binding does not establish that a test JVM used the agent or produced
+fresh execution data; an absent binding does not exclude custom instrumentation.
+An unresolved phase, skip setting or unsupported integration-only scope is
+reported as unknown. The tool may resolve Maven plugins and dependencies.
+`verify_changes_preview` remains a static, Maven-free preview.
+
 ## Docker operations
 
 Use MakeVN exclusively for Docker, including read-only diagnostics. This takes
@@ -496,12 +508,11 @@ repository with the **same** `focused` value:
 {"tool": "verify_changes", "arguments": {"repo": "/absolute/repository", "focused": true}}
 ```
 
-Read the planned owner suites/tests first. Preparation installs checkout dependencies
-without UT/IT execution; a large reactor here is normal. Owner verification has no
-`-am`: full production/POM-consumer suites, selected changed tests in other owners.
-Selected classes require fresh evidence from the expected test plugin. Unknown
-impact rejects focus instead of guessing. Report “focused checks passed” and the
-actual scope, not full integration/global coverage success. Keep full gates.
+Read the planned owner suites/tests first. Preparation packages without UT/IT
+execution and does not install project artifacts. Multimodule verification runs
+complete selected module/dependency suites together with `-am verify`, consuming
+reactor artifacts. Single-module verification retains selected tests. Inspect
+fresh reports and report actual scope; full CI and global gates remain separate.
 
 Omission or `focused: true` selects focused execution (the default).
 Explicit `focused: false` selects exhaustive owner/dependency suites, equivalent
@@ -622,6 +633,18 @@ verification still accepts `record-test-impact: true` in BOTH preview and execut
 Neither static maps nor runtime observations establish fresh coverage/CRAP or replace
 full verification and CI gates.
 
+### Explicit changed-code base
+
+`verify_changes_preview`, `verify_changes`, `coverage_changes`, and `crap_changes`
+share the optional string `base`, mapped to CLI `--base REF`. Pass the same local
+reference to every step, including inside composite `arguments`. Explicit input
+overrides offline ancestry inference. Invalid references, missing or multiple merge
+bases and ambiguous heuristic comparisons fail without fetching or looking up PRs.
+Use an authorized PR's destination as an explicit locally available reference;
+there is no automatic PR-context argument in this release. The argument does not
+change focused/exhaustive mode or relax planning and evidence checks. See the
+[comparison contract](../docs/cli-contract.md#changed-code-comparison-base).
+
 ### Explicit focused JaCoCo deferral
 
 `verify_changes_preview` and `verify_changes` accept the boolean
@@ -633,3 +656,15 @@ and other Maven gates. Literal/custom configurations may still fail. It is
 rejected with focused=false or record-test-impact=true and is not exposed on
 verify or test_impact_init. A successful local run does not establish global
 coverage; complete verification and CI remain required.
+
+## Container listing without Compose
+
+Use `makevn docker-ps --compose-file none` (MCP `docker_ps` with
+`"compose-file": "none"`) for read-only diagnostics without Compose. It lists
+all containers, including stopped containers, on the selected Docker CLI engine.
+An explicit Compose file retains Compose-scoped listing. Engine query failures
+remain command failures; an empty successful listing is not a readiness gate.
+The listing does not establish repository ownership or attribute containers to
+a particular Testcontainers run. Preserve foreign containers; this operation
+never starts or removes containers. `docker_ps_required`, lifecycle operations
+and `docker_stats` retain their Compose requirements.

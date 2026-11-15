@@ -984,6 +984,7 @@ test_mcp_tool_listing() {
   python3 -m unittest discover -s "${ROOT_DIR}/test/smoke" -p demo_mcp_test.py
   python3 "${ROOT_DIR}/test/smoke/generated_contract_mcp_test.py" "${prefix}/bin/makevn-mcp"
   python3 "${ROOT_DIR}/test/smoke/structured_mcp_test.py" "${prefix}/bin/makevn-mcp"
+  python3 "${ROOT_DIR}/test/smoke/execution_locks_test.py"
   python3 "${ROOT_DIR}/test/smoke/execution_mcp_test.py" "${prefix}/bin/makevn-mcp"
 }
 
@@ -3467,9 +3468,9 @@ test_verify_changes_focused_command() {
 #!/usr/bin/env bash
 set -euo pipefail
 printf '%s\n' "$*" >> .mvnw.log
-if [[ "$*" == *' install '* ]]; then touch .fresh-artifacts; fi
+if [[ "$*" == *' package '* ]]; then touch .fresh-artifacts; fi
 if [[ "$*" == *' verify '* ]]; then [[ -f .fresh-artifacts ]] || exit 44; fi
-if [[ "$*" == *'-pl boot verify '* && ! -f .missing-reports ]]; then
+if [[ "$*" == *'-pl boot,client -am verify '* && ! -f .missing-reports ]]; then
   mkdir -p boot/target/failsafe-reports
   printf '<testsuite><testcase classname="example.OwnersIT" name="works"/></testsuite>' > boot/target/failsafe-reports/TEST-example.OwnersIT.xml
 fi
@@ -3477,16 +3478,15 @@ EOF
   chmod +x "${repo}/mvnw"
   output="$(${CLI} --repo "${repo}" verify-changes-preview)"
   [[ "${output}" == *'mode: focused'* ]] || fail 'missing focused preview label'
-  [[ "${output}" == *'verify boot: example.OwnersIT'* ]] || fail 'missing boot IT selection'
-  [[ "${output}" == *'verify client: entire module suite'* ]] || fail 'missing production suite'
+  [[ "${output}" == *'complete suites in selected modules and dependencies together with -am'* ]] || fail 'missing reactor suite scope'
+  [[ "${output}" == *'boot,client plus dependencies: package without UT/IT'* ]] || fail 'missing production suite'
   [[ ! -f "${repo}/.mvnw.log" ]] || fail 'focused preview executed Maven'
   mkdir -p "${repo}/.makevn/logs"
   printf 'previous prepare diagnostic\n' > "${repo}/.makevn/logs/verify-changes-1.log"
   chmod 444 "${repo}/.makevn/logs/verify-changes-1.log"
   ${CLI} --repo "${repo}" verify-changes >/dev/null
-  assert_contains "${repo}/.mvnw.log" '-pl boot,client -am install -DskipTests=true -DskipUTs=true -DskipITs=true'
-  assert_contains "${repo}/.mvnw.log" '-pl boot verify -DskipTests=false -DskipUTs=false -DskipITs=false -Dtest=!%regex[.*] -Dit.test=example.OwnersIT'
-  assert_matches "${repo}/.mvnw.log" '.*-pl client verify -DskipTests=false -DskipUTs=false -DskipITs=false$'
+  assert_contains "${repo}/.mvnw.log" '-pl boot,client -am package -DskipTests=true -DskipUTs=true -DskipITs=true'
+  assert_contains "${repo}/.mvnw.log" '-pl boot,client -am verify -DskipTests=false -DskipUTs=false -DskipITs=false'
   assert_contains "${repo}/.makevn/logs/verify-changes-1.log.previous" 'previous prepare diagnostic'
   local before_log_failure
   before_log_failure="$(wc -l < "${repo}/.mvnw.log")"
@@ -4134,7 +4134,12 @@ EOF
   set -e
 
   [[ ${rc} -eq 1 ]] || fail "expected coverage verification without XML to exit 1, got ${rc}"
-  [[ "${output}" == *"without generating a JaCoCo XML report"* ]] || fail "expected missing JaCoCo XML explanation"
+  [[ "${output}" == *"without finding a JaCoCo XML report under target"* ]] \
+    || fail "expected missing JaCoCo XML explanation"
+  [[ "${output}" == *"Ensure jacoco:report runs during or before verify"* ]] \
+    || fail "expected guidance to run the JaCoCo report goal"
+  [[ "${output}" == *"enables instrumentation but does not generate the XML report"* ]] \
+    || fail "expected explanation that the skip property does not generate a report"
 }
 
 test_verify_coverage_accepts_custom_jacoco_output_path() {
@@ -4869,6 +4874,8 @@ test_crap_install_analyzer_requires_cache_home() {
 }
 
 main() {
+  python3 "${ROOT_DIR}/test/smoke/docker_ps_scope_test.py"
+  python3 "${ROOT_DIR}/test/smoke/reactor_verification_test.py"
   bash "${ROOT_DIR}/test/repo-sweep/results_test.sh"
   test_unclassified_build_change_requires_explicit_exhaustive
   test_coverage_rejects_old_global_after_scoped_verification
@@ -4970,6 +4977,11 @@ main() {
   test_crap_command_gate_and_explicit_xml
   test_crap_changes_filters_methods_and_includes_worktree
   python3 -m unittest discover -s "${ROOT_DIR}/libexec/makevn/crap" -p 'test_*.py' >/dev/null
+  python3 "${ROOT_DIR}/test/smoke/crap_constructors_test.py" >/dev/null
+  python3 "${ROOT_DIR}/test/smoke/changes_summary_test.py" >/dev/null
+  python3 "${ROOT_DIR}/test/smoke/jacoco_signal_test.py" >/dev/null
+  python3 "${ROOT_DIR}/test/smoke/jacoco_effective_test.py" >/dev/null
+  bash "${ROOT_DIR}/test/smoke/jacoco_inspect_test.sh"
   test_crap_command_uses_maven_root_for_custom_xml_path
   test_crap_command_discovers_custom_xml_path
   test_crap_command_scopes_module_custom_xml_to_its_sources
@@ -5054,6 +5066,7 @@ bash "${ROOT_DIR}/test/smoke/log_reuse_test.sh"
 bash "${ROOT_DIR}/test/smoke/focused_changes_test.sh"
 bash "${ROOT_DIR}/test/smoke/focused_coverage_gate_test.sh"
 python3 "${ROOT_DIR}/test/smoke/selected_test_reports_test.py"
+python3 "${ROOT_DIR}/test/smoke/changes_base_test.py"
 python3 "${ROOT_DIR}/test/smoke/changes_scope_test.py"
 python3 "${ROOT_DIR}/test/smoke/reactor_impact_test.py"
 bash "${ROOT_DIR}/test/smoke/impact_state_shell_test.sh"
@@ -5069,4 +5082,5 @@ bash "${ROOT_DIR}/test/smoke/scoped_coverage_shell_test.sh"
 bash "${ROOT_DIR}/test/smoke/crap_cwd_test.sh"
 python3 "${ROOT_DIR}/test/smoke/crap_non_executable_test.py"
 bash "${ROOT_DIR}/test/smoke/coverage_awk_test.sh"
+python3 "${ROOT_DIR}/test/smoke/coverage_html_archive_test.py"
 main "$@"

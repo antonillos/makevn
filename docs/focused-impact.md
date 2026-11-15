@@ -20,7 +20,9 @@ executable/test sources), shared root `src/test/resources` can affect any declar
 module. Without a proven narrower scope, makevn conservatively selects **every
 reactor module's complete suite**, including aggregators with verification goals.
 The plan displays those owners and explains this potentially expensive scope.
-Preparation still skips UT/IT; owner verification still runs without `-am`.
+Preparation uses `-am package` and skips UT/IT. Multimodule verification runs
+complete selected module/dependency suites together with `-am verify`, using
+reactor artifacts without installing project artifacts.
 This is a classified shared-test-resource scope, not a silent switch to exhaustive.
 
 This default is **Maven module verification only**. It does not execute or prove
