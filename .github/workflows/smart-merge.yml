@@ -258,7 +258,7 @@ jobs:
                   base_ref: pull.base.ref,
                   publish_badge: "false",
                 },
-                request: githubApiRequest,
+                ...githubApiRequest,
               });
 
               while (Date.now() < deadline && !verifyRun) {
