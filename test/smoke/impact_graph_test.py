@@ -32,12 +32,13 @@ class GraphTests(unittest.TestCase):
         parsed = {'src/main/java/Root.java': fact('Root', [])} | {
             f'src/test/java/Test{i}.java': fact(f'Test{i}', ['Root']) for i in range(120)}
         graph = impact_graph.describe({'facts': parsed}, impact.graph_index(parsed), 'Root')
-        self.assertEqual(len(graph['nodes']), 100)
+        self.assertEqual(len(graph['nodes']), 11)
+        self.assertEqual(graph['reached_nodes'], 121)
         self.assertTrue(graph['truncated'])
         self.assertGreater(graph['omitted'], 0)
         rendered = impact_graph.render(graph)
-        self.assertIn('Tests: 99', rendered)
-        self.assertIn('89 more', rendered)
+        self.assertIn('Tests: 120', rendered)
+        self.assertIn('110 more', rendered)
         self.assertNotIn('Root ->', rendered)
         self.assertLess(len(rendered.splitlines()), 25)
 
@@ -54,6 +55,19 @@ class GraphTests(unittest.TestCase):
         self.assertIn('100 more', impact_graph.render(limited))
         with self.assertRaises(ValueError):
             impact_graph.describe(value, index, 'A', depth=0)
+
+    def test_display_limit_does_not_stop_deeper_traversal(self):
+        parsed = {'src/main/java/Root.java': fact('Root', [])} | {
+            f'src/main/java/Wide{i}.java': fact(f'Wide{i}', ['Root']) for i in range(150)}
+        parsed['src/main/java/Deep.java'] = fact('Deep', ['Wide149'])
+        parsed['src/test/java/DeepTest.java'] = fact('DeepTest', ['Deep'])
+        value, index = {'facts': parsed}, impact.graph_index(parsed)
+        two = impact_graph.describe(value, index, 'Root', depth=2, limit=1)
+        three = impact_graph.describe(value, index, 'Root', depth=3, limit=1)
+        self.assertEqual(two['reached_nodes'] + 1, three['reached_nodes'])
+        self.assertEqual(three['layers'][3]['test'], 1)
+        self.assertIn('Hop 3:', impact_graph.render(three))
+        self.assertIn('DeepTest', impact_graph.render(three))
 
 
 if __name__ == '__main__':

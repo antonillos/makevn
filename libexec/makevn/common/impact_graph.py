@@ -39,8 +39,7 @@ def describe(value, index, focus=None, observation_status='none', depth=3, limit
         for target in sorted(edges.get(source, set())):
             if target not in nodes:
                 continue
-            if (depths[source] >= depth or (not show_all and (len(displayed) >= max(300, limit * 30) or
-                    (target not in depths and len(depths) >= max(100, limit * 10))))):
+            if depths[source] >= depth:
                 omitted += 1
                 continue
             repeat = target in depths
@@ -57,8 +56,7 @@ def describe(value, index, focus=None, observation_status='none', depth=3, limit
         for target in sorted(observed.get(source, set()) - edges.get(source, set())):
             if target not in nodes:
                 continue
-            if (depths[source] >= depth or (not show_all and (len(displayed) >= max(300, limit * 30) or
-                    (target not in depths and len(depths) >= max(100, limit * 10))))):
+            if depths[source] >= depth:
                 omitted += 1
                 continue
             repeat = target in depths
@@ -67,22 +65,29 @@ def describe(value, index, focus=None, observation_status='none', depth=3, limit
             displayed.append({'source': source, 'target': target, 'static': False,
                               'observed': True, 'ambiguous': False,
                               'conservative_reverse': False, 'repeated': repeat})
-    result.update(focus=root, nodes=[nodes[name] | {'depth': depth} for name, depth in depths.items()],
-                  edges=displayed, truncated=bool(omitted), omitted=omitted)
-    remaining = {name for name in depths if nodes[name]['kind'] == 'production'}
-    groups = []
-    while remaining:
-        start = min(remaining)
-        remaining.remove(start)
-        group, pending = {start}, [start]
-        while pending:
-            for neighbor in edges.get(pending.pop(), set()) & remaining:
-                remaining.remove(neighbor)
-                group.add(neighbor)
-                pending.append(neighbor)
-        if len(group) > 1:
-            groups.append(sorted(group))
-    result['production_groups'] = groups
+    layers = defaultdict(lambda: {'test': 0, 'production': 0, 'helper': 0})
+    buckets = defaultdict(list)
+    for name, distance in depths.items():
+        if name != root:
+            layers[distance][nodes[name]['kind']] += 1
+            buckets[(distance, nodes[name]['kind'])].append(name)
+    visible = {root}
+    for names in buckets.values():
+        visible.update(sorted(names) if show_all else sorted(names)[:limit])
+    visible_edges = [edge for edge in displayed
+                     if edge['source'] in visible and edge['target'] in visible]
+    evidence = defaultdict(set)
+    for edge in displayed:
+        for flag in ('observed', 'ambiguous', 'conservative_reverse'):
+            if edge[flag]:
+                evidence[edge['target']].add(flag)
+    result.update(focus=root,
+                  nodes=[nodes[name] | {'depth': distance, 'evidence': sorted(evidence[name])}
+                         for name, distance in depths.items() if name in visible],
+                  edges=visible_edges, truncated=bool(omitted or len(visible) < len(depths)),
+                  omitted=omitted + len(displayed) - len(visible_edges),
+                  layers=dict(sorted(layers.items())), reached_nodes=len(depths),
+                  hidden_nodes=len(depths) - len(visible), depth_boundary_relations=omitted)
     return result
 
 
@@ -97,39 +102,28 @@ def render(graph):
         labels = defaultdict(list)
         for name in nodes:
             labels[name.rsplit('.', 1)[-1]].append(name)
-        direct, indirect = {}, {}
-        for edge in graph['edges']:
-            if edge['target'] == edge['source'] or edge['target'] == graph['focus']:
-                continue
-            target = edge['target']
-            collection = direct if edge['source'] == graph['focus'] else indirect
-            collection.setdefault(target, []).append(edge)
-        transitive_count = len(set(indirect) - set(direct))
-        for name, evidence in indirect.items():
-            direct.setdefault(name, []).extend(evidence)
-        lines.append(f"Relationships within {graph['depth']} hops (shown graph scope):")
-        for kind, title in [('test', 'Tests'), ('production', 'Production classes'), ('helper', 'Helpers and benchmarks')]:
-            names = sorted(name for name in direct if nodes[name]['kind'] == kind)
-            lines.append(f'  {title}: {len(names)}')
-            shown = len(names) if graph['show_all'] else graph['limit']
-            for name in names[:shown]:
-                short = name.rsplit('.', 1)[-1]
-                label = short if len(labels[short]) == 1 else name
-                evidence = direct[name]
-                flags = []
-                if any(edge['observed'] for edge in evidence):
-                    flags.append('observed')
-                if any(edge['ambiguous'] for edge in evidence):
-                    flags.append('ambiguous')
-                if any(edge['conservative_reverse'] for edge in evidence):
-                    flags.append('conservative')
-                suffix = ' [' + ', '.join(flags) + ']' if flags else ''
-                lines.append('    ' + label + suffix)
-            if len(names) > shown:
-                lines.append(f'    … {len(names) - shown} more in displayed scope')
-        lines.append('Additional transitive nodes in displayed scope: ' + str(transitive_count))
-        if graph['truncated']:
-            lines.append('Partial graph: omitted relations: ' + str(graph['omitted']))
+        lines.append(f"Reachable classes within {graph['depth']} hops: {graph['reached_nodes'] - 1}")
+        for distance, counts in graph['layers'].items():
+            lines.append(f'Hop {distance}:')
+            for kind, title in [('test', 'Tests'), ('production', 'Production classes'), ('helper', 'Helpers and benchmarks')]:
+                lines.append(f'  {title}: {counts[kind]}')
+                names = sorted(name for name, node in nodes.items()
+                               if node['depth'] == int(distance) and node['kind'] == kind)
+                for name in names:
+                    short = name.rsplit('.', 1)[-1]
+                    label = short if len(labels[short]) == 1 else name
+                    flags = [flag for flag in ('observed', 'ambiguous')
+                             if flag in nodes[name]['evidence']]
+                    if 'conservative_reverse' in nodes[name]['evidence']:
+                        flags.append('conservative')
+                    suffix = ' [' + ', '.join(flags) + ']' if flags else ''
+                    lines.append('    ' + label + suffix)
+                if counts[kind] > len(names):
+                    lines.append(f"    … {counts[kind] - len(names)} more (use --limit or --all)")
+        if graph['hidden_nodes']:
+            lines.append('Hidden classes due to display limit: ' + str(graph['hidden_nodes']))
+        if graph['depth_boundary_relations']:
+            lines.append('Relations not expanded at depth boundary: ' + str(graph['depth_boundary_relations']))
         lines.append('Relationships are conservative; use verify-changes-preview for test selection.')
     lines.append('Conservative seeds: ' + str(graph['conservative_seed_count']) +
                  '; ambiguous identifiers: ' + str(graph['ambiguous_identifier_count']))
