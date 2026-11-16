@@ -91,11 +91,16 @@ def unsupported(context, detail):
 
 def validate(base, owner='.'):
     rules, locations = {}, {}
-    for pom, root in model_records(base, owner):
+    for depth, (pom, root) in enumerate(model_records(base, owner)):
         for plugin in root.findall('.//plugin'):
             artifact = plugin.findtext('artifactId')
             if artifact not in DEFAULT_INCLUDES:
                 continue
+            inheritance = plugin.findtext('inherited', 'true').strip()
+            if depth and inheritance != 'true':
+                context, _ = filter_context(pom, root, plugin)
+                unsupported(context, 'parent plugin inherited=' + repr(inheritance) +
+                            '; ancestor filter merging is not proven')
             for config in plugin.findall('.//configuration'):
                 filters = [node for node in config if node.tag in {'includes', 'excludes', 'includesFile', 'excludesFile'}]
                 if not filters:

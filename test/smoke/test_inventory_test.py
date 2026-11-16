@@ -125,6 +125,36 @@ class TestInventoryTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'multiple filter configurations'):
             inventory.validate(self.base)
 
+    def test_non_inherited_parent_filters_never_remove_child_tests(self):
+        for artifact in inventory.DEFAULT_INCLUDES:
+            with self.subTest(plugin=artifact):
+                self.write(self.base / 'pom.xml', self.model('child', self.parent('parent')))
+                parent = self.home / '.m2/repository/example/parent/1/parent-1.pom'
+                self.write(parent, self.model('parent').replace('</project>',
+                    '<build><plugins><plugin><artifactId>' + artifact + '</artifactId>'
+                    '<inherited>false</inherited><configuration><excludes>'
+                    '<exclude>**/OwnerTest.java</exclude></excludes></configuration>'
+                    '</plugin></plugins></build></project>'))
+                with self.assertRaisesRegex(ValueError, r'parent-1.pom.*inherited=.*false'):
+                    inventory.validate(self.base)
+
+    def test_non_inherited_parent_blocks_ancestor_filters_even_without_own_filters(self):
+        self.write(self.base / 'pom.xml', self.model('child', self.parent('parent')))
+        parent = self.home / '.m2/repository/example/parent/1/parent-1.pom'
+        self.write(parent, self.model('parent', self.parent('ancestor')).replace('</project>',
+            '<build><plugins><plugin><artifactId>maven-surefire-plugin</artifactId>'
+            '<inherited>false</inherited></plugin></plugins></build></project>'))
+        self.cached('ancestor', filters=True)
+        with self.assertRaisesRegex(ValueError, r'parent-1.pom.*inherited=.*false'):
+            inventory.validate(self.base)
+
+    def test_inherited_false_applies_to_the_declaring_owner(self):
+        self.filtered_model('<excludes><exclude>**/OwnerTest.java</exclude></excludes>')
+        pom = self.base / 'pom.xml'
+        pom.write_text(pom.read_text().replace('<configuration>', '<inherited>false</inherited><configuration>'))
+        self.assertEqual(inventory.eligible({'example.OwnerTest', 'example.OtherTest'}, inventory.validate(self.base)),
+                         {'example.OtherTest'})
+
 
 if __name__ == '__main__':
     unittest.main()

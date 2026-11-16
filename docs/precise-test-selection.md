@@ -60,6 +60,8 @@ class paths (optionally prefixed by `**/`) or the default
 `**/*$*` nested-class exclusion. Matching exclusions are preserved when constructing
 explicit selectors. Unsupported patterns, filter files, profile filters, merge
 attributes and multiple filter configurations retain complete owner suites.
+Non-default parent plugin inheritance also retains the suite; parent-only filters
+are never applied to a child without proving their effective inheritance.
 Fallback diagnostics identify the POM, profile/execution, plugin and offending
 filter rather than guessing an effective model.
 Filter validation follows the selected owner's Maven parent chain, not sibling
