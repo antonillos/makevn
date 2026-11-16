@@ -39,9 +39,12 @@ makevn_finish_test_impact_capture() {
 
 makevn_validate_prepared_impact() {
   [[ "${MAKEVN_VERIFY_CHANGES_FOCUSED_PLAN}" == *$'\t'[!*]* && -n "${MAKEVN_VERIFY_CHANGES_SRC_FILES:-}" ]] || return 0
-  local java_home prepared
+  local java_home prepared comparison_base="${MAKEVN_VERIFY_CHANGES_PARENT_SPEC}"
   java_home="$(makevn_effective_java_home "$1" code "${MAKEVN_VERIFY_CHANGES_MAVEN_BASE_PATH}")" || return $?
-  prepared="$(printf '%s\n%s\n' "${MAKEVN_VERIFY_CHANGES_SRC_FILES}" "${MAKEVN_VERIFY_CHANGES_TEST_FILES:-}" | MAKEVN_TEST_IMPACT_JAVA="${java_home}/bin/java" python3 "${SCRIPT_DIR}/common/changes_scope.py" "$1" "${MAKEVN_VERIFY_CHANGES_MAVEN_BASE_PATH}" "${MAKEVN_VERIFY_CHANGES_PARENT_SPEC}" --focused-plan)" || return $?
+  if [[ "${comparison_base}" != HEAD ]]; then
+    comparison_base="$(git -C "$1" merge-base "${comparison_base%...HEAD}" HEAD)" || return $?
+  fi
+  prepared="$(printf '%s\n%s\n' "${MAKEVN_VERIFY_CHANGES_SRC_FILES}" "${MAKEVN_VERIFY_CHANGES_TEST_FILES:-}" | MAKEVN_TEST_IMPACT_JAVA="${java_home}/bin/java" python3 "${SCRIPT_DIR}/common/changes_scope.py" "$1" "${MAKEVN_VERIFY_CHANGES_MAVEN_BASE_PATH}" "${comparison_base}" --focused-plan)" || return $?
   [[ "${prepared}" == "${MAKEVN_VERIFY_CHANGES_FOCUSED_PLAN}" ]] || makevn_die "Prepared static impact changed; run verify-changes-preview again."
 }
 

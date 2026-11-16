@@ -69,10 +69,25 @@ def mark_non_executable(base, parsed):
         declaration = re.search(r'\bclass\s+' + re.escape(simple) + r'\b[^{};]*?\bextends\s+(\w+)', content)
         test_markers = {'Test', 'ParameterizedTest', 'RepeatedTest', 'TestFactory', 'TestTemplate',
                         'RunWith', 'ExtendWith', 'TestCase'}
+        if (not (test_markers | {'suite', 'Nested'}).intersection(item['names']) and
+                not re.search(r'\b(?:extends|implements)\b', content) and
+                re.search(r'\bpublic\s+static\s+void\s+main\s*\(', content) and
+                only_non_test_annotations(content)):
+            item['executable'] = False
+            continue
         superclass = item['class'].rsplit('.', 1)[0] + '.' + declaration.group(1) if declaration else None
         if (simple.startswith('Test') and superclass in production and superclass not in test_classes and
                 not test_markers.intersection(item['names'])):
             item['executable'] = False
+
+
+def only_non_test_annotations(content):
+    if '"""' in content:
+        return False
+    tokens = r'"(?:\\.|[^"\\])*"|\x27(?:\\.|[^\x27\\])*\x27|//[^\n]*|/\*.*?\*/'
+    code = re.sub(tokens, ' ', content, flags=re.DOTALL)
+    annotations = {name.rsplit('.', 1)[-1] for name in re.findall(r'@\s*([\w.]+)', code)}
+    return annotations <= {'SuppressWarnings', 'FunctionalInterface', 'Override', 'Deprecated', 'Serial'}
 
 
 def tests(parsed):
@@ -211,7 +226,7 @@ def narrow(repo, base, owner, paths, changed_tests, reference, cache=None):
         current = cache['current']
         if owner not in (current['modules'] or ['.']):
             raise ValueError('unknown reactor owner')
-        validate_test_inventory(base, owner)
+        inventory_rules = validate_test_inventory(base, owner)
         allowed = {source for source in paths if source.endswith('.java') and
                    ('/src/main/java/' in '/' + source or '/src/test/java/' in '/' + source)}
         from changes_scope import non_verification_path
@@ -271,7 +286,8 @@ def narrow(repo, base, owner, paths, changed_tests, reference, cache=None):
         if current['kind'] == KIND and (impact.state(repo) / 'map.json').exists():
             with contextlib.redirect_stderr(io.StringIO()):
                 selected.update(impact.narrow(repo, base, owner, paths, changed_tests) or set())
-        selected = reactor.local_names(current, selected, owner)
+        from test_inventory import eligible
+        selected = eligible(reactor.local_names(current, selected, owner), inventory_rules)
         if not selected:
             raise ValueError('no statically known tests; complete suite retained')
         print('Test impact: static dependencies plus additive runtime observations; ' +

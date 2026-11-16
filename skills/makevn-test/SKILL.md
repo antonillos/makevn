@@ -52,6 +52,11 @@ runtime evidence are scoped to each module; explicit isolated capture remains
 single-module only. Profile-dependent membership and unresolved models retain
 complete suites or require exhaustive verification.
 Inspect selected classes and fallback reasons; focused does not promise few tests.
+Literal conventional test filters can be supported; profile filters, external files
+and ambiguous configuration merging retain full suites with POM/profile/plugin
+locations in the diagnostic. Inspect the summary's `selection` against fresh
+executed and skipped-only classes; no finite class comparison is claimed for an
+unknown complete-suite inventory.
 
 After doctor/setup, `test-impact-preview` is read-only and `test-impact-init` writes
 a static map without Maven/tests/containers. Normal selected tests and complete

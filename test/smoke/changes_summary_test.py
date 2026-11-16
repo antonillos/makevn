@@ -116,6 +116,31 @@ class SummaryTests(unittest.TestCase):
             self.assertEqual(result['coverage']['status'], 'not_applicable')
             self.assertEqual(result['crap']['status'], 'not_applicable')
 
+    def test_fresh_execution_is_compared_with_class_plan_and_reactor_expansion(self):
+        import sys
+        sys.path.insert(0, str(path.parent))
+        from selection_report import compare
+        result = compare('.\texample.OwnerTest,example.SkippedTest', '.\texample.OwnerTest',
+                         {'.': ['example.OwnerTest', 'example.ExtraTest']}, {'.': ['example.SkippedTest']})['.']
+        self.assertEqual(result['notExecuted'], ['example.SkippedTest'])
+        self.assertEqual(result['additional'], ['example.ExtraTest'])
+        reactor = compare('app\t*\ncore\t*', 'app\texample.AppTest',
+                          {'app': ['example.AppTest', 'example.OtherTest']}, {})
+        self.assertIn('expands class candidates', reactor['app']['expansionReason'])
+        self.assertIn('upstream dependency', reactor['core']['expansionReason'])
+
+    def test_skipped_only_reports_do_not_claim_execution(self):
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory)
+            report = base / 'target/surefire-reports/TEST-Suite.xml'
+            report.parent.mkdir(parents=True)
+            report.write_text('<testsuite tests="2" failures="0" errors="0" skipped="1">'
+                              '<testcase classname="example.RunTest"/>'
+                              '<testcase classname="example.SkippedTest"><skipped/></testcase></testsuite>')
+            result = summary.summarize(base, 0, 0)
+            self.assertEqual(result['executedClasses'], {'.': ['example.RunTest']})
+            self.assertEqual(result['skippedOnlyClasses'], {'.': ['example.SkippedTest']})
+
 
 if __name__ == '__main__':
     unittest.main()

@@ -656,7 +656,7 @@ No modified Java or POM files detected. Skipping verify-changes."
       [[ "${MAKEVN_TEST_IMPACT_CAPTURE:-false}" == true ]] || makevn_scoped_coverage_finish "${repo_root}" || return $?
       rc=0
     else rc=$?; fi
-    python3 "${SCRIPT_DIR}/common/changes_summary.py" "${repo_root}" "${MAKEVN_VERIFY_CHANGES_MAVEN_BASE_PATH}" "$(makevn_state_dir "${repo_root}")/verify-changes-started" "${rc}" || return $?
+    python3 "${SCRIPT_DIR}/common/changes_summary.py" "${repo_root}" "${MAKEVN_VERIFY_CHANGES_MAVEN_BASE_PATH}" "$(makevn_state_dir "${repo_root}")/verify-changes-started" "${rc}" "${MAKEVN_VERIFY_CHANGES_FOCUSED_PLAN}" "${MAKEVN_VERIFY_CHANGES_SELECTED_PLAN:-}" || return $?
     makevn_clear_verify_changes_plan "${repo_root}"
     return "${rc}"
   fi
