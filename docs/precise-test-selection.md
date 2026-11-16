@@ -53,9 +53,10 @@ the impact preview never runs tests.
 The static inventory includes Surefire's `Test*`, `*Test`, `*Tests`, and `*TestCase`
 conventions, including annotation-free JUnit 3 classes. Configured Surefire/Failsafe
 class filters support one literal configuration per plugin in the inspected parent
-chain. Includes must be a subset of the plugin's conventional default patterns;
+chain. Includes must be a subset of the plugin's conventional default patterns.
 Configurations must be at plugin level; execution-level filters retain the full
-suite because their lifecycle binding is not inferred. Excludes may be literal class paths (optionally prefixed by `**/`) or the default
+suite because their lifecycle binding is not inferred. Excludes may be literal
+class paths (optionally prefixed by `**/`) or the default
 `**/*$*` nested-class exclusion. Matching exclusions are preserved when constructing
 explicit selectors. Unsupported patterns, filter files, profile filters, merge
 attributes and multiple filter configurations retain complete owner suites.
