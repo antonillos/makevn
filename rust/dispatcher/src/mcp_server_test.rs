@@ -1535,3 +1535,22 @@ fn changed_preview_explanation_is_explicit() {
     super::push_tool_option(&mut args, "explain", &json!(true)).unwrap();
     assert_eq!(args, ["--explain"]);
 }
+
+#[test]
+fn pr_diagram_is_preview_only_and_returns_untrusted_markdown() {
+    assert!(super::validate_workflow_step(&json!({"tool":"verify_changes_preview", "arguments":{"diagram":true}})).is_ok());
+    assert!(super::validate_workflow_step(&json!({"tool":"verify_changes", "arguments":{"diagram":true}})).is_err());
+    let mut args = Vec::new();
+    super::push_tool_option(&mut args, "diagram", &json!(false)).unwrap();
+    assert!(args.is_empty());
+    super::push_tool_option(&mut args, "diagram", &json!(true)).unwrap();
+    assert_eq!(args, ["--diagram"]);
+    let markdown = "```mermaid\nflowchart LR\na --> b\n```";
+    let payload = json!({"format":"mermaid", "markdown":markdown, "status":"planned",
+        "changedInputs":1, "selectedModules":1, "groupedModules":0});
+    let result = super::ToolCallResult { output: format!("Preview scope\nMAKEVN_PR_DIAGRAM_JSON={payload}\n"),
+        exit_code: 0, duration_ms: 0, doctor_snapshot: None, next_suggestion: None };
+    let response = super::standard_tool_result(&result, &json!({"name":"verify_changes_preview", "arguments":{"diagram":true}}));
+    assert_eq!(response["structuredContent"]["untrustedData"]["diagram"]["markdown"], markdown);
+    assert_eq!(response["structuredContent"]["untrustedData"]["output"], "Preview scope");
+}

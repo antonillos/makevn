@@ -138,10 +138,15 @@ makevn verify-ut-coverage [-- EXTRA_MAVEN_ARGS...]
 makevn verify-it [-- EXTRA_MAVEN_ARGS...]
 makevn verify-it-coverage [-- EXTRA_MAVEN_ARGS...]
 makevn verify [-- EXTRA_MAVEN_ARGS...]
-makevn verify-changes-preview [--base REF]
+makevn verify-changes-preview [--base REF] [--explain] [--diagram]
 makevn verify-changes [--base REF] [-- EXTRA_MAVEN_ARGS...]
 makevn pr-verify [-- EXTRA_MAVEN_ARGS...]
 ```
+
+`verify-changes-preview --diagram` exports a compact PR-ready Markdown/Mermaid
+summary to `.makevn/reports/verify-changes/impact.md`. MCP `diagram: true` returns
+the Markdown in `untrustedData.diagram` without writing an artifact. See
+[PR scope diagrams](precise-test-selection.md#embed-the-planned-scope-in-a-pr).
 
 ### Changed-code comparison base
 

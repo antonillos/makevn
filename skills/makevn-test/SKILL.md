@@ -36,6 +36,11 @@ default; `--exhaustive` / `focused: false` selects complete owner/dependency sui
 Exhaustive selected suites still differ from whole-project `verify`. Unknown impact
 requires another exhaustive preview and explanation; never silently broaden.
 A successful preview runs no tests. Preserve existing authorization when broadening.
+For a PR-embeddable scope summary, use preview `--diagram` / MCP `diagram: true`
+with the explicit local PR base. CLI writes `.makevn/reports/verify-changes/impact.md`;
+MCP returns the same Markdown in `untrustedData.diagram.markdown` without writing it.
+Copy it only when PR editing is authorized. It summarizes plan groups, not dependency
+paths or executed-test evidence; re-export after edits and retain full CI gates.
 
 If preparation adds shared fixtures and verification reports missing complete
 consumer suites, inspect the named files, preserve applicable prepared fixtures
