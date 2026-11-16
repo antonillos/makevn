@@ -52,7 +52,15 @@ the impact preview never runs tests.
 
 The static inventory includes Surefire's `Test*`, `*Test`, `*Tests`, and `*TestCase`
 conventions, including annotation-free JUnit 3 classes. Configured Surefire/Failsafe
-class includes/excludes or filter files retain the complete owner suite.
+class filters support one literal configuration per plugin in the inspected parent
+chain. Includes must be a subset of the plugin's conventional default patterns;
+Configurations must be at plugin level; execution-level filters retain the full
+suite because their lifecycle binding is not inferred. Excludes may be literal class paths (optionally prefixed by `**/`) or the default
+`**/*$*` nested-class exclusion. Matching exclusions are preserved when constructing
+explicit selectors. Unsupported patterns, filter files, profile filters, merge
+attributes and multiple filter configurations retain complete owner suites.
+Fallback diagnostics identify the POM, profile/execution, plugin and offending
+filter rather than guessing an effective model.
 Filter validation follows the selected owner's Maven parent chain, not sibling
 modules or unrelated aggregators. Published parents are inspected only from the
 local Maven cache; missing or unresolved parent models retain the complete suite
@@ -163,3 +171,18 @@ reasons. Static reasons include dynamic/framework seeds and are not claims of an
 exact call path. In multimodule projects, class candidates do not narrow execution:
 complete affected and upstream dependency suites remain the effective reactor plan.
 No tests are executed by the preview.
+
+## Compare planned and executed selection
+
+The changed-code summary JSON records `selection` per module: effective plan,
+class candidates, fresh executed classes, skipped-only classes, additional classes
+and selected classes without executed evidence. Nested test cases are attributed
+to their outer selected class. Stale XML reports are excluded. A class-level
+comparison is marked unavailable for a complete suite with no finite candidate
+inventory; this does not claim that every suite test executed. Reactor expansion
+from class candidates to complete suites and upstream dependencies is explicit.
+Optional skipped tests remain visible rather than being counted as executed.
+
+The execution revalidates the same merge-base commit after preparation. Standalone
+`main` harnesses without test markers, inheritance or unknown annotations are not
+classified as executable tests merely because their file names end in `Test`.

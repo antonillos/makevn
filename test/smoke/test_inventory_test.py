@@ -79,6 +79,52 @@ class TestInventoryTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'cyclic'):
             inventory.validate(self.base)
 
+    def filtered_model(self, configuration, profile=None):
+        plugin = ('<build><plugins><plugin><artifactId>maven-surefire-plugin</artifactId>'
+                  '<configuration>' + configuration + '</configuration></plugin></plugins></build>')
+        body = plugin if profile is None else '<profiles><profile><id>' + profile + '</id>' + plugin + '</profile></profiles>'
+        self.write(self.base / 'pom.xml', self.model('child').replace('</project>', body + '</project>'))
+
+    def test_conventional_includes_and_literal_excludes_respect_selection(self):
+        self.filtered_model('<includes><include>**/*Test.java</include></includes>'
+                            '<excludes><exclude>**/perf/PerformanceTest.java</exclude></excludes>')
+        rules = inventory.validate(self.base)
+        names = {'example.OwnerTest', 'example.TestOwner', 'example.perf.PerformanceTest', 'RootTest'}
+        self.assertEqual(inventory.eligible(names, rules), {'example.OwnerTest', 'RootTest'})
+
+    def test_profile_filter_reports_pom_profile_and_pattern_location(self):
+        self.filtered_model('<excludes><exclude>**/OwnerTest.java</exclude></excludes>', 'conditional')
+        with self.assertRaisesRegex(ValueError, r'pom.xml.*profile\[conditional\].*maven-surefire-plugin.*excludes.*activation'):
+            inventory.validate(self.base)
+
+    def test_unknown_patterns_and_filter_files_fail_closed_with_context(self):
+        for value in ['<includes><include>%regex[.*]</include></includes>',
+                      '<excludes><exclude>${excluded}</exclude></excludes>',
+                      '<includesFile>filters.txt</includesFile>']:
+            with self.subTest(value=value):
+                self.filtered_model(value)
+                with self.assertRaisesRegex(ValueError, r'pom.xml.*maven-surefire-plugin'):
+                    inventory.validate(self.base)
+
+    def test_execution_filters_report_binding_uncertainty(self):
+        self.filtered_model('<includes><include>**/*Test.java</include></includes>')
+        pom = self.base / 'pom.xml'
+        pom.write_text(pom.read_text().replace('<configuration>', '<executions><execution><id>custom-tests</id><configuration>')
+                       .replace('</configuration>', '</configuration></execution></executions>'))
+        with self.assertRaisesRegex(ValueError, r'execution\[custom-tests\].*binding'):
+            inventory.validate(self.base)
+
+    def test_filter_inheritance_merge_is_not_guessed(self):
+        self.filtered_model('<includes><include>**/*Test.java</include></includes>')
+        pom = self.base / 'pom.xml'
+        pom.write_text(pom.read_text().replace('<artifactId>child</artifactId>', '<artifactId>child</artifactId>' + self.parent('parent')))
+        parent = self.home / '.m2/repository/example/parent/1/parent-1.pom'
+        self.write(parent, self.model('parent').replace('</project>',
+                   '<build><plugins><plugin><artifactId>maven-surefire-plugin</artifactId><configuration>'
+                   '<includes><include>**/*Tests.java</include></includes></configuration></plugin></plugins></build></project>'))
+        with self.assertRaisesRegex(ValueError, 'multiple filter configurations'):
+            inventory.validate(self.base)
+
 
 if __name__ == '__main__':
     unittest.main()

@@ -8,7 +8,7 @@ import xml.etree.ElementTree as ET
 
 
 def summarize(base, started, exit_code):
-    modules = {}
+    modules, executed, skipped = {}, {}, {}
     for path in sorted(base.rglob('TEST-*.xml')):
         if path.parent.name not in {'surefire-reports', 'failsafe-reports'} or path.stat().st_mtime < started:
             continue
@@ -17,7 +17,16 @@ def summarize(base, started, exit_code):
         counts = modules.setdefault(owner, dict(tests=0, failures=0, errors=0, skipped=0))
         for key in counts:
             counts[key] += int(node.get(key, '0'))
+        for test in node.iter('testcase'):
+            name = test.get('classname', '').split('$')[0]
+            if not name:
+                continue
+            collection = skipped if test.find('skipped') is not None else executed
+            collection.setdefault(owner, set()).add(name)
+
     return dict(exitCode=exit_code, scope='focused', modules=modules,
+                executedClasses={owner: sorted(names) for owner, names in executed.items()},
+                skippedOnlyClasses={owner: sorted(names - executed.get(owner, set())) for owner, names in skipped.items()},
                 globalGates='not established by focused verification')
 
 
@@ -78,9 +87,13 @@ def main(args):
         _, repo, command, code = args
         update_stage(Path(repo), command, int(code))
         return
-    repo, base, stamp, code = args
+    repo, base, stamp, code = args[:4]
     output = summary_path(Path(repo))
     summary = summarize(Path(base), Path(stamp).stat().st_mtime, int(code))
+    if len(args) > 4:
+        from selection_report import compare
+        summary['selection'] = compare(args[4], args[5] if len(args) > 5 else '',
+                                       summary['executedClasses'], summary['skippedOnlyClasses'])
     try:
         run_id = run_identity(Path(repo))
     except FileNotFoundError:
@@ -99,6 +112,16 @@ def main(args):
     save_summary(output, summary)
     totals = {key: sum(m[key] for m in summary['modules'].values()) for key in ('tests', 'failures', 'errors', 'skipped')}
     print('Changed-code verification: exit ' + code + '; ' + ', '.join(f'{key}={value}' for key, value in totals.items()))
+    if 'selection' in summary:
+        for owner, result in summary['selection'].items():
+            print('Selection ' + owner + ': planned=' + result['mode'] +
+                  (' (' + str(len(result['planned'])) + ')' if result['mode'] == 'classes' else '') +
+                  '; executed classes=' + str(len(result['executed'])) +
+                  '; skipped-only=' + str(len(result['skippedOnly'])) +
+                  '; additional=' + str(len(result['additional'])) +
+                  '; not executed=' + (str(len(result['notExecuted'])) if result['classComparisonAvailable'] else 'unknown (suite)'))
+            if result['expansionReason']:
+                print('Scope ' + owner + ': ' + result['expansionReason'])
     print('Summary: ' + str(output))
     if code != '0':
         print('Inspect the failed phase and fresh test reports; multimodule verification uses complete selected module/dependency suites together in the reactor.')

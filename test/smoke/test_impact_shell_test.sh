@@ -86,6 +86,19 @@ printf '<testsuite><testcase classname="example.OptionalTest"><failure/></testca
 if python3 "${SCRIPT_DIR}/common/selected_test_reports.py" "${tmp}" example.OptionalTest "${stamp}" "${tmp}"; then exit 1; fi
 printf 'Test impact shell capture, optional reports and failure invalidation passed\n'
 
+# Revalidation must use the same merge-base commit as the initial plan, not a Git range.
+MAKEVN_VERIFY_CHANGES_FOCUSED_PLAN=$'.\texample.OwnerTest'
+MAKEVN_VERIFY_CHANGES_SRC_FILES='src/main/java/example/Owner.java'
+MAKEVN_VERIFY_CHANGES_PARENT_SPEC='HEAD...HEAD'
+python3() {
+  if [[ "$1" == */changes_scope.py ]]; then
+    [[ "$4" == "$(git -C "${tmp}" rev-parse HEAD)" ]]
+    printf '%s\n' "${MAKEVN_VERIFY_CHANGES_FOCUSED_PLAN}"
+  else command python3 "$@"; fi
+}
+makevn_validate_prepared_impact "${tmp}"
+unset -f python3
+
 # A JDK selection failure must be actionable before any capture starts.
 makevn_load_profile() { :; }
 makevn_detect_maven_base_path() { printf '%s\n' "${tmp}"; }

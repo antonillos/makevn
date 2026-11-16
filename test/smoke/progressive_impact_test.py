@@ -55,6 +55,31 @@ class ProgressiveImpactTests(unittest.TestCase):
     def initialize(self, write=True):
         return progressive.initialize(self.repo, self.repo, self.java, write)
 
+    def test_standalone_main_harness_is_not_a_test_but_annotated_main_is(self):
+        folder = self.repo / 'src/test/java/example'
+        (folder / 'PerformanceTest.java').write_text(
+            'package example; class PerformanceTest { public static void main(String[] args) {} }')
+        (folder / 'MainTest.java').write_text(
+            'package example; class MainTest { public static void main(String[] args) {} @Test void check() {} }')
+        (folder / 'ComposedTest.java').write_text(
+            'package example; @CustomSuite class ComposedTest { public static void main(String[] args) {} }')
+        value = self.initialize(False)
+        self.assertIn('example.ComposedTest', progressive.tests(value['facts']))
+        self.assertNotIn('example.PerformanceTest', progressive.tests(value['facts']))
+        self.assertIn('example.MainTest', progressive.tests(value['facts']))
+
+    def test_supported_filters_preserve_related_tests_and_exclude_unrelated_tests(self):
+        (self.repo / 'pom.xml').write_text('<project><build><plugins><plugin>'
+            '<artifactId>maven-surefire-plugin</artifactId><configuration><includes>'
+            '<include>**/*Test.java</include></includes></configuration></plugin></plugins></build></project>')
+        subprocess.run(['git', '-C', str(self.repo), 'add', 'pom.xml'], check=True)
+        subprocess.run(['git', '-C', str(self.repo), '-c', 'user.name=Test', '-c', 'user.email=test@example.org',
+                        'commit', '--no-gpg-sign', '-qm', 'fixture filters'], check=True)
+        source = self.repo / self.source
+        source.write_text(source.read_text().replace('return 1', 'return 2'))
+        self.assertEqual(progressive.narrow(self.repo, self.repo, '.', [self.source], set(), 'HEAD'),
+                         {'example.OwnerTest', 'example.ConsumerTest'})
+
     def test_init_builds_static_map_and_defers_unavailable_analysis(self):
         script = '''
 set -euo pipefail
