@@ -354,6 +354,18 @@ class ReactorProgressiveTests(unittest.TestCase):
         self.assertIn('target/generated-sources/api',
                       [item['root'] for item in plan['unresolved_roots']])
 
+    def test_explanation_preserves_effective_reactor_plan(self):
+        self.edit()
+        expected = changes_scope.verification_plan(self.repo, self.repo, 'HEAD', [self.source])
+        output = io.StringIO()
+        with patch.dict(os.environ, MAKEVN_CHANGES_EXPLAIN='true', MAKEVN_BACKEND_DETAIL_OUT=''):
+            with contextlib.redirect_stderr(output):
+                actual = changes_scope.verification_plan(self.repo, self.repo, 'HEAD', [self.source])
+        self.assertEqual(actual, expected)
+        self.assertIn('changed input: ' + self.source, output.getvalue())
+        self.assertIn('static reachability', output.getvalue())
+        self.assertIn('complete affected and upstream dependency module suites', output.getvalue())
+
     def test_core_edit_selects_consumers_without_unrelated_tests(self):
         self.edit()
         with patch.object(progressive, 'graph_index', wraps=progressive.graph_index) as build:

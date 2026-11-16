@@ -671,3 +671,13 @@ The listing does not establish repository ownership or attribute containers to
 a particular Testcontainers run. Preserve foreign containers; this operation
 never starts or removes containers. `docker_ps_required`, lifecycle operations
 and `docker_stats` retain their Compose requirements.
+
+### Explain changed-code selection
+
+`verify_changes_preview` accepts `explain: true` (CLI `--explain`). Its normal
+text output includes the planner's selection reasons and full-suite fallback
+reasons. Multimodule class candidates are distinguished from the effective
+complete reactor suites. Use `test_impact_preview` to explore dependencies,
+`verify_changes_preview` to inspect the current diff's plan, and `verify_changes`
+to recompute and execute it. Preview explanations do not execute tests or provide
+verification evidence.

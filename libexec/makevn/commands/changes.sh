@@ -420,7 +420,7 @@ cmd_verify_changes_preview() {
   shift
   makevn_changes_mode "$@"
   shift "${MAKEVN_VERIFY_CHANGES_MODE_ARGS}"
-  [[ $# -eq 0 ]] || makevn_die "Usage: verify-changes-preview [--base REF] [--focused|--exhaustive] [--record-test-impact] [--defer-global-coverage]"
+  [[ $# -eq 0 ]] || makevn_die "Usage: verify-changes-preview [--explain] [--base REF] [--focused|--exhaustive] [--record-test-impact] [--defer-global-coverage]"
 
   if ! makevn_frontend_owns_loader; then
     print_command_intro "${repo_root}" verify-changes-preview
@@ -428,6 +428,9 @@ cmd_verify_changes_preview() {
 
   makevn_load_profile "${repo_root}"
   makevn_collect_verify_changes_scope "${repo_root}" preview
+  if [[ "${MAKEVN_CHANGES_EXPLAIN:-false}:${MAKEVN_VERIFY_CHANGES_MODE}" == true:exhaustive ]]; then
+    makevn_print_detail_line "Explain: explicit exhaustive mode retains complete selected module suites; class-level narrowing is disabled."
+  fi
   if [[ "${MAKEVN_VERIFY_CHANGES_SCOPE_REQUIRED}" == true ]]; then
     makevn_print_item "compare against" "${MAKEVN_VERIFY_CHANGES_PARENT_SPEC}"
     makevn_print_changes_base "${repo_root}" "${MAKEVN_VERIFY_CHANGES_PARENT_SPEC}"

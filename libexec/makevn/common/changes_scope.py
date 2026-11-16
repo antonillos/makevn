@@ -195,6 +195,8 @@ def focused_plan(repo, base, reference, paths):
     """Full suites for production/POM owners, changed tests in other owners."""
     repo, base = repo.resolve(), base.resolve()
     paths = [path for path in paths if path]
+    from impact_explanation import emit
+    emit('comparison ' + reference, ['changed input: ' + path for path in paths])
     root_pom = base / "pom.xml"
     test_paths = {path for path in paths if "/src/test/java/" in f"/{path}"}
     root_sources = set()
@@ -250,6 +252,13 @@ def focused_plan(repo, base, reference, paths):
         chosen = None
         if owner in suites and owner not in shared_suites and os.environ.get('MAKEVN_TEST_IMPACT_CAPTURE') != 'true':
             chosen = narrow(repo, base, owner, paths, tests.get(owner, set()), reference, impact_cache)
+        if not chosen:
+            reasons = [reason for reason, affected_owners in impact_cache.get('fallbacks', {}).items() if owner in affected_owners]
+            if owner in shared_suites:
+                reasons.append('shared test resources affect complete owner suites')
+            if os.environ.get('MAKEVN_TEST_IMPACT_CAPTURE') == 'true':
+                reasons.append('explicit impact capture requires complete suites')
+            emit(owner, reasons or ['complete affected owner suite' if owner in suites else 'explicit changed test classes'])
         records.append(owner + "\t" + (",".join(sorted(chosen)) if chosen else
                        "*" if owner in suites else ",".join(sorted(tests[owner]))))
     report_fallbacks(impact_cache)
@@ -261,6 +270,8 @@ def verification_plan(repo, base, reference, paths):
     reactor = declared_modules(base, parse((base / 'pom.xml').read_text()))
     if not reactor or not plan:
         return plan
+    from impact_explanation import emit
+    emit('reactor', ['effective verification runs complete affected and upstream dependency module suites with -am; class-level candidates do not narrow reactor execution'])
     owners = {line.split('\t')[0] for line in plan.splitlines()}
     if reactor <= owners:
         return '\n'.join(owner + '\t*' for owner in sorted(owners))

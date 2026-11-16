@@ -152,4 +152,5 @@ def render(graph):
         lines.append('Relationships are conservative; use verify-changes-preview for test selection.')
     lines.append('Conservative seeds: ' + str(graph['conservative_seed_count']) +
                  '; ambiguous identifiers: ' + str(graph['ambiguous_identifier_count']))
+    lines.append('Next: makevn verify-changes-preview --explain to review the actual changed-code plan.')
     return '\n'.join(lines)

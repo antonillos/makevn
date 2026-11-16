@@ -277,6 +277,8 @@ def narrow(repo, base, owner, paths, changed_tests, reference, cache=None):
         print('Test impact: static dependencies plus additive runtime observations; ' +
               str(len(selected)) + '/' + str(len(reactor.local_names(current, tests(parsed), owner))) +
               ' classes selected for ' + owner, file=sys.stderr)
+        from impact_explanation import explain_tests
+        explain_tests(current, owner, selected, changed_test_classes, affected, skipped, cache['observed_index'])
         return selected
     except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError, ET.ParseError) as error:
         if collect_fallbacks:
