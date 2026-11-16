@@ -1524,3 +1524,14 @@ fn graph_display_options_forward_limits_and_all() {
     }
     assert_eq!(args, ["--depth", "2", "--limit", "50", "--all"]);
 }
+
+#[test]
+fn changed_preview_explanation_is_explicit() {
+    let spec = super::TOOL_SPECS.iter().find(|spec| spec.name == "verify_changes_preview").unwrap();
+    assert!(spec.options.iter().any(|option| option.name == "explain"));
+    let mut args = Vec::new();
+    super::push_tool_option(&mut args, "explain", &json!(false)).unwrap();
+    assert!(args.is_empty());
+    super::push_tool_option(&mut args, "explain", &json!(true)).unwrap();
+    assert_eq!(args, ["--explain"]);
+}

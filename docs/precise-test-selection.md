@@ -152,3 +152,14 @@ verify/CI remains required. The subsequent coverage/CRAP commands evaluate the
 changed-code snapshot, not a global gate. This flag defaults to false and is
 rejected with exhaustive mode or record-test-impact. Static initialization executes
 no verification; isolated capture retains its complete-suite prerequisite.
+
+## Explain a changed-code plan
+
+Use `makevn verify-changes-preview --explain` (MCP `verify_changes_preview`
+with `explain: true`) to include reasons from the selection planner in its output.
+The explanation lists changed inputs, conservative static reachability, compatible
+runtime observations, skipped tests retained conservatively, and full-suite fallback
+reasons. Static reasons include dynamic/framework seeds and are not claims of an
+exact call path. In multimodule projects, class candidates do not narrow execution:
+complete affected and upstream dependency suites remain the effective reactor plan.
+No tests are executed by the preview.

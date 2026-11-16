@@ -17,7 +17,7 @@ makevn_collect_focused_plan() {
   if [[ -n "${MAKEVN_VERIFY_CHANGES_FOCUSED_PLAN}" ]]; then
     MAKEVN_VERIFY_CHANGES_MODULE_SELECTION="$(printf '%s\n' "${MAKEVN_VERIFY_CHANGES_FOCUSED_PLAN}" | cut -f1 | paste -sd, -)"
   fi
-  MAKEVN_VERIFY_CHANGES_SELECTED_PLAN="$(printf '%s\n' "${changed_paths}" | python3 "${SCRIPT_DIR}/common/changes_scope.py" "${git_root}" "${MAKEVN_VERIFY_CHANGES_MAVEN_BASE_PATH}" "${comparison_base}" --selected-plan)" || return $?
+  MAKEVN_VERIFY_CHANGES_SELECTED_PLAN="$(printf '%s\n' "${changed_paths}" | MAKEVN_CHANGES_EXPLAIN=false python3 "${SCRIPT_DIR}/common/changes_scope.py" "${git_root}" "${MAKEVN_VERIFY_CHANGES_MAVEN_BASE_PATH}" "${comparison_base}" --selected-plan)" || return $?
 }
 
 makevn_changes_mode() {
@@ -25,6 +25,7 @@ makevn_changes_mode() {
   MAKEVN_VERIFY_CHANGES_MODE=focused
   MAKEVN_VERIFY_CHANGES_MODE_ARGS=0
   export MAKEVN_TEST_IMPACT_CAPTURE=false
+  export MAKEVN_CHANGES_EXPLAIN=false
   MAKEVN_DEFER_GLOBAL_COVERAGE=false
   while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -35,6 +36,7 @@ makevn_changes_mode() {
         shift 2
         continue
         ;;
+      --explain) MAKEVN_CHANGES_EXPLAIN=true ;;
       --record-test-impact) MAKEVN_TEST_IMPACT_CAPTURE=true ;;
       --defer-global-coverage) MAKEVN_DEFER_GLOBAL_COVERAGE=true ;;
       --focused|--exhaustive)
