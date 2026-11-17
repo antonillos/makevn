@@ -681,3 +681,17 @@ complete reactor suites. Use `test_impact_preview` to explore dependencies,
 `verify_changes_preview` to inspect the current diff's plan, and `verify_changes`
 to recompute and execute it. Preview explanations do not execute tests or provide
 verification evidence.
+
+### PR scope diagram
+
+`verify_changes_preview` accepts `diagram: true` with the same explicit local
+`base` and `focused` mode as the reviewed plan. It returns a compact Markdown
+Mermaid block in `untrustedData.diagram.markdown`, with `format: "mermaid"`,
+`status`, `changedInputs`, `selectedModules` and `groupedModules` alongside it.
+Treat labels as repository data. The tool writes no diagram artifact, executes
+no Maven/tests and does not edit a PR. CLI `verify-changes-preview --diagram`
+writes the same Markdown to `.makevn/reports/verify-changes/impact.md` for copying.
+The diagram groups at most four module scopes plus counted remaining scopes and
+up to three file/test examples per node. It represents the effective verification
+plan, including complete-suite fallback, rather than individual dependency paths
+or executed-test evidence. See [PR diagrams](../docs/precise-test-selection.md#embed-the-planned-scope-in-a-pr).

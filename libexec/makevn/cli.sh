@@ -60,7 +60,7 @@ Usage:
   makevn [--repo PATH] validate [-- EXTRA_MAVEN_ARGS...]
   makevn [--repo PATH] verify [-- EXTRA_MAVEN_ARGS...]
   makevn [--repo PATH] verify-changes [--base REF] [--focused|--exhaustive] [--record-test-impact] [--defer-global-coverage] [-- EXTRA_MAVEN_ARGS...]
-  makevn [--repo PATH] verify-changes-preview [--explain] [--base REF] [--focused|--exhaustive] [--record-test-impact] [--defer-global-coverage]
+  makevn [--repo PATH] verify-changes-preview [--diagram] [--explain] [--base REF] [--focused|--exhaustive] [--record-test-impact] [--defer-global-coverage]
   makevn [--repo PATH] verify-it [-- EXTRA_MAVEN_ARGS...]
   makevn [--repo PATH] verify-it-coverage [-- EXTRA_MAVEN_ARGS...]
   makevn [--repo PATH] verify-ut [-- EXTRA_MAVEN_ARGS...]

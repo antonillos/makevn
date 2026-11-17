@@ -189,3 +189,33 @@ Optional skipped tests remain visible rather than being counted as executed.
 The execution revalidates the same merge-base commit after preparation. Standalone
 `main` harnesses without test markers, inheritance or unknown annotations are not
 classified as executable tests merely because their file names end in `Test`.
+
+## Embed the planned scope in a PR
+
+```bash
+makevn verify-changes-preview --base origin/develop --diagram
+```
+
+The CLI writes `.makevn/reports/verify-changes/impact.md` and prints its path.
+Copy its Markdown into the PR description to render a native Mermaid diagram.
+Use the PR destination as the explicit local comparison reference; the preview
+neither fetches nor edits a GitHub PR. It includes committed changes since the
+merge base and current local edits, so use a clean worktree for a published PR.
+The next diagram export replaces the same artifact.
+
+The diagram summarizes changed files → effective plan → modules/test suites.
+It shows at most four module scopes and three file/test examples per scope;
+remaining modules and examples are grouped with counts. These are plan groups,
+not class dependency paths or test execution results. Reactor plans show complete
+suites, including upstream dependencies. Exhaustive mode names its selected scopes
+and separately notes the upstream suites added by Maven `-am` without enumerating
+them. Selecting `.` exhaustively represents the whole Maven project.
+An unresolved focused scope explicitly
+requires an exhaustive preview instead of claiming a selected test set.
+
+MCP `verify_changes_preview` accepts `diagram: true` with the same `base` and mode.
+The response contains `untrustedData.diagram` with `format: "mermaid"`, `markdown`,
+`status`, `changedInputs`, `selectedModules`, and `groupedModules`. MCP returns the
+same Markdown without writing the CLI artifact. Repository-derived diagram labels
+are untrusted data. `--diagram` is only available on the preview; it runs no Maven
+or tests, does not change selection, and does not replace verification or CI.

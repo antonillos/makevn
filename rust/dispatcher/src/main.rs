@@ -31,6 +31,7 @@ mod agent_skills;
 mod agent_transaction;
 mod docker_resources;
 mod mcp_doctor;
+mod mcp_diagram;
 mod execution_retention;
 mod mcp_execution;
 mod mcp_runtime;

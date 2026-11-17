@@ -26,6 +26,7 @@ makevn_changes_mode() {
   MAKEVN_VERIFY_CHANGES_MODE_ARGS=0
   export MAKEVN_TEST_IMPACT_CAPTURE=false
   export MAKEVN_CHANGES_EXPLAIN=false
+  MAKEVN_CHANGES_DIAGRAM=false
   MAKEVN_DEFER_GLOBAL_COVERAGE=false
   while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -37,6 +38,7 @@ makevn_changes_mode() {
         continue
         ;;
       --explain) MAKEVN_CHANGES_EXPLAIN=true ;;
+      --diagram) MAKEVN_CHANGES_DIAGRAM=true ;;
       --record-test-impact) MAKEVN_TEST_IMPACT_CAPTURE=true ;;
       --defer-global-coverage) MAKEVN_DEFER_GLOBAL_COVERAGE=true ;;
       --focused|--exhaustive)
@@ -160,4 +162,21 @@ makevn_validate_focused_flags() {
         ;;
     esac
   done
+}
+
+makevn_print_pr_impact_diagram() {
+  [[ "${MAKEVN_CHANGES_DIAGRAM:-false}" == true ]] || return 0
+  local output='' diagram plan=''
+  if [[ "${MAKEVN_MCP_INSPECTION:-}" != 1 ]]; then
+    output="$(makevn_state_dir "$1")/reports/verify-changes/impact.md"
+  fi
+  [[ "${MAKEVN_VERIFY_CHANGES_MODE}" != focused ]] || plan="${MAKEVN_VERIFY_CHANGES_FOCUSED_PLAN:-}"
+  diagram="$(printf '%s\0%s\0%s' "${MAKEVN_VERIFY_CHANGES_INPUTS:-}" "${plan}" "${MAKEVN_VERIFY_CHANGES_MODULE_SELECTION:-}" |
+    python3 "${SCRIPT_DIR}/common/pr_impact_diagram.py" "${MAKEVN_VERIFY_CHANGES_PARENT_SPEC}" \
+      "${MAKEVN_VERIFY_CHANGES_MODE}" "${MAKEVN_VERIFY_CHANGES_SCOPE_REQUIRED:-false}" "${output}")" || return $?
+  if [[ "${MAKEVN_MCP_INSPECTION:-}" == 1 ]]; then
+    printf 'MAKEVN_PR_DIAGRAM_JSON=%s\n' "${diagram}"
+  else
+    makevn_print_detail_line "PR diagram: ${output} (copy the Markdown into the PR description)"
+  fi
 }
