@@ -72,7 +72,8 @@ def summarize(reference, mode, blocked, changed, plan, modules):
 
 
 def main(args):
-    reference, mode, blocked, changed, plan, modules, destination = args
+    reference, mode, blocked, destination = args
+    changed, plan, modules = sys.stdin.read().split('\0')
     result = summarize(reference, mode, blocked == 'true', changed, plan, modules)
     if destination:
         output = Path(destination)

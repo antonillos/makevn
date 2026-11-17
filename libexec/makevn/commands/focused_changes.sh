@@ -171,10 +171,9 @@ makevn_print_pr_impact_diagram() {
     output="$(makevn_state_dir "$1")/reports/verify-changes/impact.md"
   fi
   [[ "${MAKEVN_VERIFY_CHANGES_MODE}" != focused ]] || plan="${MAKEVN_VERIFY_CHANGES_FOCUSED_PLAN:-}"
-  diagram="$(python3 "${SCRIPT_DIR}/common/pr_impact_diagram.py" "${MAKEVN_VERIFY_CHANGES_PARENT_SPEC}" \
-    "${MAKEVN_VERIFY_CHANGES_MODE}" "${MAKEVN_VERIFY_CHANGES_SCOPE_REQUIRED:-false}" \
-    "${MAKEVN_VERIFY_CHANGES_INPUTS:-}" \
-    "${plan}" "${MAKEVN_VERIFY_CHANGES_MODULE_SELECTION:-}" "${output}")" || return $?
+  diagram="$(printf '%s\0%s\0%s' "${MAKEVN_VERIFY_CHANGES_INPUTS:-}" "${plan}" "${MAKEVN_VERIFY_CHANGES_MODULE_SELECTION:-}" |
+    python3 "${SCRIPT_DIR}/common/pr_impact_diagram.py" "${MAKEVN_VERIFY_CHANGES_PARENT_SPEC}" \
+      "${MAKEVN_VERIFY_CHANGES_MODE}" "${MAKEVN_VERIFY_CHANGES_SCOPE_REQUIRED:-false}" "${output}")" || return $?
   if [[ "${MAKEVN_MCP_INSPECTION:-}" == 1 ]]; then
     printf 'MAKEVN_PR_DIAGRAM_JSON=%s\n' "${diagram}"
   else

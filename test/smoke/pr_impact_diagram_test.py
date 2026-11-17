@@ -56,9 +56,10 @@ class DiagramTests(unittest.TestCase):
     def test_cli_writes_the_same_markdown_as_the_mcp_payload(self):
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory) / 'reports/impact.md'
-            args = ['HEAD', 'focused', 'false', 'src/Price.java', '.\texample.PriceTest', '.', str(output)]
+            args = ['HEAD', 'focused', 'false', str(output)]
+            payload = '\0'.join(['src/Price.java', '.\texample.PriceTest', '.'])
             result = subprocess.run([sys.executable, str(ROOT / 'libexec/makevn/common/pr_impact_diagram.py'), *args],
-                                    check=True, capture_output=True, text=True)
+                                    input=payload, check=True, capture_output=True, text=True)
             self.assertEqual(output.read_text(), json.loads(result.stdout)['markdown'])
 
 
