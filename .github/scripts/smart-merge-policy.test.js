@@ -16,23 +16,23 @@ test("Verify runs for intermediate stack bases and Smart Merge consumes each lay
 
   assert.match(prTrigger[1], /types: \[opened, synchronize, reopened, edited\]/);
 
-  const functionStart = workflow.indexOf("async function findSuccessfulVerify(target) {");
+  const functionStart = workflow.indexOf("async function findVerify(target, allowPending = false) {");
   const functionEnd = workflow.indexOf("\n\n            // Reuse", functionStart);
   assert.ok(functionStart >= 0 && functionEnd > functionStart);
-  const findSuccessfulVerify = new Function("github", "loadRequiredJobs", "owner", "repo",
-    `${workflow.slice(functionStart, functionEnd)}; return findSuccessfulVerify;`);
+  const findVerify = new Function("github", "loadRequiredJobs", "owner", "repo",
+    `${workflow.slice(functionStart, functionEnd)}; return findVerify;`);
   const requests = [];
   const loaded = [];
   const github = { rest: { actions: { listWorkflowRuns: async (request) => {
     requests.push(request);
     return { data: { workflow_runs: [
       { id: 1, head_sha: "stale" },
-      { id: 2, head_sha: request.branch + "-sha", pull_requests: [
+      { id: 2, status: "completed", conclusion: "success", head_sha: request.branch + "-sha", pull_requests: [
         { number: 7, base: { ref: "develop", sha: "base-sha" } },
       ] },
     ] } };
   } } } };
-  const lookup = findSuccessfulVerify(github, async (id) => {
+  const lookup = findVerify(github, async (id) => {
     loaded.push(id);
     return { invalid: [] };
   }, "example", "repo");
@@ -59,12 +59,71 @@ test("Verify runs for intermediate stack bases and Smart Merge consumes each lay
   }
 });
 
+test("Smart Merge follows an exact queued Verify and stops on a failed gate or changed revision", async () => {
+  const start = workflow.indexOf('const requiredChecks =');
+  const end = workflow.indexOf('// Required-workflow rules', start);
+  assert.ok(start >= 0 && end > start);
+  const verify = new Function("github", "pull", "core", "comment", "sleep",
+    `const owner = "example", repo = "repo", pullNumber = pull.number;
+     const targetPulls = [pull];
+     return (async () => { ${workflow.slice(start, end)} return "merge-reached"; })();`);
+  const pull = { number: 1, state: "open", head: { ref: "topic", sha: "head" },
+    base: { ref: "develop", sha: "base" } };
+  const queued = { id: 10, status: "queued", head_sha: pull.head.sha,
+    html_url: "https://github.com/example/repo/actions/runs/10", pull_requests: [pull] };
+  const candidates = [
+    { ...queued, id: 8, display_title: "Verify metadata edit" },
+    { ...queued, id: 9, pull_requests: [{ ...pull, base: { ...pull.base, sha: "old" } }] },
+    queued,
+  ];
+
+  for (const scenario of ["success", "gate failure", "changed head", "changed base", "already verified"]) {
+    const changed = scenario.startsWith("changed");
+    const failed = scenario === "gate failure";
+    const existingSuccess = scenario === "already verified";
+    const current = structuredClone(pull);
+    if (scenario === "changed head") current.head.sha = "new";
+    if (scenario === "changed base") current.base.sha = "new";
+    const completed = { ...queued, status: "completed", conclusion: failed ? "failure" : "success" };
+    const summaries = [];
+    const failures = [];
+    const comments = [];
+    const finished = await verify({ paginate: async (_, { run_id }) => {
+      assert.equal(run_id, existingSuccess ? 11 : 10);
+      return ["smoke", "crap"].map((name) => ({ name, status: "completed",
+        conclusion: failed && name === "crap" ? "failure" : "success" }));
+    }, rest: {
+      pulls: { get: async () => ({ data: current }) },
+      actions: {
+        listWorkflowRuns: async () => ({ data: { workflow_runs: existingSuccess
+          ? [...candidates, { ...completed, id: 11 }] : candidates } }),
+        createWorkflowDispatch: async () => assert.fail("compatible runs must prevent dispatch"),
+        getWorkflowRun: async ({ run_id }) => {
+          assert.ok(!changed && !existingSuccess);
+          assert.equal(run_id, queued.id);
+          return { data: completed };
+        },
+      },
+    } }, pull, {
+      summary: { addRaw(message) { summaries.push(message); return this; }, async write() {} },
+      setFailed: (message) => failures.push(message),
+    }, async (message) => comments.push(message), async () => {});
+
+    assert.equal(finished, failed || changed ? undefined : "merge-reached", scenario);
+    assert.equal(failures.length, failed || changed ? 1 : 0, scenario);
+    assert.equal(summaries.length, existingSuccess ? 0 : 1, scenario);
+    if (!existingSuccess) assert.match(summaries[0], /existing.*runs\/10/);
+    if (failed) assert.match(comments[0], /`crap` \(failure\)/);
+    if (changed) assert.match(comments[0], /changed while waiting/);
+  }
+});
+
 test("missing intermediate verification stops the stack before merge", async () => {
   const start = workflow.indexOf("for (const target of targetPulls) {",
     workflow.indexOf("// Reuse a complete successful"));
-  const end = workflow.indexOf("let verifyRun = await findSuccessfulVerify(pull);", start);
+  const end = workflow.indexOf("let verifyRun = await findVerify(pull, true);", start);
   assert.ok(start >= 0 && end > start);
-  const validate = new Function("targetPulls", "pullNumber", "findSuccessfulVerify",
+  const validate = new Function("targetPulls", "pullNumber", "findVerify",
     "comment", "core", `return (async () => {
       ${workflow.slice(start, end)}
       return "merge-reached";
@@ -97,9 +156,14 @@ test("text edits skip expensive checks in a separate concurrency group", () => {
   const textEdit = { ...event, run_id: 101, event: { ...event.event,
     action: "edited", changes: { title: { from: "Old" } } } };
   assert.ok(!evaluate(condition, textEdit));
+  const runName = verify.match(/^run-name: \$\{\{ (.*?) \}\}$/m)[1];
+  const renderRunName = (github) => new Function("github", "format", `return (${runName});`)(
+    github, (pattern, value) => pattern.replace("{0}", value));
+  assert.equal(renderRunName(textEdit), "Verify metadata edit");
   assert.notEqual(render(textEdit), render(event));
   const baseEdit = { ...textEdit, event: { ...textEdit.event, changes: { base: {} } } };
   assert.ok(evaluate(condition, baseEdit));
+  assert.notEqual(renderRunName(baseEdit), "Verify metadata edit");
   for (const job of ["smoke", "crap"]) {
     const name = verify.split("  " + job + ":\n    name: ")[1].split("\n")[0];
     const expression = name.slice(3, -2);
