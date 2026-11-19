@@ -56,10 +56,11 @@ retry through MCP, or report the blocker.
 | Configure succeeds with pending questions | Use its fresh diagnosis/token and resolve only remaining questions. |
 | Configure succeeds with ready setup | Continue from its diagnosis without another routine doctor call. |
 
-After a stale-token or concurrent-change rejection, run doctor again before
-resubmitting: the rejected call may return an obsolete token. Compare the refreshed
-questions with the user's authorized answers, reuse only still-applicable answers,
-and ask only new or changed decisions.
+On `STALE_SETUP_TOKEN` or a stale-token or concurrent-change rejection from an
+older server, call MCP `doctor` again in the same worktree. Compare the refreshed
+questions with previously authorized answers. Retry once with the fresh token for
+answers that still apply. Ask only about new or changed decisions. If the retry
+fails, report the specific error.
 Setup ready does not prove JDK, build, Docker or test readiness. Saving answers
 starts neither containers nor tests. Explain the user's decisions, not this
 internal sequence.
