@@ -445,8 +445,10 @@ before atomically updating `.makevn/config`, preserves unrelated settings and
 returns a fresh diagnosis on success. Partial answers are accepted; omitted
 questions remain pending. Invalid/stale submissions do not apply the submitted
 answers; another writer may have changed config. After a stale-token or concurrent
-change rejection, run doctor again before resubmitting: the rejected call may
-return a snapshot from before the conflicting change. Reuse authorized answers
+change rejection, `doctor_configure` returns `errorCode: "STALE_SETUP_TOKEN"`,
+a null `interactive_setup.setupToken`, and a structured `suggested_next_step`
+to run MCP `doctor` in the same worktree. Run it before retrying once with the
+fresh token. Reuse authorized answers
 only where the refreshed question, type, options and relevant suggestion still
 apply; ask new or changed decisions and omit IDs no longer pending. Ask only
 unresolved questions, using the latest token. Do not continue Docker/tests until

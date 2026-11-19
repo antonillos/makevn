@@ -131,7 +131,7 @@ prompts are not recovery paths for an MCP session.
 
 | Failure or exceptional state | Recovery |
 | --- | --- |
-| Stale token or concurrent config change | Run doctor again before resubmitting, even if the rejection includes questions and a token. The returned snapshot may predate the conflicting change. Compare the refreshed questions with prior user answers; reuse only answers whose question, type, options and relevant suggestion still apply. Omit IDs no longer pending, ask new or changed decisions, and submit with the refreshed token. Never blindly replay the old batch. |
+| `STALE_SETUP_TOKEN` or concurrent config change | Call MCP `doctor` in the same worktree to refresh the questions and token. Reuse prior user answers only if the question, type, options and relevant suggestion still apply. Omit IDs no longer pending and ask about new or changed decisions. Retry once with the refreshed token. If the retry fails, report the specific error. |
 | Invalid answer/type/option | The rejected batch writes nothing. Correct an unambiguous serialization error (use boolean `false`, not string `"false"`); ask the user when the intended value is ambiguous or invalid. Resubmit still-applicable answers with the current token. |
 | Partial answers | Preserve accepted answers. Ask only remaining unresolved questions; never resend IDs no longer pending. |
 | User has not answered | Wait for required decisions; do not treat silence or a suggested default as authorization. Continue only independent work. |

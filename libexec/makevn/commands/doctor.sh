@@ -88,8 +88,9 @@ print_doctor() {
   fi
   makevn_refresh_impact "${repo_root}" "" doctor
   if [[ -n "${MAKEVN_MCP_DOCTOR_METADATA_OUT:-}" ]]; then
-    makevn_print_doctor_json > "${MAKEVN_MCP_DOCTOR_METADATA_OUT}"
+    makevn_print_doctor_json "${setup_rc}" > "${MAKEVN_MCP_DOCTOR_METADATA_OUT}"
   fi
+  [[ "${setup_rc}" != 3 ]] || return 2
   [[ "${setup_rc}" == 0 ]] || return "${setup_rc}"
   makevn_doctor_progress "Reporting repository analysis"
   if [[ "${MAKEVN_DOCTOR_BUILD_STATUS}" != "current" ]]; then

@@ -52,6 +52,7 @@ pub(crate) fn result_schema() -> Value {
                             "changedInputs":{"type":"integer","minimum":0}, "selectedModules":{"type":"integer","minimum":0},
                             "groupedModules":{"type":"integer","minimum":0}}}}},
             "nextSuggestion": {"type": "string"},
+            "errorCode": {"enum": [crate::mcp_doctor::STALE_SETUP_TOKEN]},
             "interactive_setup": crate::mcp_doctor::setup_schema(),
             "suggested_next_step": {"type": "object"},
             "graph": {"type": "object"},
@@ -115,6 +116,18 @@ pub(crate) fn standard_tool_result(result: &ToolCallResult, params: &Value) -> V
     if let Some(snapshot) = &result.doctor_snapshot {
         structured["interactive_setup"] = snapshot["interactive_setup"].clone();
         structured["suggested_next_step"] = snapshot["suggested_next_step"].clone();
+        if failed && tool == "doctor_configure" && snapshot["errorCode"] == crate::mcp_doctor::STALE_SETUP_TOKEN {
+            structured["errorCode"] = json!(crate::mcp_doctor::STALE_SETUP_TOKEN);
+            structured["message"] = json!("Doctor setup changed before the answers could be saved.");
+            structured["interactive_setup"]["setupToken"] = Value::Null;
+            structured["suggested_next_step"] = json!({
+                "next": "makevn doctor",
+                "tool": "doctor",
+                "arguments": {"repo": snapshot["repository_analysis"]["repo_root"]},
+                "note": "Get a fresh setup token before retrying.",
+                "optional": ""
+            });
+        }
     }
     json!({"content": [{"type": "text", "text": structured.to_string()}],
         "structuredContent": structured, "isError": failed})
@@ -205,6 +218,9 @@ fn tool_next_suggestion<'a>(tool: &str, result: &'a ToolCallResult) -> &'a str {
 
 // Only server-authored, allowlisted actions become trusted guidance.
 fn doctor_next_suggestion(snapshot: &Value) -> Option<&'static str> {
+    if snapshot["errorCode"] == crate::mcp_doctor::STALE_SETUP_TOKEN {
+        return Some(crate::mcp_doctor::STALE_SETUP_GUIDANCE);
+    }
     if snapshot["repository_analysis"]["repository_support_status"] == "unsupported" {
         return Some("No Maven project was detected; do not run init or verification.");
     }

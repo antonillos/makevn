@@ -31,3 +31,25 @@ fn doctor_snapshot_survives_result_serialization() {
     assert_eq!(response["structuredContent"]["interactive_setup"], snapshot["interactive_setup"]);
     assert_eq!(response["structuredContent"]["suggested_next_step"], snapshot["suggested_next_step"]);
 }
+
+#[test]
+fn stale_setup_response_requires_a_fresh_doctor_call() {
+    let result = crate::mcp_server::ToolCallResult {
+        output: "diagnostic".into(), exit_code: 2, duration_ms: 1,
+        doctor_snapshot: Some(json!({
+            "errorCode": super::STALE_SETUP_TOKEN,
+            "repository_analysis": {"repo_root": "/repo/worktree"},
+            "interactive_setup": {"required": true, "status": "pending", "questions": [], "setupToken": "obsolete"},
+            "suggested_next_step": {"next": ""}
+        })),
+        next_suggestion: Some(super::STALE_SETUP_GUIDANCE.into()),
+    };
+    let response = crate::mcp_server::standard_tool_result(&result, &json!({"name": "doctor_configure"}));
+    assert_eq!(response["isError"], true);
+    let structured = &response["structuredContent"];
+    assert_eq!(structured["errorCode"], super::STALE_SETUP_TOKEN);
+    assert!(structured["interactive_setup"]["setupToken"].is_null());
+    assert_eq!(structured["suggested_next_step"]["tool"], "doctor");
+    assert_eq!(structured["suggested_next_step"]["arguments"]["repo"], "/repo/worktree");
+    assert_eq!(structured["nextSuggestion"], super::STALE_SETUP_GUIDANCE);
+}

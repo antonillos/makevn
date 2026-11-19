@@ -75,6 +75,8 @@ with tempfile.TemporaryDirectory(prefix="makevn-doctor-chat-") as directory:
         invalid = configure(repo, doctor, answers, error=True)
         assert config.read_bytes() == before
         assert questions(invalid) == available
+        assert "errorCode" not in invalid
+        assert invalid["interactive_setup"]["setupToken"] == doctor["interactive_setup"]["setupToken"]
     # Even a still-valid choice needs reconfirmation when the offered set changes.
     added = repo / "boot-c/docker-compose.yml"
     added.parent.mkdir()
@@ -82,7 +84,13 @@ with tempfile.TemporaryDirectory(prefix="makevn-doctor-chat-") as directory:
     stale = configure(repo, doctor, {"boot_compose": available["boot_compose"]["options"][0]}, error=True)
     assert len(questions(stale)["boot_compose"]["options"]) == 4
     assert config.read_bytes() == before
-    doctor = stale
+    assert stale["errorCode"] == "STALE_SETUP_TOKEN"
+    assert stale["exitCode"] == 2
+    assert stale["interactive_setup"]["setupToken"] is None
+    assert stale["suggested_next_step"]["tool"] == "doctor"
+    assert stale["suggested_next_step"]["arguments"] == {"repo": str(repo.resolve())}
+    assert "same worktree" in stale["nextSuggestion"]
+    doctor = call(repo, "doctor")
     partial = configure(repo, doctor, {"local_containers": False})
     assert "local_containers" not in questions(partial)
     assert partial["interactive_setup"]["required"] is True
@@ -91,9 +99,13 @@ with tempfile.TemporaryDirectory(prefix="makevn-doctor-chat-") as directory:
     config.write_bytes(before + b"# changed during chat\n")
     stale = configure(repo, partial, {"app_health_url": "http://localhost/health"}, error=True)
     assert config.read_bytes() == before + b"# changed during chat\n"
-    available = questions(stale)
+    assert stale["errorCode"] == "STALE_SETUP_TOKEN"
+    assert stale["interactive_setup"]["setupToken"] is None
+    refreshed = call(repo, "doctor")
+    available = questions(refreshed)
+    assert available == questions(partial)
     special_url = "http://localhost/health?value='$(touch${IFS}SENTINEL)`id`&ok=yes"
-    completed = configure(repo, stale, {
+    completed = configure(repo, refreshed, {
         "boot_compose": available["boot_compose"]["options"][0],
         "e2e_compose": available["e2e_compose"]["options"][1],
         "app_health_url": special_url, "karate_app_profiles": "standalone,local"})

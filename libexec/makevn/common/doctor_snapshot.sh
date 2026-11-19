@@ -708,6 +708,10 @@ makevn_doctor_interaction_status() {
 
 makevn_print_doctor_json() {
   printf '{\n'
+  # The setup helper reserves status 3 for stale or concurrently changed setup.
+  if [[ "${1:-}" == 3 ]]; then
+    printf '  "errorCode": "STALE_SETUP_TOKEN",\n'
+  fi
   printf '  "version": 1,\n'
   printf '  "docker_bind_mounts": %s,\n' "${MAKEVN_DOCTOR_BIND_MOUNTS}"
   printf '  "command": "doctor",\n'

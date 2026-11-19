@@ -21,6 +21,10 @@ SETTINGS = {
 }
 
 
+class StaleSetupToken(ValueError):
+    """The configuration changed since the setup questions were collected."""
+
+
 def valid_health_url(value):
     return re.fullmatch(r"https?://[^\s]+", value) is not None
 
@@ -51,7 +55,7 @@ def _replace_config(path, updates, original):
             output.write(content)
         os.chmod(name, path.stat().st_mode & 0o777)
         if path.read_bytes() != original:
-            raise ValueError("Configuration changed; run doctor and ask the updated questions.")
+            raise StaleSetupToken("Configuration changed; run doctor and ask the updated questions.")
         os.replace(name, path)
     finally:
         if os.path.exists(name):
@@ -137,7 +141,7 @@ def apply_answers(repo, request, snapshot):
     setup = snapshot["interactive_setup"]
     token = setup_token(Path(repo), setup["questions"], original)
     if request.get("setupToken") != token or setup["setupToken"] != token:
-        raise ValueError("Doctor configuration or questions changed; ask the updated questions before applying answers.")
+        raise StaleSetupToken("Doctor configuration or questions changed; ask the updated questions before applying answers.")
     updates = answer_updates(setup, request.get("answers"))
     write_config(path, updates, original)
 
@@ -165,4 +169,4 @@ if __name__ == "__main__":
         main()
     except (ValueError, OSError, KeyError) as error:
         print(f"Doctor configuration unchanged: {error}", file=sys.stderr)
-        sys.exit(2)
+        sys.exit(3 if isinstance(error, StaleSetupToken) else 2)
