@@ -167,7 +167,7 @@ impl McpSession {
             return write_message(json!({"jsonrpc":"2.0", "id":id, "result":result}));
         }
         if let Err(error) = mcp_server::validate_call(&params) {
-            return write_message(mcp_server::tool_failure_response(id, &params, error));
+            return write_message(mcp_server::tool_validation_response(id, &params, error));
         }
         match self.launch(id.clone(), params.clone()) {
             Ok(()) => Ok(()),

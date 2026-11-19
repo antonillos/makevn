@@ -692,6 +692,37 @@ fn unknown_tools_are_protocol_errors_but_execution_errors_are_tool_results() {
 }
 
 #[test]
+fn unknown_readiness_argument_returns_actionable_validation_error() {
+    let mut params = json!({
+        "name": "docker_ps_required",
+        "arguments": {"repo": "/repo", "compose": "boot", "wait-seconds": 30,
+            "pr": "https://github.com/example/repo/pull/1", "compact": true}
+    });
+    let error = super::validate_call(&params).unwrap_err();
+    let response = super::tool_validation_response(json!(1), &params, error);
+    assert_eq!(response["result"]["isError"], true);
+    let structured = &response["result"]["structuredContent"];
+    assert_eq!(structured["errorCode"], "UNKNOWN_ARGUMENT");
+    assert_eq!(structured["argument"], "compact");
+    assert_eq!(structured["exitCode"], -1);
+    assert_eq!(structured["logPaths"], json!([]));
+    assert_eq!(structured["nextSuggestion"],
+        "Remove the unsupported argument identified in the argument field and retry docker_ps_required with its advertised arguments.");
+    assert_eq!(response["result"]["content"][0]["text"], structured.to_string());
+
+    params["arguments"].as_object_mut().unwrap().remove("compact");
+    assert!(super::validate_call(&params).is_ok());
+
+    params["arguments"]["wait-seconds"] = json!("30");
+    let error = super::validate_call(&params).unwrap_err();
+    let response = super::tool_validation_response(json!(2), &params, error);
+    let structured = &response["result"]["structuredContent"];
+    assert!(structured.get("errorCode").is_none());
+    assert_eq!(structured["untrustedData"]["output"],
+        "argument 'wait-seconds' for docker_ps_required must be number");
+}
+
+#[test]
 fn preview_completion_is_analysis_not_verification_success() {
     for exit_code in [0, 1] {
         let result = super::ToolCallResult {
@@ -1279,7 +1310,7 @@ fn configure_cannot_run_inside_a_workflow_before_user_answers() {
         let params = json!({"name": tool, "arguments": {"steps": [
             {"tool": "doctor_configure", "arguments": {"setupToken": "current", "answers": {"local_containers": false}}}
         ]}});
-        assert!(super::validate_call(&params).unwrap_err().contains("separately"));
+        assert!(String::from(super::validate_call(&params).unwrap_err()).contains("separately"));
     }
 }
 

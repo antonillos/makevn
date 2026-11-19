@@ -22,6 +22,23 @@ pub(crate) fn tool_failure_response(id: Value, params: &Value, error: String) ->
         }, params)})
 }
 
+pub(crate) fn tool_validation_response(id: Value, params: &Value, error: CallValidationError) -> Value {
+    let CallValidationError::UnknownArgument { tool, argument } = error else {
+        return tool_failure_response(id, params, error.into());
+    };
+    let diagnostic = format!("unknown argument '{argument}' for {tool}");
+    let mut response = tool_failure_response(id, params, diagnostic);
+    let structured = &mut response["result"]["structuredContent"];
+    structured["errorCode"] = json!("UNKNOWN_ARGUMENT");
+    structured["argument"] = json!(argument);
+    structured["message"] = json!("MakeVN rejected the arguments before running the command.");
+    structured["nextSuggestion"] = json!(format!(
+        "Remove the unsupported argument identified in the argument field and retry {tool} with its advertised arguments."
+    ));
+    response["result"]["content"][0]["text"] = json!(structured.to_string());
+    response
+}
+
 pub(crate) fn negotiated_protocol(params: &Value) -> &str {
     match params["protocolVersion"].as_str() {
         Some("2024-11-05") => "2024-11-05",
@@ -52,7 +69,8 @@ pub(crate) fn result_schema() -> Value {
                             "changedInputs":{"type":"integer","minimum":0}, "selectedModules":{"type":"integer","minimum":0},
                             "groupedModules":{"type":"integer","minimum":0}}}}},
             "nextSuggestion": {"type": "string"},
-            "errorCode": {"enum": [crate::mcp_doctor::STALE_SETUP_TOKEN]},
+            "errorCode": {"enum": [crate::mcp_doctor::STALE_SETUP_TOKEN, "UNKNOWN_ARGUMENT"]},
+            "argument": {"type": "string"},
             "interactive_setup": crate::mcp_doctor::setup_schema(),
             "suggested_next_step": {"type": "object"},
             "graph": {"type": "object"},
@@ -549,12 +567,34 @@ impl ToolCallResult {
     }
 }
 
-pub(crate) fn validate_call(params: &Value) -> Result<(), String> {
-    let name = params["name"].as_str().ok_or("missing tool name")?;
+#[derive(Debug)]
+pub(crate) enum CallValidationError {
+    UnknownArgument { tool: &'static str, argument: String },
+    Invalid(String),
+}
+
+impl From<String> for CallValidationError {
+    fn from(message: String) -> Self {
+        Self::Invalid(message)
+    }
+}
+
+impl From<CallValidationError> for String {
+    fn from(error: CallValidationError) -> Self {
+        match error {
+            CallValidationError::UnknownArgument { tool, argument } =>
+                format!("unknown argument '{argument}' for {tool}"),
+            CallValidationError::Invalid(message) => message,
+        }
+    }
+}
+
+pub(crate) fn validate_call(params: &Value) -> Result<(), CallValidationError> {
+    let name = params["name"].as_str().ok_or_else(|| "missing tool name".to_owned())?;
     let spec = TOOL_SPECS.iter().find(|spec| spec.name == name)
         .ok_or_else(|| format!("unknown makevn tool: {name}"))?;
     validate_step_arguments(spec, params.get("arguments"))?;
-    validate_tool_specific_arguments(spec, params)
+    validate_tool_specific_arguments(spec, params).map_err(Into::into)
 }
 
 fn validate_tool_specific_arguments(spec: &ToolSpec, params: &Value) -> Result<(), String> {
@@ -748,7 +788,7 @@ fn validate_workflow_step(step: &Value) -> Result<(), String> {
     if properties_for_workflow(spec) {
         return Err(String::from("nested workflow steps are not supported"));
     }
-    validate_step_arguments(spec, object.get("arguments"))
+    validate_step_arguments(spec, object.get("arguments")).map_err(Into::into)
 }
 
 fn validate_workflow_step_fields(object: &Map<String, Value>) -> Result<(), String> {
@@ -760,13 +800,13 @@ fn validate_workflow_step_fields(object: &Map<String, Value>) -> Result<(), Stri
     Ok(())
 }
 
-fn validate_step_arguments(spec: &ToolSpec, arguments: Option<&Value>) -> Result<(), String> {
+fn validate_step_arguments(spec: &ToolSpec, arguments: Option<&Value>) -> Result<(), CallValidationError> {
     let Some(arguments) = arguments else { return Ok(()); };
-    let arguments = arguments.as_object().ok_or("step 'arguments' must be an object")?;
+    let arguments = arguments.as_object().ok_or_else(|| "step 'arguments' must be an object".to_owned())?;
     for (key, value) in arguments {
         let ty = step_option_type(spec, key)?;
         if !option_value_matches(ty, value) {
-            return Err(format!("argument '{key}' for {} must be {ty}", spec.name));
+            return Err(format!("argument '{key}' for {} must be {ty}", spec.name).into());
         }
     }
     if let Some(properties) = arguments.get("properties").filter(|_| spec.name == "test") {
@@ -775,11 +815,11 @@ fn validate_step_arguments(spec: &ToolSpec, arguments: Option<&Value>) -> Result
     Ok(())
 }
 
-fn step_option_type<'a>(spec: &'a ToolSpec, key: &str) -> Result<&'a str, String> {
+fn step_option_type<'a>(spec: &'a ToolSpec, key: &str) -> Result<&'a str, CallValidationError> {
     if key == "trace" { return Ok("boolean"); }
     if key == "pr" { return Ok("string"); }
     spec.options.iter().find(|option| option.name == key).map(|option| option.ty)
-        .ok_or_else(|| format!("unknown argument '{key}' for {}", spec.name))
+        .ok_or_else(|| CallValidationError::UnknownArgument { tool: spec.name, argument: key.to_owned() })
 }
 
 pub(crate) fn option_value_matches(ty: &str, value: &Value) -> bool {
