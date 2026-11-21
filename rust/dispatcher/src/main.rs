@@ -45,6 +45,10 @@ fn main() {
             Err(error) => exit_with_error(error),
         }
     }
+    if env::args_os().nth(1).as_deref() == Some(std::ffi::OsStr::new("--makevn-mvnd-owner")) {
+        mcp_supervisor::run_daemon_owner();
+        return;
+    }
     if env::args_os().nth(1).as_deref() == Some(std::ffi::OsStr::new("--makevn-mcp-supervisor")) {
         match mcp_supervisor::run() {
             Ok(code) => process::exit(code),

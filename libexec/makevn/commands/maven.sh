@@ -89,6 +89,10 @@ makevn_parse_test_options() {
         name_args+=("$2")
         shift 2
         ;;
+      --mvnd)
+        use_mvnd=true
+        shift
+        ;;
       --fast)
         fast_mode=true
         shift
@@ -169,6 +173,7 @@ makevn_run_test_sequence() {
 cmd_test() {
   local repo_root="$1"
   local fast_mode=false
+  local use_mvnd=false
   local name_arg=""
   local test_name=""
   local failed_names=""
@@ -189,6 +194,10 @@ cmd_test() {
   makevn_collect_test_names
   if [[ "${fast_mode}" == true && ${#test_names[@]} -eq 0 ]]; then
     makevn_die "test --fast requires at least one --name"
+  fi
+
+  if [[ "${use_mvnd}" == true && ${#test_names[@]} -ne 1 ]]; then
+    makevn_die "test --mvnd requires exactly one --name"
   fi
 
   if [[ ${#test_names[@]} -eq 0 ]]; then
