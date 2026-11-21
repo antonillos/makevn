@@ -352,23 +352,16 @@ makevn_verify_selected_failsafe_summary() {
 }
 
 makevn_selected_test_daemon() {
-  local repo_root="$1" maven_base_path="$2" maven_executable="$3"
-  local pinned_executable daemon java_home
+  local daemon
 
   if [[ -n "${MAKEVN_MCP_PHASE_OUT:-}" && -z "${MAKEVN_MCP_MVND_SESSION:-}" ]]; then
     makevn_die "test --mvnd requires a managed MakeVN MCP test step"
     return 1
   fi
-  pinned_executable="$(makevn_pinned_maven_executable "${repo_root}" code "${maven_base_path}")" || return $?
   daemon="$(type -P mvnd)" || {
     makevn_die "test --mvnd requires mvnd on PATH. Install mvnd, omit --mvnd on the CLI, or set mvnd: false for this MCP test."
     return 1
   }
-  if [[ -n "${pinned_executable}" || "${maven_executable##*/}" == mvnw ]]; then
-    java_home="$(makevn_effective_java_home "${repo_root}" code "${maven_base_path}" || true)"
-    python3 "${MAKEVN_LIBEXEC_DIR}/common/maven_inspection.py" match-daemon "${daemon}" \
-      "${maven_base_path}" "${maven_base_path}" "${java_home}" "${maven_executable}" || return $?
-  fi
   printf '%s\n' "${daemon}"
 }
 
@@ -461,9 +454,10 @@ makevn_run_selected_test() {
     test_param="-Dtest=${full_test_class}"
   fi
 
-  maven_executable="$(makevn_maven_executable "${repo_root}" "${maven_base_path}")" || return $?
   if [[ "${use_mvnd:-false}" == true ]]; then
-    maven_executable="$(makevn_selected_test_daemon "${repo_root}" "${maven_base_path}" "${maven_executable}")" || return $?
+    maven_executable="$(makevn_selected_test_daemon)" || return $?
+  else
+    maven_executable="$(makevn_maven_executable "${repo_root}" "${maven_base_path}")" || return $?
   fi
   cli_flags_value="$(makevn_maven_cli_flags_for_command "${repo_root}" test)"
   cli_flags_value="$(makevn_append_word "${cli_flags_value}" "-nsu")"

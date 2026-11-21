@@ -85,23 +85,13 @@ def inspect(executable, base, cwd, java_home, checking=False, arguments=()):
 def main(args):
     mode, executable, base, cwd, java_home, *arguments = args
     try:
-        if mode == "match-daemon":
-            pinned = arguments[0]
-            expected = (wrapper_version(pinned) if Path(pinned).name == "mvnw"
-                        else installed_version(pinned, cwd, java_home))
-            embedded = installed_version(executable, cwd, java_home)
-            if embedded != expected:
-                raise ValueError(f"mvnd embeds Maven {embedded}, but the project selects Maven {expected}. "
-                                 "Install a matching mvnd, omit --mvnd on the CLI, "
-                                 "or set mvnd: false for this MCP test to use the project Maven.")
-            return 0
         message = inspect(executable, base, cwd, java_home, checking=mode == "check", arguments=arguments)
         if mode != "check":
             print(message)
         return 0
     except (ValueError, OSError, ET.ParseError, subprocess.TimeoutExpired) as error:
         print("Maven version unresolved or incompatible: " + str(error),
-              file=sys.stderr if mode in ("check", "match-daemon") else sys.stdout)
+              file=sys.stderr if mode == "check" else sys.stdout)
         return 1
 
 

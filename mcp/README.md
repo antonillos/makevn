@@ -168,13 +168,13 @@ the `test` tool or a `test` step with one selected class:
 {"repo": "/path/to/worktree", "name": "ExampleTest", "mvnd": true}
 ```
 
-When `mvnd` is available and the worktree has neither a Maven pin nor a wrapper,
-MCP Doctor asks whether to use the daemon by default for selected tests.
+When `mvnd` is available, MCP Doctor asks whether to use the daemon by default
+for selected tests.
 It saves the `use_mvnd` answer per worktree. Omit `mvnd` to use that preference,
 or send `mvnd: false` to use the project Maven for one call. Without a saved
-preference, MakeVN uses the project Maven. If the project declares a Maven pin
-or wrapper version, the Maven embedded in `mvnd` must match it. Compiling and
-test selection follow the ordinary named-test contract.
+preference, MakeVN uses the project Maven. Daemon tests use the Maven bundled
+with `mvnd`, and project Enforcer rules still apply. Compiling and test selection
+follow the ordinary named-test contract.
 
 `composite_run` can reuse a daemon across sequential test steps. With
 `parallel_run`, use a separate worktree for each daemon test and any other step

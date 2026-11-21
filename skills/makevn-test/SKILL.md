@@ -26,7 +26,8 @@ without Compose the tests own container startup, so no `docker_up` is needed.
 
 For a single named MCP test, omit `mvnd` to use the worktree preference from
 Doctor. Pass `mvnd: false` for one run with the project Maven, or `mvnd: true`
-to opt in explicitly when mvnd is installed and compatible with any Maven pin.
+to opt in explicitly when mvnd is installed. The daemon uses its bundled Maven;
+project Enforcer rules still apply.
 The preference also applies to `test` steps in `composite_run`, which can reuse
 a daemon across steps. In `parallel_run`, arrange daemon tests and any other
 build-writing steps in distinct worktrees. An explicit daemon step conflicts

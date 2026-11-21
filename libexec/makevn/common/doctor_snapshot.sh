@@ -653,8 +653,7 @@ makevn_doctor_refresh_setup_answers() {
 makevn_doctor_mvnd_pending() {
   [[ "${MAKEVN_MCP_INSPECTION:-}" == 1 ]] || return 1
   command -v mvnd >/dev/null 2>&1 || return 1
-  ! grep -qs '^MAKEVN_USE_MVND=' "$(makevn_config_path "$1")" || return 1
-  [[ "$(makevn_maven_executable "$1" "$2")" == mvn ]]
+  ! grep -qs '^MAKEVN_USE_MVND=' "$(makevn_config_path "$1")"
 }
 
 # Classify pending decisions independently of the client interaction method.
