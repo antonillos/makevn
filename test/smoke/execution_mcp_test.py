@@ -276,8 +276,20 @@ def managed_daemon_reuses_group_and_cleans_forks(executable, state, repo):
         assert client.call("test", repo=str(repo), mvnd=True)["isError"]
         assert client.call("test", **{**args, "properties": {"mvnd.daemonStorage": "/tmp/foreign"}})["isError"]
         assert client.call("composite_run", steps=[{"tool": "test", "arguments": args}])["isError"]
+        quick = repo / "quick"
+        quick.touch()
+        default_args = {"repo": str(repo), "name": "ExampleTest"}
+        config = repo / ".makevn/config"
+        config.parent.mkdir()
+        config.write_text("MAKEVN_USE_MVND=FALSE\n")
+        assert client.call("test", **default_args)["isError"] is False
+        assert not (repo / "mvnd-groups").exists()
+        config.write_text("MAKEVN_USE_MVND=TRUE\n")
+        assert client.call("test", **default_args, mvnd=False)["isError"] is False
+        assert not (repo / "mvnd-groups").exists()
+        assert client.call("test", **default_args, properties={"mvnd.daemonStorage": "/tmp/foreign"})["isError"]
         for _ in range(2):
-            assert client.call("test", **args)["isError"] is False
+            assert client.call("test", **default_args)["isError"] is False
         owned = pids(repo, 2)
         groups = (repo / "mvnd-groups").read_text().splitlines()
         assert len(groups) == 2 and groups[0] == groups[1]

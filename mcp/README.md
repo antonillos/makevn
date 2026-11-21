@@ -168,7 +168,11 @@ standalone call to the `test` tool:
 {"repo": "/path/to/worktree", "name": "ExampleTest", "mvnd": true}
 ```
 
-MakeVN uses the project Maven by default. If the project declares a Maven pin
+When `mvnd` is available and the worktree has neither a Maven pin nor a wrapper,
+MCP Doctor asks whether to use the daemon by default for standalone named tests.
+It saves the `use_mvnd` answer per worktree. Omit `mvnd` to use that preference,
+or send `mvnd: false` to use the project Maven for one call. Without a saved
+preference, MakeVN uses the project Maven. If the project declares a Maven pin
 or wrapper version, the Maven embedded in `mvnd` must match it. Compiling and
 test selection follow the ordinary named-test contract.
 
@@ -462,7 +466,7 @@ that the client provides a prefilled editor when it does not.
 Submit user-provided or previously user-authorized answers with `doctor_configure`
 in the same repository. Pass `setupToken` and an `answers` object keyed by question
 id: `boot_compose`, `e2e_compose`, `local_containers` (boolean), `app_health_url`,
-`karate_app_profiles`, and `code_java_home`. JDK answers select an exact offered
+`karate_app_profiles`, `code_java_home`, and `use_mvnd` (boolean). JDK answers select an exact offered
 installation path and persist `MAKEVN_CODE_JAVA_HOME`; multiple compatible
 automatic candidates remain pending until the user chooses. A required but missing
 compatible JDK is reported as a diagnostic error while doctor itself succeeds;

@@ -86,6 +86,19 @@ class DoctorSetupTests(unittest.TestCase):
         self.assertIn("MAKEVN_CODE_JAVA_HOME=/jdks/25.0.3", self.path.read_text())
         self.assertIn('OTHER="keep"', self.path.read_text())
 
+    def test_daemon_choice_persists_both_answers(self):
+        arguments = [str(self.repo), "", "", "", "", "false", "false", "false",
+                     "", "", "", "true"]
+        for enabled, setting in ((True, "TRUE"), (False, "FALSE")):
+            with self.subTest(enabled=enabled):
+                self.details = setup.collect_questions(arguments)
+                self.snapshot["interactive_setup"] = self.details
+                item, = self.details["questions"]
+                self.assertEqual(item["id"], "use_mvnd")
+                self.assertEqual(item["type"], "boolean")
+                self.apply({"use_mvnd": enabled})
+                self.assertIn("MAKEVN_USE_MVND=" + setting, self.path.read_text())
+
     def test_all_answers_and_shell_roundtrip(self):
         url = "http://localhost/health?value='$(touch${IFS}SENTINEL)`id`&other=ok"
         self.apply({"boot_compose": "/boot/b", "e2e_compose": "/e2e/a", "local_containers": False,

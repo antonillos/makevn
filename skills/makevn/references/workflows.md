@@ -170,7 +170,7 @@ that the client provides a prefilled editor when it does not.
 Submit user-provided or previously user-authorized answers with `doctor_configure`
 in the same repository. Pass `setupToken` and an `answers` object keyed by question
 id: `boot_compose`, `e2e_compose`, `local_containers` (boolean), `app_health_url`,
-`karate_app_profiles`, and `code_java_home`. The JDK answer must be an exact offered
+`karate_app_profiles`, `code_java_home`, and `use_mvnd` (boolean). The JDK answer must be an exact offered
 installation path. Compose answers use an offered path, an absolute path to an existing file, or `none`; Spring
 profiles use literal comma-separated names. The tool validates the whole batch
 before atomically updating `.makevn/config`, preserves unrelated settings and

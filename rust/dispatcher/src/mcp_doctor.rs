@@ -36,7 +36,7 @@ pub(crate) fn answers_schema() -> Value {
             "boot_compose": {"type": "string", "description": "Detected candidate, absolute existing file path, or none"}, "e2e_compose": {"type": "string", "description": "Detected candidate, absolute existing file path, or none"},
             "local_containers": {"type": "boolean"}, "app_health_url": {"type": "string"},
             "karate_app_profiles": {"type": "string"},
-            "code_java_home": {"type": "string"}
+            "code_java_home": {"type": "string"}, "use_mvnd": {"type": "boolean"}
         }})
 }
 

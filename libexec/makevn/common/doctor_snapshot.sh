@@ -634,7 +634,7 @@ makevn_collect_doctor_snapshot() {
     MAKEVN_DOCTOR_TEST_PROCESSES="$(python3 "${MAKEVN_LIBEXEC_DIR}/common/test_processes.py" doctor "${repo_root}")"
   fi
   makevn_doctor_refresh_setup_answers "${repo_root}"
-  makevn_doctor_interactive_setup_status
+  makevn_doctor_interactive_setup_status "${repo_root}" "${maven_base_path}"
   makevn_doctor_interaction_status
   makevn_doctor_collect_setup "${repo_root}"
   makevn_doctor_record_build "${repo_root}"
@@ -650,14 +650,26 @@ makevn_doctor_refresh_setup_answers() {
   fi
 }
 
+makevn_doctor_mvnd_pending() {
+  [[ "${MAKEVN_MCP_INSPECTION:-}" == 1 ]] || return 1
+  command -v mvnd >/dev/null 2>&1 || return 1
+  ! grep -qs '^MAKEVN_USE_MVND=' "$(makevn_config_path "$1")" || return 1
+  [[ "$(makevn_maven_executable "$1" "$2")" == mvn ]]
+}
+
 # Classify pending decisions independently of the client interaction method.
 makevn_doctor_interactive_setup_status() {
   MAKEVN_DOCTOR_INTERACTIVE_REQUIRED=false
+  MAKEVN_DOCTOR_MVND_PENDING=false
   MAKEVN_DOCTOR_HEALTH_PENDING=false
   MAKEVN_DOCTOR_LOCAL_PENDING=false
   MAKEVN_DOCTOR_PROFILES_PENDING=false
   [[ -z "${MAKEVN_DOCTOR_JAVA_CANDIDATES:-}" ]] || MAKEVN_DOCTOR_INTERACTIVE_REQUIRED=true
   [[ "${MAKEVN_DOCTOR_REPO_SUPPORT_STATUS:-supported}" != unsupported ]] || return 0
+  if makevn_doctor_mvnd_pending "${1:-}" "${2:-}"; then
+    MAKEVN_DOCTOR_MVND_PENDING=true
+    MAKEVN_DOCTOR_INTERACTIVE_REQUIRED=true
+  fi
   if [[ "${MAKEVN_DOCTOR_KARATE_APP_PROFILES:-}" == 'unresolved (explicit selection required)' && -z "${SPRING_PROFILES_ACTIVE+x}" && -z "${MAKEVN_KARATE_APP_PROFILES:-}" ]]; then
     MAKEVN_DOCTOR_INTERACTIVE_REQUIRED=true
     MAKEVN_DOCTOR_PROFILES_PENDING=true
@@ -689,7 +701,7 @@ makevn_doctor_collect_setup() {
     fi
   fi
   local details
-  details="$(python3 "${MAKEVN_LIBEXEC_DIR}/common/doctor_setup.py" questions "${repo_root}" "${boot}" "${e2e}" "${health}" "${MAKEVN_DOCTOR_KARATE_APP_PROFILES_CANDIDATES}" "${MAKEVN_DOCTOR_LOCAL_PENDING}" "${MAKEVN_DOCTOR_HEALTH_PENDING}" "${MAKEVN_DOCTOR_PROFILES_PENDING}" "${MAKEVN_DOCTOR_JAVA_CANDIDATES:-}" "${MAKEVN_DOCTOR_JAVA_RECOMMENDED:-}" "${MAKEVN_DOCTOR_JAVA_DETAILS:-}")"
+  details="$(python3 "${MAKEVN_LIBEXEC_DIR}/common/doctor_setup.py" questions "${repo_root}" "${boot}" "${e2e}" "${health}" "${MAKEVN_DOCTOR_KARATE_APP_PROFILES_CANDIDATES}" "${MAKEVN_DOCTOR_LOCAL_PENDING}" "${MAKEVN_DOCTOR_HEALTH_PENDING}" "${MAKEVN_DOCTOR_PROFILES_PENDING}" "${MAKEVN_DOCTOR_JAVA_CANDIDATES:-}" "${MAKEVN_DOCTOR_JAVA_RECOMMENDED:-}" "${MAKEVN_DOCTOR_JAVA_DETAILS:-}" "${MAKEVN_DOCTOR_MVND_PENDING:-false}")"
   details="${details#\{}"
   MAKEVN_DOCTOR_SETUP_DETAILS="${details%\}}"
 }
