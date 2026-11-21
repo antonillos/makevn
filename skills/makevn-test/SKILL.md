@@ -28,8 +28,10 @@ For a single named MCP test, omit `mvnd` to use the worktree preference from
 Doctor. Pass `mvnd: false` for one run with the project Maven, or `mvnd: true`
 to opt in explicitly when mvnd is installed. The daemon uses its bundled Maven;
 project Enforcer rules still apply.
-The preference also applies to `test` steps in `composite_run`, which can reuse
-a daemon across steps. In `parallel_run`, arrange daemon tests and any other
+When mvnd is enabled and several tests are requested, use one `composite_run`
+with one named `test` step per class. Pass `mvnd: true` to each step for explicit
+selection, or omit it to inherit the Doctor preference. This can reuse the daemon
+across steps. In `parallel_run`, arrange daemon tests and any other
 build-writing steps in distinct worktrees. An explicit daemon step conflicts
 with another build on the same worktree. When the flag is omitted in a shared
 worktree, the parallel workflow uses the project Maven. On the CLI, pass
