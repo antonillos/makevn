@@ -215,11 +215,7 @@ fn finish(
 ) -> Result<i32, String> {
     let mut record = worker.record.lock().unwrap();
     let cancelled = worker.cancelled.load(Ordering::SeqCst);
-    if let Some(group) = worker.daemon_group {
-        if cancelled || result.exit_code != 0 {
-            clean_group(worker, group);
-        }
-    }
+    worker.finish_daemon(cancelled, result.exit_code);
     if cancelled {
         result.exit_code = 130;
         result.next_suggestion = Some(
@@ -247,6 +243,14 @@ fn finish(
 }
 
 impl ExecutionWorker {
+    fn finish_daemon(&self, cancelled: bool, exit_code: i32) {
+        if let Some(group) = self.daemon_group {
+            if cancelled || exit_code != 0 {
+                clean_group(self, group);
+            }
+        }
+    }
+
     fn update(&self, change: impl FnOnce(&mut ExecutionRecord)) -> Result<(), String> {
         let mut record = self.record.lock().unwrap();
         change(&mut record);
@@ -314,14 +318,7 @@ pub fn command_output(command: &mut Command, detached: bool) -> Result<Output, S
         return Err("Execution cancelled before starting the next step".into());
     }
     let (stdout, stderr, phase) = worker.paths()?;
-    command.env_remove("MAKEVN_MCP_MVND_SESSION");
-    if worker.daemon_group.is_some() {
-        command.env(
-            "MAKEVN_MCP_MVND_SESSION",
-            &worker.record.lock().unwrap().session_id,
-        );
-    }
-    let mut child = spawn_captured(command, &stdout, &stderr, &phase, worker.daemon_group)?;
+    let mut child = spawn_captured(worker, command, &stdout, &stderr, &phase)?;
     let group = worker.daemon_group.unwrap_or_else(|| child.id() as i32);
     let mut tail = OutputTail::default();
     let status = wait_command(worker, &mut child, group, &stdout, &phase, &mut tail)?;
@@ -333,18 +330,25 @@ pub fn command_output(command: &mut Command, detached: bool) -> Result<Output, S
 }
 
 fn spawn_captured(
+    worker: &ExecutionWorker,
     command: &mut Command,
     stdout: &std::path::Path,
     stderr: &std::path::Path,
     phase: &std::path::Path,
-    daemon_group: Option<i32>,
 ) -> Result<Child, String> {
+    command.env_remove("MAKEVN_MCP_MVND_SESSION");
+    if worker.daemon_group.is_some() {
+        command.env(
+            "MAKEVN_MCP_MVND_SESSION",
+            &worker.record.lock().unwrap().session_id,
+        );
+    }
     command
         .stdin(Stdio::null())
         .stdout(capture_file(stdout)?)
         .stderr(capture_file(stderr)?)
         .env("MAKEVN_MCP_PHASE_OUT", phase)
-        .process_group(daemon_group.unwrap_or(0));
+        .process_group(worker.daemon_group.unwrap_or(0));
     command.spawn().map_err(|error| error.to_string())
 }
 

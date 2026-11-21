@@ -601,21 +601,28 @@ fn validate_tool_specific_arguments(spec: &ToolSpec, params: &Value) -> Result<(
     if spec.name == "doctor_configure" {
         crate::mcp_doctor::validate_arguments(&params["arguments"])?;
     }
-    let args = &params["arguments"];
-    if spec.name == "test" && args["mvnd"] == true {
-        let names = args["name"].as_str().unwrap_or_default().split(',');
-        if names.filter(|name| !name.trim().is_empty()).count() != 1 {
-            return Err("mvnd requires exactly one test name".into());
-        }
-        if args["properties"].as_object().is_some_and(|properties| {
-            properties.keys().any(|key| key.starts_with("mvnd."))
-        }) {
-            return Err("mvnd daemon properties are managed by MakeVN MCP".into());
-        }
+    if spec.name == "test" {
+        validate_daemon_test_arguments(&params["arguments"])?;
     }
     if properties_for_workflow(spec) {
         let args = params["arguments"].as_object().ok_or("arguments must be an object")?;
         parse_steps(args)?;
+    }
+    Ok(())
+}
+
+fn validate_daemon_test_arguments(args: &Value) -> Result<(), String> {
+    if args["mvnd"] != true {
+        return Ok(());
+    }
+    let names = args["name"].as_str().unwrap_or_default().split(',');
+    if names.filter(|name| !name.trim().is_empty()).count() != 1 {
+        return Err("mvnd requires exactly one test name".into());
+    }
+    if args["properties"].as_object().is_some_and(|properties| {
+        properties.keys().any(|key| key.starts_with("mvnd."))
+    }) {
+        return Err("mvnd daemon properties are managed by MakeVN MCP".into());
     }
     Ok(())
 }
