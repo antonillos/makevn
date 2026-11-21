@@ -361,7 +361,7 @@ makevn_selected_test_daemon() {
   fi
   pinned_executable="$(makevn_pinned_maven_executable "${repo_root}" code "${maven_base_path}")" || return $?
   daemon="$(type -P mvnd)" || {
-    makevn_die "test --mvnd requires mvnd on PATH"
+    makevn_die "test --mvnd requires mvnd on PATH. Install mvnd, omit --mvnd on the CLI, or set mvnd: false for this MCP test."
     return 1
   }
   if [[ -n "${pinned_executable}" || "${maven_executable##*/}" == mvnw ]]; then

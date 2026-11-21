@@ -92,7 +92,8 @@ def main(args):
             embedded = installed_version(executable, cwd, java_home)
             if embedded != expected:
                 raise ValueError(f"mvnd embeds Maven {embedded}, but the project selects Maven {expected}. "
-                                 "Install a matching mvnd or use the project Maven.")
+                                 "Install a matching mvnd, omit --mvnd on the CLI, "
+                                 "or set mvnd: false for this MCP test to use the project Maven.")
             return 0
         message = inspect(executable, base, cwd, java_home, checking=mode == "check", arguments=arguments)
         if mode != "check":
