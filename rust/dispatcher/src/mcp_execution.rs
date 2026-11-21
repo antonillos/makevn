@@ -407,8 +407,30 @@ fn acquire_locks(
             &key,
             record,
         )?);
+        if let Some(repo) = key.strip_prefix("worktree:") {
+            locks.push(acquire_worktree_lock(repo, &key)?);
+        }
     }
     Ok(locks)
+}
+
+fn acquire_worktree_lock(repo: &str, key: &str) -> Result<File, String> {
+    // The checkout directory is shared even when MCP clients use different registries.
+    let directory = OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_DIRECTORY | libc::O_NOFOLLOW)
+        .open(repo)
+        .map_err(|error| format!("Cannot open {key} for locking: {error}"))?;
+    if unsafe { libc::flock(directory.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) } != 0 {
+        let error = std::io::Error::last_os_error();
+        if error.kind() == std::io::ErrorKind::WouldBlock {
+            return Err(format!(
+                "Execution conflict for {key}; another MakeVN execution holds this worktree. Retry after it finishes."
+            ));
+        }
+        return Err(format!("Cannot lock {key}: {error}"));
+    }
+    Ok(directory)
 }
 
 fn acquire_lock(path: &Path, key: &str, record: &ExecutionRecord) -> Result<File, String> {

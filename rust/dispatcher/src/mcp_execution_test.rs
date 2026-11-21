@@ -79,6 +79,35 @@ fn worktree_aliases_and_sessions_share_nonblocking_locks() {
 }
 
 #[test]
+fn named_tests_share_worktree_locks_across_registries() {
+    let worktrees = Fixture::new();
+    let first_registry = Fixture::new();
+    let second_registry = Fixture::new();
+    let first = first_registry.store();
+    let second = second_registry.store();
+
+    let left = worktrees.0.join("left");
+    let right = worktrees.0.join("right");
+    for worktree in [&left, &right] {
+        fs::create_dir(&worktree).unwrap();
+        fs::write(worktree.join(".git"), "gitdir: /linked-worktree").unwrap();
+    }
+    let alias = worktrees.0.join("alias");
+    symlink(&left, &alias).unwrap();
+    let named_test = |repo: &Path| json!({"name":"test","arguments":{"repo":repo,"name":"ExampleTest"}});
+    let (_, locks) = first.prepare(&named_test(&left)).unwrap();
+
+    let conflict = second.prepare(&named_test(&alias)).err().unwrap();
+    assert!(conflict.contains("Execution conflict for worktree:"));
+    assert!(second.prepare(&named_test(&right)).is_ok());
+    assert!(second
+        .prepare(&json!({"name":"doctor","arguments":{"repo":left}}))
+        .is_ok());
+    release_fixture_locks(locks);
+    assert!(second.prepare(&named_test(&left)).is_ok());
+}
+
+#[test]
 fn pr_locks_span_worktrees_but_other_prs_remain_independent() {
     let fixture = Fixture::new();
     let store = fixture.store();
