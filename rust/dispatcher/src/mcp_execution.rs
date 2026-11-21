@@ -334,7 +334,7 @@ fn prepare_record(session: &str, params: &Value) -> Result<ExecutionRecord, Stri
     Ok(record)
 }
 
-fn effective_repo(args: &Value, fallback: Option<&str>) -> Result<String, String> {
+pub(crate) fn effective_repo(args: &Value, fallback: Option<&str>) -> Result<String, String> {
     let cwd = std::env::current_dir().map_err(|error| error.to_string())?;
     let repo = args["repo"]
         .as_str()

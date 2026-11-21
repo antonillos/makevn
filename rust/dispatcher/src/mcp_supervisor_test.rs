@@ -12,7 +12,7 @@ fn zombie_group_members_do_not_hold_execution_locks() {
 #[test]
 fn cancelled_without_supervisor_is_false() {
     assert!(!cancelled());
-    let output = command_output(Command::new("printf").arg("sample"), false).unwrap();
+    let output = command_output(Command::new("printf").arg("sample"), false, None).unwrap();
     assert!(output.status.success());
     assert_eq!(output.stdout, b"sample");
 }
@@ -37,7 +37,7 @@ fn queued_cancellation_and_owner_loss_never_admit_a_command() {
             cancelled: AtomicBool::new(false),
             cancellation_started: OnceLock::new(),
             command_index: AtomicUsize::new(0),
-            daemon_group: None,
+            daemon_groups: Mutex::new(HashMap::new()),
         };
         assert!(!admit(&mut io::Cursor::new(input), &worker).unwrap());
         assert!(worker.cancelled.load(Ordering::SeqCst));
@@ -74,7 +74,7 @@ fn telemetry_reads_only_appended_lines_and_persists_only_changes() {
         cancelled: AtomicBool::new(false),
         cancellation_started: OnceLock::new(),
         command_index: AtomicUsize::new(0),
-        daemon_group: None,
+        daemon_groups: Mutex::new(HashMap::new()),
     };
     let stdout = root.join("stdout");
     let phase = root.join("phase");

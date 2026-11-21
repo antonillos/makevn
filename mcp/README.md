@@ -161,20 +161,27 @@ completes; use its documented lifecycle controls.
 
 ### Maven Daemon for named tests
 
-For a configured Maven worktree with `mvnd` on the server's `PATH`, opt in on a
-standalone call to the `test` tool:
+For a configured Maven worktree with `mvnd` on the server's `PATH`, opt in on
+the `test` tool or a `test` step with one selected class:
 
 ```json
 {"repo": "/path/to/worktree", "name": "ExampleTest", "mvnd": true}
 ```
 
 When `mvnd` is available and the worktree has neither a Maven pin nor a wrapper,
-MCP Doctor asks whether to use the daemon by default for standalone named tests.
+MCP Doctor asks whether to use the daemon by default for selected tests.
 It saves the `use_mvnd` answer per worktree. Omit `mvnd` to use that preference,
 or send `mvnd: false` to use the project Maven for one call. Without a saved
 preference, MakeVN uses the project Maven. If the project declares a Maven pin
 or wrapper version, the Maven embedded in `mvnd` must match it. Compiling and
 test selection follow the ordinary named-test contract.
+
+`composite_run` can reuse a daemon across sequential test steps. With
+`parallel_run`, use a separate worktree for each daemon test and any other step
+that writes build output. A shared-worktree parallel workflow keeps its normal
+Maven behavior when `mvnd` is omitted. An explicit `mvnd: true` on a conflicting
+step is rejected before any step starts. Use `composite_run` to run those steps
+sequentially on one worktree.
 
 The daemon is reused by calls in the same MCP session and worktree. Worktree
 locks still protect compiled output and reports across sessions. Cancellation

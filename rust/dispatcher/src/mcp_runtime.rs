@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 use std::io::{self, BufRead, Read, Write};
 use std::path::PathBuf;
 use std::process::ChildStdin;
@@ -9,7 +9,7 @@ use std::time::Duration;
 
 use serde_json::{json, Value};
 
-use crate::mcp_execution::{save_record, ExecutionRecord, ExecutionStore};
+use crate::mcp_execution::{effective_repo, inspection, save_record, ExecutionRecord, ExecutionStore};
 use crate::mcp_server::{self, ToolCallResult};
 use crate::mcp_supervisor;
 
@@ -64,16 +64,78 @@ pub fn run(executable: PathBuf, backend: PathBuf) -> Result<i32, String> {
     session.serve(receiver, interrupted)
 }
 
-fn apply_daemon_preference(params: &mut Value, repo: &str) -> Result<(), String> {
-    if params["name"] != "test" || params["arguments"].get("mvnd").is_some() {
+fn apply_daemon_preference(args: &mut Value, repo: &str) -> Result<(), String> {
+    if args.get("mvnd").is_some() {
         return Ok(());
     }
-    let names = params["arguments"]["name"].as_str().unwrap_or_default().split(',');
+    let names = args["name"].as_str().unwrap_or_default().split(',');
     if names.filter(|name| !name.trim().is_empty()).count() == 1 && configured_daemon(repo) {
-        params["arguments"]["mvnd"] = json!(true);
-        mcp_server::validate_daemon_test_arguments("test", &params["arguments"])?;
+        args["mvnd"] = json!(true);
+        mcp_server::validate_daemon_test_arguments("test", args)?;
     }
     Ok(())
+}
+
+fn daemon_worktrees(params: &mut Value, repo: &str) -> Result<BTreeSet<String>, String> {
+    if params["name"] == "test" {
+        let args = &mut params["arguments"];
+        apply_daemon_preference(args, repo)?;
+        if args["mvnd"] == true {
+            args["repo"] = json!(repo);
+            return Ok(BTreeSet::from([repo.to_owned()]));
+        }
+        return Ok(BTreeSet::new());
+    }
+    let parallel = params["name"] == "parallel_run";
+    let Some(steps) = params.pointer_mut("/arguments/steps").and_then(Value::as_array_mut) else {
+        return Ok(BTreeSet::new());
+    };
+    let writes = if parallel {
+        workflow_write_counts(steps, repo)?
+    } else {
+        HashMap::new()
+    };
+    workflow_daemon_worktrees(steps, repo, &writes)
+}
+
+fn workflow_write_counts(steps: &[Value], repo: &str) -> Result<HashMap<String, usize>, String> {
+    let mut writes = HashMap::new();
+    for step in steps.iter().filter(|step| !inspection(step["tool"].as_str().unwrap_or_default())) {
+        let worktree = effective_repo(&step["arguments"], Some(repo))?;
+        *writes.entry(worktree).or_insert(0) += 1;
+    }
+    Ok(writes)
+}
+
+fn workflow_daemon_worktrees(
+    steps: &mut [Value],
+    repo: &str,
+    writes: &HashMap<String, usize>,
+) -> Result<BTreeSet<String>, String> {
+    let mut worktrees = BTreeSet::new();
+    for step in steps.iter_mut().filter(|step| step["tool"] == "test") {
+        let args = &mut step["arguments"];
+        let worktree = effective_repo(args, Some(repo))?;
+        if configure_workflow_daemon(args, &worktree, writes.get(&worktree).copied().unwrap_or_default())? {
+            worktrees.insert(worktree);
+        }
+    }
+    Ok(worktrees)
+}
+
+fn configure_workflow_daemon(args: &mut Value, worktree: &str, writes: usize) -> Result<bool, String> {
+    if writes > 1 {
+        if args["mvnd"] == true {
+            return Err(format!("Parallel Maven Daemon test shares worktree {worktree} with another build. Use composite_run or separate worktrees."));
+        }
+        return Ok(false);
+    }
+    apply_daemon_preference(args, worktree)?;
+    if args["mvnd"] != true {
+        return Ok(false);
+    }
+    args["repo"] = json!(worktree);
+    Ok(true)
 }
 
 fn configured_daemon(repo: &str) -> bool {
@@ -248,16 +310,15 @@ impl McpSession {
         params: &mut Value,
         locks: Vec<std::fs::File>,
     ) -> Result<(std::process::Child, ChildStdin), String> {
-        apply_daemon_preference(params, &record.repo)?;
-        let daemon_group = if params["name"] == "test" && params["arguments"]["mvnd"] == true {
-            Some(mcp_supervisor::DaemonGroup::for_worktree(
+        let mut groups = HashMap::new();
+        for repo in daemon_worktrees(params, &record.repo)? {
+            let group = mcp_supervisor::DaemonGroup::for_worktree(
                 &mut self.daemon_groups,
-                &record.repo,
+                &repo,
                 &self.executable,
-            )?)
-        } else {
-            None
-        };
+            )?;
+            groups.insert(repo, group);
+        }
         mcp_supervisor::spawn(
             &self.executable,
             &self.backend,
@@ -265,7 +326,7 @@ impl McpSession {
             record.clone(),
             params.clone(),
             locks,
-            daemon_group,
+            groups,
         )
     }
 

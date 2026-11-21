@@ -125,6 +125,8 @@ if '--mvnd' in args:
     if not (repo / 'mvnd-started').exists():
         subprocess.Popen([sys.executable, str(Path(__file__).with_name('child.py')), str(repo)])
         (repo / 'mvnd-started').touch()
+    if 'FailingTest' in args:
+        sys.exit(1)
     if not (repo / 'mvnd-block').exists():
         sys.exit(0)
     while True:
@@ -275,7 +277,8 @@ def managed_daemon_reuses_group_and_cleans_forks(executable, state, repo):
         args = {"repo": str(repo), "name": "ExampleTest", "mvnd": True}
         assert client.call("test", repo=str(repo), mvnd=True)["isError"]
         assert client.call("test", **{**args, "properties": {"mvnd.daemonStorage": "/tmp/foreign"}})["isError"]
-        assert client.call("composite_run", steps=[{"tool": "test", "arguments": args}])["isError"]
+        invalid = {**args, "name": "FirstTest,SecondTest"}
+        assert client.call("composite_run", steps=[{"tool": "test", "arguments": invalid}])["isError"]
         quick = repo / "quick"
         quick.touch()
         default_args = {"repo": str(repo), "name": "ExampleTest"}
@@ -312,6 +315,59 @@ def managed_daemon_reuses_group_and_cleans_forks(executable, state, repo):
     finally:
         client.close()
     eventually(lambda: all(not alive(pid) for pid in restarted))
+
+
+def mvnd_workflows(client, left, right):
+    def step(**options):
+        return {"tool": "test", "arguments": {"name": "ExampleTest", **options}}
+
+    def groups(repo):
+        return (repo / "mvnd-groups").read_text().splitlines()
+
+    config = left / ".makevn/config"
+    config.parent.mkdir()
+    config.write_text("MAKEVN_USE_MVND=TRUE\n")
+    result = client.call("composite_run", repo=str(left), steps=[step(), step()])
+    assert result["isError"] is False, result
+    initial = groups(left)
+    assert len(initial) == 2 and len(set(initial)) == 1
+    original = pids(left, 2)
+
+    alias = left.with_name(left.name + "-alias")
+    alias.symlink_to(left, target_is_directory=True)
+    conflict = client.call("parallel_run", repo=str(left), steps=[step(mvnd=True), step(repo=str(alias))])
+    assert conflict["isError"] is True
+    assert "shares worktree" in conflict["structuredContent"]["untrustedData"]["output"]
+    assert groups(left) == initial
+
+    quick = left / "quick"
+    quick.touch()
+    assert client.call("parallel_run", repo=str(left), steps=[step(), step()])["isError"] is False
+    quick.unlink()
+    assert (left / "started").read_text().splitlines() == ["test", "test"]
+    assert groups(left) == initial
+
+    result = client.call("composite_run", repo=str(left), **{
+        "fail-fast": False,
+        "steps": [step(name="FailingTest"), step()],
+    })
+    workflow = result["structuredContent"]["untrustedData"]["workflow"]
+    assert [entry["exitCode"] for entry in workflow["steps"]] == [1, 0], result
+    assert groups(left)[-2] == initial[0] and groups(left)[-1] != initial[0]
+    assert all(not alive(pid) for pid in original)
+    (left / "mvnd-started").unlink()
+
+    for repo in (left, right):
+        (repo / "mvnd-block").touch()
+    request = client.begin("parallel_run", repo=str(left), steps=[step(), step(repo=str(right), mvnd=True)])
+    record = client.running(left)
+    left_owned = pids(left, 4)[2:]
+    right_owned = pids(right, 2)
+    assert groups(left)[-1] != groups(right)[-1]
+    assert all(alive(pid) for pid in left_owned + right_owned)
+    client.call("execution_cancel", executionId=record["executionId"])
+    stopped(client, record, left_owned + right_owned)
+    assert client.receive(request)["result"]["structuredContent"]["exitCode"] == 130
 
 
 def pr_conflicts(first, second, left, right):
@@ -497,7 +553,7 @@ def run(executable):
         backend.chmod(0o700)
         (root / "child.py").write_text(CHILD)
         state = root / "state"
-        repos = [root / f"repo-{index}" for index in range(18)]
+        repos = [root / f"repo-{index}" for index in range(20)]
         for repo in repos:
             repo.mkdir()
         first = Session(mcp, state)
@@ -510,6 +566,7 @@ def run(executable):
             responsiveness_and_cancellation(first, second, repos[0], repos[1])
             named_test_conflicts_across_registries(first, mcp, root / "other-state", repos[15], repos[16])
             managed_daemon_reuses_group_and_cleans_forks(mcp, state, repos[17])
+            mvnd_workflows(first, repos[18], repos[19])
             pr_conflicts(first, second, repos[2], repos[3])
             notification_and_workflows(first, repos[4], repos[5])
             completion_and_forcing(first, repos[6], repos[7])
