@@ -446,7 +446,7 @@ const TOOL_SPECS: &[ToolSpec] = &[
     ToolSpec { name: "package", description: "Compile and package without running tests.", command: &["package"], options: &[COMMON_REPO, COMPACT] },
     ToolSpec { name: "build", description: "Full Maven build (compile, test, package).", command: &["build"], options: &[COMMON_REPO, COMPACT] },
     ToolSpec { name: "clean", description: "Clean Maven build output; first archive manifest-owned legacy focused JaCoCo HTML while preserving XML, CSV and snapshot evidence. For diagnosed stale generated-source compilation failures, set clean-generated-contract-targets=true, then retry the original test or verification without fast. If cleanup fails, inspect untrustedData and logPaths before retrying; do not move the cleanup flag to test or verification tools.", command: &["clean"], options: &[COMMON_REPO, CLEAN_GENERATED_CONTRACT_TARGETS, COMPACT] },
-    ToolSpec { name: "test", description: "Run tests with optional name filter. Use fast=true only after a successful compile or test run when sources have not changed.", command: &["test"], options: &[COMMON_REPO, ToolOption { name: "name", ty: "string", description: "Test class name or comma-separated names", required: false }, ToolOption { name: "fast", ty: "boolean", description: "Skip compilation only after a successful compile or test run when sources have not changed. Do not use on the first test run.", required: false }, ToolOption { name: "properties", ty: "object", description: "Explicit Maven user properties as string values, forwarded as -Dname=value. Do not infer skip values or copy flags from other workflows.", required: false }, COMPACT] },
+    ToolSpec { name: "test", description: "Run tests with optional name filter. Use fast=true only after a successful compile or test run when sources have not changed.", command: &["test"], options: &[COMMON_REPO, ToolOption { name: "name", ty: "string", description: "Test class name or comma-separated names", required: false }, ToolOption { name: "fast", ty: "boolean", description: "Skip compilation only after a successful compile or test run when sources have not changed. Do not use on the first test run.", required: false }, ToolOption { name: "mvnd", ty: "boolean", description: "Opt in to Maven Daemon for a single named test. Requires mvnd on PATH. The daemon belongs to this MCP session and worktree.", required: false }, ToolOption { name: "properties", ty: "object", description: "Explicit Maven user properties as string values, forwarded as -Dname=value. Do not infer skip values or copy flags from other workflows.", required: false }, COMPACT] },
     ToolSpec { name: "verify_ut", description: "Run unit-test-only verification.", command: &["verify-ut"], options: &[COMMON_REPO, COMPACT] },
     ToolSpec { name: "verify_ut_coverage", description: "Run unit-test-only verification with coverage.", command: &["verify-ut-coverage"], options: &[COMMON_REPO, COMPACT] },
     ToolSpec { name: "verify_it", description: "Run integration-test-only verification.", command: &["verify-it"], options: &[COMMON_REPO, COMPACT, COMPOSE_FILE] },
@@ -604,6 +604,22 @@ fn validate_tool_specific_arguments(spec: &ToolSpec, params: &Value) -> Result<(
     if properties_for_workflow(spec) {
         let args = params["arguments"].as_object().ok_or("arguments must be an object")?;
         parse_steps(args)?;
+    }
+    validate_daemon_test_arguments(spec.name, &params["arguments"])
+}
+
+fn validate_daemon_test_arguments(tool: &str, args: &Value) -> Result<(), String> {
+    if tool != "test" || args["mvnd"] != true {
+        return Ok(());
+    }
+    let names = args["name"].as_str().unwrap_or_default().split(',');
+    if names.filter(|name| !name.trim().is_empty()).count() != 1 {
+        return Err("mvnd requires exactly one test name".into());
+    }
+    if args["properties"].as_object().is_some_and(|properties| {
+        properties.keys().any(|key| key.starts_with("mvnd."))
+    }) {
+        return Err("mvnd daemon properties are managed by MakeVN MCP".into());
     }
     Ok(())
 }
@@ -787,6 +803,9 @@ fn validate_workflow_step(step: &Value) -> Result<(), String> {
     }
     if properties_for_workflow(spec) {
         return Err(String::from("nested workflow steps are not supported"));
+    }
+    if step["arguments"]["mvnd"] == true {
+        return Err("mvnd is supported for standalone test calls only".into());
     }
     validate_step_arguments(spec, object.get("arguments")).map_err(Into::into)
 }
@@ -1095,7 +1114,7 @@ fn push_maven_properties(cmd_args: &mut Vec<String>, value: &Value) -> Result<()
 
 fn push_tool_option(cmd_args: &mut Vec<String>, name: &str, value: &Value) -> Result<(), String> {
     match name {
-        "diagram" | "explain" | "apply" | "clean-generated-contract-targets" | "dry-run" | "fast" | "force" | "verbose" | "isolated" | "record-test-impact" | "defer-global-coverage" => {
+        "diagram" | "explain" | "apply" | "clean-generated-contract-targets" | "dry-run" | "fast" | "mvnd" | "force" | "verbose" | "isolated" | "record-test-impact" | "defer-global-coverage" => {
             push_boolean_option(cmd_args, name, value)
         }
         "focused" => push_focused_option(cmd_args, value)?,

@@ -24,7 +24,7 @@ pub(super) fn command_help(
         "package" => maven_command_help("package", "Package the project without running tests.", false),
         "build" => maven_command_help("build", "Run the full Maven build.", false),
         "clean" => maven_command_help("clean", "Archive manifest-owned legacy focused JaCoCo HTML and clean Maven build output.", true),
-        "test" => Some(("makevn [--repo PATH] [--compact] test [--tail] [--name TEST]... [--fast] [-- EXTRA_MAVEN_ARGS...]", "Run tests with optional filtering.", &["--tail                              Start in interactive log tail mode", "--compact                           Use compact non-interactive output", "--name TEST                         Test class name or comma-separated names", "--fast                              Skip compilation when sources have not changed"])),
+        "test" => Some(("makevn [--repo PATH] [--compact] test [--tail] [--name TEST]... [--fast] [--mvnd] [-- EXTRA_MAVEN_ARGS...]", "Run tests with optional filtering.", &["--tail                              Start in interactive log tail mode", "--compact                           Use compact non-interactive output", "--name TEST                         Test class name or comma-separated names", "--fast                              Skip compilation when sources have not changed"])),
         "verify-ut" => maven_command_help("verify-ut", "Run unit-test-only verification.", false),
         "verify-ut-coverage" => maven_command_help("verify-ut-coverage", "Run unit-test-only verification with coverage.", false),
         "verify-it" => maven_command_help("verify-it", "Run integration-test-only verification.", false),

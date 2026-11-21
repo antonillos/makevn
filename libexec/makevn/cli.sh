@@ -52,7 +52,7 @@ Usage:
   makevn [--repo PATH] run-app
   makevn [--repo PATH] run-app-bg
   makevn [--repo PATH] stop-app
-  makevn [--repo PATH] test [--name TEST]... [--fast] [-- EXTRA_MAVEN_ARGS...]
+  makevn [--repo PATH] test [--name TEST]... [--fast] [--mvnd] [-- EXTRA_MAVEN_ARGS...]
   makevn [--repo PATH] test-compile [-- EXTRA_MAVEN_ARGS...]
   makevn [--repo PATH] test-impact-init [--isolated]
   makevn [--repo PATH] test-impact-preview [--graph [--focus CLASS [--depth N] [--limit N] [--all]]]

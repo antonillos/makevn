@@ -37,6 +37,7 @@ fn queued_cancellation_and_owner_loss_never_admit_a_command() {
             cancelled: AtomicBool::new(false),
             cancellation_started: OnceLock::new(),
             command_index: AtomicUsize::new(0),
+            daemon_group: None,
         };
         assert!(!admit(&mut io::Cursor::new(input), &worker).unwrap());
         assert!(worker.cancelled.load(Ordering::SeqCst));
@@ -73,6 +74,7 @@ fn telemetry_reads_only_appended_lines_and_persists_only_changes() {
         cancelled: AtomicBool::new(false),
         cancellation_started: OnceLock::new(),
         command_index: AtomicUsize::new(0),
+        daemon_group: None,
     };
     let stdout = root.join("stdout");
     let phase = root.join("phase");

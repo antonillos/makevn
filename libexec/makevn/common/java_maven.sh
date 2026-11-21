@@ -351,6 +351,46 @@ makevn_verify_selected_failsafe_summary() {
   return 0
 }
 
+makevn_selected_test_daemon() {
+  local repo_root="$1" maven_base_path="$2" maven_executable="$3"
+  local pinned_executable daemon java_home
+
+  if [[ -n "${MAKEVN_MCP_PHASE_OUT:-}" && -z "${MAKEVN_MCP_MVND_SESSION:-}" ]]; then
+    makevn_die "test --mvnd requires a standalone MakeVN MCP test call"
+    return 1
+  fi
+  pinned_executable="$(makevn_pinned_maven_executable "${repo_root}" code "${maven_base_path}")" || return $?
+  daemon="$(type -P mvnd)" || {
+    makevn_die "test --mvnd requires mvnd on PATH"
+    return 1
+  }
+  if [[ -n "${pinned_executable}" || "${maven_executable##*/}" == mvnw ]]; then
+    java_home="$(makevn_effective_java_home "${repo_root}" code "${maven_base_path}" || true)"
+    python3 "${MAKEVN_LIBEXEC_DIR}/common/maven_inspection.py" match-daemon "${daemon}" \
+      "${maven_base_path}" "${maven_base_path}" "${java_home}" "${maven_executable}" || return $?
+  fi
+  printf '%s\n' "${daemon}"
+}
+
+makevn_mvnd_storage() {
+  local repo_root="$1" maven_base_path="$2" executable="$3"
+  local storage java_home identity
+  storage="$(makevn_state_dir "${repo_root}")/mvnd"
+  if [[ -n "${MAKEVN_MCP_MVND_SESSION:-}" ]]; then
+    java_home="$(makevn_effective_java_home "${repo_root}" code "${maven_base_path}" || true)"
+    identity="$(python3 -c '
+import hashlib
+import os
+import sys
+
+paths = [os.fsencode(os.path.realpath(path)) for path in sys.argv[1:]]
+print(hashlib.sha256(b"\0".join(paths)).hexdigest()[:24])
+' "${executable}" "${java_home:-${JAVA_HOME:-}}")" || return $?
+    storage+="/mcp-${MAKEVN_MCP_MVND_SESSION}/${identity}"
+  fi
+  printf '%s\n' "${storage}"
+}
+
 makevn_run_selected_test() {
   local repo_root="$1"
   local test_name="$2"
@@ -422,6 +462,9 @@ makevn_run_selected_test() {
   fi
 
   maven_executable="$(makevn_maven_executable "${repo_root}" "${maven_base_path}")" || return $?
+  if [[ "${use_mvnd:-false}" == true ]]; then
+    maven_executable="$(makevn_selected_test_daemon "${repo_root}" "${maven_base_path}" "${maven_executable}")" || return $?
+  fi
   cli_flags_value="$(makevn_maven_cli_flags_for_command "${repo_root}" test)"
   cli_flags_value="$(makevn_append_word "${cli_flags_value}" "-nsu")"
   prop_flags_value="$(makevn_maven_prop_flags_for_command "${repo_root}" test)"
@@ -511,6 +554,11 @@ makevn_run_selected_test() {
   fi
   if [[ $# -gt 0 ]]; then
     maven_args+=("$@")
+  fi
+  if [[ "${use_mvnd:-false}" == true ]]; then
+    local daemon_storage
+    daemon_storage="$(makevn_mvnd_storage "${repo_root}" "${maven_base_path}" "${maven_executable}")" || return $?
+    maven_args+=("-Dmvnd.daemonStorage=${daemon_storage}" "-Dmvnd.registry=${daemon_storage}/registry.bin" -Dmvnd.idleTimeout=15m -T1)
   fi
 
   if [[ "${test_mode}" == "integration" ]]; then

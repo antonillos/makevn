@@ -38,6 +38,7 @@ struct McpSession {
     executable: PathBuf,
     backend: PathBuf,
     active: HashMap<String, ActiveExecution>,
+    daemon_groups: HashMap<String, mcp_supervisor::DaemonGroup>,
     sender: mpsc::Sender<Event>,
     stopping: bool,
 }
@@ -55,6 +56,7 @@ pub fn run(executable: PathBuf, backend: PathBuf) -> Result<i32, String> {
         executable,
         backend,
         active: HashMap::new(),
+        daemon_groups: HashMap::new(),
         sender,
         stopping: false,
     };
@@ -179,14 +181,7 @@ impl McpSession {
         crate::execution_retention::automatic(&self.store);
         let (mut record, locks) = self.store.prepare(&params)?;
         let execution_id = record.execution_id.clone();
-        let (mut child, ownership) = match mcp_supervisor::spawn(
-            &self.executable,
-            &self.backend,
-            self.store.root.clone(),
-            record.clone(),
-            params.clone(),
-            locks,
-        ) {
+        let (mut child, ownership) = match self.spawn_execution(&record, &params, locks) {
             Ok(process) => process,
             Err(error) => {
                 record.state = "failed".into();
@@ -221,6 +216,32 @@ impl McpSession {
             });
         });
         Ok(())
+    }
+
+    fn spawn_execution(
+        &mut self,
+        record: &ExecutionRecord,
+        params: &Value,
+        locks: Vec<std::fs::File>,
+    ) -> Result<(std::process::Child, ChildStdin), String> {
+        let daemon_group = if params["name"] == "test" && params["arguments"]["mvnd"] == true {
+            Some(mcp_supervisor::DaemonGroup::for_worktree(
+                &mut self.daemon_groups,
+                &record.repo,
+                &self.executable,
+            )?)
+        } else {
+            None
+        };
+        mcp_supervisor::spawn(
+            &self.executable,
+            &self.backend,
+            self.store.root.clone(),
+            record.clone(),
+            params.clone(),
+            locks,
+            daemon_group,
+        )
     }
 
     fn start(&mut self, execution_id: &str) -> Result<(), String> {

@@ -159,6 +159,27 @@ locks until owned descendants have stopped. The explicitly background
 `run_app_bg` command retains its detached contract after its launch command
 completes; use its documented lifecycle controls.
 
+### Maven Daemon for named tests
+
+For a configured Maven worktree with `mvnd` on the server's `PATH`, opt in on a
+standalone call to the `test` tool:
+
+```json
+{"repo": "/path/to/worktree", "name": "ExampleTest", "mvnd": true}
+```
+
+MakeVN uses the project Maven by default. If the project declares a Maven pin
+or wrapper version, the Maven embedded in `mvnd` must match it. Compiling and
+test selection follow the ordinary named-test contract.
+
+The daemon is reused by calls in the same MCP session and worktree. Worktree
+locks still protect compiled output and reports across sessions. Cancellation
+stops the owned daemon group, including its test JVMs, before releasing the
+worktree lock. The next call can start a fresh daemon. Closing the MCP session
+stops its groups. The daemon expires after 15 minutes of inactivity.
+
+### Execution record retention
+
 Nonterminal records with a released per-execution lifetime lock are reconciled
 as `failed` by listing or status queries, with logs retained and an unknown exit
 code. This includes supervisor death and host restart; it does not imply that

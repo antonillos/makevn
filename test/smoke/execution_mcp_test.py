@@ -117,6 +117,19 @@ if command in ['doctor', 'verify-changes-preview']:
     print('inspection completed')
     sys.exit(0)
 assert 'MAKEVN_MCP_INSPECTION' not in os.environ
+if '--mvnd' in args:
+    assert command == 'test'
+    assert os.environ['MAKEVN_MCP_MVND_SESSION']
+    with (repo / 'mvnd-groups').open('a') as file:
+        file.write(str(os.getpgrp()) + '\n')
+    if not (repo / 'mvnd-started').exists():
+        subprocess.Popen([sys.executable, str(Path(__file__).with_name('child.py')), str(repo)])
+        (repo / 'mvnd-started').touch()
+    if not (repo / 'mvnd-block').exists():
+        sys.exit(0)
+    while True:
+        time.sleep(0.1)
+assert 'MAKEVN_MCP_MVND_SESSION' not in os.environ
 with (repo / 'started').open('a') as file:
     file.write(command + '\n')
 if command in ['clean', 'run-app-bg'] or (repo / 'quick').exists():
@@ -254,6 +267,39 @@ def named_test_conflicts_across_registries(first, executable, state, repo, other
         assert second.call("test", repo=str(repo), name="ExampleTest")["isError"] is False
     finally:
         second.close()
+
+
+def managed_daemon_reuses_group_and_cleans_forks(executable, state, repo):
+    client = Session(executable, state)
+    try:
+        args = {"repo": str(repo), "name": "ExampleTest", "mvnd": True}
+        assert client.call("test", repo=str(repo), mvnd=True)["isError"]
+        assert client.call("test", **{**args, "properties": {"mvnd.daemonStorage": "/tmp/foreign"}})["isError"]
+        assert client.call("composite_run", steps=[{"tool": "test", "arguments": args}])["isError"]
+        for _ in range(2):
+            assert client.call("test", **args)["isError"] is False
+        owned = pids(repo, 2)
+        groups = (repo / "mvnd-groups").read_text().splitlines()
+        assert len(groups) == 2 and groups[0] == groups[1]
+        assert all(alive(pid) for pid in owned)
+
+        block = repo / "mvnd-block"
+        block.touch()
+        request = client.begin("test", **args)
+        record = client.running(repo)
+        eventually(lambda: len((repo / "mvnd-groups").read_text().splitlines()) == 3)
+        client.call("execution_cancel", executionId=record["executionId"])
+        stopped(client, record, owned)
+        assert client.receive(request)["result"]["structuredContent"]["exitCode"] == 130
+
+        block.unlink()
+        (repo / "mvnd-started").unlink()
+        assert client.call("test", **args)["isError"] is False
+        restarted = pids(repo, 4)[2:]
+        assert (repo / "mvnd-groups").read_text().splitlines()[-1] != groups[0]
+    finally:
+        client.close()
+    eventually(lambda: all(not alive(pid) for pid in restarted))
 
 
 def pr_conflicts(first, second, left, right):
@@ -439,7 +485,7 @@ def run(executable):
         backend.chmod(0o700)
         (root / "child.py").write_text(CHILD)
         state = root / "state"
-        repos = [root / f"repo-{index}" for index in range(17)]
+        repos = [root / f"repo-{index}" for index in range(18)]
         for repo in repos:
             repo.mkdir()
         first = Session(mcp, state)
@@ -451,6 +497,7 @@ def run(executable):
             assert first.call_method("unknown/method", {})["error"]["code"] == -32601
             responsiveness_and_cancellation(first, second, repos[0], repos[1])
             named_test_conflicts_across_registries(first, mcp, root / "other-state", repos[15], repos[16])
+            managed_daemon_reuses_group_and_cleans_forks(mcp, state, repos[17])
             pr_conflicts(first, second, repos[2], repos[3])
             notification_and_workflows(first, repos[4], repos[5])
             completion_and_forcing(first, repos[6], repos[7])

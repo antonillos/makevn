@@ -1,9 +1,10 @@
+use std::collections::HashMap;
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, BufRead, Read, Seek, SeekFrom, Write};
 use std::os::fd::{AsRawFd, FromRawFd};
 use std::os::unix::fs::OpenOptionsExt;
 use std::os::unix::process::CommandExt;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdin, Command, Output, Stdio};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
@@ -23,6 +24,7 @@ struct SupervisorConfig {
     params: Value,
     backend: PathBuf,
     lock_fds: Vec<i32>,
+    daemon_group: Option<i32>,
 }
 
 static WORKER: OnceLock<Arc<ExecutionWorker>> = OnceLock::new();
@@ -33,6 +35,59 @@ struct ExecutionWorker {
     cancelled: AtomicBool,
     cancellation_started: OnceLock<Instant>,
     command_index: AtomicUsize,
+    daemon_group: Option<i32>,
+}
+
+pub struct DaemonGroup {
+    owner: Child,
+    stdin: Option<ChildStdin>,
+}
+
+impl DaemonGroup {
+    pub fn for_worktree(
+        groups: &mut HashMap<String, Self>,
+        repo: &str,
+        executable: &Path,
+    ) -> Result<i32, String> {
+        if let Some(group) = groups.get_mut(repo) {
+            let id = group.owner.id() as i32;
+            if group.owner.try_wait().map_err(|error| error.to_string())?.is_none() {
+                return Ok(id);
+            }
+            if group_alive(id) {
+                return Err("The previous Maven Daemon group is still active for this worktree".into());
+            }
+        }
+        let mut owner = Command::new(executable)
+            .arg("--makevn-mvnd-owner")
+            .stdin(Stdio::piped())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .process_group(0)
+            .spawn()
+            .map_err(|error| format!("Cannot start Maven Daemon process group: {error}"))?;
+        let id = owner.id() as i32;
+        let stdin = owner.stdin.take();
+        groups.insert(repo.into(), Self { owner, stdin });
+        Ok(id)
+    }
+}
+
+impl Drop for DaemonGroup {
+    fn drop(&mut self) {
+        drop(self.stdin.take());
+        let _ = self.owner.wait();
+    }
+}
+
+pub fn run_daemon_owner() {
+    // The owner only signals its own dedicated group when its parent pipe closes.
+    let group = unsafe { libc::getpgrp() };
+    if group != std::process::id() as i32 {
+        return;
+    }
+    let _ = io::copy(&mut io::stdin().lock(), &mut io::sink());
+    signal_group(group, libc::SIGKILL);
 }
 
 pub fn spawn(
@@ -42,6 +97,7 @@ pub fn spawn(
     record: ExecutionRecord,
     params: Value,
     locks: Vec<File>,
+    daemon_group: Option<i32>,
 ) -> Result<(Child, ChildStdin), String> {
     let lock_fds: Vec<_> = locks.iter().map(AsRawFd::as_raw_fd).collect();
     let config = SupervisorConfig {
@@ -50,6 +106,7 @@ pub fn spawn(
         params,
         backend: backend.into(),
         lock_fds: lock_fds.clone(),
+        daemon_group,
     };
     let mut command = Command::new(executable);
     command
@@ -106,6 +163,7 @@ pub fn run() -> Result<i32, String> {
         cancelled: AtomicBool::new(false),
         cancellation_started: OnceLock::new(),
         command_index: AtomicUsize::new(0),
+        daemon_group: config.daemon_group,
     });
     WORKER
         .set(worker.clone())
@@ -156,7 +214,9 @@ fn finish(
     locks: Vec<File>,
 ) -> Result<i32, String> {
     let mut record = worker.record.lock().unwrap();
-    if worker.cancelled.load(Ordering::SeqCst) {
+    let cancelled = worker.cancelled.load(Ordering::SeqCst);
+    worker.finish_daemon(cancelled, result.exit_code);
+    if cancelled {
         result.exit_code = 130;
         result.next_suggestion = Some(
             "Execution cancelled; inspect its logs before starting another verification.".into(),
@@ -183,6 +243,14 @@ fn finish(
 }
 
 impl ExecutionWorker {
+    fn finish_daemon(&self, cancelled: bool, exit_code: i32) {
+        if let Some(group) = self.daemon_group {
+            if cancelled || exit_code != 0 {
+                clean_group(self, group);
+            }
+        }
+    }
+
     fn update(&self, change: impl FnOnce(&mut ExecutionRecord)) -> Result<(), String> {
         let mut record = self.record.lock().unwrap();
         change(&mut record);
@@ -250,11 +318,11 @@ pub fn command_output(command: &mut Command, detached: bool) -> Result<Output, S
         return Err("Execution cancelled before starting the next step".into());
     }
     let (stdout, stderr, phase) = worker.paths()?;
-    let mut child = spawn_captured(command, &stdout, &stderr, &phase)?;
-    let group = child.id() as i32;
+    let mut child = spawn_captured(worker, command, &stdout, &stderr, &phase)?;
+    let group = worker.daemon_group.unwrap_or_else(|| child.id() as i32);
     let mut tail = OutputTail::default();
-    let status = wait_command(worker, &mut child, &stdout, &phase, &mut tail)?;
-    if !detached {
+    let status = wait_command(worker, &mut child, group, &stdout, &phase, &mut tail)?;
+    if worker.daemon_group.is_none() && !detached {
         clean_group(worker, group);
     }
     worker.refresh(&tail.read(&stdout), &phase);
@@ -262,17 +330,25 @@ pub fn command_output(command: &mut Command, detached: bool) -> Result<Output, S
 }
 
 fn spawn_captured(
+    worker: &ExecutionWorker,
     command: &mut Command,
     stdout: &std::path::Path,
     stderr: &std::path::Path,
     phase: &std::path::Path,
 ) -> Result<Child, String> {
+    command.env_remove("MAKEVN_MCP_MVND_SESSION");
+    if worker.daemon_group.is_some() {
+        command.env(
+            "MAKEVN_MCP_MVND_SESSION",
+            &worker.record.lock().unwrap().session_id,
+        );
+    }
     command
         .stdin(Stdio::null())
         .stdout(capture_file(stdout)?)
         .stderr(capture_file(stderr)?)
         .env("MAKEVN_MCP_PHASE_OUT", phase)
-        .process_group(0);
+        .process_group(worker.daemon_group.unwrap_or(0));
     command.spawn().map_err(|error| error.to_string())
 }
 
@@ -330,6 +406,7 @@ fn capture_file(path: &std::path::Path) -> Result<File, String> {
 fn wait_command(
     worker: &ExecutionWorker,
     child: &mut Child,
+    group: i32,
     stdout: &std::path::Path,
     phase: &std::path::Path,
     tail: &mut OutputTail,
@@ -338,7 +415,7 @@ fn wait_command(
     let mut refreshed = Instant::now() - Duration::from_secs(1);
     loop {
         if cancelled() {
-            signal_cancellation(worker, child.id() as i32, &mut termination_sent);
+            signal_cancellation(worker, group, &mut termination_sent);
         }
         if let Some(status) = child.try_wait().map_err(|error| error.to_string())? {
             return Ok(status);
