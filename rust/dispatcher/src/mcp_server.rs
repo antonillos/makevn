@@ -601,18 +601,15 @@ fn validate_tool_specific_arguments(spec: &ToolSpec, params: &Value) -> Result<(
     if spec.name == "doctor_configure" {
         crate::mcp_doctor::validate_arguments(&params["arguments"])?;
     }
-    if spec.name == "test" {
-        validate_daemon_test_arguments(&params["arguments"])?;
-    }
     if properties_for_workflow(spec) {
         let args = params["arguments"].as_object().ok_or("arguments must be an object")?;
         parse_steps(args)?;
     }
-    Ok(())
+    validate_daemon_test_arguments(spec.name, &params["arguments"])
 }
 
-fn validate_daemon_test_arguments(args: &Value) -> Result<(), String> {
-    if args["mvnd"] != true {
+fn validate_daemon_test_arguments(tool: &str, args: &Value) -> Result<(), String> {
+    if tool != "test" || args["mvnd"] != true {
         return Ok(());
     }
     let names = args["name"].as_str().unwrap_or_default().split(',');
