@@ -62,8 +62,8 @@ with tempfile.TemporaryDirectory(prefix="makevn-doctor-chat-") as directory:
     config.write_text(config.read_text() + '# Keep user settings\nCUSTOM_SETTING="preserved"\n')
     doctor = call(repo, "doctor")
     available = questions(doctor)
-    assert set(available) == {"boot_compose", "e2e_compose", "app_health_url", "local_containers",
-                              "karate_app_profiles"}, doctor
+    assert set(available) - {"use_mvnd"} == {"boot_compose", "e2e_compose", "app_health_url",
+                                            "local_containers", "karate_app_profiles"}, doctor
     assert doctor["interactive_setup"]["requires_tty"] is False
     assert "configuration is pending" in doctor["message"]
     with patch.dict(os.environ, {"SPRING_PROFILES_ACTIVE": "", "LOCAL_CONTAINERS": ""}):
@@ -105,10 +105,12 @@ with tempfile.TemporaryDirectory(prefix="makevn-doctor-chat-") as directory:
     available = questions(refreshed)
     assert available == questions(partial)
     special_url = "http://localhost/health?value='$(touch${IFS}SENTINEL)`id`&ok=yes"
-    completed = configure(repo, refreshed, {
-        "boot_compose": available["boot_compose"]["options"][0],
-        "e2e_compose": available["e2e_compose"]["options"][1],
-        "app_health_url": special_url, "karate_app_profiles": "standalone,local"})
+    answers = {"boot_compose": available["boot_compose"]["options"][0],
+               "e2e_compose": available["e2e_compose"]["options"][1],
+               "app_health_url": special_url, "karate_app_profiles": "standalone,local"}
+    if "use_mvnd" in available:
+        answers["use_mvnd"] = False
+    completed = configure(repo, refreshed, answers)
     assert completed["interactive_setup"]["status"] == "ready", completed
     assert completed["interactive_setup"]["required"] is False
     assert questions(completed) == {}
@@ -154,7 +156,10 @@ with tempfile.TemporaryDirectory(prefix="makevn-doctor-jdk-") as directory:
         before = config.read_bytes()
         configure(repo, doctor, {"code_java_home": "/not-an-offered-jdk"}, error=True)
         assert config.read_bytes() == before
-        completed = configure(repo, doctor, {"code_java_home": str(homes[1])})
+        answers = {"code_java_home": str(homes[1])}
+        if "use_mvnd" in questions(doctor):
+            answers["use_mvnd"] = False
+        completed = configure(repo, doctor, answers)
         assert completed["interactive_setup"]["required"] is False, completed
         assert completed["interactive_setup"]["status"] == "ready", completed
         assert str(homes[1]) in config.read_text()
@@ -182,5 +187,32 @@ with tempfile.TemporaryDirectory(prefix="makevn-doctor-console-") as directory:
     configured = call(repo, "doctor")
     assert "app_health_url" not in questions(configured), configured
     assert 'MAKEVN_APP_HEALTH_URL="http://localhost:18080/custom"' in config.read_text()
+
+with tempfile.TemporaryDirectory(prefix="makevn-doctor-mvnd-") as directory:
+    root = Path(directory)
+    mvnd = root / "bin/mvnd"
+    mvnd.parent.mkdir()
+    mvnd.write_text("#!/bin/sh\nexit 0\n")
+    mvnd.chmod(0o755)
+    with patch.dict(os.environ, {"PATH": f"{mvnd.parent}{os.pathsep}{os.environ['PATH']}"}):
+        for name, enabled in [("enable", True), ("decline", False), ("wrapper", None)]:
+            repo = root / name
+            repo.mkdir()
+            (repo / "pom.xml").write_text("<project/>")
+            if enabled is None:
+                wrapper = repo / "mvnw"
+                wrapper.write_text("#!/bin/sh\nexit 0\n")
+                wrapper.chmod(0o755)
+            call(repo, "init")
+            doctor = call(repo, "doctor")
+            if enabled is None:
+                assert "use_mvnd" not in questions(doctor), doctor
+            else:
+                assert questions(doctor)["use_mvnd"]["options"] == [True, False], doctor
+                completed = configure(repo, doctor, {"use_mvnd": enabled})
+                assert "use_mvnd" not in questions(completed), completed
+                setting = "TRUE" if enabled else "FALSE"
+                assert f"MAKEVN_USE_MVND={setting}" in (repo / ".makevn/config").read_text()
+                assert "use_mvnd" not in questions(call(repo, "doctor"))
 
 print("Doctor chat configuration MCP tests passed")

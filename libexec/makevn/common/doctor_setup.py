@@ -13,6 +13,7 @@ import tempfile
 
 SETTINGS = {
     "code_java_home": "MAKEVN_CODE_JAVA_HOME",
+    "use_mvnd": "MAKEVN_USE_MVND",
     "boot_compose": "MAKEVN_COMPOSE_FILE",
     "e2e_compose": "MAKEVN_E2E_COMPOSE_FILE",
     "local_containers": "MAKEVN_LOCAL_CONTAINERS",
@@ -97,6 +98,11 @@ def collect_questions(arguments):
         questions.append(question("code_java_home", "Which compatible JDK should this repository use? "
                                   f"The lowest compatible major is recommended.\n{java_details}", "choice",
                                   java_homes.splitlines(), suggested=java_recommended))
+    if arguments[11:12] == ["true"]:
+        questions.append(question("use_mvnd",
+                                  "Use Maven Daemon by default for standalone named MCP tests in this worktree? "
+                                  "If the project pins Maven, the embedded Maven version must match.",
+                                  "boolean", [True, False]))
     path = Path(repo) / ".makevn/config"
     config = path.read_bytes() if path.is_file() else b""
     return {"questions": questions, "setupToken": setup_token(Path(repo), questions, config), "available": True}
@@ -114,7 +120,7 @@ def answer_updates(setup, answers):
         if item["type"] == "boolean":
             if type(value) is not bool:
                 raise ValueError(f"{identifier} requires a boolean answer.")
-            value = "TRUE" if value else ""
+            value = "TRUE" if value else ("FALSE" if identifier == "use_mvnd" else "")
         else:
             if not isinstance(value, str) or "\0" in value or "\n" in value or "\r" in value:
                 raise ValueError(f"{identifier} requires a single-line string answer.")

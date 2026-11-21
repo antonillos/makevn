@@ -64,6 +64,30 @@ pub fn run(executable: PathBuf, backend: PathBuf) -> Result<i32, String> {
     session.serve(receiver, interrupted)
 }
 
+fn apply_daemon_preference(params: &mut Value, repo: &str) -> Result<(), String> {
+    if params["name"] != "test" || params["arguments"].get("mvnd").is_some() {
+        return Ok(());
+    }
+    let names = params["arguments"]["name"].as_str().unwrap_or_default().split(',');
+    if names.filter(|name| !name.trim().is_empty()).count() == 1 && configured_daemon(repo) {
+        params["arguments"]["mvnd"] = json!(true);
+        mcp_server::validate_daemon_test_arguments("test", &params["arguments"])?;
+    }
+    Ok(())
+}
+
+fn configured_daemon(repo: &str) -> bool {
+    let path = std::path::Path::new(repo).join(".makevn/config");
+    // Doctor writes literal TRUE or FALSE values. Do not evaluate shell code at admission.
+    std::fs::read_to_string(path).is_ok_and(|config| {
+        config
+            .lines()
+            .rev()
+            .find_map(|line| line.strip_prefix("MAKEVN_USE_MVND="))
+            == Some("TRUE")
+    })
+}
+
 fn read_requests(sender: mpsc::Sender<Event>) {
     thread::spawn(move || {
         for line in io::stdin().lock().lines() {
@@ -177,11 +201,11 @@ impl McpSession {
         }
     }
 
-    fn launch(&mut self, id: Value, params: Value) -> Result<(), String> {
+    fn launch(&mut self, id: Value, mut params: Value) -> Result<(), String> {
         crate::execution_retention::automatic(&self.store);
         let (mut record, locks) = self.store.prepare(&params)?;
         let execution_id = record.execution_id.clone();
-        let (mut child, ownership) = match self.spawn_execution(&record, &params, locks) {
+        let (mut child, ownership) = match self.spawn_execution(&record, &mut params, locks) {
             Ok(process) => process,
             Err(error) => {
                 record.state = "failed".into();
@@ -221,9 +245,10 @@ impl McpSession {
     fn spawn_execution(
         &mut self,
         record: &ExecutionRecord,
-        params: &Value,
+        params: &mut Value,
         locks: Vec<std::fs::File>,
     ) -> Result<(std::process::Child, ChildStdin), String> {
+        apply_daemon_preference(params, &record.repo)?;
         let daemon_group = if params["name"] == "test" && params["arguments"]["mvnd"] == true {
             Some(mcp_supervisor::DaemonGroup::for_worktree(
                 &mut self.daemon_groups,
