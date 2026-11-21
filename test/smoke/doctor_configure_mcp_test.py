@@ -195,24 +195,24 @@ with tempfile.TemporaryDirectory(prefix="makevn-doctor-mvnd-") as directory:
     mvnd.write_text("#!/bin/sh\nexit 0\n")
     mvnd.chmod(0o755)
     with patch.dict(os.environ, {"PATH": f"{mvnd.parent}{os.pathsep}{os.environ['PATH']}"}):
-        for name, enabled in [("enable", True), ("decline", False), ("wrapper", None)]:
+        for name, enabled in [("enable", True), ("decline", False), ("wrapper", True)]:
             repo = root / name
             repo.mkdir()
             (repo / "pom.xml").write_text("<project/>")
-            if enabled is None:
+            if name == "wrapper":
+                properties = repo / ".mvn/wrapper/maven-wrapper.properties"
+                properties.parent.mkdir(parents=True)
+                properties.write_text("distributionUrl=https://example.test/apache-maven-3.9.11-bin.zip\n")
                 wrapper = repo / "mvnw"
                 wrapper.write_text("#!/bin/sh\nexit 0\n")
                 wrapper.chmod(0o755)
             call(repo, "init")
             doctor = call(repo, "doctor")
-            if enabled is None:
-                assert "use_mvnd" not in questions(doctor), doctor
-            else:
-                assert questions(doctor)["use_mvnd"]["options"] == [True, False], doctor
-                completed = configure(repo, doctor, {"use_mvnd": enabled})
-                assert "use_mvnd" not in questions(completed), completed
-                setting = "TRUE" if enabled else "FALSE"
-                assert f"MAKEVN_USE_MVND={setting}" in (repo / ".makevn/config").read_text()
-                assert "use_mvnd" not in questions(call(repo, "doctor"))
+            assert questions(doctor)["use_mvnd"]["options"] == [True, False], doctor
+            completed = configure(repo, doctor, {"use_mvnd": enabled})
+            assert "use_mvnd" not in questions(completed), completed
+            setting = "TRUE" if enabled else "FALSE"
+            assert f"MAKEVN_USE_MVND={setting}" in (repo / ".makevn/config").read_text()
+            assert "use_mvnd" not in questions(call(repo, "doctor"))
 
 print("Doctor chat configuration MCP tests passed")
