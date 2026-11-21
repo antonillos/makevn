@@ -446,7 +446,7 @@ const TOOL_SPECS: &[ToolSpec] = &[
     ToolSpec { name: "package", description: "Compile and package without running tests.", command: &["package"], options: &[COMMON_REPO, COMPACT] },
     ToolSpec { name: "build", description: "Full Maven build (compile, test, package).", command: &["build"], options: &[COMMON_REPO, COMPACT] },
     ToolSpec { name: "clean", description: "Clean Maven build output; first archive manifest-owned legacy focused JaCoCo HTML while preserving XML, CSV and snapshot evidence. For diagnosed stale generated-source compilation failures, set clean-generated-contract-targets=true, then retry the original test or verification without fast. If cleanup fails, inspect untrustedData and logPaths before retrying; do not move the cleanup flag to test or verification tools.", command: &["clean"], options: &[COMMON_REPO, CLEAN_GENERATED_CONTRACT_TARGETS, COMPACT] },
-    ToolSpec { name: "test", description: "Run tests with optional name filter. Use fast=true only after a successful compile or test run when sources have not changed.", command: &["test"], options: &[COMMON_REPO, ToolOption { name: "name", ty: "string", description: "Test class name or comma-separated names", required: false }, ToolOption { name: "fast", ty: "boolean", description: "Skip compilation only after a successful compile or test run when sources have not changed. Do not use on the first test run.", required: false }, ToolOption { name: "mvnd", ty: "boolean", description: "Override the Doctor preference for Maven Daemon on a standalone named test. Requires mvnd on PATH. The daemon belongs to this MCP session and worktree.", required: false }, ToolOption { name: "properties", ty: "object", description: "Explicit Maven user properties as string values, forwarded as -Dname=value. Do not infer skip values or copy flags from other workflows.", required: false }, COMPACT] },
+    ToolSpec { name: "test", description: "Run tests with optional name filter. Use fast=true only after a successful compile or test run when sources have not changed.", command: &["test"], options: &[COMMON_REPO, ToolOption { name: "name", ty: "string", description: "Test class name or comma-separated names", required: false }, ToolOption { name: "fast", ty: "boolean", description: "Skip compilation only after a successful compile or test run when sources have not changed. Do not use on the first test run.", required: false }, ToolOption { name: "mvnd", ty: "boolean", description: "Override the Doctor preference for Maven Daemon on a single named test. Requires mvnd on PATH. In parallel workflows use a separate worktree for a daemon step.", required: false }, ToolOption { name: "properties", ty: "object", description: "Explicit Maven user properties as string values, forwarded as -Dname=value. Do not infer skip values or copy flags from other workflows.", required: false }, COMPACT] },
     ToolSpec { name: "verify_ut", description: "Run unit-test-only verification.", command: &["verify-ut"], options: &[COMMON_REPO, COMPACT] },
     ToolSpec { name: "verify_ut_coverage", description: "Run unit-test-only verification with coverage.", command: &["verify-ut-coverage"], options: &[COMMON_REPO, COMPACT] },
     ToolSpec { name: "verify_it", description: "Run integration-test-only verification.", command: &["verify-it"], options: &[COMMON_REPO, COMPACT, COMPOSE_FILE] },
@@ -701,7 +701,7 @@ pub(crate) fn handle_tool_call(makevn_bin: &Path, params: &Value) -> Result<Tool
             .env("MAKEVN_AGENT_OUTPUT", "1")
             .env("CI", "1");
         configure_inspection(&mut command, tool_name);
-        crate::mcp_supervisor::command_output(&mut command, detached_tool(tool_name))
+        crate::mcp_supervisor::command_output(&mut command, detached_tool(tool_name), mvnd_repo(&args))
             .map_err(|error| format!("failed to execute makevn: {error}"))?.into()
     };
     let duration_ms = start.elapsed().as_millis();
@@ -804,10 +804,12 @@ fn validate_workflow_step(step: &Value) -> Result<(), String> {
     if properties_for_workflow(spec) {
         return Err(String::from("nested workflow steps are not supported"));
     }
-    if step["arguments"]["mvnd"] == true {
-        return Err("mvnd is supported for standalone test calls only".into());
-    }
-    validate_step_arguments(spec, object.get("arguments")).map_err(Into::into)
+    validate_workflow_step_arguments(spec, object.get("arguments"))
+}
+
+fn validate_workflow_step_arguments(spec: &ToolSpec, arguments: Option<&Value>) -> Result<(), String> {
+    validate_step_arguments(spec, arguments).map_err(String::from)?;
+    validate_daemon_test_arguments(spec.name, arguments.unwrap_or(&Value::Null))
 }
 
 fn validate_workflow_step_fields(object: &Map<String, Value>) -> Result<(), String> {
@@ -894,7 +896,7 @@ fn execute_single_step(
         );
     }
     let start = Instant::now();
-    let output = execute_tool_process(makevn_bin, &cmd_args, trace_output(&step_args), step_tool)?;
+    let output = execute_tool_process(makevn_bin, &cmd_args, trace_output(&step_args), step_tool, mvnd_repo(&step_args))?;
     let duration_ms = start.elapsed().as_millis();
 
     let (result, exit_code) = format_tool_output(&output);
@@ -912,6 +914,7 @@ fn execute_tool_process(
     cmd_args: &[String],
     trace: &str,
     tool: &str,
+    daemon_repo: Option<&str>,
 ) -> Result<ToolOutput, String> {
     let mut command = Command::new(makevn_bin);
     command.args(cmd_args)
@@ -921,9 +924,16 @@ fn execute_tool_process(
         .env("MAKEVN_AGENT_OUTPUT", "1")
         .env("CI", "1");
     configure_inspection(&mut command, tool);
-    let output = crate::mcp_supervisor::command_output(&mut command, detached_tool(tool))
+    let output = crate::mcp_supervisor::command_output(&mut command, detached_tool(tool), daemon_repo)
         .map_err(|error| format!("failed to execute makevn: {error}"))?.into();
     Ok(output)
+}
+
+fn mvnd_repo(args: &Map<String, Value>) -> Option<&str> {
+    if args.get("mvnd").and_then(Value::as_bool) == Some(true) {
+        return args.get("repo").and_then(Value::as_str);
+    }
+    None
 }
 
 fn format_tool_output(output: &ToolOutput) -> (String, i32) {

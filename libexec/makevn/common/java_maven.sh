@@ -356,7 +356,7 @@ makevn_selected_test_daemon() {
   local pinned_executable daemon java_home
 
   if [[ -n "${MAKEVN_MCP_PHASE_OUT:-}" && -z "${MAKEVN_MCP_MVND_SESSION:-}" ]]; then
-    makevn_die "test --mvnd requires a standalone MakeVN MCP test call"
+    makevn_die "test --mvnd requires a managed MakeVN MCP test step"
     return 1
   fi
   pinned_executable="$(makevn_pinned_maven_executable "${repo_root}" code "${maven_base_path}")" || return $?

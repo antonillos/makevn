@@ -24,7 +24,7 @@ struct SupervisorConfig {
     params: Value,
     backend: PathBuf,
     lock_fds: Vec<i32>,
-    daemon_group: Option<i32>,
+    daemon_groups: HashMap<String, i32>,
 }
 
 static WORKER: OnceLock<Arc<ExecutionWorker>> = OnceLock::new();
@@ -35,7 +35,12 @@ struct ExecutionWorker {
     cancelled: AtomicBool,
     cancellation_started: OnceLock<Instant>,
     command_index: AtomicUsize,
-    daemon_group: Option<i32>,
+    daemon_groups: Mutex<HashMap<String, DaemonLease>>,
+}
+
+struct DaemonLease {
+    group: Option<i32>,
+    replacement: Option<DaemonGroup>,
 }
 
 pub struct DaemonGroup {
@@ -58,6 +63,13 @@ impl DaemonGroup {
                 return Err("The previous Maven Daemon group is still active for this worktree".into());
             }
         }
+        let group = Self::start(executable)?;
+        let id = group.owner.id() as i32;
+        groups.insert(repo.into(), group);
+        Ok(id)
+    }
+
+    fn start(executable: &Path) -> Result<Self, String> {
         let mut owner = Command::new(executable)
             .arg("--makevn-mvnd-owner")
             .stdin(Stdio::piped())
@@ -66,10 +78,8 @@ impl DaemonGroup {
             .process_group(0)
             .spawn()
             .map_err(|error| format!("Cannot start Maven Daemon process group: {error}"))?;
-        let id = owner.id() as i32;
         let stdin = owner.stdin.take();
-        groups.insert(repo.into(), Self { owner, stdin });
-        Ok(id)
+        Ok(Self { owner, stdin })
     }
 }
 
@@ -97,7 +107,7 @@ pub fn spawn(
     record: ExecutionRecord,
     params: Value,
     locks: Vec<File>,
-    daemon_group: Option<i32>,
+    daemon_groups: HashMap<String, i32>,
 ) -> Result<(Child, ChildStdin), String> {
     let lock_fds: Vec<_> = locks.iter().map(AsRawFd::as_raw_fd).collect();
     let config = SupervisorConfig {
@@ -106,7 +116,7 @@ pub fn spawn(
         params,
         backend: backend.into(),
         lock_fds: lock_fds.clone(),
-        daemon_group,
+        daemon_groups,
     };
     let mut command = Command::new(executable);
     command
@@ -163,7 +173,9 @@ pub fn run() -> Result<i32, String> {
         cancelled: AtomicBool::new(false),
         cancellation_started: OnceLock::new(),
         command_index: AtomicUsize::new(0),
-        daemon_group: config.daemon_group,
+        daemon_groups: Mutex::new(config.daemon_groups.into_iter().map(|(repo, group)| {
+            (repo, DaemonLease { group: Some(group), replacement: None })
+        }).collect()),
     });
     WORKER
         .set(worker.clone())
@@ -215,7 +227,7 @@ fn finish(
 ) -> Result<i32, String> {
     let mut record = worker.record.lock().unwrap();
     let cancelled = worker.cancelled.load(Ordering::SeqCst);
-    worker.finish_daemon(cancelled, result.exit_code);
+    worker.finish_daemons(cancelled);
     if cancelled {
         result.exit_code = 130;
         result.next_suggestion = Some(
@@ -243,11 +255,35 @@ fn finish(
 }
 
 impl ExecutionWorker {
-    fn finish_daemon(&self, cancelled: bool, exit_code: i32) {
-        if let Some(group) = self.daemon_group {
-            if cancelled || exit_code != 0 {
-                clean_group(self, group);
+    fn finish_daemons(&self, cancelled: bool) {
+        for lease in self.daemon_groups.lock().unwrap().values_mut() {
+            if cancelled || lease.replacement.is_some() {
+                if let Some(group) = lease.group.take() {
+                    clean_group(self, group);
+                }
             }
+        }
+    }
+
+    fn daemon_group(&self, repo: &str) -> Result<i32, String> {
+        let mut groups = self.daemon_groups.lock().unwrap();
+        let lease = groups.get_mut(repo).ok_or("Maven Daemon worktree was not reserved")?;
+        if let Some(group) = lease.group {
+            return Ok(group);
+        }
+        let executable = std::env::current_exe().map_err(|error| error.to_string())?;
+        let owner = DaemonGroup::start(&executable)?;
+        let group = owner.owner.id() as i32;
+        lease.group = Some(group);
+        lease.replacement = Some(owner);
+        Ok(group)
+    }
+
+    fn retire_daemon(&self, repo: &str, group: i32) {
+        clean_group(self, group);
+        if let Some(lease) = self.daemon_groups.lock().unwrap().get_mut(repo) {
+            lease.group = None;
+            lease.replacement = None;
         }
     }
 
@@ -310,7 +346,11 @@ pub fn cancelled() -> bool {
         .is_some_and(|worker| worker.cancelled.load(Ordering::SeqCst))
 }
 
-pub fn command_output(command: &mut Command, detached: bool) -> Result<Output, String> {
+pub fn command_output(
+    command: &mut Command,
+    detached: bool,
+    mvnd_repo: Option<&str>,
+) -> Result<Output, String> {
     let Some(worker) = WORKER.get() else {
         return command.output().map_err(|error| error.to_string());
     };
@@ -318,15 +358,42 @@ pub fn command_output(command: &mut Command, detached: bool) -> Result<Output, S
         return Err("Execution cancelled before starting the next step".into());
     }
     let (stdout, stderr, phase) = worker.paths()?;
-    let mut child = spawn_captured(worker, command, &stdout, &stderr, &phase)?;
-    let group = worker.daemon_group.unwrap_or_else(|| child.id() as i32);
+    let (worktree, daemon_group) = command_daemon(worker, mvnd_repo)?;
+    let mut child = spawn_captured(worker, command, &stdout, &stderr, &phase, daemon_group)?;
+    let group = daemon_group.unwrap_or_else(|| child.id() as i32);
     let mut tail = OutputTail::default();
-    let status = wait_command(worker, &mut child, group, &stdout, &phase, &mut tail)?;
-    if worker.daemon_group.is_none() && !detached {
-        clean_group(worker, group);
-    }
+    let status = wait_command(worker, &mut child, group, &stdout, &phase, &mut tail);
+    finish_command_group(worker, worktree.as_deref(), group, detached, &status);
     worker.refresh(&tail.read(&stdout), &phase);
-    captured_output(status, &stdout, &stderr)
+    captured_output(status?, &stdout, &stderr)
+}
+
+fn command_daemon(
+    worker: &ExecutionWorker,
+    repo: Option<&str>,
+) -> Result<(Option<String>, Option<i32>), String> {
+    let Some(repo) = repo else {
+        return Ok((None, None));
+    };
+    let worktree = crate::mcp_execution::canonical_repo(repo)?;
+    let group = worker.daemon_group(&worktree)?;
+    Ok((Some(worktree), Some(group)))
+}
+
+fn finish_command_group(
+    worker: &ExecutionWorker,
+    worktree: Option<&str>,
+    group: i32,
+    detached: bool,
+    status: &Result<std::process::ExitStatus, String>,
+) {
+    match worktree {
+        Some(repo) if !matches!(status, Ok(exit) if exit.success()) || cancelled() => {
+            worker.retire_daemon(repo, group);
+        }
+        None if !detached => clean_group(worker, group),
+        _ => {}
+    }
 }
 
 fn spawn_captured(
@@ -335,9 +402,10 @@ fn spawn_captured(
     stdout: &std::path::Path,
     stderr: &std::path::Path,
     phase: &std::path::Path,
+    daemon_group: Option<i32>,
 ) -> Result<Child, String> {
     command.env_remove("MAKEVN_MCP_MVND_SESSION");
-    if worker.daemon_group.is_some() {
+    if daemon_group.is_some() {
         command.env(
             "MAKEVN_MCP_MVND_SESSION",
             &worker.record.lock().unwrap().session_id,
@@ -348,7 +416,7 @@ fn spawn_captured(
         .stdout(capture_file(stdout)?)
         .stderr(capture_file(stderr)?)
         .env("MAKEVN_MCP_PHASE_OUT", phase)
-        .process_group(worker.daemon_group.unwrap_or(0));
+        .process_group(daemon_group.unwrap_or(0));
     command.spawn().map_err(|error| error.to_string())
 }
 

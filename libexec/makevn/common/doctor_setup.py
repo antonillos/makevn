@@ -100,7 +100,7 @@ def collect_questions(arguments):
                                   java_homes.splitlines(), suggested=java_recommended))
     if arguments[11:12] == ["true"]:
         questions.append(question("use_mvnd",
-                                  "Use Maven Daemon by default for standalone named MCP tests in this worktree? "
+                                  "Use Maven Daemon by default for selected MCP tests in this worktree? "
                                   "If the project pins Maven, the embedded Maven version must match.",
                                   "boolean", [True, False]))
     path = Path(repo) / ".makevn/config"

@@ -24,6 +24,16 @@ without Compose the tests own container startup, so no `docker_up` is needed.
 | Whole project | `makevn verify` | `verify` | Full requested verification results |
 | Changed code | preview then `makevn verify-changes` | `verify_changes_preview`, `verify_changes` | Reviewed scope and fresh Surefire/Failsafe evidence |
 
+For a single named MCP test, omit `mvnd` to use the worktree preference from
+Doctor. Pass `mvnd: false` for one run with the project Maven, or `mvnd: true`
+to opt in explicitly when mvnd is installed and compatible with any Maven pin.
+The preference also applies to `test` steps in `composite_run`, which can reuse
+a daemon across steps. In `parallel_run`, arrange daemon tests and any other
+build-writing steps in distinct worktrees. An explicit daemon step conflicts
+with another build on the same worktree. When the flag is omitted in a shared
+worktree, the parallel workflow uses the project Maven. On the CLI, pass
+`--mvnd` explicitly.
+
 MCP `test` accepts explicit Maven user properties through `properties`, for example
 `{"name":"ExampleTest","properties":{"skipEnforceSnapshots":"false"}}`.
 Values must be strings. Use repository intent or user answers to choose values;
