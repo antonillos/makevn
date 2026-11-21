@@ -55,10 +55,10 @@ class Session:
         self.process.stdin.write(json.dumps(message) + "\n")
         self.process.stdin.flush()
 
-    def begin(self, name, **args):
+    def begin(self, tool, **args):
         request_id = self.next_id
         self.next_id += 1
-        self.send("tools/call", {"name": name, "arguments": args}, request_id)
+        self.send("tools/call", {"name": tool, "arguments": args}, request_id)
         return request_id
 
     def receive(self, request_id, timeout=10):
@@ -77,8 +77,8 @@ class Session:
         self.send(method, params, request_id)
         return self.receive(request_id)
 
-    def call(self, name, **args):
-        response = self.receive(self.begin(name, **args))
+    def call(self, tool, **args):
+        response = self.receive(self.begin(tool, **args))
         result = response["result"]
         assert json.loads(result["content"][0]["text"]) == result["structuredContent"]
         return result
@@ -111,7 +111,7 @@ import time
 
 args = sys.argv[1:]
 repo = Path(args[args.index('--repo') + 1]) if '--repo' in args else Path.cwd()
-command = next(arg for arg in args if arg in ['doctor', 'verify-changes-preview', 'verify-changes', 'verify', 'verify-ut', 'verify-it', 'clean', 'mutation', 'run-app-bg'])
+command = next(arg for arg in args if arg in ['doctor', 'verify-changes-preview', 'verify-changes', 'verify', 'verify-ut', 'verify-it', 'test', 'clean', 'mutation', 'run-app-bg'])
 if command in ['doctor', 'verify-changes-preview']:
     assert os.environ['MAKEVN_MCP_INSPECTION'] == '1'
     print('inspection completed')
@@ -230,6 +230,30 @@ def responsiveness_and_cancellation(first, second, repo, other):
     stopped(second, other_record, other_owned)
     second.receive(other_request)
     assert terminal["executionId"] in [item["executionId"] for item in first.executions(includeFinished=True)]
+
+
+def named_test_conflicts_across_registries(first, executable, state, repo, other):
+    second = Session(executable, state)
+    try:
+        request = first.begin("test", repo=str(repo), name="ExampleTest")
+        record = first.running(repo)
+        owned = pids(repo)
+        conflict = second.call("test", repo=str(repo), name="ExampleTest")
+        assert conflict["isError"] is True
+        assert "Execution conflict for worktree:" in conflict["structuredContent"]["untrustedData"]["output"]
+        assert (repo / "started").read_text().splitlines() == ["test"]
+
+        (other / "quick").touch()
+        assert second.call("test", repo=str(other), name="ExampleTest")["isError"] is False
+        assert all(alive(pid) for pid in owned)
+
+        first.call("execution_cancel", executionId=record["executionId"])
+        stopped(first, record, owned)
+        first.receive(request)
+        (repo / "quick").touch()
+        assert second.call("test", repo=str(repo), name="ExampleTest")["isError"] is False
+    finally:
+        second.close()
 
 
 def pr_conflicts(first, second, left, right):
@@ -415,7 +439,7 @@ def run(executable):
         backend.chmod(0o700)
         (root / "child.py").write_text(CHILD)
         state = root / "state"
-        repos = [root / f"repo-{index}" for index in range(15)]
+        repos = [root / f"repo-{index}" for index in range(17)]
         for repo in repos:
             repo.mkdir()
         first = Session(mcp, state)
@@ -426,6 +450,7 @@ def run(executable):
             assert next(tool for tool in tools if tool["name"] == "verify")["inputSchema"]["properties"]["pr"]["type"] == "string"
             assert first.call_method("unknown/method", {})["error"]["code"] == -32601
             responsiveness_and_cancellation(first, second, repos[0], repos[1])
+            named_test_conflicts_across_registries(first, mcp, root / "other-state", repos[15], repos[16])
             pr_conflicts(first, second, repos[2], repos[3])
             notification_and_workflows(first, repos[4], repos[5])
             completion_and_forcing(first, repos[6], repos[7])
