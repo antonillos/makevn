@@ -101,7 +101,7 @@ def collect_questions(arguments):
     if arguments[11:12] == ["true"]:
         questions.append(question("use_mvnd",
                                   "Use Maven Daemon by default for selected MCP tests in this worktree? "
-                                  "If the project pins Maven, the embedded Maven version must match.",
+                                  "The daemon uses its bundled Maven. Project Enforcer rules still apply.",
                                   "boolean", [True, False]))
     path = Path(repo) / ".makevn/config"
     config = path.read_bytes() if path.is_file() else b""

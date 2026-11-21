@@ -32,23 +32,17 @@ def pom(rule="[3.9.14,3.10.0)"):
 
 
 class MavenInspectionTests(unittest.TestCase):
-    def test_mvnd_requires_exact_wrapper_maven_version(self):
+    def test_mvnd_is_checked_against_enforcer_range(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            wrapper = root / ".mvn/wrapper"
-            wrapper.mkdir(parents=True)
-            (wrapper / "maven-wrapper.properties").write_text(
-                "distributionUrl=https://repo.example/apache-maven-3.9.16-bin.zip\n")
+            (root / "pom.xml").write_text(pom("[3.9.16,4)"))
             executable = root / "mvnd"
-            arguments = ["match-daemon", str(executable), str(root), str(root), "", str(root / "mvnw")]
             executable.write_text("#!/bin/sh\necho 'Apache Maven 3.9.16'\n")
             executable.chmod(0o755)
-            self.assertEqual(inspection.main(arguments), 0)
-            executable.write_text("#!/bin/sh\necho 'Apache Maven 3.9.15'\n")
-            error = io.StringIO()
-            with contextlib.redirect_stderr(error):
-                self.assertEqual(inspection.main(arguments), 1)
-            self.assertIn("mvnd embeds Maven 3.9.15, but the project selects Maven 3.9.16", error.getvalue())
+            self.assertEqual(inspection.main(["check", str(executable), str(root), str(root), ""]), 0)
+            executable.write_text("#!/bin/sh\necho 'Apache Maven 3.9.11'\n")
+            with contextlib.redirect_stderr(io.StringIO()):
+                self.assertEqual(inspection.main(["check", str(executable), str(root), str(root), ""]), 1)
 
     def test_command_properties_control_version_rule_in_reactor(self):
         with tempfile.TemporaryDirectory() as directory:
