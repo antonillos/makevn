@@ -26,6 +26,47 @@ fn docker_logs_validates_selectors_and_forwards_repeated_services() {
 }
 
 #[test]
+fn docker_logs_result_preserves_structured_evidence_and_renders_each_container() {
+    let snapshot = json!({
+        "compose": "karate", "since": "5m", "contains": "ERROR",
+        "containers": [
+            {"service": "app", "container": "app-1", "state": "exited", "health": null,
+             "exitCode": 1, "startedAt": "2026-11-22T18:00:00Z", "readStatus": "ok",
+             "truncated": true, "logs": ["ERROR first", "ERROR second"], "error": null},
+            {"service": "db", "container": "db-1", "state": "running", "health": "healthy",
+             "exitCode": 0, "startedAt": "2026-11-22T18:00:00Z", "readStatus": "error",
+             "truncated": false, "logs": [], "error": "log driver unavailable"}
+        ],
+        "missingServices": ["worker"], "truncated": true
+    });
+    let result = super::ToolCallResult {
+        output: snapshot.to_string(),
+        exit_code: 0,
+        duration_ms: 1,
+        doctor_snapshot: None,
+        next_suggestion: None,
+    };
+    let response = super::standard_tool_result(&result, &json!({"name": "docker_logs"}));
+    let structured = &response["structuredContent"];
+    let data = &structured["untrustedData"];
+    assert_eq!(data["dockerLogs"], snapshot);
+    assert_eq!(data["output"].as_str().unwrap(), [
+        r#"Compose: "karate" | since: "5m" | contains: "ERROR""#,
+        r#"["app"/"app-1"] state="exited" health=null exitCode=1 startedAt="2026-11-22T18:00:00Z" readStatus="ok" truncated=true"#,
+        "ERROR first",
+        "ERROR second",
+        r#"["db"/"db-1"] state="running" health="healthy" exitCode=0 startedAt="2026-11-22T18:00:00Z" readStatus="error" truncated=false"#,
+        "log driver unavailable",
+        r#"Missing services: ["worker"] | truncated: true"#,
+    ].join("\n"));
+    assert_eq!(
+        serde_json::from_str::<serde_json::Value>(response["content"][0]["text"].as_str().unwrap())
+            .unwrap(),
+        *structured,
+    );
+}
+
+#[test]
 fn invalid_execution_status_explains_how_to_find_the_id() {
     let result = super::ToolCallResult::failure("invalid executionId".into());
     let suggestion = super::tool_next_suggestion("execution_status", &result);
