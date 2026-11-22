@@ -19,6 +19,34 @@ fn snapshot_filters_and_bounds_each_stream_without_following_symlinks() {
     }))
     .unwrap();
 
+    fs::write(root.join(format!("{id}.json")), "").unwrap();
+    assert_eq!(resolve_id(&store, &id[..8].to_uppercase()).unwrap(), id);
+    assert_eq!(resolve_id(&store, &id).unwrap(), id);
+    assert!(resolve_id(&store, "../bad-id")
+        .unwrap_err()
+        .contains("hexadecimal"));
+    let absent = format!(
+        "{}{}",
+        if id.starts_with('0') { "1" } else { "0" },
+        &id[1..8]
+    );
+    assert!(resolve_id(&store, &absent)
+        .unwrap_err()
+        .contains("No execution found"));
+    let other = format!(
+        "{}{}",
+        &id[..8],
+        if id.ends_with('0') {
+            "1".repeat(24)
+        } else {
+            "0".repeat(24)
+        }
+    );
+    fs::write(root.join(format!("{other}.json")), "").unwrap();
+    assert!(resolve_id(&store, &id[..8])
+        .unwrap_err()
+        .contains("Ambiguous"));
+
     fs::write(
         directory.join("1.stdout.log"),
         format!(
@@ -28,7 +56,11 @@ fn snapshot_filters_and_bounds_each_stream_without_following_symlinks() {
     )
     .unwrap();
     fs::write(directory.join("1.stderr.log"), "").unwrap();
-    fs::write(directory.join("1.maven.log"), "Tests run: 4\nERROR failing test\n").unwrap();
+    fs::write(
+        directory.join("1.maven.log"),
+        "Tests run: 4\nERROR failing test\n",
+    )
+    .unwrap();
     symlink(
         directory.join("1.stdout.log"),
         directory.join("supervisor.log"),

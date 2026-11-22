@@ -1,5 +1,5 @@
 use std::ffi::{CString, OsString};
-use std::fs::{File, OpenOptions};
+use std::fs::{self, File, OpenOptions};
 use std::io::{self, Read, Seek, SeekFrom};
 use std::os::fd::{AsRawFd, FromRawFd};
 use std::os::unix::fs::OpenOptionsExt;
@@ -14,11 +14,41 @@ const HELP: &str = "Usage: makevn execution-logs ID [--step N] [--tail N] [--con
 pub fn input_schema() -> Value {
     json!({"type":"object", "required":["executionId"], "additionalProperties":false,
     "properties":{
-        "executionId":{"type":"string", "pattern":"^[a-fA-F0-9]{32}$"},
+        "executionId":{"type":"string", "pattern":"^[a-fA-F0-9]{8,32}$", "description":"Full execution ID or a unique hexadecimal prefix of at least 8 characters."},
         "step":{"type":"integer", "minimum":0, "maximum":u32::MAX, "default":0},
         "tail":{"type":"integer", "minimum":1, "maximum":1000, "default":100},
         "contains":{"type":"string", "description":"Case-sensitive literal filter within the captured suffix."}
     }})
+}
+
+pub fn resolve_id(store: &ExecutionStore, id: &str) -> Result<String, String> {
+    if !(8..=32).contains(&id.len()) || !id.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        return Err("executionId must contain 8 to 32 hexadecimal characters".into());
+    }
+    let prefix = id.to_ascii_lowercase();
+    if prefix.len() == 32 {
+        return Ok(prefix);
+    }
+    resolve_prefix(store, &prefix)
+}
+
+fn resolve_prefix(store: &ExecutionStore, prefix: &str) -> Result<String, String> {
+    let mut found = None;
+    for entry in fs::read_dir(&store.root).map_err(|error| error.to_string())? {
+        let entry = entry.map_err(|error| error.to_string())?;
+        let name = entry.file_name();
+        let Some(candidate) = name.to_str().and_then(|name| name.strip_suffix(".json")) else {
+            continue;
+        };
+        if candidate.starts_with(prefix) && crate::mcp_execution::validate_id(candidate).is_ok() {
+            if found.replace(candidate.to_owned()).is_some() {
+                return Err(format!(
+                    "Ambiguous executionId prefix '{prefix}'; use a longer prefix or the full ID"
+                ));
+            }
+        }
+    }
+    found.ok_or_else(|| format!("No execution found for executionId prefix '{prefix}'"))
 }
 
 pub fn schema() -> Value {
@@ -160,7 +190,7 @@ pub fn cli(args: Vec<OsString>) -> Result<(), String> {
     let id = id.to_str().ok_or("execution ID must be UTF-8")?;
     let args = cli_options(options)?;
     let store = ExecutionStore::new()?;
-    let record = store.get(id)?.snapshot();
+    let record = store.get(&resolve_id(&store, id)?)?.snapshot();
     let logs = read(&store, &record, &args)?;
     println!(
         "{}",

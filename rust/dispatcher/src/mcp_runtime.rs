@@ -400,6 +400,13 @@ impl McpSession {
         let id = params["arguments"]["executionId"]
             .as_str()
             .ok_or("executionId is required")?;
+        let resolved;
+        let id = if params["name"] == "execution_logs" {
+            resolved = crate::execution_logs::resolve_id(&self.store, id)?;
+            resolved.as_str()
+        } else {
+            id
+        };
         let mut record = self.store.get(id)?.snapshot();
         if params["name"] == "execution_cancel" {
             self.cancel_execution(&mut record)?;

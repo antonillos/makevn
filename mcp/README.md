@@ -192,6 +192,10 @@ stops its groups. The daemon expires after 15 minutes of inactivity.
 
 ### Read execution logs
 
+CLI and MCP accept the full execution ID or a unique hexadecimal prefix of at
+least eight characters. If several executions match, supply a longer prefix
+or the full ID.
+
 When a build or test tool fails, use the `execution_logs` call in its
 `nextSuggestion`. If you missed the ID, use `execution_list` with the same
 worktree and `includeFinished: true`. This reads existing evidence and does not
