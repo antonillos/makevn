@@ -111,6 +111,18 @@ fn snapshot_filters_and_bounds_each_stream_without_following_symlinks() {
     assert_eq!(paged["streams"].as_array().unwrap().len(), 1);
     let cursor = &paged["streams"][0]["nextCursor"];
     assert!(read(&store, &record, &json!({"step":1,"stream":"stderr","cursor":cursor})).is_err());
+    for changed_filter in [json!("INFO"), json!("")] {
+        let error = read(
+            &store,
+            &record,
+            &json!({"step":1,"contains":changed_filter,"cursor":cursor}),
+        )
+        .unwrap_err();
+        assert!(error.contains("start again without a cursor"), "{error}");
+    }
+    assert!(read(&store, &record, &json!({"step":1,"cursor":cursor}))
+        .unwrap_err()
+        .contains("does not match contains"));
     let arguments = json!({"step":1,"tail":1,"contains":"ERROR","cursor":cursor});
     let previous = read(&store, &record, &arguments).unwrap();
     assert_eq!(previous["streams"].as_array().unwrap().len(), 1);
@@ -176,12 +188,12 @@ fn cursor_reaches_matches_before_an_empty_page_and_ignores_appends() {
         .write_all(b"ERROR appended\n")
         .unwrap();
 
-    query.cursor = Some(Cursor::parse(&json!(newest.cursor)).unwrap());
+    query.cursor = Some(Cursor::parse(&json!(newest.cursor), query.contains).unwrap());
     let older = query.read_stream(&directory, 3).unwrap();
     assert_eq!(older.lines, ["ERROR second"]);
     assert!(older.limited);
 
-    query.cursor = Some(Cursor::parse(&json!(older.cursor)).unwrap());
+    query.cursor = Some(Cursor::parse(&json!(older.cursor), query.contains).unwrap());
     let oldest = query.read_stream(&directory, 3).unwrap();
     assert_eq!(oldest.lines, ["ERROR first"]);
     assert!(oldest.cursor.is_none());

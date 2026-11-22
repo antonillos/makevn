@@ -6,6 +6,7 @@ use std::os::unix::fs::{MetadataExt, OpenOptionsExt};
 
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use sha2::{Digest, Sha256};
 
 use crate::mcp_execution::{ExecutionRecord, ExecutionStore};
 
@@ -21,7 +22,7 @@ pub fn input_schema() -> Value {
         "contains":{"type":"string", "description":"Case-sensitive literal filter within the current page."},
         "stream":{"type":"string", "enum":STREAMS, "description":"Read just this stream. Omit to read all streams."},
         "paginate":{"type":"boolean", "default":false, "description":"Opt in to backward pagination. Leave false for a bounded diagnostic snapshot."},
-        "cursor":{"type":"string", "maxLength":256, "description":"Pass a stream’s nextCursor to read its preceding page. Keep the same executionId, step and contains."}
+        "cursor":{"type":"string", "maxLength":256, "description":"Pass a stream’s nextCursor to read its preceding page. Keep the same executionId, step and contains. To change contains, start without a cursor."}
     }})
 }
 
@@ -82,7 +83,10 @@ pub fn read(
     let tail = integer(args, "tail", 100, 1, 1000)? as usize;
     let step = integer(args, "step", 0, 0, u32::MAX.into())?;
     let contains = args["contains"].as_str();
-    let cursor = args.get("cursor").map(Cursor::parse).transpose()?;
+    let cursor = args
+        .get("cursor")
+        .map(|value| Cursor::parse(value, contains))
+        .transpose()?;
     let stream = args
         .get("stream")
         .map(|value| {
@@ -144,15 +148,28 @@ fn open_stream(directory: &File, name: &str) -> io::Result<File> {
 const STREAMS: [&str; 4] = ["stdout", "stderr", "supervisor", "maven"];
 
 #[derive(Deserialize, Serialize)]
-struct Cursor(String, u64, usize, u64, u64, u64, bool);
+struct Cursor(String, u64, usize, u64, u64, u64, bool, Option<String>);
 
 impl Cursor {
-    fn parse(value: &Value) -> Result<Self, String> {
-        value
+    fn parse(value: &Value, contains: Option<&str>) -> Result<Self, String> {
+        let cursor: Self = value
             .as_str()
             .filter(|token| token.len() <= 256)
             .and_then(|token| serde_json::from_str(token).ok())
-            .ok_or_else(|| "Invalid cursor; use nextCursor from execution logs".into())
+            .ok_or("Invalid or stale cursor; start without a cursor to obtain a new nextCursor")?;
+        if cursor.7 != Self::filter_digest(contains) {
+            return Err("Cursor does not match contains; start again without a cursor to change the filter".into());
+        }
+        Ok(cursor)
+    }
+
+    fn filter_digest(contains: Option<&str>) -> Option<String> {
+        contains.map(|needle| {
+            Sha256::digest(needle.as_bytes())
+                .iter()
+                .map(|byte| format!("{byte:02x}"))
+                .collect()
+        })
     }
 }
 
@@ -218,6 +235,7 @@ impl PageQuery<'_> {
                 identity.1,
                 offset,
                 partial,
+                Cursor::filter_digest(self.contains),
             ))
             .expect("cursor contains only primitive values")
         });
@@ -226,7 +244,7 @@ impl PageQuery<'_> {
 
     fn page_end(&self, identity: (u64, u64), length: u64) -> io::Result<(u64, bool)> {
         match self.cursor {
-            Some(Cursor(_, _, _, dev, ino, end, partial))
+            Some(Cursor(_, _, _, dev, ino, end, partial, _))
                 if (dev, ino) == identity && end > 0 && end <= length =>
             {
                 Ok((end, partial))

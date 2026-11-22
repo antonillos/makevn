@@ -228,7 +228,7 @@ combines both flags.
 For an explicit historical read, start with `paginate: true` (CLI
 `--paginate`). Pass a stream's `nextCursor` as `cursor` (CLI
 `--cursor TOKEN`, quoted as one argument). Keep the same execution ID, step and
-filter. A snapshot returns a null cursor even when truncated. A continuation returns only that stream and resumes before the lines
+filter. To change the filter, start without a cursor. A snapshot returns a null cursor even when truncated. A continuation returns only that stream and resumes before the lines
 already returned, even if newer lines have been appended. For a historical read, a non-null cursor can advance past a `no_matches`
 page. Stop when the requested evidence is found or the cursor is null. Lines larger than the byte window may be skipped.
 If a capture is replaced or truncated past the cursor, start a new query.
