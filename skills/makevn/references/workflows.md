@@ -173,7 +173,10 @@ id: `boot_compose`, `e2e_compose`, `local_containers` (boolean), `app_health_url
 `karate_app_profiles`, `code_java_home`, and `use_mvnd` (boolean). The JDK answer must be an exact offered
 installation path. Compose answers use an offered path, an absolute path to an existing file, or `none`; Spring
 profiles use literal comma-separated names. Doctor offers `use_mvnd` when
-mvnd is on the server's PATH and the worktree has no Maven pin or wrapper.
+the daemon is on the server's PATH, the project has a Maven declaration or
+wrapper, and no answer is saved. An available daemon is otherwise preferred
+for a single named MCP test unless disabled. Doctor displays the choice and
+provides installation instructions when the daemon is missing.
 The saved choice applies to single named MCP tests and eligible workflow steps.
 See the makevn-test skill for parallel worktree isolation and per-call overrides.
 The tool validates the whole batch

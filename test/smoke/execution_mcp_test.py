@@ -9,6 +9,7 @@ import signal
 import subprocess
 import sys
 import tempfile
+from unittest.mock import patch
 import threading
 import time
 
@@ -287,7 +288,7 @@ def managed_daemon_reuses_group_and_cleans_forks(executable, state, repo):
         config.write_text("MAKEVN_USE_MVND=FALSE\n")
         assert client.call("test", **default_args)["isError"] is False
         assert not (repo / "mvnd-groups").exists()
-        config.write_text("MAKEVN_USE_MVND=TRUE\n")
+        config.write_text("")
         assert client.call("test", **default_args, mvnd=False)["isError"] is False
         assert not (repo / "mvnd-groups").exists()
         assert client.call("test", **default_args, properties={"mvnd.daemonStorage": "/tmp/foreign"})["isError"]
@@ -556,8 +557,19 @@ def run(executable):
         repos = [root / f"repo-{index}" for index in range(20)]
         for repo in repos:
             repo.mkdir()
-        first = Session(mcp, state)
-        second = Session(mcp, state)
+        for repo in repos[17:]:
+            (repo / "pom.xml").write_text("<project/>")
+        mvnd = root / "bin" / "mvnd"
+        mvnd.parent.mkdir()
+        mvnd.write_text("#!/bin/sh\nexit 0\n")
+        mvnd.chmod(0o700)
+        daemon_environment = {
+            "PATH": f"{mvnd.parent}{os.pathsep}{os.environ['PATH']}",
+            "MAKEVN_INSTALL_ROOT": str(Path(__file__).resolve().parents[2]),
+        }
+        with patch.dict(os.environ, daemon_environment):
+            first = Session(mcp, state)
+            second = Session(mcp, state)
         try:
             tools = first.call_method("tools/list", {})["result"]["tools"]
             assert {"execution_list", "execution_status", "execution_cancel", "execution_cleanup"} <= {tool["name"] for tool in tools}
@@ -565,7 +577,8 @@ def run(executable):
             assert first.call_method("unknown/method", {})["error"]["code"] == -32601
             responsiveness_and_cancellation(first, second, repos[0], repos[1])
             named_test_conflicts_across_registries(first, mcp, root / "other-state", repos[15], repos[16])
-            managed_daemon_reuses_group_and_cleans_forks(mcp, state, repos[17])
+            with patch.dict(os.environ, daemon_environment):
+                managed_daemon_reuses_group_and_cleans_forks(mcp, state, repos[17])
             mvnd_workflows(first, repos[18], repos[19])
             pr_conflicts(first, second, repos[2], repos[3])
             notification_and_workflows(first, repos[4], repos[5])

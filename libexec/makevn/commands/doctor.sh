@@ -105,6 +105,15 @@ print_doctor() {
   done < <(python3 "${MAKEVN_LIBEXEC_DIR}/common/doctor_summary.py" "${MAKEVN_DOCTOR_TEST_PROCESSES}" "${MAKEVN_DOCTOR_BIND_MOUNTS}")
   makevn_print_doctor_init_recommendation
 
+  if [[ "${MAKEVN_DOCTOR_REPO_SUPPORT_STATUS}" == supported ]]; then
+    makevn_print_item "MAKEVN_USE_MVND" "${MAKEVN_MVND_PREFERENCE}"
+    makevn_print_item "Maven Daemon for named MCP tests" "${MAKEVN_MVND_STATUS}"
+    case "${MAKEVN_MVND_STATUS}" in
+      missing) makevn_print_detail_line "Warning: mvnd is unavailable on PATH. Using project Maven. ${MAKEVN_MVND_INSTALL_HINT}" ;;
+      confirmation) makevn_print_detail_line "Using project Maven pending confirmation of mvnd for ${MAKEVN_MVND_PIN}." ;;
+    esac
+  fi
+
   if [[ "${MAKEVN_COMPACT_OUTPUT:-}" == "1" ]]; then
     makevn_print_item "Current makevn status" "${MAKEVN_DOCTOR_CURRENT_STATUS}"
     makevn_print_item "Repository support status" "${MAKEVN_DOCTOR_REPO_SUPPORT_STATUS}"
@@ -121,45 +130,45 @@ print_doctor() {
   makevn_print_item "Maven base path" "${MAKEVN_DOCTOR_MAVEN_BASE_PATH}"
   makevn_print_item "Existing .makevn/" "${MAKEVN_DOCTOR_EXISTING_STATE_DIR}"
   makevn_print_item "Current makevn status" "${MAKEVN_DOCTOR_CURRENT_STATUS}"
+  makevn_print_item "Application runnable" "${MAKEVN_DOCTOR_APP_RUNNABLE}"
+  makevn_print_item "Build profile" "${MAKEVN_DOCTOR_BUILD_PROFILE}"
+  makevn_print_item "Checkstyle support" "${MAKEVN_DOCTOR_CHECKSTYLE_AVAILABLE:-no}"
   makevn_print_item "Code .tool-versions" "${MAKEVN_DOCTOR_CODE_TOOL_VERSIONS}"
   makevn_print_item "Code Java version" "${MAKEVN_DOCTOR_CODE_JAVA_VERSION}"
-  makevn_print_item "Application runnable" "${MAKEVN_DOCTOR_APP_RUNNABLE}"
-  makevn_print_item "Karate .tool-versions" "${MAKEVN_DOCTOR_KARATE_TOOL_VERSIONS}"
-  makevn_print_item "Detected workflow files" "${MAKEVN_DOCTOR_DETECTED_WORKFLOW_FILES}"
-  makevn_print_item "Detected Maven CLI flags" "${MAKEVN_DOCTOR_DETECTED_MAVEN_CLI_FLAGS}"
-  makevn_print_item "Detected Maven prop flags" "${MAKEVN_DOCTOR_DETECTED_MAVEN_PROP_FLAGS}"
-  makevn_print_item "Detected Maven cache" "${MAKEVN_DOCTOR_DETECTED_MAVEN_CACHE_SOURCE}"
-  makevn_print_item "Karate application profiles" "${MAKEVN_DOCTOR_KARATE_APP_PROFILES}"
-  makevn_print_item "Karate profiles source" "${MAKEVN_DOCTOR_KARATE_APP_PROFILES_SOURCE}"
-  makevn_print_item "Karate profiles candidates" "${MAKEVN_DOCTOR_KARATE_APP_PROFILES_CANDIDATES}"
+  makevn_print_item "Code Maven version" "${MAKEVN_DOCTOR_CODE_MAVEN_DIAGNOSTIC}"
+  makevn_print_item "Compatible code JAVA_HOMEs" "${MAKEVN_DOCTOR_COMPATIBLE_CODE_JAVA_HOMES}"
+  makevn_print_item "Compile profile" "${MAKEVN_DOCTOR_COMPILE_PROFILE}"
   makevn_print_item "Configure Karate profiles" "MAKEVN_KARATE_APP_PROFILES in .makevn/config (or SPRING_PROFILES_ACTIVE override)"
+  makevn_print_item "crap4java analyzer" "${MAKEVN_DOCTOR_CRAP_ANALYZER}"
   makevn_print_item "Detected app health URL" "${MAKEVN_DOCTOR_DETECTED_APP_HEALTH_URL}"
   makevn_print_item "Detected coverage activation" "${MAKEVN_DOCTOR_DETECTED_COVERAGE_ACTIVATION}"
-  makevn_print_item "JaCoCo report layout" "${MAKEVN_DOCTOR_JACOCO_REPORT_LAYOUT}"
-  makevn_print_item "JaCoCo report dir" "${MAKEVN_DOCTOR_JACOCO_REPORT_DIR}"
-  makevn_print_item "JaCoCo XML reports" "${MAKEVN_DOCTOR_JACOCO_XML_COUNT}"
-  makevn_print_item "crap4java analyzer" "${MAKEVN_DOCTOR_CRAP_ANALYZER}"
   makevn_print_item "Detected coverage threshold" "${MAKEVN_DOCTOR_DETECTED_COVERAGE_THRESHOLD}"
   makevn_print_item "Detected coverage-changes threshold" "${MAKEVN_DOCTOR_DETECTED_COVERAGE_CHANGES_THRESHOLD}"
-  makevn_print_item "Compile profile" "${MAKEVN_DOCTOR_COMPILE_PROFILE}"
-  makevn_print_item "Build profile" "${MAKEVN_DOCTOR_BUILD_PROFILE}"
-  makevn_print_item "Test profile" "${MAKEVN_DOCTOR_TEST_PROFILE}"
-  makevn_print_item "Verify profile" "${MAKEVN_DOCTOR_VERIFY_PROFILE}"
-  makevn_print_item "Resolved code Maven" "${MAKEVN_DOCTOR_CODE_MAVEN}"
-  makevn_print_item "Code Maven version" "${MAKEVN_DOCTOR_CODE_MAVEN_DIAGNOSTIC}"
-  makevn_print_item "Resolved Karate Maven" "${MAKEVN_DOCTOR_KARATE_MAVEN}"
-  makevn_print_item "Karate Maven version" "${MAKEVN_DOCTOR_KARATE_MAVEN_DIAGNOSTIC}"
-  makevn_print_item "Resolved code JAVA_HOME" "${MAKEVN_DOCTOR_CODE_JAVA_HOME}"
-  makevn_print_item "Compatible code JAVA_HOMEs" "${MAKEVN_DOCTOR_COMPATIBLE_CODE_JAVA_HOMES}"
-  makevn_print_doctor_java_details
-  makevn_print_item "Run command configured" "${MAKEVN_DOCTOR_RUN_CONFIGURED}"
+  makevn_print_item "Detected Maven cache" "${MAKEVN_DOCTOR_DETECTED_MAVEN_CACHE_SOURCE}"
+  makevn_print_item "Detected Maven CLI flags" "${MAKEVN_DOCTOR_DETECTED_MAVEN_CLI_FLAGS}"
+  makevn_print_item "Detected Maven prop flags" "${MAKEVN_DOCTOR_DETECTED_MAVEN_PROP_FLAGS}"
+  makevn_print_item "Detected workflow files" "${MAKEVN_DOCTOR_DETECTED_WORKFLOW_FILES}"
   makevn_print_item "Docker compose file" "${MAKEVN_DOCTOR_COMPOSE_FILE}"
   makevn_print_item "Docker e2e compose file" "${MAKEVN_DOCTOR_E2E_COMPOSE_FILE}"
+  makevn_print_item "JaCoCo report dir" "${MAKEVN_DOCTOR_JACOCO_REPORT_DIR}"
+  makevn_print_item "JaCoCo report layout" "${MAKEVN_DOCTOR_JACOCO_REPORT_LAYOUT}"
+  makevn_print_item "JaCoCo XML reports" "${MAKEVN_DOCTOR_JACOCO_XML_COUNT}"
+  makevn_print_item "Karate .tool-versions" "${MAKEVN_DOCTOR_KARATE_TOOL_VERSIONS}"
+  makevn_print_item "Karate application profiles" "${MAKEVN_DOCTOR_KARATE_APP_PROFILES}"
+  makevn_print_item "Karate Maven version" "${MAKEVN_DOCTOR_KARATE_MAVEN_DIAGNOSTIC}"
+  makevn_print_item "Karate profiles candidates" "${MAKEVN_DOCTOR_KARATE_APP_PROFILES_CANDIDATES}"
+  makevn_print_item "Karate profiles source" "${MAKEVN_DOCTOR_KARATE_APP_PROFILES_SOURCE}"
   makevn_print_item "LOCAL_CONTAINERS default" "${MAKEVN_DOCTOR_LOCAL_CONTAINERS}"
+  makevn_print_item "Mutation testing (PIT)" "${MAKEVN_DOCTOR_MUTATION_AVAILABLE}"
   makevn_print_item "Persisted profile" "${MAKEVN_DOCTOR_PROFILE_STATUS}"
   makevn_print_item "Repository support status" "${MAKEVN_DOCTOR_REPO_SUPPORT_STATUS}"
-  makevn_print_item "Checkstyle support" "${MAKEVN_DOCTOR_CHECKSTYLE_AVAILABLE:-no}"
-  makevn_print_item "Mutation testing (PIT)" "${MAKEVN_DOCTOR_MUTATION_AVAILABLE}"
+  makevn_print_item "Resolved code JAVA_HOME" "${MAKEVN_DOCTOR_CODE_JAVA_HOME}"
+  makevn_print_item "Resolved code Maven" "${MAKEVN_DOCTOR_CODE_MAVEN}"
+  makevn_print_item "Resolved Karate Maven" "${MAKEVN_DOCTOR_KARATE_MAVEN}"
+  makevn_print_item "Run command configured" "${MAKEVN_DOCTOR_RUN_CONFIGURED}"
+  makevn_print_item "Test profile" "${MAKEVN_DOCTOR_TEST_PROFILE}"
+  makevn_print_item "Verify profile" "${MAKEVN_DOCTOR_VERIFY_PROFILE}"
+  makevn_print_doctor_java_details
   if [[ "${MAKEVN_DOCTOR_MUTATION_AVAILABLE}" == "yes" && -n "${MAKEVN_DOCTOR_MUTATION_GOAL}" ]]; then
     makevn_print_detail_line "  goal: ${MAKEVN_DOCTOR_MUTATION_GOAL}"
   fi

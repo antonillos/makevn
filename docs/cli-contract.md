@@ -637,6 +637,13 @@ directly for an externally managed application. HTTP readiness does not
 validate JSON health status, application semantics, or Kafka availability.
 
 
+### Maven Daemon diagnostics
+
+Doctor reports the saved `MAKEVN_USE_MVND` preference, availability and
+effective executor for single named MCP tests. If the daemon is missing,
+Doctor displays installation guidance and automatic selection uses the
+project Maven. For direct CLI tests, select the daemon with `test --mvnd`.
+
 ### Doctor health configuration prompts
 
 For an initialized runnable application without an explicit health URL,
