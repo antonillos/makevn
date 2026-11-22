@@ -2,14 +2,15 @@ use std::ffi::{CString, OsString};
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Read, Seek, SeekFrom};
 use std::os::fd::{AsRawFd, FromRawFd};
-use std::os::unix::fs::OpenOptionsExt;
+use std::os::unix::fs::{MetadataExt, OpenOptionsExt};
 
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
 use crate::mcp_execution::{ExecutionRecord, ExecutionStore};
 
 const STREAM_BYTES: u64 = 16 * 1024;
-const HELP: &str = "Usage: makevn execution-logs ID [--step N] [--tail N] [--contains TEXT]\nRead bounded JSON logs from an execution recorded by MakeVN MCP.";
+const HELP: &str = "Usage: makevn execution-logs ID [--step N] [--tail N] [--contains TEXT] [--cursor TOKEN]\nRead bounded JSON logs from an execution recorded by MakeVN MCP.";
 
 pub fn input_schema() -> Value {
     json!({"type":"object", "required":["executionId"], "additionalProperties":false,
@@ -17,7 +18,8 @@ pub fn input_schema() -> Value {
         "executionId":{"type":"string", "pattern":"^[a-fA-F0-9]{8,32}$", "description":"Full execution ID or a unique hexadecimal prefix of at least 8 characters."},
         "step":{"type":"integer", "minimum":0, "maximum":u32::MAX, "default":0},
         "tail":{"type":"integer", "minimum":1, "maximum":1000, "default":100},
-        "contains":{"type":"string", "description":"Case-sensitive literal filter within the captured suffix."}
+        "contains":{"type":"string", "description":"Case-sensitive literal filter within the current page."},
+        "cursor":{"type":"string", "maxLength":256, "description":"Pass a stream’s nextCursor to read its preceding page. Keep the same executionId, step and contains."}
     }})
 }
 
@@ -55,13 +57,14 @@ pub fn schema() -> Value {
     json!({"type":"object", "required":["step","streams"], "properties":{
         "step":{"type":"integer"},
         "streams":{"type":"array", "items":{"type":"object",
-            "required":["stream","lines","readStatus","truncated","truncatedBeforeFilter","truncatedByTail","error"], "properties":{
+            "required":["stream","lines","readStatus","truncated","truncatedBeforeFilter","truncatedByTail","nextCursor","error"], "properties":{
                 "stream":{"enum":["stdout","stderr","supervisor","maven"]},
                 "lines":{"type":"array","items":{"type":"string"}},
                 "readStatus":{"enum":["ok","empty","no_matches","missing","error"]},
                 "truncated":{"type":"boolean","description":"True when either truncation flag is true."},
-                "truncatedBeforeFilter":{"type":"boolean","description":"Older content was outside the 16 KiB window searched."},
+                "truncatedBeforeFilter":{"type":"boolean","description":"Older content was outside the 16 KiB window searched for this page."},
                 "truncatedByTail":{"type":"boolean","description":"More lines matched inside the search window than tail returned."},
+                "nextCursor":{"type":["string","null"],"description":"Continue backward for this stream, even if readStatus is no_matches. Null means no continuation is available."},
                 "error":{"type":["string","null"]}
             }
         }}
@@ -77,23 +80,15 @@ pub fn read(
     let tail = integer(args, "tail", 100, 1, 1000)? as usize;
     let step = integer(args, "step", 0, 0, u32::MAX.into())?;
     let contains = args["contains"].as_str();
-    let streams = match OpenOptions::new()
-        .read(true)
-        .custom_flags(libc::O_DIRECTORY | libc::O_NOFOLLOW)
-        .open(store.root.join(&record.execution_id))
-    {
-        Ok(directory) => [
-            ("stdout", format!("{step}.stdout.log")),
-            ("stderr", format!("{step}.stderr.log")),
-            ("supervisor", "supervisor.log".into()),
-            ("maven", format!("{step}.maven.log")),
-        ]
-        .map(|(stream, name)| {
-            stream_result(stream, read_stream(&directory, &name, tail, contains))
-        }),
-        Err(error) => ["stdout", "stderr", "supervisor", "maven"]
-            .map(|stream| stream_result(stream, Err(io::Error::from(error.kind())))),
+    let cursor = args.get("cursor").map(Cursor::parse).transpose()?;
+    let query = PageQuery {
+        execution: &record.execution_id,
+        step,
+        tail,
+        contains,
+        cursor,
     };
+    let streams = query.read(&store.root)?;
     Ok(json!({"step":step,"streams":streams}))
 }
 
@@ -130,49 +125,165 @@ fn open_stream(directory: &File, name: &str) -> io::Result<File> {
     Ok(file)
 }
 
+const STREAMS: [&str; 4] = ["stdout", "stderr", "supervisor", "maven"];
+
+#[derive(Deserialize, Serialize)]
+struct Cursor(String, u64, usize, u64, u64, u64, bool);
+
+impl Cursor {
+    fn parse(value: &Value) -> Result<Self, String> {
+        value
+            .as_str()
+            .filter(|token| token.len() <= 256)
+            .and_then(|token| serde_json::from_str(token).ok())
+            .ok_or_else(|| "Invalid cursor; use nextCursor from execution logs".into())
+    }
+}
+
+struct PageQuery<'a> {
+    execution: &'a str,
+    step: u64,
+    tail: usize,
+    contains: Option<&'a str>,
+    cursor: Option<Cursor>,
+}
+
+impl PageQuery<'_> {
+    fn read(&self, root: &std::path::Path) -> Result<Vec<Value>, String> {
+        let indexes = match &self.cursor {
+            Some(Cursor(id, step, index, ..))
+                if id == self.execution && *step == self.step && *index < STREAMS.len() =>
+            {
+                *index..*index + 1
+            }
+            Some(_) => return Err("Cursor does not match this execution or step".into()),
+            None => 0..STREAMS.len(),
+        };
+        let directory = OpenOptions::new()
+            .read(true)
+            .custom_flags(libc::O_DIRECTORY | libc::O_NOFOLLOW)
+            .open(root.join(self.execution));
+        Ok(indexes
+            .map(|index| {
+                let result = directory
+                    .as_ref()
+                    .map_err(|error| io::Error::from(error.kind()))
+                    .and_then(|directory| self.read_stream(directory, index));
+                stream_result(STREAMS[index], result)
+            })
+            .collect())
+    }
+
+    fn read_stream(&self, directory: &File, index: usize) -> io::Result<StreamSnapshot> {
+        let stream = STREAMS[index];
+        let name = if stream == "supervisor" {
+            "supervisor.log".into()
+        } else {
+            format!("{}.{stream}.log", self.step)
+        };
+        let mut file = open_stream(directory, &name)?;
+        let metadata = file.metadata()?;
+        let identity = (metadata.dev(), metadata.ino());
+        let (end, partial_end) = match self.cursor {
+            Some(Cursor(_, _, _, dev, ino, end, partial))
+                if (dev, ino) == identity && end > 0 && end <= metadata.len() =>
+            {
+                (end, partial)
+            }
+            Some(_) => {
+                return Err(io::Error::other(
+                    "Log changed; start again without a cursor",
+                ))
+            }
+            None => (metadata.len(), false),
+        };
+        let (start, bytes) = read_window(&mut file, end)?;
+        let mut snapshot = select_page(&bytes, start, partial_end, self.tail, self.contains);
+        snapshot.cursor = snapshot.next.map(|(offset, partial)| {
+            serde_json::to_string(&Cursor(
+                self.execution.into(),
+                self.step,
+                index,
+                identity.0,
+                identity.1,
+                offset,
+                partial,
+            ))
+            .expect("cursor contains only primitive values")
+        });
+        Ok(snapshot)
+    }
+}
+
+fn read_window(file: &mut File, end: u64) -> io::Result<(u64, Vec<u8>)> {
+    let start = end.saturating_sub(STREAM_BYTES);
+    let offset = start.saturating_sub(1);
+    file.seek(SeekFrom::Start(offset))?;
+    let mut bytes = vec![0; (end - offset) as usize];
+    file.read_exact(&mut bytes)?;
+    Ok((offset, bytes))
+}
+
 struct StreamSnapshot {
     lines: Vec<String>,
     status: &'static str,
     clipped: bool,
     limited: bool,
+    next: Option<(u64, bool)>,
+    cursor: Option<String>,
 }
 
-fn read_stream(
-    directory: &File,
-    name: &str,
-    tail: usize,
-    contains: Option<&str>,
-) -> io::Result<StreamSnapshot> {
-    let mut file = open_stream(directory, name)?;
-    let end = file.metadata()?.len();
-    let start = end.saturating_sub(STREAM_BYTES);
-    file.seek(SeekFrom::Start(start.saturating_sub(1)))?;
-    let mut bytes = Vec::new();
-    file.take((end - start) + u64::from(start > 0))
-        .read_to_end(&mut bytes)?;
-    let bytes = discard_partial_line(&bytes, start > 0);
-    Ok(select_lines(bytes, end == 0, start > 0, tail, contains))
-}
-
-fn select_lines(
+fn select_page(
     bytes: &[u8],
-    empty_file: bool,
-    clipped: bool,
+    offset: u64,
+    partial_end: bool,
     tail: usize,
     contains: Option<&str>,
 ) -> StreamSnapshot {
-    let output = String::from_utf8_lossy(bytes);
-    let mut matched = output
-        .lines()
+    let end = if partial_end {
+        bytes
+            .iter()
+            .rposition(|byte| *byte == b'\n')
+            .map_or(0, |i| i + 1)
+    } else {
+        bytes.len()
+    };
+    // A nonzero offset includes one lookbehind byte to detect a line boundary.
+    let start = if offset > 0 || bytes.len() as u64 > STREAM_BYTES {
+        bytes[..end]
+            .iter()
+            .position(|byte| *byte == b'\n')
+            .map_or(end, |i| i + 1)
+    } else {
+        0
+    };
+    let clipped = offset + start as u64 > 0;
+    let mut position = offset + end as u64;
+    let mut matched = bytes[start..end]
+        .split_inclusive(|byte| *byte == b'\n')
         .rev()
-        .filter(|line| contains.is_none_or(|needle| line.contains(needle)));
-    let mut lines: Vec<_> = matched.by_ref().take(tail).map(str::to_owned).collect();
+        .filter_map(|raw| {
+            position -= raw.len() as u64;
+            let line = String::from_utf8_lossy(raw);
+            let line = line.lines().next().unwrap_or("");
+            contains
+                .is_none_or(|needle| line.contains(needle))
+                .then(|| (position, line.to_owned()))
+        });
+    let selected: Vec<_> = matched.by_ref().take(tail).collect();
     let limited = matched.next().is_some();
-    lines.reverse();
-    let status = match (empty_file, lines.is_empty()) {
-        (true, _) => "empty",
-        (_, true) if contains.is_some() => "no_matches",
-        (_, true) => "empty",
+    let next = if limited {
+        selected.last().map(|(position, _)| (*position, false))
+    } else if start > 0 && start < bytes.len() {
+        Some((offset + start as u64, false))
+    } else {
+        (offset > 0).then_some((offset, true))
+    };
+    let lines: Vec<_> = selected.into_iter().rev().map(|(_, line)| line).collect();
+    let status = match (bytes.is_empty(), lines.is_empty(), contains.is_some()) {
+        (true, _, _) => "empty",
+        (_, true, true) => "no_matches",
+        (_, true, false) => "empty",
         _ => "ok",
     };
     StreamSnapshot {
@@ -180,36 +291,28 @@ fn select_lines(
         status,
         clipped,
         limited,
-    }
-}
-
-fn discard_partial_line(bytes: &[u8], clipped: bool) -> &[u8] {
-    if clipped {
-        bytes
-            .iter()
-            .position(|byte| *byte == b'\n')
-            .map_or(&[], |newline| &bytes[newline + 1..])
-    } else {
-        bytes
+        next,
+        cursor: None,
     }
 }
 
 fn stream_result(stream: &str, result: io::Result<StreamSnapshot>) -> Value {
-    let (lines, status, clipped, limited, error) = match result {
+    let (lines, status, clipped, limited, cursor, error) = match result {
         Ok(snapshot) => (
             snapshot.lines,
             snapshot.status,
             snapshot.clipped,
             snapshot.limited,
+            snapshot.cursor,
             None,
         ),
         Err(error) if error.kind() == io::ErrorKind::NotFound => {
-            (vec![], "missing", false, false, None)
+            (vec![], "missing", false, false, None, None)
         }
-        Err(error) => (vec![], "error", false, false, Some(error.to_string())),
+        Err(error) => (vec![], "error", false, false, None, Some(error.to_string())),
     };
     json!({"stream":stream,"lines":lines,"readStatus":status,"truncated":clipped || limited,
-        "truncatedBeforeFilter":clipped,"truncatedByTail":limited,"error":error})
+        "truncatedBeforeFilter":clipped,"truncatedByTail":limited,"nextCursor":cursor,"error":error})
 }
 
 pub fn cli(args: Vec<OsString>) -> Result<(), String> {
@@ -250,6 +353,7 @@ fn cli_options(options: &[OsString]) -> Result<Value, String> {
                 args["tail"] = json!(value.parse::<u64>().map_err(|_| "invalid tail")?)
             }
             Some("--contains") => args["contains"] = json!(value),
+            Some("--cursor") => args["cursor"] = json!(value),
             _ => return Err(HELP.into()),
         }
     }
