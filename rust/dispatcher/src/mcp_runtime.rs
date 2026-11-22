@@ -506,7 +506,7 @@ fn suggest_execution_logs(result: &mut Value, record: &ExecutionRecord) {
     let args = json!({"executionId": record.execution_id});
     let next = &mut result["structuredContent"]["nextSuggestion"];
     let existing = next.as_str().unwrap_or_default();
-    *next = json!(format!("Inspect captured logs with MCP execution_logs {args} or CLI makevn execution-logs {}. {existing}", record.execution_id));
+    *next = json!(format!("{existing} Inspect captured logs with MCP execution_logs {args} or CLI makevn execution-logs {}.", record.execution_id));
 }
 
 fn mirror_content(result: &mut Value) {

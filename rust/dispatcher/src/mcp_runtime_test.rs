@@ -66,5 +66,5 @@ fn failed_execution_suggests_the_registered_log_query_and_preserves_guidance() {
     suggest_execution_logs(&mut result, &record);
     let guidance = result["structuredContent"]["nextSuggestion"].as_str().unwrap();
     assert!(guidance.contains(&format!("execution_logs {}", json!({"executionId":id}))));
-    assert!(guidance.ends_with("Check the compiler error."));
+    assert!(guidance.starts_with("Check the compiler error."));
 }
