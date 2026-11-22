@@ -142,21 +142,31 @@ fn read_stream(
     file.take((end - start) + u64::from(start > 0))
         .read_to_end(&mut bytes)?;
     let bytes = discard_partial_line(&bytes, start > 0);
+    Ok(select_lines(bytes, end == 0, start > 0, tail, contains))
+}
+
+fn select_lines(
+    bytes: &[u8],
+    empty_file: bool,
+    clipped: bool,
+    tail: usize,
+    contains: Option<&str>,
+) -> (Vec<String>, &'static str, bool) {
     let output = String::from_utf8_lossy(bytes);
     let mut matched = output
         .lines()
         .rev()
         .filter(|line| contains.is_none_or(|needle| line.contains(needle)));
     let mut lines: Vec<_> = matched.by_ref().take(tail).map(str::to_owned).collect();
-    let truncated = start > 0 || matched.next().is_some();
+    let truncated = clipped || matched.next().is_some();
     lines.reverse();
-    let status = match (bytes.is_empty(), lines.is_empty()) {
-        (true, _) if end == 0 => "empty",
+    let status = match (empty_file, lines.is_empty()) {
+        (true, _) => "empty",
         (_, true) if contains.is_some() => "no_matches",
         (_, true) => "empty",
         _ => "ok",
     };
-    Ok((lines, status, truncated))
+    (lines, status, truncated)
 }
 
 fn discard_partial_line(bytes: &[u8], clipped: bool) -> &[u8] {
@@ -189,9 +199,12 @@ pub fn cli(args: Vec<OsString>) -> Result<(), String> {
     }
     let id = id.to_str().ok_or("execution ID must be UTF-8")?;
     let args = cli_options(options)?;
-    let store = ExecutionStore::new()?;
-    let record = store.get(&resolve_id(&store, id)?)?.snapshot();
-    let logs = read(&store, &record, &args)?;
+    print_snapshot(&ExecutionStore::new()?, id, &args)
+}
+
+fn print_snapshot(store: &ExecutionStore, id: &str, args: &Value) -> Result<(), String> {
+    let record = store.get(&resolve_id(store, id)?)?.snapshot();
+    let logs = read(store, &record, args)?;
     println!(
         "{}",
         json!({"execution":record,"untrustedData":{"executionLogs":logs}})

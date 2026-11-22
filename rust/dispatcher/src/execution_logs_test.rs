@@ -3,6 +3,21 @@ use std::fs;
 use std::os::unix::fs::symlink;
 
 #[test]
+fn cli_accepts_help_and_validates_snapshot_options() {
+    assert!(cli(vec![]).is_err());
+    assert!(cli(vec!["-h".into()]).is_ok());
+    assert!(cli(vec!["01234567".into(), "--tail".into()]).is_err());
+    let options = ["--step", "2", "--tail", "1", "--contains", "Tests run:"].map(OsString::from);
+    assert_eq!(
+        cli_options(&options).unwrap(),
+        json!({"step":2,"tail":1,"contains":"Tests run:"})
+    );
+    for flags in [["--tail", "bad"], ["--step", "bad"], ["--unknown", "1"]] {
+        assert!(cli_options(&flags.map(OsString::from)).is_err());
+    }
+}
+
+#[test]
 fn snapshot_filters_and_bounds_each_stream_without_following_symlinks() {
     let root = std::env::temp_dir().join(crate::mcp_execution::new_id().unwrap());
     let id = crate::mcp_execution::new_id().unwrap();
@@ -19,7 +34,8 @@ fn snapshot_filters_and_bounds_each_stream_without_following_symlinks() {
     }))
     .unwrap();
 
-    fs::write(root.join(format!("{id}.json")), "").unwrap();
+    crate::mcp_execution::save_record(&root, &record).unwrap();
+    print_snapshot(&store, &id, &json!({"step":1})).unwrap();
     assert_eq!(resolve_id(&store, &id[..8].to_uppercase()).unwrap(), id);
     assert_eq!(resolve_id(&store, &id).unwrap(), id);
     assert!(resolve_id(&store, "../bad-id")

@@ -385,15 +385,25 @@ impl McpSession {
         } else {
             let record = self.control_record(params)?;
             add_identity(&mut result, &record);
-            if params["name"] == "execution_logs" {
-                result["structuredContent"]["untrustedData"]["executionLogs"] =
-                    crate::execution_logs::read(&self.store, &record, args)?;
-            }
+            self.attach_execution_logs(&mut result, &record, params)?;
             result["structuredContent"]["execution"] =
                 serde_json::to_value(record).map_err(|error| error.to_string())?;
         }
         mirror_content(&mut result);
         Ok(result)
+    }
+
+    fn attach_execution_logs(
+        &self,
+        result: &mut Value,
+        record: &ExecutionRecord,
+        params: &Value,
+    ) -> Result<(), String> {
+        if params["name"] == "execution_logs" {
+            result["structuredContent"]["untrustedData"]["executionLogs"] =
+                crate::execution_logs::read(&self.store, record, &params["arguments"])?;
+        }
+        Ok(())
     }
 
     fn control_record(&mut self, params: &Value) -> Result<ExecutionRecord, String> {
