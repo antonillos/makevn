@@ -179,7 +179,7 @@ fn owned_name(name: &str) -> bool {
     if matches!(name, "lifetime.lock" | "supervisor.log") {
         return true;
     }
-    [".stdout.log", ".stderr.log", ".phase"]
+    [".stdout.log", ".stderr.log", ".maven.log", ".phase"]
         .iter()
         .any(|suffix| {
             name.strip_suffix(suffix).is_some_and(|index| {

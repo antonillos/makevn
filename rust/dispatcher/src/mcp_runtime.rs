@@ -361,6 +361,7 @@ impl McpSession {
             return Ok(());
         }
         let mut result = mcp_server::standard_tool_result(&result, &params);
+        suggest_execution_logs(&mut result, &record);
         add_identity(&mut result, &record);
         write_message(json!({"jsonrpc":"2.0", "id":id, "result":result}))
     }
@@ -384,6 +385,7 @@ impl McpSession {
         } else {
             let record = self.control_record(params)?;
             add_identity(&mut result, &record);
+            self.attach_execution_logs(&mut result, &record, params)?;
             result["structuredContent"]["execution"] =
                 serde_json::to_value(record).map_err(|error| error.to_string())?;
         }
@@ -391,10 +393,30 @@ impl McpSession {
         Ok(result)
     }
 
+    fn attach_execution_logs(
+        &self,
+        result: &mut Value,
+        record: &ExecutionRecord,
+        params: &Value,
+    ) -> Result<(), String> {
+        if params["name"] == "execution_logs" {
+            result["structuredContent"]["untrustedData"]["executionLogs"] =
+                crate::execution_logs::read(&self.store, record, &params["arguments"])?;
+        }
+        Ok(())
+    }
+
     fn control_record(&mut self, params: &Value) -> Result<ExecutionRecord, String> {
         let id = params["arguments"]["executionId"]
             .as_str()
             .ok_or("executionId is required")?;
+        let resolved;
+        let id = if params["name"] == "execution_logs" {
+            resolved = crate::execution_logs::resolve_id(&self.store, id)?;
+            resolved.as_str()
+        } else {
+            id
+        };
         let mut record = self.store.get(id)?.snapshot();
         if params["name"] == "execution_cancel" {
             self.cancel_execution(&mut record)?;
@@ -494,6 +516,16 @@ fn add_identity(result: &mut Value, record: &ExecutionRecord) {
     mirror_content(result);
 }
 
+fn suggest_execution_logs(result: &mut Value, record: &ExecutionRecord) {
+    if record.state != "failed" {
+        return;
+    }
+    let args = json!({"executionId": record.execution_id});
+    let next = &mut result["structuredContent"]["nextSuggestion"];
+    let existing = next.as_str().unwrap_or_default();
+    *next = json!(format!("{existing} Inspect captured logs with MCP execution_logs {args} or CLI makevn execution-logs {}.", record.execution_id));
+}
+
 fn mirror_content(result: &mut Value) {
     result["content"][0]["text"] = json!(result["structuredContent"].to_string());
 }
@@ -526,7 +558,7 @@ fn cleanup_control(store: &ExecutionStore, params: &Value) -> Result<Value, Stri
 fn control_name(name: &str) -> bool {
     matches!(
         name,
-        "execution_list" | "execution_status" | "execution_cancel"
+        "execution_list" | "execution_status" | "execution_cancel" | "execution_logs"
     )
 }
 
@@ -553,13 +585,18 @@ pub fn control_tools() -> Vec<Value> {
     [("execution_cleanup", "Remove terminal executions and their private logs older than retentionDays (default MAKEVN_RETENTION_DAYS or 3). dryRun previews candidates without deleting."),
      ("execution_list", "List active MakeVN executions across local MCP sessions. includeFinished also returns preserved terminal executions."),
      ("execution_status", "Inspect one execution, including its owning session, repository, PR, state and logs. Pass the 32-character hexadecimal executionId from a MakeVN result or execution_list."),
+     ("execution_logs", "Read captured stdout, stderr and supervisor logs for a recorded MakeVN execution without rerunning it. Supply executionId and optionally a zero-based step, tail and case-sensitive literal contains filter. Read structuredContent.untrustedData.executionLogs."),
      ("execution_cancel", "Cancel only an execution owned by this MCP session. Idempotent for stopped executions; cleanup uses five seconds of grace and two seconds of confirmation.")]
         .into_iter().map(|(name, description)| control_tool(name, description)).collect()
 }
 
 fn control_tool(name: &str, description: &str) -> Value {
     let mut output = mcp_server::result_schema();
-    let input = if name == "execution_cleanup" {
+    let input = if name == "execution_logs" {
+        output["properties"]["execution"] = crate::mcp_execution::record_schema();
+        output["properties"]["untrustedData"]["properties"]["executionLogs"] = crate::execution_logs::schema();
+        crate::execution_logs::input_schema()
+    } else if name == "execution_cleanup" {
         output["properties"]["cleanup"] = crate::execution_retention::schema();
         json!({"type":"object", "properties":{"retentionDays":{"type":"integer","minimum":1}, "dryRun":{"type":"boolean","default":false}}, "additionalProperties":false})
     } else if name == "execution_list" {
