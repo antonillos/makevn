@@ -209,7 +209,10 @@ the captured steps for a workflow.
 
 Read `structuredContent.untrustedData.executionLogs` in MCP and
 `untrustedData.executionLogs` in CLI JSON. It groups lines and read status by
-stdout, stderr and supervisor. Each stream reads at most its last 16 KiB, then
+stdout, stderr, supervisor and Maven. The Maven stream contains the actual build
+and test output captured for that step, including any application output Maven
+emits. Older executions and steps without a Maven capture report `missing`.
+Each stream reads at most its last 16 KiB, then
 applies the optional case-sensitive literal `contains` filter and the line cap
 (`tail` defaults to 100, between 1 and 1000). `truncated` indicates a clipped
 snapshot. `missing`, `empty`, `no_matches` and `error` describe distinct states.

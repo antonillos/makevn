@@ -416,6 +416,7 @@ fn spawn_captured(
         .stdout(capture_file(stdout)?)
         .stderr(capture_file(stderr)?)
         .env("MAKEVN_MCP_PHASE_OUT", phase)
+        .env("MAKEVN_MCP_MAVEN_LOG", phase.with_extension("maven.log"))
         .process_group(daemon_group.unwrap_or(0));
     command.spawn().map_err(|error| error.to_string())
 }

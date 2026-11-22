@@ -26,7 +26,7 @@ pub fn schema() -> Value {
         "step":{"type":"integer"},
         "streams":{"type":"array", "items":{"type":"object",
             "required":["stream","lines","readStatus","truncated","error"], "properties":{
-                "stream":{"enum":["stdout","stderr","supervisor"]},
+                "stream":{"enum":["stdout","stderr","supervisor","maven"]},
                 "lines":{"type":"array","items":{"type":"string"}},
                 "readStatus":{"enum":["ok","empty","no_matches","missing","error"]},
                 "truncated":{"type":"boolean"},
@@ -54,11 +54,12 @@ pub fn read(
             ("stdout", format!("{step}.stdout.log")),
             ("stderr", format!("{step}.stderr.log")),
             ("supervisor", "supervisor.log".into()),
+            ("maven", format!("{step}.maven.log")),
         ]
         .map(|(stream, name)| {
             stream_result(stream, read_stream(&directory, &name, tail, contains))
         }),
-        Err(error) => ["stdout", "stderr", "supervisor"]
+        Err(error) => ["stdout", "stderr", "supervisor", "maven"]
             .map(|stream| stream_result(stream, Err(io::Error::from(error.kind())))),
     };
     Ok(json!({"step":step,"streams":streams}))

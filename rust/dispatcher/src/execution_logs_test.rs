@@ -28,6 +28,7 @@ fn snapshot_filters_and_bounds_each_stream_without_following_symlinks() {
     )
     .unwrap();
     fs::write(directory.join("1.stderr.log"), "").unwrap();
+    fs::write(directory.join("1.maven.log"), "Tests run: 4\nERROR failing test\n").unwrap();
     symlink(
         directory.join("1.stdout.log"),
         directory.join("supervisor.log"),
@@ -44,6 +45,8 @@ fn snapshot_filters_and_bounds_each_stream_without_following_symlinks() {
     assert_eq!(logs["streams"][0]["truncated"], true);
     assert_eq!(logs["streams"][1]["readStatus"], "empty");
     assert_eq!(logs["streams"][2]["readStatus"], "error");
+    assert_eq!(logs["streams"][3]["stream"], "maven");
+    assert_eq!(logs["streams"][3]["lines"], json!(["ERROR failing test"]));
     assert_eq!(
         read(&store, &record, &json!({"step":1,"contains":"absent"})).unwrap()["streams"][0]
             ["readStatus"],
