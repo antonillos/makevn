@@ -184,19 +184,7 @@ impl PageQuery<'_> {
         let mut file = open_stream(directory, &name)?;
         let metadata = file.metadata()?;
         let identity = (metadata.dev(), metadata.ino());
-        let (end, partial_end) = match self.cursor {
-            Some(Cursor(_, _, _, dev, ino, end, partial))
-                if (dev, ino) == identity && end > 0 && end <= metadata.len() =>
-            {
-                (end, partial)
-            }
-            Some(_) => {
-                return Err(io::Error::other(
-                    "Log changed; start again without a cursor",
-                ))
-            }
-            None => (metadata.len(), false),
-        };
+        let (end, partial_end) = self.page_end(identity, metadata.len())?;
         let (start, bytes) = read_window(&mut file, end)?;
         let mut snapshot = select_page(&bytes, start, partial_end, self.tail, self.contains);
         snapshot.cursor = snapshot.next.map(|(offset, partial)| {
@@ -212,6 +200,20 @@ impl PageQuery<'_> {
             .expect("cursor contains only primitive values")
         });
         Ok(snapshot)
+    }
+
+    fn page_end(&self, identity: (u64, u64), length: u64) -> io::Result<(u64, bool)> {
+        match self.cursor {
+            Some(Cursor(_, _, _, dev, ino, end, partial))
+                if (dev, ino) == identity && end > 0 && end <= length =>
+            {
+                Ok((end, partial))
+            }
+            Some(_) => Err(io::Error::other(
+                "Log changed; start again without a cursor",
+            )),
+            None => Ok((length, false)),
+        }
     }
 }
 
@@ -233,13 +235,7 @@ struct StreamSnapshot {
     cursor: Option<String>,
 }
 
-fn select_page(
-    bytes: &[u8],
-    offset: u64,
-    partial_end: bool,
-    tail: usize,
-    contains: Option<&str>,
-) -> StreamSnapshot {
+fn complete_line_bounds(bytes: &[u8], offset: u64, partial_end: bool) -> (usize, usize) {
     let end = if partial_end {
         bytes
             .iter()
@@ -257,6 +253,17 @@ fn select_page(
     } else {
         0
     };
+    (start, end)
+}
+
+fn select_page(
+    bytes: &[u8],
+    offset: u64,
+    partial_end: bool,
+    tail: usize,
+    contains: Option<&str>,
+) -> StreamSnapshot {
+    let (start, end) = complete_line_bounds(bytes, offset, partial_end);
     let clipped = offset + start as u64 > 0;
     let mut position = offset + end as u64;
     let mut matched = bytes[start..end]
