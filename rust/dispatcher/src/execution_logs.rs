@@ -90,7 +90,9 @@ pub fn read(
     let stream = args
         .get("stream")
         .map(|value| {
-            STREAMS.iter().position(|name| value.as_str() == Some(*name))
+            STREAMS
+                .iter()
+                .position(|name| value.as_str() == Some(*name))
                 .ok_or("stream must be stdout, stderr, supervisor, or maven")
         })
         .transpose()?;
@@ -158,7 +160,10 @@ impl Cursor {
             .and_then(|token| serde_json::from_str(token).ok())
             .ok_or("Invalid or stale cursor; start without a cursor to obtain a new nextCursor")?;
         if cursor.7 != Self::filter_digest(contains) {
-            return Err("Cursor does not match contains; start again without a cursor to change the filter".into());
+            return Err(
+                "Cursor does not match contains; start again without a cursor to change the filter"
+                    .into(),
+            );
         }
         Ok(cursor)
     }
@@ -187,13 +192,17 @@ impl PageQuery<'_> {
     fn read(&self, root: &std::path::Path) -> Result<Vec<Value>, String> {
         let indexes = match &self.cursor {
             Some(Cursor(id, step, index, ..))
-                if id == self.execution && *step == self.step && *index < STREAMS.len()
+                if id == self.execution
+                    && *step == self.step
+                    && *index < STREAMS.len()
                     && self.stream.is_none_or(|stream| stream == *index) =>
             {
                 *index..*index + 1
             }
             Some(_) => return Err("Cursor does not match this execution, step, or stream".into()),
-            None => self.stream.map_or(0..STREAMS.len(), |stream| stream..stream + 1),
+            None => self
+                .stream
+                .map_or(0..STREAMS.len(), |stream| stream..stream + 1),
         };
         let directory = OpenOptions::new()
             .read(true)
@@ -395,18 +404,16 @@ fn cli_options(options: &[OsString]) -> Result<Value, String> {
         }
         let value = options.next().ok_or(HELP)?;
         let value = value.to_str().ok_or("option values must be UTF-8")?;
-        match flag.to_str() {
-            Some("--step") => {
-                args["step"] = json!(value.parse::<u64>().map_err(|_| "invalid step")?)
+        let (key, value) = match flag.to_str() {
+            Some(flag @ ("--step" | "--tail")) => {
+                let key = &flag[2..];
+                let number = value.parse::<u64>().map_err(|_| format!("invalid {key}"))?;
+                (key, json!(number))
             }
-            Some("--tail") => {
-                args["tail"] = json!(value.parse::<u64>().map_err(|_| "invalid tail")?)
-            }
-            Some("--contains") => args["contains"] = json!(value),
-            Some("--stream") => args["stream"] = json!(value),
-            Some("--cursor") => args["cursor"] = json!(value),
+            Some(flag @ ("--contains" | "--stream" | "--cursor")) => (&flag[2..], json!(value)),
             _ => return Err(HELP.into()),
-        }
+        };
+        args[key] = value;
     }
     Ok(args)
 }
