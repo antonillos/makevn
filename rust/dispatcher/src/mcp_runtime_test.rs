@@ -47,3 +47,24 @@ fn cleanup_tool_exposes_options_and_structured_counts() {
     assert!(validate_control_arguments(&json!({"name":"execution_cleanup","arguments":{"dryRun":"yes"}})).is_err());
     assert!(validate_control_arguments(&json!({"name":"execution_cleanup","arguments":{"unknown":true}})).is_err());
 }
+
+#[test]
+fn failed_execution_suggests_the_registered_log_query_and_preserves_guidance() {
+    let id = "0123456789abcdef0123456789abcdef";
+    let params = json!({"name":"execution_logs","arguments":{"executionId":id,"tail":40,"contains":"ERROR"}});
+    assert!(control_name("execution_logs"));
+    assert!(validate_control_arguments(&params).is_ok());
+    let tool = control_tools().into_iter().find(|tool| tool["name"] == "execution_logs").unwrap();
+    assert_eq!(tool["outputSchema"]["properties"]["untrustedData"]["properties"]["executionLogs"]["type"], "object");
+
+    let record: ExecutionRecord = serde_json::from_value(json!({
+        "executionId":id, "sessionId":"session", "command":"compile", "repo":"/repo",
+        "repositories":["/repo"], "pullRequests":[], "startedAtMs":0, "durationMs":1,
+        "state":"failed", "logPaths":[], "exitCode":1
+    })).unwrap();
+    let mut result = json!({"structuredContent":{"nextSuggestion":"Check the compiler error."}});
+    suggest_execution_logs(&mut result, &record);
+    let guidance = result["structuredContent"]["nextSuggestion"].as_str().unwrap();
+    assert!(guidance.contains(&format!("execution_logs {}", json!({"executionId":id}))));
+    assert!(guidance.ends_with("Check the compiler error."));
+}

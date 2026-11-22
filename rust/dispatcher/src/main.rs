@@ -32,6 +32,7 @@ mod agent_transaction;
 mod docker_resources;
 mod mcp_doctor;
 mod mcp_diagram;
+mod execution_logs;
 mod execution_retention;
 mod mcp_execution;
 mod mcp_runtime;
@@ -39,6 +40,12 @@ mod mcp_server;
 mod mcp_supervisor;
 
 fn main() {
+    if env::args_os().nth(1).as_deref() == Some(std::ffi::OsStr::new("execution-logs")) {
+        match execution_logs::cli(env::args_os().skip(2).collect()) {
+            Ok(()) => return,
+            Err(error) => exit_with_error(error),
+        }
+    }
     if env::args_os().nth(1).as_deref() == Some(std::ffi::OsStr::new("execution-cleanup")) {
         match execution_retention::cli(env::args_os().skip(2).collect()) {
             Ok(()) => return,
