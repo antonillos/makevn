@@ -242,6 +242,7 @@ cmd_docker_ps_required() {
       exit 1
     fi
   ' bash "${output}" "${wait_seconds}" "${elapsed}"; then
+    makevn_docker_log_query "${repo_root}" "${compose_kind}" suggest || true
     return 1
   fi
 }
@@ -275,6 +276,7 @@ makevn_run_docker_lifecycle() {
   fi
 
   makevn_publish_compose_resources "${repo_root}" "${docker_compose_cmd}" "${compose_file}" "${compose_override_file}"
+  local status=0
   makevn_run_logged "${repo_root}" "${title}" "${title}" "${title}" bash -e -c '
     action="$1"
     shift
@@ -286,7 +288,51 @@ makevn_run_docker_lifecycle() {
         "$@" up --detach
         ;;
     esac
-  ' bash "${action}" "${docker_compose[@]}" "${compose_args[@]}"
+  ' bash "${action}" "${docker_compose[@]}" "${compose_args[@]}" || status=$?
+  if [[ "${status}" != 0 && "${action}" != down ]]; then
+    makevn_docker_log_query "${repo_root}" "${compose_kind}" suggest || true
+  fi
+  return "${status}"
+}
+
+makevn_docker_log_query() {
+  local repo_root="$1" compose_kind="$2" mode="$3"
+  shift 3
+  local compose_file="" override_file="" compose_command=""
+  local -a command_words=() compose_args=()
+  compose_file="$(makevn_docker_compose_file_for_kind "${repo_root}" "${compose_kind}")" || return 1
+  override_file="$(makevn_docker_compose_override_file_for_kind "${repo_root}" "${compose_kind}")" || return 1
+  [[ -f "${compose_file}" ]] || makevn_die "Docker compose file not found for ${compose_kind}"
+  compose_command="$(makevn_resolve_docker_compose_command)" || return 1
+  read -r -a command_words <<< "${compose_command}"
+  while IFS= read -r arg; do compose_args+=("${arg}"); done < <(makevn_collect_compose_args "${compose_file}" "${override_file}")
+  if [[ "${compose_kind}" == karate && -n "${PROFILE:-}" ]]; then
+    compose_args+=(--profile "${PROFILE}")
+  fi
+  python3 "${MAKEVN_LIBEXEC_DIR}/docker/logs.py" "${mode}" --repo "${repo_root}" --compose "${compose_kind}" --file "${compose_file}" "$@" -- "${command_words[@]}" "${compose_args[@]}"
+}
+
+cmd_docker_logs() {
+  local repo_root="$1" compose_kind=boot tail=100
+  local -a services=()
+  shift
+  while [[ $# -gt 0 ]]; do
+    if [[ "$1" == --json ]]; then
+      services+=(--json)
+      shift
+      continue
+    fi
+    [[ $# -ge 2 ]] || makevn_die "Missing value for $1"
+    case "$1" in
+      --compose) compose_kind="$2" ;;
+      --tail) tail="$2" ;;
+      --service) services+=(--service "$2") ;;
+      --since|--contains) services+=("$1=$2") ;;
+      *) makevn_die "Unknown docker logs option: $1" ;;
+    esac
+    shift 2
+  done
+  makevn_docker_log_query "${repo_root}" "${compose_kind}" logs --tail "${tail}" "${services[@]}"
 }
 
 cmd_docker_up() {

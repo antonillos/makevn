@@ -152,3 +152,26 @@ already-authorized tests unless another independent prerequisite fails; do not
 request worktree relocation or Docker sharing changes solely for that warning.
 Visibility does not prove database/user initialization: that needs project-specific
 semantic checks. Empty host directories produce informational empty_source diagnostics, not warnings or failures; no missing initialization data is inferred.
+
+## Compose container log diagnosis
+
+After failed `docker-up`, `karate-docker-up` or `docker-ps-required`, inspect
+the suggested log query for the same repository, stack and affected services
+before deciding recovery. Partial startup preserves the original failure and
+offers logs from existing containers. Missing containers and inaccessible engines
+have explicit diagnostics.
+
+```sh
+makevn --repo /path/to/repo docker-logs
+makevn --repo /path/to/repo docker-logs --compose karate --service app --service postgres --tail 100
+```
+
+MCP `docker_logs` accepts `repo`, `compose` (`boot` by default),
+`compose-file`, `tail` (1..1000, default 100), and either `service` or a
+nonempty string array `services`. Both selectors together are rejected.
+Every selected replica, including stopped containers, is queried. Ownership
+must match the selected Compose file and worktree. Empty logs, absent
+containers and query failures are distinguished. Captures are bounded to
+262144 bytes of log content with an explicit truncation marker.
+MCP log text remains in `untrustedData`. This read-only query works after
+readiness failures and does not establish readiness.

@@ -145,8 +145,9 @@ class DockerLifecycleTests(unittest.TestCase):
             for prefix in ("docker", "karate-docker"):
                 self.clear_logs()
                 interface(prefix + "-reset", success=False)
-                self.assertEqual(len(self.records()), 1)
-                self.assertEqual(self.records()[0][-3:], ["down", "-v", "--remove-orphans"])
+                lifecycle = [args for args in self.records() if "down" in args or "up" in args]
+                self.assertEqual(len(lifecycle), 1)
+                self.assertEqual(lifecycle[0][-3:], ["down", "-v", "--remove-orphans"])
                 self.assertEqual((self.repo / "boot.data").read_text(), "saved-boot")
                 self.assertEqual((self.repo / "karate.data").read_text(), "saved-karate")
 
@@ -155,8 +156,9 @@ class DockerLifecycleTests(unittest.TestCase):
         for prefix in ("docker", "karate-docker"):
             self.clear_logs()
             self.cli(prefix + "-up", success=False)
-            self.assertEqual(len(self.records()), 1)
-            self.assertEqual(self.records()[0][-2:], ["up", "--detach"])
+            lifecycle = [args for args in self.records() if "down" in args or "up" in args]
+            self.assertEqual(len(lifecycle), 1)
+            self.assertEqual(lifecycle[0][-2:], ["up", "--detach"])
         self.assertEqual((self.repo / "boot.data").read_text(), "saved-boot")
         self.assertEqual((self.repo / "karate.data").read_text(), "saved-karate")
 
