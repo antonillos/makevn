@@ -32,7 +32,8 @@ class DockerLogsTest(unittest.TestCase):
     def test_read_stopped_and_running_replicas_without_mutation(self):
         records = [record(), record(state="running", replica="2")]
         commands = []
-        def run(command):
+        def run(command, *, merge_streams):
+            self.assertTrue(merge_streams)
             commands.append(command)
             return SimpleNamespace(returncode=0, stdout="failure detail\n", stderr="")
         output = io.StringIO()
@@ -96,7 +97,7 @@ class DockerLogsTest(unittest.TestCase):
         args = self.args()
         args.json = True
         output = io.StringIO()
-        responses = [SimpleNamespace(returncode=1, stdout="", stderr="read failed"),
+        responses = [SimpleNamespace(returncode=1, stdout="read failed", stderr=None),
                      SimpleNamespace(returncode=0, stdout="", stderr="")]
         with patch.object(LOGS, "run", side_effect=responses), contextlib.redirect_stdout(output):
             self.assertEqual(LOGS.show_logs(args, ["app", "db"],
@@ -121,7 +122,7 @@ class DockerLogsTest(unittest.TestCase):
             response = SimpleNamespace(returncode=0, stdout="failure1\nfailure[1]\n", stderr="")
             with patch.object(LOGS, "run", return_value=response) as run:
                 snapshot = LOGS.capture_logs(args, services, records)
-                run.assert_any_call(["docker", "logs", "--tail", "100", "--since", "5m", records[0]["Id"]])
+                run.assert_any_call(["docker", "logs", "--tail", "100", "--since", "5m", records[0]["Id"]], merge_streams=True)
                 self.assertEqual(len(snapshot["containers"]), count)
                 for entry in snapshot["containers"]:
                     self.assertEqual(entry["logs"], ["failure[1]"])
@@ -129,6 +130,27 @@ class DockerLogsTest(unittest.TestCase):
                 args.contains = "absent"
                 self.assertEqual(LOGS.capture_logs(args, services, records)["containers"][0]["readStatus"],
                                  "no_matches")
+
+    def test_suggestion_reaches_interactive_frontend_details(self):
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as directory:
+            detail = Path(directory) / "details"
+            detail.write_text("original diagnostic\n")
+            with patch.dict("os.environ", {"MAKEVN_BACKEND_DETAIL_OUT": str(detail)}):
+                with contextlib.redirect_stdout(io.StringIO()):
+                    LOGS.suggest(self.args(), [record()])
+            self.assertEqual(detail.read_text().splitlines(), [
+                "original diagnostic",
+                "Suggested log query: makevn --repo /repo docker-logs --compose boot "
+                "--service app --compose-file /repo/compose.yml",
+            ])
+
+    def test_combined_logs_keep_emission_order(self):
+        result = LOGS.run([sys.executable, "-u", "-c",
+                           "import os; os.write(1, b'first\\n'); os.write(2, b'second\\n'); os.write(1, b'third\\n')"],
+                          merge_streams=True)
+        self.assertEqual(result.stdout.splitlines(), ["first", "second", "third"])
 
     def test_no_containers_does_not_suggest_logs(self):
         output = io.StringIO()

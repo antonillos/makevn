@@ -8,8 +8,9 @@ import subprocess
 import sys
 
 
-def run(command):
-    return subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+def run(command, *, merge_streams=False):
+    stderr = subprocess.STDOUT if merge_streams else subprocess.PIPE
+    return subprocess.run(command, stdout=subprocess.PIPE, stderr=stderr,
                           text=True, errors="replace", timeout=30)
 
 
@@ -59,7 +60,11 @@ def suggest(args, records):
                      **({"services": affected} if affected else {}))
     arguments["compose-file"] = os.path.realpath(args.file)
     command += ["--compose-file", arguments["compose-file"]]
-    print("Suggested log query: " + shlex.join(command))
+    cli_suggestion = "Suggested log query: " + shlex.join(command)
+    print(cli_suggestion)
+    if detail := os.environ.get("MAKEVN_BACKEND_DETAIL_OUT"):
+        with open(detail, "a", encoding="utf-8") as stream:
+            print(cli_suggestion, file=stream)
     suggestion = "Use docker_logs with arguments " + json.dumps(arguments)
     print("MCP docker_logs arguments: " + json.dumps(arguments))
     metadata = os.environ.get("MAKEVN_DOCKER_LOG_SUGGESTION_OUT")
@@ -90,8 +95,8 @@ def read_container_logs(record, args, remaining):
         command = ["docker", "logs", "--tail", str(args.tail)]
         if since := getattr(args, "since", None):
             command.extend(["--since", since])
-        result = run(command + [record["Id"]])
-        output = result.stdout + result.stderr
+        result = run(command + [record["Id"]], merge_streams=True)
+        output = result.stdout
         if result.returncode:
             entry["readStatus"] = "error"
     except (OSError, subprocess.TimeoutExpired) as error:
