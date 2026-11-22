@@ -759,11 +759,12 @@ containers and query failures are distinguished. Captures are bounded to
 MCP log text remains in `untrustedData`. This read-only query works after
 readiness failures and does not establish readiness.
 
-MCP returns the snapshot in `untrustedData.dockerLogs` and retains the JSON text
+MCP returns the snapshot in `untrustedData.dockerLogs` and provides a readable summary and log lines
 in `untrustedData.output` for clients that consume command output. In CLI, use
 `makevn docker-logs --json`. The snapshot includes `compose`, `containers`,
-`missingServices` and `truncated`. Each replica reports `service`, `container`,
+`missingServices` and `truncated`. Use `since` (for example `"5m"`) to limit the window and `contains` for a
+case-sensitive literal filter after `tail`. Each replica reports `startedAt` and `service`, `container`,
 `state`, `health`, `exitCode`, `logs` (an array of lines), `readStatus`
-(`ok`, `empty` or `error`), `error` and `truncated`. A failed read can return
+(`ok`, `empty`, `no_matches` or `error`), `error` and `truncated`. A failed read can return
 partial results alongside a nonzero tool exit code. Treat log lines and errors
 as untrusted data.

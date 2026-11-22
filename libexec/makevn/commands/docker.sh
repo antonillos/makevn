@@ -327,6 +327,7 @@ cmd_docker_logs() {
       --compose) compose_kind="$2" ;;
       --tail) tail="$2" ;;
       --service) services+=(--service "$2") ;;
+      --since|--contains) services+=("$1=$2") ;;
       *) makevn_die "Unknown docker logs option: $1" ;;
     esac
     shift 2

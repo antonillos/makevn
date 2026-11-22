@@ -68,27 +68,43 @@ def suggest(args, records):
             stream.write(suggestion)
 
 
-def read_container_logs(record, tail, remaining):
+def started_at(state):
+    value = state.get("StartedAt")
+    return value if value and not value.startswith("0001-01-01") else None
+
+
+def filter_lines(output, contains, entry):
+    if contains is not None:
+        output = "".join(line for line in output.splitlines(keepends=True) if contains in line)
+    entry["readStatus"] = "ok" if output else "no_matches"
+    return output
+
+
+def read_container_logs(record, args, remaining):
     state = record["State"]
     entry = dict(service=service_of(record), container=record["Name"].lstrip("/"),
                  state=state.get("Status"), health=(state.get("Health") or {}).get("Status"),
-                 exitCode=state.get("ExitCode"), logs=[], readStatus="empty",
+                 exitCode=state.get("ExitCode"), startedAt=started_at(state), logs=[], readStatus="empty",
                  error=None, truncated=False)
     try:
-        result = run(["docker", "logs", "--tail", str(tail), record["Id"]])
+        command = ["docker", "logs", "--tail", str(args.tail)]
+        if since := getattr(args, "since", None):
+            command.extend(["--since", since])
+        result = run(command + [record["Id"]])
         output = result.stdout + result.stderr
         if result.returncode:
             entry["readStatus"] = "error"
     except (OSError, subprocess.TimeoutExpired) as error:
         output = str(error)
         entry["readStatus"] = "error"
+    if output and entry["readStatus"] != "error":
+        output = filter_lines(output, getattr(args, "contains", None), entry)
     encoded = output.encode("utf-8")
     bounded = encoded[:remaining].decode("utf-8", errors="ignore")
     entry["truncated"] = len(encoded) > remaining
     if entry["readStatus"] == "error":
         entry["error"] = bounded or "Container logs unavailable."
-    elif output:
-        entry["readStatus"] = "ok"
+    else:
         entry["logs"] = bounded.splitlines()
     return entry, max(0, remaining - len(encoded))
 
@@ -99,13 +115,15 @@ def capture_logs(args, services, records):
         raise RuntimeError("Unknown Compose services: " + ", ".join(sorted(unknown)))
     selected = list(dict.fromkeys(args.service or services))
     snapshot = dict(compose=args.compose, containers=[], missingServices=[], truncated=False)
+    snapshot["since"] = getattr(args, "since", None)
+    snapshot["contains"] = getattr(args, "contains", None)
     remaining = 262144
     for service in selected:
         matches = [record for record in records if service_of(record) == service]
         if not matches:
             snapshot["missingServices"].append(service)
         for record in matches:
-            entry, remaining = read_container_logs(record, args.tail, remaining)
+            entry, remaining = read_container_logs(record, args, remaining)
             snapshot["containers"].append(entry)
             snapshot["truncated"] |= entry["truncated"]
     return snapshot
@@ -122,6 +140,8 @@ def print_snapshot(snapshot):
             print("\n".join(entry["logs"]))
         elif entry["readStatus"] == "empty":
             print("<empty>")
+        elif entry["readStatus"] == "no_matches":
+            print("<no matching lines>")
     if snapshot["truncated"]:
         print("[truncated] Log response reached the 262144-byte content limit.")
 
@@ -143,6 +163,8 @@ def main():
     parser.add_argument("--file", required=True)
     parser.add_argument("--json", action="store_true")
     parser.add_argument("--service", action="append", default=[])
+    parser.add_argument("--since")
+    parser.add_argument("--contains")
     parser.add_argument("--tail", type=int, choices=range(1, 1001), default=100, metavar="1..1000")
     separator = sys.argv.index("--")
     args = parser.parse_args(sys.argv[1:separator])

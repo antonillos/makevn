@@ -31,7 +31,7 @@ Usage:
   makevn [--repo PATH] docker-ps-required [--tail] [--compose boot|karate] [--wait-seconds N]
   makevn [--repo PATH] docker-reset [--tail]
   makevn [--repo PATH] docker-stats [--tail]
-  makevn [--repo PATH] docker-logs [--compose boot|karate] [--service NAME]... [--tail N] [--json]
+  makevn [--repo PATH] docker-logs [--compose boot|karate] [--service NAME]... [--tail N] [--since TIME] [--contains TEXT] [--json]
   makevn [--repo PATH] docker-up [--tail]
   makevn [--repo PATH] doctor [--compact] [--reset-config]
   makevn [--repo PATH] format [--apply] [-- EXTRA_MAVEN_ARGS...]
@@ -135,7 +135,7 @@ makevn_cli_is_top_level_command() {
 
 makevn_cli_option_takes_value() {
   case "$1" in
-    --name|--threshold|--overall-threshold|--max-warnings|--jacoco-xml|--base|--tag|--compose|--module|--service)
+    --name|--threshold|--overall-threshold|--max-warnings|--jacoco-xml|--base|--tag|--compose|--module|--service|--since|--contains)
       return 0
       ;;
   esac

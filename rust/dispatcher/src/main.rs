@@ -928,6 +928,8 @@ fn command_option_takes_value(arg: &OsString) -> bool {
             | "--compose-file"
             | "--module"
             | "--service"
+            | "--since"
+            | "--contains"
     )
 }
 

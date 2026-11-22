@@ -109,6 +109,27 @@ class DockerLogsTest(unittest.TestCase):
         self.assertEqual(empty["readStatus"], "empty")
         self.assertEqual(empty["logs"], [])
 
+    def test_time_window_and_literal_filter_across_service_counts(self):
+        for count in (1, 3, 5):
+            args = self.args()
+            args.since = "5m"
+            args.contains = "failure[1]"
+            services = [f"app{i}" for i in range(count)]
+            records = [record(service) for service in services]
+            for item in records:
+                item["State"]["StartedAt"] = "2026-11-22T17:33:00Z"
+            response = SimpleNamespace(returncode=0, stdout="failure1\nfailure[1]\n", stderr="")
+            with patch.object(LOGS, "run", return_value=response) as run:
+                snapshot = LOGS.capture_logs(args, services, records)
+                run.assert_any_call(["docker", "logs", "--tail", "100", "--since", "5m", records[0]["Id"]])
+                self.assertEqual(len(snapshot["containers"]), count)
+                for entry in snapshot["containers"]:
+                    self.assertEqual(entry["logs"], ["failure[1]"])
+                    self.assertEqual(entry["startedAt"], "2026-11-22T17:33:00Z")
+                args.contains = "absent"
+                self.assertEqual(LOGS.capture_logs(args, services, records)["containers"][0]["readStatus"],
+                                 "no_matches")
+
     def test_no_containers_does_not_suggest_logs(self):
         output = io.StringIO()
         with contextlib.redirect_stdout(output):
@@ -179,16 +200,19 @@ elif args[0] == "logs":
                     self.assertTrue(suggestion.startswith("Use docker_logs with arguments "), result)
                     query = json.JSONDecoder().raw_decode(suggestion.split("arguments ", 1)[1])[0]
                     self.assertEqual(query["services"], ["app"])
+                    query.update(since="5m", contains="application")
                     logs = request(str(mcp), {"jsonrpc": "2.0", "id": 2, "method": "tools/call",
                         "params": {"name": "docker_logs", "arguments": query}})["result"]["structuredContent"]
                     self.assertEqual(logs["exitCode"], 0, logs)
                     snapshot = logs["untrustedData"]["dockerLogs"]
-                    self.assertEqual(json.loads(logs["untrustedData"]["output"]), snapshot)
+                    self.assertIn("specific application failure", logs["untrustedData"]["output"])
+                    self.assertIn("readStatus=", logs["untrustedData"]["output"])
                     self.assertEqual(snapshot["containers"][0]["logs"], ["specific application failure"])
                     self.assertEqual(snapshot["containers"][0]["state"], "exited")
                     self.assertEqual(snapshot["containers"][0]["readStatus"], "ok")
                 cli = subprocess.run([str(binary), "--repo", str(repo), "docker-logs",
-                                      "--compose-file", str(compose), "--service", "app", "--tail", "50", "--json"],
+                                      "--compose-file", str(compose), "--service", "app", "--tail", "50", "--since", "5m",
+                                      "--contains", "application", "--json"],
                                      env=env, capture_output=True, text=True)
                 self.assertEqual(cli.returncode, 0, cli.stdout + cli.stderr)
                 self.assertEqual(json.loads(cli.stdout)["containers"], snapshot["containers"])
