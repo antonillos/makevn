@@ -8,6 +8,24 @@ use std::process;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 #[test]
+fn docker_logs_validates_selectors_and_forwards_repeated_services() {
+    let spec = TOOL_SPECS.iter().find(|spec| spec.name == "docker_logs").unwrap();
+    let mut flags = Vec::new();
+    push_tool_flags(&mut flags, spec, &serde_json::from_value(json!({
+        "compose": "karate", "services": ["app", "db"], "tail": 50
+    })).unwrap()).unwrap();
+    assert_eq!(flags, ["--compose", "karate", "--service", "app", "--service", "db", "--tail", "50"]);
+    for arguments in [
+        json!({"service": "app", "services": ["db"]}),
+        json!({"services": []}), json!({"services": [1]}),
+        json!({"tail": 0}), json!({"tail": 1001}), json!({"tail": 1.5}),
+    ] {
+        assert!(push_tool_flags(&mut Vec::new(), spec,
+            &serde_json::from_value(arguments).unwrap()).is_err());
+    }
+}
+
+#[test]
 fn invalid_execution_status_explains_how_to_find_the_id() {
     let result = super::ToolCallResult::failure("invalid executionId".into());
     let suggestion = super::tool_next_suggestion("execution_status", &result);

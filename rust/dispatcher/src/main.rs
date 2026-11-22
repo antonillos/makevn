@@ -681,7 +681,7 @@ fn validate_command(
             Ok(CommandValidation::Valid)
         }
         "help" | "init" | "refresh" | "uninstall" | "test" | "coverage" | "coverage-changes" | "jacoco-inspect"
-        | "crap" | "crap-changes" | "docker-up" | "docker-down" | "docker-reset" | "docker-ps" | "docker-stats"
+        | "crap" | "crap-changes" | "docker-up" | "docker-down" | "docker-reset" | "docker-ps" | "docker-stats" | "docker-logs"
         | "docker-ps-required" | "karate-docker-up" | "karate-docker-down" | "karate-docker-reset" | "run-app"
         | "run-app-bg" | "stop-app" | "run" => Ok(CommandValidation::Valid),
         "doctor" => {
@@ -896,7 +896,7 @@ fn is_top_level_command(arg: &OsString) -> bool {
             | "docker-down"
             | "docker-reset"
             | "docker-ps"
-            | "docker-stats"
+            | "docker-stats" | "docker-logs"
             | "docker-ps-required"
             | "karate-docker-up"
             | "karate-docker-down"
@@ -927,6 +927,7 @@ fn command_option_takes_value(arg: &OsString) -> bool {
             | "--compose"
             | "--compose-file"
             | "--module"
+            | "--service"
     )
 }
 
@@ -938,6 +939,9 @@ fn strip_frontend_tail_flag(
     command: &OsString,
     trailing_args: Vec<OsString>,
 ) -> Result<(Vec<OsString>, bool), String> {
+    if command == "docker-logs" {
+        return Ok((trailing_args, false));
+    }
     let mut forwarded_args = Vec::with_capacity(trailing_args.len());
     let mut tail = false;
     let mut forwarding_passthrough_args = false;

@@ -31,6 +31,7 @@ Usage:
   makevn [--repo PATH] docker-ps-required [--tail] [--compose boot|karate] [--wait-seconds N]
   makevn [--repo PATH] docker-reset [--tail]
   makevn [--repo PATH] docker-stats [--tail]
+  makevn [--repo PATH] docker-logs [--compose boot|karate] [--service NAME]... [--tail N]
   makevn [--repo PATH] docker-up [--tail]
   makevn [--repo PATH] doctor [--compact] [--reset-config]
   makevn [--repo PATH] format [--apply] [-- EXTRA_MAVEN_ARGS...]
@@ -125,7 +126,7 @@ print_command_intro() {
 
 makevn_cli_is_top_level_command() {
   case "$1" in
-    help|doctor|init|uninstall|profile|compile|test-compile|compile-tests|validate|package|clean|build|test|verify-ut|verify-ut-coverage|verify-it|verify-it-coverage|verify|test-impact-preview|test-impact-init|verify-changes-preview|verify-changes|coverage|jacoco-inspect|coverage-changes|crap|crap-changes|pr-verify|format|checkstyle|docker-up|docker-down|docker-reset|docker-ps|docker-stats|docker-ps-required|karate-docker-up|karate-docker-down|karate-docker-reset|karate-test|karate-all|run-app|run-app-bg|stop-app|run|jdk|mutation)
+    help|doctor|init|uninstall|profile|compile|test-compile|compile-tests|validate|package|clean|build|test|verify-ut|verify-ut-coverage|verify-it|verify-it-coverage|verify|test-impact-preview|test-impact-init|verify-changes-preview|verify-changes|coverage|jacoco-inspect|coverage-changes|crap|crap-changes|pr-verify|format|checkstyle|docker-up|docker-down|docker-reset|docker-ps|docker-stats|docker-logs|docker-ps-required|karate-docker-up|karate-docker-down|karate-docker-reset|karate-test|karate-all|run-app|run-app-bg|stop-app|run|jdk|mutation)
       return 0
       ;;
   esac
@@ -134,7 +135,7 @@ makevn_cli_is_top_level_command() {
 
 makevn_cli_option_takes_value() {
   case "$1" in
-    --name|--threshold|--overall-threshold|--max-warnings|--jacoco-xml|--base|--tag|--compose|--module)
+    --name|--threshold|--overall-threshold|--max-warnings|--jacoco-xml|--base|--tag|--compose|--module|--service)
       return 0
       ;;
   esac
@@ -418,6 +419,9 @@ case "${COMMAND}" in
     ;;
   docker-ps)
     cmd_docker_ps "${REPO_ROOT}" "$@"
+    ;;
+  docker-logs)
+    cmd_docker_logs "${REPO_ROOT}" "$@"
     ;;
   docker-stats)
     cmd_docker_stats "${REPO_ROOT}" "$@"
