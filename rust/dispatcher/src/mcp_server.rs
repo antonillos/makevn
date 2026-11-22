@@ -166,13 +166,19 @@ pub(crate) fn standard_tool_result(result: &ToolCallResult, params: &Value) -> V
         structured["graph"] = graph_result["graph"].clone();
         structured["untrustedData"]["output"] = graph_result["text"].clone();
     }
+    attach_doctor_snapshot(&mut structured, tool, result);
+    json!({"content": [{"type": "text", "text": structured.to_string()}],
+        "structuredContent": structured, "isError": failed})
+}
+
+fn attach_doctor_snapshot(structured: &mut Value, tool: &str, result: &ToolCallResult) {
     if let Some(snapshot) = &result.doctor_snapshot {
         structured["interactive_setup"] = snapshot["interactive_setup"].clone();
         structured["suggested_next_step"] = snapshot["suggested_next_step"].clone();
         if let Some(mvnd) = snapshot.get("mvnd") {
             structured["mvnd"] = mvnd.clone();
         }
-        if failed && tool == "doctor_configure" && snapshot["errorCode"] == crate::mcp_doctor::STALE_SETUP_TOKEN {
+        if result.exit_code != 0 && tool == "doctor_configure" && snapshot["errorCode"] == crate::mcp_doctor::STALE_SETUP_TOKEN {
             structured["errorCode"] = json!(crate::mcp_doctor::STALE_SETUP_TOKEN);
             structured["message"] = json!("Doctor setup changed before the answers could be saved.");
             structured["interactive_setup"]["setupToken"] = Value::Null;
@@ -185,8 +191,6 @@ pub(crate) fn standard_tool_result(result: &ToolCallResult, params: &Value) -> V
             });
         }
     }
-    json!({"content": [{"type": "text", "text": structured.to_string()}],
-        "structuredContent": structured, "isError": failed})
 }
 
 fn attach_docker_logs(result: &mut Value, tool: &str, output: &str) {
