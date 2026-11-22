@@ -76,21 +76,23 @@ for service in ${services}; do
     continue
   fi
 
-  state="$(docker inspect -f '{{.State.Status}}' "${cid}" 2>/dev/null || printf 'unknown')"
-  health="$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "${cid}" 2>/dev/null || printf 'unknown')"
-  exit_code="$(docker inspect -f '{{.State.ExitCode}}' "${cid}" 2>/dev/null || printf 'unknown')"
+  while IFS= read -r cid; do
+    state="$(docker inspect -f '{{.State.Status}}' "${cid}" 2>/dev/null || printf 'unknown')"
+    health="$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "${cid}" 2>/dev/null || printf 'unknown')"
+    exit_code="$(docker inspect -f '{{.State.ExitCode}}' "${cid}" 2>/dev/null || printf 'unknown')"
 
-  if [[ "${state}" != "running" || ("${health}" != "none" && "${health}" != "healthy") ]]; then
-    has_errors=true
-    diagnostics+=("${service}: state=${state} health=${health} exit_code=${exit_code}")
-    if logs="$(docker logs --tail 40 "${cid}" 2>&1)"; then
-      diagnostics+=("${service} recent logs (up to 40 lines):" "${logs:-<empty>}")
-    else
-      diagnostics+=("${service} logs unavailable: ${logs:-unknown error}")
+    if [[ "${state}" != "running" || ("${health}" != "none" && "${health}" != "healthy") ]]; then
+      has_errors=true
+      diagnostics+=("${service}: state=${state} health=${health} exit_code=${exit_code}")
+      if logs="$(docker logs --tail 40 "${cid}" 2>&1)"; then
+        diagnostics+=("${service} recent logs (up to 40 lines):" "${logs:-<empty>}")
+      else
+        diagnostics+=("${service} logs unavailable: ${logs:-unknown error}")
+      fi
     fi
-  fi
 
-  rows+=("${service}|${state}|${health}|${cid:0:12}")
+    rows+=("${service}|${state}|${health}|${cid:0:12}")
+  done <<< "${cid}"
 done
 
 if [[ "${has_errors}" == "true" ]]; then
