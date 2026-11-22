@@ -105,7 +105,7 @@ print_doctor() {
   done < <(python3 "${MAKEVN_LIBEXEC_DIR}/common/doctor_summary.py" "${MAKEVN_DOCTOR_TEST_PROCESSES}" "${MAKEVN_DOCTOR_BIND_MOUNTS}")
   makevn_print_doctor_init_recommendation
 
-  if [[ "${MAKEVN_DOCTOR_REPO_SUPPORT_STATUS}" == supported ]]; then
+  if [[ "${MAKEVN_DOCTOR_REPO_SUPPORT_STATUS}" == supported && -n "${MAKEVN_MVND_STATUS:-}" ]]; then
     makevn_print_item "MAKEVN_USE_MVND" "${MAKEVN_MVND_PREFERENCE}"
     makevn_print_item "Maven Daemon for named MCP tests" "${MAKEVN_MVND_STATUS}"
     case "${MAKEVN_MVND_STATUS}" in
