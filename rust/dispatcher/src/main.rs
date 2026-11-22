@@ -1070,12 +1070,29 @@ fn frontend_loader_is_available() -> bool {
     )
 }
 
+fn is_docker_logs_json(invocation: &BackendInvocation) -> bool {
+    invocation.args.first().is_some_and(|arg| arg == "docker-logs")
+        && invocation.args.iter().any(|arg| arg == "--json")
+}
+
 fn dispatch_backend_invocations(
     backend_path: &Path,
     current_exe: &Path,
     install_root: &Path,
     backend_invocations: Vec<BackendInvocation>,
 ) -> Result<i32, String> {
+    if let [invocation] = backend_invocations.as_slice() {
+        if is_docker_logs_json(invocation) {
+            let mut command = process::Command::new("bash");
+            command.arg(backend_path).args(&invocation.args);
+            command.env("MAKEVN_BIN_PATH", current_exe);
+            command.env("MAKEVN_INSTALL_ROOT", install_root);
+            command.env("MAKEVN_FRONTEND", "rust");
+            command.env("MAKEVN_FRONTEND_VERSION", makevn_version());
+            command.env("MAKEVN_VERSION", makevn_version());
+            return run_backend_command(command, backend_path);
+        }
+    }
     let mut last_exit_code = 0;
     let started_at = Instant::now();
     let mut completed_summaries: Vec<CommandSummary> = Vec::new();

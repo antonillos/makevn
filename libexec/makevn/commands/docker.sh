@@ -317,6 +317,11 @@ cmd_docker_logs() {
   local -a services=()
   shift
   while [[ $# -gt 0 ]]; do
+    if [[ "$1" == --json ]]; then
+      services+=(--json)
+      shift
+      continue
+    fi
     [[ $# -ge 2 ]] || makevn_die "Missing value for $1"
     case "$1" in
       --compose) compose_kind="$2" ;;

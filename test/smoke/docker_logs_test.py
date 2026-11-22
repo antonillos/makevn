@@ -92,6 +92,23 @@ class DockerLogsTest(unittest.TestCase):
         self.assertIn("[truncated]", output.getvalue())
         self.assertLess(len(output.getvalue()), 263000)
 
+    def test_json_preserves_partial_results_on_read_error(self):
+        args = self.args()
+        args.json = True
+        output = io.StringIO()
+        responses = [SimpleNamespace(returncode=1, stdout="", stderr="read failed"),
+                     SimpleNamespace(returncode=0, stdout="", stderr="")]
+        with patch.object(LOGS, "run", side_effect=responses), contextlib.redirect_stdout(output):
+            self.assertEqual(LOGS.show_logs(args, ["app", "db"],
+                                           [record(), record(replica="2")]), 1)
+        snapshot = json.loads(output.getvalue())
+        self.assertEqual(snapshot["missingServices"], ["db"])
+        failed, empty = snapshot["containers"]
+        self.assertEqual(failed["readStatus"], "error")
+        self.assertEqual(failed["error"], "read failed")
+        self.assertEqual(empty["readStatus"], "empty")
+        self.assertEqual(empty["logs"], [])
+
     def test_no_containers_does_not_suggest_logs(self):
         output = io.StringIO()
         with contextlib.redirect_stdout(output):
@@ -165,12 +182,15 @@ elif args[0] == "logs":
                     logs = request(str(mcp), {"jsonrpc": "2.0", "id": 2, "method": "tools/call",
                         "params": {"name": "docker_logs", "arguments": query}})["result"]["structuredContent"]
                     self.assertEqual(logs["exitCode"], 0, logs)
-                    self.assertIn("specific application failure", logs["untrustedData"]["output"])
+                    snapshot = logs["untrustedData"]["dockerLogs"]
+                    self.assertEqual(snapshot["containers"][0]["logs"], ["specific application failure"])
+                    self.assertEqual(snapshot["containers"][0]["state"], "exited")
+                    self.assertEqual(snapshot["containers"][0]["readStatus"], "ok")
                 cli = subprocess.run([str(binary), "--repo", str(repo), "docker-logs",
-                                      "--compose-file", str(compose), "--service", "app", "--tail", "50"],
+                                      "--compose-file", str(compose), "--service", "app", "--tail", "50", "--json"],
                                      env=env, capture_output=True, text=True)
                 self.assertEqual(cli.returncode, 0, cli.stdout + cli.stderr)
-                self.assertIn("specific application failure", cli.stdout)
+                self.assertEqual(json.loads(cli.stdout)["containers"], snapshot["containers"])
 
 
 if __name__ == "__main__":
