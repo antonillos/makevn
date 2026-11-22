@@ -660,7 +660,7 @@ makevn_doctor_interactive_setup_status() {
   MAKEVN_DOCTOR_PROFILES_PENDING=false
   [[ -z "${MAKEVN_DOCTOR_JAVA_CANDIDATES:-}" ]] || MAKEVN_DOCTOR_INTERACTIVE_REQUIRED=true
   [[ "${MAKEVN_DOCTOR_REPO_SUPPORT_STATUS:-supported}" != unsupported ]] || return 0
-  if [[ "${MAKEVN_MVND_STATUS}" == confirmation && "${MAKEVN_MCP_INSPECTION:-}" == 1 ]]; then
+  if [[ "${MAKEVN_MVND_STATUS:-}" == confirmation && "${MAKEVN_MCP_INSPECTION:-}" == 1 ]]; then
     MAKEVN_DOCTOR_MVND_PENDING=true
     MAKEVN_DOCTOR_INTERACTIVE_REQUIRED=true
   fi
