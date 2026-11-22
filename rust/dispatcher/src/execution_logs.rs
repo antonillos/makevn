@@ -55,11 +55,13 @@ pub fn schema() -> Value {
     json!({"type":"object", "required":["step","streams"], "properties":{
         "step":{"type":"integer"},
         "streams":{"type":"array", "items":{"type":"object",
-            "required":["stream","lines","readStatus","truncated","error"], "properties":{
+            "required":["stream","lines","readStatus","truncated","truncatedBeforeFilter","truncatedByTail","error"], "properties":{
                 "stream":{"enum":["stdout","stderr","supervisor","maven"]},
                 "lines":{"type":"array","items":{"type":"string"}},
                 "readStatus":{"enum":["ok","empty","no_matches","missing","error"]},
-                "truncated":{"type":"boolean"},
+                "truncated":{"type":"boolean","description":"True when either truncation flag is true."},
+                "truncatedBeforeFilter":{"type":"boolean","description":"Older content was outside the 16 KiB window searched."},
+                "truncatedByTail":{"type":"boolean","description":"More lines matched inside the search window than tail returned."},
                 "error":{"type":["string","null"]}
             }
         }}
@@ -128,12 +130,19 @@ fn open_stream(directory: &File, name: &str) -> io::Result<File> {
     Ok(file)
 }
 
+struct StreamSnapshot {
+    lines: Vec<String>,
+    status: &'static str,
+    clipped: bool,
+    limited: bool,
+}
+
 fn read_stream(
     directory: &File,
     name: &str,
     tail: usize,
     contains: Option<&str>,
-) -> io::Result<(Vec<String>, &'static str, bool)> {
+) -> io::Result<StreamSnapshot> {
     let mut file = open_stream(directory, name)?;
     let end = file.metadata()?.len();
     let start = end.saturating_sub(STREAM_BYTES);
@@ -151,14 +160,14 @@ fn select_lines(
     clipped: bool,
     tail: usize,
     contains: Option<&str>,
-) -> (Vec<String>, &'static str, bool) {
+) -> StreamSnapshot {
     let output = String::from_utf8_lossy(bytes);
     let mut matched = output
         .lines()
         .rev()
         .filter(|line| contains.is_none_or(|needle| line.contains(needle)));
     let mut lines: Vec<_> = matched.by_ref().take(tail).map(str::to_owned).collect();
-    let truncated = clipped || matched.next().is_some();
+    let limited = matched.next().is_some();
     lines.reverse();
     let status = match (empty_file, lines.is_empty()) {
         (true, _) => "empty",
@@ -166,7 +175,12 @@ fn select_lines(
         (_, true) => "empty",
         _ => "ok",
     };
-    (lines, status, truncated)
+    StreamSnapshot {
+        lines,
+        status,
+        clipped,
+        limited,
+    }
 }
 
 fn discard_partial_line(bytes: &[u8], clipped: bool) -> &[u8] {
@@ -180,13 +194,22 @@ fn discard_partial_line(bytes: &[u8], clipped: bool) -> &[u8] {
     }
 }
 
-fn stream_result(stream: &str, result: io::Result<(Vec<String>, &'static str, bool)>) -> Value {
-    let (lines, status, truncated, error) = match result {
-        Ok((lines, status, truncated)) => (lines, status, truncated, None),
-        Err(error) if error.kind() == io::ErrorKind::NotFound => (vec![], "missing", false, None),
-        Err(error) => (vec![], "error", false, Some(error.to_string())),
+fn stream_result(stream: &str, result: io::Result<StreamSnapshot>) -> Value {
+    let (lines, status, clipped, limited, error) = match result {
+        Ok(snapshot) => (
+            snapshot.lines,
+            snapshot.status,
+            snapshot.clipped,
+            snapshot.limited,
+            None,
+        ),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {
+            (vec![], "missing", false, false, None)
+        }
+        Err(error) => (vec![], "error", false, false, Some(error.to_string())),
     };
-    json!({"stream":stream,"lines":lines,"readStatus":status,"truncated":truncated,"error":error})
+    json!({"stream":stream,"lines":lines,"readStatus":status,"truncated":clipped || limited,
+        "truncatedBeforeFilter":clipped,"truncatedByTail":limited,"error":error})
 }
 
 pub fn cli(args: Vec<OsString>) -> Result<(), String> {

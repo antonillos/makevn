@@ -91,6 +91,19 @@ fn snapshot_filters_and_bounds_each_stream_without_following_symlinks() {
     .unwrap();
     assert_eq!(logs["streams"][0]["lines"], json!(["ERROR last"]));
     assert_eq!(logs["streams"][0]["truncated"], true);
+    assert_eq!(logs["streams"][0]["truncatedBeforeFilter"], true);
+    assert_eq!(logs["streams"][0]["truncatedByTail"], true);
+    let wide = read(
+        &store,
+        &record,
+        &json!({"step":1,"tail":400,"contains":"ERROR"}),
+    )
+    .unwrap();
+    assert_eq!(wide["streams"][0]["truncatedBeforeFilter"], true);
+    assert_eq!(wide["streams"][0]["truncatedByTail"], false);
+    let tail_only = read(&store, &record, &json!({"step":1,"tail":1})).unwrap();
+    assert_eq!(tail_only["streams"][3]["truncatedBeforeFilter"], false);
+    assert_eq!(tail_only["streams"][3]["truncatedByTail"], true);
     assert_eq!(logs["streams"][1]["readStatus"], "empty");
     assert_eq!(logs["streams"][2]["readStatus"], "error");
     assert_eq!(logs["streams"][3]["stream"], "maven");
