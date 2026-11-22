@@ -17,6 +17,11 @@ fn cli_accepts_help_and_validates_snapshot_options() {
         cli_options(&["--cursor".into(), "token".into()]).unwrap(),
         json!({"cursor":"token"})
     );
+    let snapshot_options = ["--stream", "maven", "--paginate", "--tail", "50"].map(OsString::from);
+    assert_eq!(
+        cli_options(&snapshot_options).unwrap(),
+        json!({"stream":"maven","paginate":true,"tail":50})
+    );
     for flags in [["--tail", "bad"], ["--step", "bad"], ["--unknown", "1"]] {
         assert!(cli_options(&flags.map(OsString::from)).is_err());
     }
@@ -98,7 +103,14 @@ fn snapshot_filters_and_bounds_each_stream_without_following_symlinks() {
     assert_eq!(logs["streams"][0]["truncated"], true);
     assert_eq!(logs["streams"][0]["truncatedBeforeFilter"], true);
     assert_eq!(logs["streams"][0]["truncatedByTail"], true);
-    let cursor = &logs["streams"][0]["nextCursor"];
+    assert!(logs["streams"][0]["nextCursor"].is_null());
+    let paged = read(
+        &store, &record,
+        &json!({"step":1,"tail":1,"contains":"ERROR","stream":"stdout","paginate":true}),
+    ).unwrap();
+    assert_eq!(paged["streams"].as_array().unwrap().len(), 1);
+    let cursor = &paged["streams"][0]["nextCursor"];
+    assert!(read(&store, &record, &json!({"step":1,"stream":"stderr","cursor":cursor})).is_err());
     let arguments = json!({"step":1,"tail":1,"contains":"ERROR","cursor":cursor});
     let previous = read(&store, &record, &arguments).unwrap();
     assert_eq!(previous["streams"].as_array().unwrap().len(), 1);
@@ -106,6 +118,8 @@ fn snapshot_filters_and_bounds_each_stream_without_following_symlinks() {
     assert_eq!(previous["streams"][0]["lines"], json!(["ERROR first"]));
     assert!(read(&store, &record, &json!({"step":2,"cursor":cursor})).is_err());
     assert!(read(&store, &record, &json!({"cursor":"invalid"})).is_err());
+    assert!(read(&store, &record, &json!({"stream":"unknown"})).is_err());
+    assert!(read(&store, &record, &json!({"paginate":"true"})).is_err());
     let wide = read(
         &store,
         &record,
@@ -144,6 +158,8 @@ fn cursor_reaches_matches_before_an_empty_page_and_ignores_appends() {
     fs::write(&path, format!("ERROR first\r\nERROR second\r\n{middle}")).unwrap();
     let directory = File::open(&root).unwrap();
     let mut query = PageQuery {
+        stream: None,
+        paginate: true,
         execution: "example",
         step: 0,
         tail: 1,

@@ -10,7 +10,7 @@ use serde_json::{json, Value};
 use crate::mcp_execution::{ExecutionRecord, ExecutionStore};
 
 const STREAM_BYTES: u64 = 16 * 1024;
-const HELP: &str = "Usage: makevn execution-logs ID [--step N] [--tail N] [--contains TEXT] [--cursor TOKEN]\nRead bounded JSON logs from an execution recorded by MakeVN MCP.";
+const HELP: &str = "Usage: makevn execution-logs ID [--step N] [--tail N] [--contains TEXT] [--stream NAME] [--paginate] [--cursor TOKEN]\nRead bounded JSON logs from an execution recorded by MakeVN MCP.";
 
 pub fn input_schema() -> Value {
     json!({"type":"object", "required":["executionId"], "additionalProperties":false,
@@ -19,6 +19,8 @@ pub fn input_schema() -> Value {
         "step":{"type":"integer", "minimum":0, "maximum":u32::MAX, "default":0},
         "tail":{"type":"integer", "minimum":1, "maximum":1000, "default":100},
         "contains":{"type":"string", "description":"Case-sensitive literal filter within the current page."},
+        "stream":{"type":"string", "enum":STREAMS, "description":"Read just this stream. Omit to read all streams."},
+        "paginate":{"type":"boolean", "default":false, "description":"Opt in to backward pagination. Leave false for a bounded diagnostic snapshot."},
         "cursor":{"type":"string", "maxLength":256, "description":"Pass a stream’s nextCursor to read its preceding page. Keep the same executionId, step and contains."}
     }})
 }
@@ -64,7 +66,7 @@ pub fn schema() -> Value {
                 "truncated":{"type":"boolean","description":"True when either truncation flag is true."},
                 "truncatedBeforeFilter":{"type":"boolean","description":"Older content was outside the 16 KiB window searched for this page."},
                 "truncatedByTail":{"type":"boolean","description":"More lines matched inside the search window than tail returned."},
-                "nextCursor":{"type":["string","null"],"description":"Continue backward for this stream, even if readStatus is no_matches. Null means no continuation is available."},
+                "nextCursor":{"type":["string","null"],"description":"Continue backward for this stream, even if readStatus is no_matches. Null means pagination was not requested or there are no older pages."},
                 "error":{"type":["string","null"]}
             }
         }}
@@ -81,11 +83,25 @@ pub fn read(
     let step = integer(args, "step", 0, 0, u32::MAX.into())?;
     let contains = args["contains"].as_str();
     let cursor = args.get("cursor").map(Cursor::parse).transpose()?;
+    let stream = args
+        .get("stream")
+        .map(|value| {
+            STREAMS.iter().position(|name| value.as_str() == Some(*name))
+                .ok_or("stream must be stdout, stderr, supervisor, or maven")
+        })
+        .transpose()?;
+    let paginate = args
+        .get("paginate")
+        .map(|value| value.as_bool().ok_or("paginate must be a boolean"))
+        .transpose()?
+        .unwrap_or(false);
     let query = PageQuery {
         execution: &record.execution_id,
         step,
         tail,
         contains,
+        stream,
+        paginate,
         cursor,
     };
     let streams = query.read(&store.root)?;
@@ -145,6 +161,8 @@ struct PageQuery<'a> {
     step: u64,
     tail: usize,
     contains: Option<&'a str>,
+    stream: Option<usize>,
+    paginate: bool,
     cursor: Option<Cursor>,
 }
 
@@ -152,12 +170,13 @@ impl PageQuery<'_> {
     fn read(&self, root: &std::path::Path) -> Result<Vec<Value>, String> {
         let indexes = match &self.cursor {
             Some(Cursor(id, step, index, ..))
-                if id == self.execution && *step == self.step && *index < STREAMS.len() =>
+                if id == self.execution && *step == self.step && *index < STREAMS.len()
+                    && self.stream.is_none_or(|stream| stream == *index) =>
             {
                 *index..*index + 1
             }
-            Some(_) => return Err("Cursor does not match this execution or step".into()),
-            None => 0..STREAMS.len(),
+            Some(_) => return Err("Cursor does not match this execution, step, or stream".into()),
+            None => self.stream.map_or(0..STREAMS.len(), |stream| stream..stream + 1),
         };
         let directory = OpenOptions::new()
             .read(true)
@@ -187,6 +206,9 @@ impl PageQuery<'_> {
         let (end, partial_end) = self.page_end(identity, metadata.len())?;
         let (start, bytes) = read_window(&mut file, end)?;
         let mut snapshot = select_page(&bytes, start, partial_end, self.tail, self.contains);
+        if !self.paginate && self.cursor.is_none() {
+            return Ok(snapshot);
+        }
         snapshot.cursor = snapshot.next.map(|(offset, partial)| {
             serde_json::to_string(&Cursor(
                 self.execution.into(),
@@ -347,10 +369,13 @@ fn print_snapshot(store: &ExecutionStore, id: &str, args: &Value) -> Result<(), 
 
 fn cli_options(options: &[OsString]) -> Result<Value, String> {
     let mut args = json!({});
-    for pair in options.chunks(2) {
-        let [flag, value] = pair else {
-            return Err(HELP.into());
-        };
+    let mut options = options.iter();
+    while let Some(flag) = options.next() {
+        if flag == "--paginate" {
+            args["paginate"] = json!(true);
+            continue;
+        }
+        let value = options.next().ok_or(HELP)?;
         let value = value.to_str().ok_or("option values must be UTF-8")?;
         match flag.to_str() {
             Some("--step") => {
@@ -360,6 +385,7 @@ fn cli_options(options: &[OsString]) -> Result<Value, String> {
                 args["tail"] = json!(value.parse::<u64>().map_err(|_| "invalid tail")?)
             }
             Some("--contains") => args["contains"] = json!(value),
+            Some("--stream") => args["stream"] = json!(value),
             Some("--cursor") => args["cursor"] = json!(value),
             _ => return Err(HELP.into()),
         }

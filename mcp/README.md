@@ -216,19 +216,21 @@ Read `structuredContent.untrustedData.executionLogs` in MCP and
 stdout, stderr, supervisor and Maven. The Maven stream contains the actual build
 and test output captured for that step, including any application output Maven
 emits. Older executions and steps without a Maven capture report `missing`.
-The first call reads each stream's most recent 16 KiB, applies the optional
+By default, one call reads a snapshot. Select a single stream with `stream`
+(CLI `--stream NAME`) or omit it for all streams. Each selected stream's most
+recent 16 KiB is read before applying the optional
 case-sensitive literal `contains` filter, then returns up to `tail` lines (default
 100, range 1–1000). Within a page, lines are in chronological order.
 `truncatedBeforeFilter` flags older bytes outside the page window.
 `truncatedByTail` flags additional matches within the window. `truncated`
 combines both flags.
 
-To read older lines, pass a stream's `nextCursor` as `cursor` (CLI
+For an explicit historical read, start with `paginate: true` (CLI
+`--paginate`). Pass a stream's `nextCursor` as `cursor` (CLI
 `--cursor TOKEN`, quoted as one argument). Keep the same execution ID, step and
-filter. A continuation returns only that stream and resumes before the lines
-already returned, even if newer lines have been appended. Follow a non-null
-cursor even when the page reports `no_matches`; with a null cursor, there are
-no more pages to request. Lines larger than the byte window may be skipped.
+filter. A snapshot returns a null cursor even when truncated. A continuation returns only that stream and resumes before the lines
+already returned, even if newer lines have been appended. For a historical read, a non-null cursor can advance past a `no_matches`
+page. Stop when the requested evidence is found or the cursor is null. Lines larger than the byte window may be skipped.
 If a capture is replaced or truncated past the cursor, start a new query.
 
 `missing` means a capture is absent, `empty` means the page has no readable
