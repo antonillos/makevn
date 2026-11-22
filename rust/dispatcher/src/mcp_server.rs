@@ -160,7 +160,6 @@ fn attach_docker_logs(result: &mut Value, tool: &str, output: &str) {
     let Some(first_line) = output.lines().next() else { return };
     if let Ok(snapshot) = serde_json::from_str::<Value>(first_line) {
         result["untrustedData"]["dockerLogs"] = snapshot;
-        result["untrustedData"]["output"] = json!("");
     }
 }
 

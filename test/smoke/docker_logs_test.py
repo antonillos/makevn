@@ -183,6 +183,7 @@ elif args[0] == "logs":
                         "params": {"name": "docker_logs", "arguments": query}})["result"]["structuredContent"]
                     self.assertEqual(logs["exitCode"], 0, logs)
                     snapshot = logs["untrustedData"]["dockerLogs"]
+                    self.assertEqual(json.loads(logs["untrustedData"]["output"]), snapshot)
                     self.assertEqual(snapshot["containers"][0]["logs"], ["specific application failure"])
                     self.assertEqual(snapshot["containers"][0]["state"], "exited")
                     self.assertEqual(snapshot["containers"][0]["readStatus"], "ok")
