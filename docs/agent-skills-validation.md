@@ -14,6 +14,27 @@ client version, scope and exact outcome. Do not label disk checks as model tests
 4. Implicit selection: use the requests below in fresh sessions without naming a
    skill. Record selected skills, prerequisite decisions and stated evidence.
 
+## MCP guidance and call order
+
+Inspect MCP `tools/list` to verify that each tool description names the base
+skill and the applicable specialty. Composite and parallel workflows refer to
+the specialties of their planned steps. This catalogs guidance for clients;
+the client still decides whether it can load a skill.
+
+To evaluate the guidance in OpenCode, use a fresh session per request and a
+disposable fixture with permissions and prerequisites ready. Start with a named
+test, a changed-code preview and a Compose log diagnosis. Use the ordinary user
+request without naming a skill or prescribing a tool. Record the model and the
+ordered `skill` and MakeVN MCP calls. Expect `makevn` before the first MakeVN
+call, including `doctor`, and the applicable specialty before the first tool
+for that workflow (`makevn-test` for `test` or `verify_changes_preview`,
+`makevn-docker` for `docker_logs`). For workflows with multiple specialties,
+record the skills needed by each step before submitting the workflow.
+
+Record missing skills, failed argument validation and retries through the first
+valid workflow call. An available skill, a skill loaded after the call, or a
+catalog-only check does not count as a successful call-order evaluation.
+
 Use the client's official commands/API for its installed version. OpenCode API
 and Codex `skills/list` can inspect discovery without a model run. With OpenCode
 2.0.32, initialize plugins/agents in the same persistent server (for example

@@ -1374,6 +1374,36 @@ fn configure_cannot_run_inside_a_workflow_before_user_answers() {
 }
 
 #[test]
+fn catalog_advertises_skills_before_tool_arguments() {
+    let skills = [
+        ("doctor", "the makevn skill"),
+        ("execution_logs", "the makevn skill"),
+        ("test", "the makevn and makevn-test skills"),
+        ("verify_changes_preview", "the makevn and makevn-test skills"),
+        ("verify_changes", "the makevn and makevn-test skills"),
+        ("format", "the makevn and makevn-quality skills"),
+        ("coverage_changes", "the makevn, makevn-test and makevn-quality skills"),
+        ("docker_ps_required", "the makevn and makevn-docker skills"),
+        ("docker_logs", "the makevn and makevn-docker skills"),
+        ("karate_docker_up", "the makevn and makevn-docker skills"),
+        ("karate_test", "the makevn and makevn-karate skills"),
+        ("composite_run", "the makevn skill and the specialties advertised by the planned step tools"),
+        ("parallel_run", "the makevn skill and the specialties advertised by the planned step tools"),
+    ];
+    let catalog = super::tools_list();
+    assert!(catalog.iter().all(|tool| tool["description"]
+        .as_str()
+        .unwrap()
+        .starts_with("Before calling, load ")));
+    for (name, expected) in skills {
+        let tool = catalog.iter().find(|tool| tool["name"] == name).unwrap();
+        let description = tool["description"].as_str().unwrap();
+        assert!(description.starts_with(&format!("Before calling, load {expected} if available. ")), "{name}: {description}");
+        assert_eq!(description.matches("Before calling, load ").count(), 1);
+    }
+}
+
+#[test]
 fn docker_interface_policy_covers_tools_and_workflow_results() {
     let names = [
         "docker_up",
