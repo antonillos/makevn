@@ -195,7 +195,7 @@ with tempfile.TemporaryDirectory(prefix="makevn-doctor-mvnd-") as directory:
     mvnd.write_text("#!/bin/sh\nexit 0\n")
     mvnd.chmod(0o755)
     with patch.dict(os.environ, {"PATH": f"{mvnd.parent}{os.pathsep}{os.environ['PATH']}"}):
-        for name, enabled in [("enable", True), ("decline", False), ("wrapper", True)]:
+        for name, enabled in [("unpinned", None), ("decline", False), ("wrapper", True)]:
             repo = root / name
             repo.mkdir()
             (repo / "pom.xml").write_text("<project/>")
@@ -206,10 +206,18 @@ with tempfile.TemporaryDirectory(prefix="makevn-doctor-mvnd-") as directory:
                 wrapper = repo / "mvnw"
                 wrapper.write_text("#!/bin/sh\nexit 0\n")
                 wrapper.chmod(0o755)
+            if name == "decline":
+                (repo / ".tool-versions").write_text("maven 3.9.11\n")
             call(repo, "init")
             doctor = call(repo, "doctor")
+            if enabled is None:
+                assert "use_mvnd" not in questions(doctor), doctor
+                assert doctor["mvnd"]["executor"] == "mvnd", doctor
+                continue
             assert questions(doctor)["use_mvnd"]["options"] == [True, False], doctor
+            assert doctor["mvnd"]["executor"] == "maven", doctor
             completed = configure(repo, doctor, {"use_mvnd": enabled})
+            assert completed["mvnd"]["executor"] == ("mvnd" if enabled else "maven"), completed
             assert "use_mvnd" not in questions(completed), completed
             setting = "TRUE" if enabled else "FALSE"
             assert f"MAKEVN_USE_MVND={setting}" in (repo / ".makevn/config").read_text()
