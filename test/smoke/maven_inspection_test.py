@@ -32,6 +32,18 @@ def pom(rule="[3.9.14,3.10.0)"):
 
 
 class MavenInspectionTests(unittest.TestCase):
+    def test_mvnd_is_checked_against_enforcer_range(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "pom.xml").write_text(pom("[3.9.16,4)"))
+            executable = root / "mvnd"
+            executable.write_text("#!/bin/sh\necho 'Apache Maven 3.9.16'\n")
+            executable.chmod(0o755)
+            self.assertEqual(inspection.main(["check", str(executable), str(root), str(root), ""]), 0)
+            executable.write_text("#!/bin/sh\necho 'Apache Maven 3.9.11'\n")
+            with contextlib.redirect_stderr(io.StringIO()):
+                self.assertEqual(inspection.main(["check", str(executable), str(root), str(root), ""]), 1)
+
     def test_command_properties_control_version_rule_in_reactor(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

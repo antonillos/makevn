@@ -634,6 +634,7 @@ makevn_collect_doctor_snapshot() {
     MAKEVN_DOCTOR_TEST_PROCESSES="$(python3 "${MAKEVN_LIBEXEC_DIR}/common/test_processes.py" doctor "${repo_root}")"
   fi
   makevn_doctor_refresh_setup_answers "${repo_root}"
+  makevn_mvnd_status "${repo_root}" "${maven_base_path}"
   makevn_doctor_interactive_setup_status
   makevn_doctor_interaction_status
   makevn_doctor_collect_setup "${repo_root}"
@@ -653,11 +654,16 @@ makevn_doctor_refresh_setup_answers() {
 # Classify pending decisions independently of the client interaction method.
 makevn_doctor_interactive_setup_status() {
   MAKEVN_DOCTOR_INTERACTIVE_REQUIRED=false
+  MAKEVN_DOCTOR_MVND_PENDING=false
   MAKEVN_DOCTOR_HEALTH_PENDING=false
   MAKEVN_DOCTOR_LOCAL_PENDING=false
   MAKEVN_DOCTOR_PROFILES_PENDING=false
   [[ -z "${MAKEVN_DOCTOR_JAVA_CANDIDATES:-}" ]] || MAKEVN_DOCTOR_INTERACTIVE_REQUIRED=true
   [[ "${MAKEVN_DOCTOR_REPO_SUPPORT_STATUS:-supported}" != unsupported ]] || return 0
+  if [[ "${MAKEVN_MVND_STATUS:-}" == confirmation && "${MAKEVN_MCP_INSPECTION:-}" == 1 ]]; then
+    MAKEVN_DOCTOR_MVND_PENDING=true
+    MAKEVN_DOCTOR_INTERACTIVE_REQUIRED=true
+  fi
   if [[ "${MAKEVN_DOCTOR_KARATE_APP_PROFILES:-}" == 'unresolved (explicit selection required)' && -z "${SPRING_PROFILES_ACTIVE+x}" && -z "${MAKEVN_KARATE_APP_PROFILES:-}" ]]; then
     MAKEVN_DOCTOR_INTERACTIVE_REQUIRED=true
     MAKEVN_DOCTOR_PROFILES_PENDING=true
@@ -688,8 +694,11 @@ makevn_doctor_collect_setup() {
       [[ -n "${health}" ]] || health="$(makevn_doctor_suggest_app_health_url "${maven_base_path}")"
     fi
   fi
-  local details
-  details="$(python3 "${MAKEVN_LIBEXEC_DIR}/common/doctor_setup.py" questions "${repo_root}" "${boot}" "${e2e}" "${health}" "${MAKEVN_DOCTOR_KARATE_APP_PROFILES_CANDIDATES}" "${MAKEVN_DOCTOR_LOCAL_PENDING}" "${MAKEVN_DOCTOR_HEALTH_PENDING}" "${MAKEVN_DOCTOR_PROFILES_PENDING}" "${MAKEVN_DOCTOR_JAVA_CANDIDATES:-}" "${MAKEVN_DOCTOR_JAVA_RECOMMENDED:-}" "${MAKEVN_DOCTOR_JAVA_DETAILS:-}")"
+  local details mvnd_pin="${MAKEVN_MVND_PIN:-}"
+  if [[ "${mvnd_pin}" == "Maven Wrapper (mvnw)" ]]; then
+    mvnd_pin="${mvnd_pin}: ${MAKEVN_DOCTOR_CODE_MAVEN_DIAGNOSTIC}"
+  fi
+  details="$(python3 "${MAKEVN_LIBEXEC_DIR}/common/doctor_setup.py" questions "${repo_root}" "${boot}" "${e2e}" "${health}" "${MAKEVN_DOCTOR_KARATE_APP_PROFILES_CANDIDATES}" "${MAKEVN_DOCTOR_LOCAL_PENDING}" "${MAKEVN_DOCTOR_HEALTH_PENDING}" "${MAKEVN_DOCTOR_PROFILES_PENDING}" "${MAKEVN_DOCTOR_JAVA_CANDIDATES:-}" "${MAKEVN_DOCTOR_JAVA_RECOMMENDED:-}" "${MAKEVN_DOCTOR_JAVA_DETAILS:-}" "${MAKEVN_DOCTOR_MVND_PENDING:-false}" "${mvnd_pin}")"
   details="${details#\{}"
   MAKEVN_DOCTOR_SETUP_DETAILS="${details%\}}"
 }
@@ -708,6 +717,18 @@ makevn_doctor_interaction_status() {
 
 makevn_print_doctor_json() {
   printf '{\n'
+  # The setup helper reserves status 3 for stale or concurrently changed setup.
+  if [[ "${1:-}" == 3 ]]; then
+    printf '  "errorCode": "STALE_SETUP_TOKEN",\n'
+  fi
+  local mvnd_warning="" mvnd_available=true mvnd_executor=maven
+  [[ "${MAKEVN_MVND_STATUS:-missing}" != missing ]] || mvnd_available=false
+  [[ "${MAKEVN_MVND_STATUS:-}" != mvnd ]] || mvnd_executor=mvnd
+  if [[ "${MAKEVN_MVND_STATUS:-}" == missing && "${MAKEVN_DOCTOR_REPO_SUPPORT_STATUS}" == supported ]]; then
+    mvnd_warning="mvnd is unavailable on PATH. ${MAKEVN_MVND_INSTALL_HINT}"
+  fi
+  printf '  "mvnd": {"preference": "%s", "status": "%s", "available": %s, "executor": "%s", "warning": "%s"},\n' \
+    "$(makevn_json_escape "${MAKEVN_MVND_PREFERENCE:-automatic}")" "${MAKEVN_MVND_STATUS:-missing}" "${mvnd_available}" "${mvnd_executor}" "$(makevn_json_escape "${mvnd_warning}")"
   printf '  "version": 1,\n'
   printf '  "docker_bind_mounts": %s,\n' "${MAKEVN_DOCTOR_BIND_MOUNTS}"
   printf '  "command": "doctor",\n'

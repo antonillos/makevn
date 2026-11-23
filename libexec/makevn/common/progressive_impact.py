@@ -69,10 +69,25 @@ def mark_non_executable(base, parsed):
         declaration = re.search(r'\bclass\s+' + re.escape(simple) + r'\b[^{};]*?\bextends\s+(\w+)', content)
         test_markers = {'Test', 'ParameterizedTest', 'RepeatedTest', 'TestFactory', 'TestTemplate',
                         'RunWith', 'ExtendWith', 'TestCase'}
+        if (not (test_markers | {'suite', 'Nested'}).intersection(item['names']) and
+                not re.search(r'\b(?:extends|implements)\b', content) and
+                re.search(r'\bpublic\s+static\s+void\s+main\s*\(', content) and
+                only_non_test_annotations(content)):
+            item['executable'] = False
+            continue
         superclass = item['class'].rsplit('.', 1)[0] + '.' + declaration.group(1) if declaration else None
         if (simple.startswith('Test') and superclass in production and superclass not in test_classes and
                 not test_markers.intersection(item['names'])):
             item['executable'] = False
+
+
+def only_non_test_annotations(content):
+    if '"""' in content:
+        return False
+    tokens = r'"(?:\\.|[^"\\])*"|\x27(?:\\.|[^\x27\\])*\x27|//[^\n]*|/\*.*?\*/'
+    code = re.sub(tokens, ' ', content, flags=re.DOTALL)
+    annotations = {name.rsplit('.', 1)[-1] for name in re.findall(r'@\s*([\w.]+)', code)}
+    return annotations <= {'SuppressWarnings', 'FunctionalInterface', 'Override', 'Deprecated', 'Serial'}
 
 
 def tests(parsed):
@@ -145,15 +160,16 @@ def baseline(repo, base, java, parsed, paths, reference):
     return previous
 
 
-def consumers(parsed, changed):
+def graph_index(parsed, observations=None):
     from collections import defaultdict, deque
     aliases, edges, production = defaultdict(set), defaultdict(set), set()
+    ambiguous_edges, conservative_edges = set(), set()
     for source, item in parsed.items():
         for alias in item.get('declared', [item['class'].rsplit('.', 1)[-1]]):
             aliases[alias].add(item['class'])
         if reactor.is_source(source, 'main'):
             production.add(item['class'])
-    seeds = set(changed)
+    seeds = set()
     for item in parsed.values():
         name = item['class']
         if (impact.DYNAMIC | UNCERTAIN).intersection(item['names']):
@@ -161,11 +177,36 @@ def consumers(parsed, changed):
         for reference in item['names']:
             for target in aliases[reference]:
                 edges[target].add(name)
+                if len(aliases[reference]) > 1:
+                    ambiguous_edges.add((target, name))
                 # Without Java attribution, an implementation may be consumed
                 # through an interface/base class. Retain connected production
                 # types in both directions rather than missing that dispatch.
                 if name in production and target in production:
                     edges[name].add(target)
+                    conservative_edges.add((name, target))
+    observed = observation_index(observations or {})
+    return {'edges': edges, 'seeds': seeds, 'observed': observed,
+            'ambiguous': {name for name, targets in aliases.items() if len(targets) > 1},
+            'ambiguous_edges': ambiguous_edges, 'conservative_edges': conservative_edges,
+            'tests': tests(parsed), 'static_counts': {name: len(targets) for name, targets in edges.items()},
+            'observed_counts': {name: len(targets) for name, targets in observed.items()}}
+
+
+def observation_index(observations):
+    from collections import defaultdict
+    observed = defaultdict(set)
+    for test, loaded in observations.items():
+        for name in loaded:
+            observed[name].add(test)
+    return observed
+
+
+def consumers(parsed, changed, index=None):
+    from collections import deque
+    index = index or graph_index(parsed)
+    edges = index['edges']
+    seeds = set(changed) | index['seeds']
     pending, affected = deque(seeds), set(seeds)
     while pending:
         for name in edges[pending.popleft()] - affected:
@@ -185,7 +226,7 @@ def narrow(repo, base, owner, paths, changed_tests, reference, cache=None):
         current = cache['current']
         if owner not in (current['modules'] or ['.']):
             raise ValueError('unknown reactor owner')
-        validate_test_inventory(base, owner)
+        inventory_rules = validate_test_inventory(base, owner)
         allowed = {source for source in paths if source.endswith('.java') and
                    ('/src/main/java/' in '/' + source or '/src/test/java/' in '/' + source)}
         from changes_scope import non_verification_path
@@ -225,7 +266,9 @@ def narrow(repo, base, owner, paths, changed_tests, reference, cache=None):
                     raise ValueError('changed method has dynamic/global effects')
                 changed.add(after['class'])
             parsed[relative]['names'] = sorted(set(before['names']) | set(after['names']))
-        affected = consumers(parsed, changed | changed_test_classes)
+        if 'graph_index' not in cache:
+            cache['graph_index'] = graph_index(parsed)
+        affected = consumers(parsed, changed | changed_test_classes, cache['graph_index'])
         selected = changed_test_classes | {reactor.identity(current, owner, name) for name in changed_tests} | (affected & tests(parsed))
         observations, skipped = {}, set()
         try:
@@ -236,16 +279,22 @@ def narrow(repo, base, owner, paths, changed_tests, reference, cache=None):
         except (OSError, ValueError, KeyError, TypeError):
             pass
         selected.update(skipped)
-        selected.update(name for name, loaded in observations.items() if affected.intersection(loaded))
+        if 'observed_index' not in cache:
+            cache['observed_index'] = observation_index(observations)
+        for name in affected:
+            selected.update(cache['observed_index'].get(name, ()))
         if current['kind'] == KIND and (impact.state(repo) / 'map.json').exists():
             with contextlib.redirect_stderr(io.StringIO()):
                 selected.update(impact.narrow(repo, base, owner, paths, changed_tests) or set())
-        selected = reactor.local_names(current, selected, owner)
+        from test_inventory import eligible
+        selected = eligible(reactor.local_names(current, selected, owner), inventory_rules)
         if not selected:
             raise ValueError('no statically known tests; complete suite retained')
         print('Test impact: static dependencies plus additive runtime observations; ' +
               str(len(selected)) + '/' + str(len(reactor.local_names(current, tests(parsed), owner))) +
               ' classes selected for ' + owner, file=sys.stderr)
+        from impact_explanation import explain_tests
+        explain_tests(current, owner, selected, changed_test_classes, affected, skipped, cache['observed_index'])
         return selected
     except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError, ET.ParseError) as error:
         if collect_fallbacks:
@@ -359,9 +408,34 @@ def init_diagnostic(base, error):
 
 if __name__ == '__main__':
     try:
-        command, repo, base, java = sys.argv[1:]
+        command, repo, base, java = sys.argv[1:5]
+        options = sys.argv[5:]
         value = initialize(Path(repo).resolve(), Path(base).resolve(), Path(java), command in {'init', 'init-summary'})
-        if command == 'init-summary':
+        if '--graph' in options:
+            import impact_graph
+            status = 'none'
+            try:
+                stored = load(Path(repo).resolve())
+                if reusable(stored, value):
+                    value['observations'] = stored['observations']
+                    status = 'compatible'
+                else:
+                    status = 'incompatible'
+            except (OSError, ValueError, KeyError, TypeError):
+                if path(Path(repo).resolve()).exists():
+                    status = 'unavailable'
+            focus = options[options.index('--focus') + 1] if '--focus' in options else None
+            try:
+                graph = impact_graph.describe(value, graph_index(value['facts'], value['observations']), focus, status,
+                                              int(options[options.index('--depth') + 1]) if '--depth' in options else 3,
+                                              int(options[options.index('--limit') + 1]) if '--limit' in options else 10,
+                                              '--all' in options)
+            except ValueError as error:
+                print(str(error), file=sys.stderr)
+                sys.exit(1)
+            rendered = impact_graph.render(graph)
+            print(json.dumps({'text': rendered, 'graph': graph}, sort_keys=True) if '--graph-json' in options else rendered)
+        elif command == 'init-summary':
             summary = 'static map updated · ' + str(len(tests(value['facts']))) + ' test classes'
             if value['observations']:
                 summary += ' · ' + str(len(value['observations'])) + ' observed classes retained'

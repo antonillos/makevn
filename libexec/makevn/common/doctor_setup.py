@@ -13,12 +13,17 @@ import tempfile
 
 SETTINGS = {
     "code_java_home": "MAKEVN_CODE_JAVA_HOME",
+    "use_mvnd": "MAKEVN_USE_MVND",
     "boot_compose": "MAKEVN_COMPOSE_FILE",
     "e2e_compose": "MAKEVN_E2E_COMPOSE_FILE",
     "local_containers": "MAKEVN_LOCAL_CONTAINERS",
     "app_health_url": "MAKEVN_APP_HEALTH_URL",
     "karate_app_profiles": "MAKEVN_KARATE_APP_PROFILES",
 }
+
+
+class StaleSetupToken(ValueError):
+    """The configuration changed since the setup questions were collected."""
 
 
 def valid_health_url(value):
@@ -51,7 +56,7 @@ def _replace_config(path, updates, original):
             output.write(content)
         os.chmod(name, path.stat().st_mode & 0o777)
         if path.read_bytes() != original:
-            raise ValueError("Configuration changed; run doctor and ask the updated questions.")
+            raise StaleSetupToken("Configuration changed; run doctor and ask the updated questions.")
         os.replace(name, path)
     finally:
         if os.path.exists(name):
@@ -93,6 +98,12 @@ def collect_questions(arguments):
         questions.append(question("code_java_home", "Which compatible JDK should this repository use? "
                                   f"The lowest compatible major is recommended.\n{java_details}", "choice",
                                   java_homes.splitlines(), suggested=java_recommended))
+    if arguments[11:12] == ["true"]:
+        questions.append(question("use_mvnd",
+                                  "Use Maven Daemon by default for MCP formatting and named tests in this worktree? "
+                                  f"Project Maven selection: {arguments[12]}. The daemon uses its bundled Maven. "
+                                  "Project Enforcer rules still apply.",
+                                  "boolean", [True, False]))
     path = Path(repo) / ".makevn/config"
     config = path.read_bytes() if path.is_file() else b""
     return {"questions": questions, "setupToken": setup_token(Path(repo), questions, config), "available": True}
@@ -110,7 +121,7 @@ def answer_updates(setup, answers):
         if item["type"] == "boolean":
             if type(value) is not bool:
                 raise ValueError(f"{identifier} requires a boolean answer.")
-            value = "TRUE" if value else ""
+            value = "TRUE" if value else ("FALSE" if identifier == "use_mvnd" else "")
         else:
             if not isinstance(value, str) or "\0" in value or "\n" in value or "\r" in value:
                 raise ValueError(f"{identifier} requires a single-line string answer.")
@@ -137,7 +148,7 @@ def apply_answers(repo, request, snapshot):
     setup = snapshot["interactive_setup"]
     token = setup_token(Path(repo), setup["questions"], original)
     if request.get("setupToken") != token or setup["setupToken"] != token:
-        raise ValueError("Doctor configuration or questions changed; ask the updated questions before applying answers.")
+        raise StaleSetupToken("Doctor configuration or questions changed; ask the updated questions before applying answers.")
     updates = answer_updates(setup, request.get("answers"))
     write_config(path, updates, original)
 
@@ -165,4 +176,4 @@ if __name__ == "__main__":
         main()
     except (ValueError, OSError, KeyError) as error:
         print(f"Doctor configuration unchanged: {error}", file=sys.stderr)
-        sys.exit(2)
+        sys.exit(3 if isinstance(error, StaleSetupToken) else 2)

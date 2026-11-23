@@ -9,6 +9,7 @@ pub(super) fn command_help(
         "jdk current" => Some(("makevn [--repo PATH] jdk current", "Show the selected JDK installation.", &[])),
         "jdk list" => Some(("makevn [--repo PATH] jdk list", "List discovered JDK installations.", &[])),
         "crap install-analyzer" => Some(("makevn [--repo PATH] crap install-analyzer", "Download and verify the pinned crap4java release.", &[])),
+        "execution-logs" => Some(("makevn execution-logs ID [--step N] [--tail N] [--contains TEXT] [--stream NAME] [--paginate] [--cursor TOKEN]", "Read captured logs from a recorded MCP execution as JSON.", &[])),
         "execution-cleanup" => Some(("makevn execution-cleanup [--retention-days DAYS] [--dry-run]", "Remove expired execution records and owned logs. Outputs JSON counts and candidate paths.", &["--retention-days DAYS  Retention period (MAKEVN_RETENTION_DAYS or 3 days)", "--dry-run  List candidates without deleting files"])),
         "help" => Some(("makevn help", "Print the full makevn help.", &[])),
         "agent" => Some(("makevn agent <install|status> <opencode|codex> [--scope global|project] | makevn agent upgrade [--scope global|project]", "Register MCP and six workflow skills, upgrade the existing integration (project before global), or inspect registration without changes. Installation does not prove a running client loaded a skill.", &["--scope global|project  Select configuration and skills scope; status requires it."])),
@@ -24,15 +25,15 @@ pub(super) fn command_help(
         "package" => maven_command_help("package", "Package the project without running tests.", false),
         "build" => maven_command_help("build", "Run the full Maven build.", false),
         "clean" => maven_command_help("clean", "Archive manifest-owned legacy focused JaCoCo HTML and clean Maven build output.", true),
-        "test" => Some(("makevn [--repo PATH] [--compact] test [--tail] [--name TEST]... [--fast] [-- EXTRA_MAVEN_ARGS...]", "Run tests with optional filtering.", &["--tail                              Start in interactive log tail mode", "--compact                           Use compact non-interactive output", "--name TEST                         Test class name or comma-separated names", "--fast                              Skip compilation when sources have not changed"])),
+        "test" => Some(("makevn [--repo PATH] [--compact] test [--tail] [--name TEST]... [--fast] [--mvnd] [-- EXTRA_MAVEN_ARGS...]", "Run tests with optional filtering.", &["--tail                              Start in interactive log tail mode", "--compact                           Use compact non-interactive output", "--name TEST                         Test class name or comma-separated names", "--fast                              Skip compilation when sources have not changed"])),
         "verify-ut" => maven_command_help("verify-ut", "Run unit-test-only verification.", false),
         "verify-ut-coverage" => maven_command_help("verify-ut-coverage", "Run unit-test-only verification with coverage.", false),
         "verify-it" => maven_command_help("verify-it", "Run integration-test-only verification.", false),
         "verify-it-coverage" => maven_command_help("verify-it-coverage", "Run integration-test-only verification with coverage.", false),
         "verify" => maven_command_help("verify", "Run full combined verification.", false),
-        "test-impact-preview" => Some(("makevn [--repo PATH] test-impact-preview", "Preview static dependencies without writes, Maven or tests.", &[])),
+        "test-impact-preview" => Some(("makevn [--repo PATH] test-impact-preview [--graph [--focus CLASS [--depth N] [--limit N] [--all]]]", "Preview static dependencies without writes, Maven or tests.", &["--graph  Show the impact graph", "--focus CLASS  Explore a class in the graph"])),
         "test-impact-init" => Some(("makevn [--repo PATH] test-impact-init [--isolated]", "Create a static map without Maven/tests; normal executions add runtime observations. Use --isolated explicitly for complete-suite verification and isolated replays.", &["--isolated  Explicit expensive full-suite and isolated-class capture"])),
-        "verify-changes-preview" => Some(("makevn [--repo PATH] verify-changes-preview [--base REF] [--focused|--exhaustive] [--record-test-impact] [--defer-global-coverage]", "Preview changed-code scope without Maven; focused by default. For user-requested faster local feedback, explain --focused limitations and use the same mode in preview and execution. A large preparation reactor does not mean its test suites run.", &["--base REF  Explicit local comparison reference; no fetch or PR lookup", "--focused  Preview focused owner suites and selected tests (default)", "--exhaustive  Preview exhaustive changed-code verification", "--defer-global-coverage  Explicitly defer property-based JaCoCo failures; changed-code metrics and full CI gates remain separate", "--record-test-impact  Preview full-suite and isolated per-test capture (expensive, JDK 17+, single module)"])),
+        "verify-changes-preview" => Some(("makevn [--repo PATH] verify-changes-preview [--diagram] [--explain] [--base REF] [--focused|--exhaustive] [--record-test-impact] [--defer-global-coverage]", "Preview changed-code scope without Maven; focused by default. For user-requested faster local feedback, explain --focused limitations and use the same mode in preview and execution. A large preparation reactor does not mean its test suites run.", &["--diagram  Write a compact Markdown/Mermaid scope summary for a PR", "--explain  Include selection reasons", "--base REF  Explicit local comparison reference; no fetch or PR lookup", "--focused  Preview focused owner suites and selected tests (default)", "--exhaustive  Preview exhaustive changed-code verification", "--defer-global-coverage  Explicitly defer property-based JaCoCo failures; changed-code metrics and full CI gates remain separate", "--record-test-impact  Preview full-suite and isolated per-test capture (expensive, JDK 17+, single module)"])),
         "verify-changes" => maven_command_help("verify-changes", "Verify changed-code scope; focused by default, --exhaustive is explicit. --focused packages without UT/IT then verifies complete selected module/dependency suites together with -am in multimodule reactors; single-module projects retain selected tests or full owner suites; not a full integration/coverage gate. Use the same mode as preview and report its scope.", false),
         "coverage" => Some(("makevn [--repo PATH] coverage [--threshold PCT]", "Check the latest aggregate coverage report.", &["--threshold  Required coverage percentage"])),
         "jacoco-inspect" => Some(("makevn [--repo PATH] jacoco-inspect", "Inspect the effective JaCoCo model using Maven; no tests run.", &[])),
@@ -40,12 +41,13 @@ pub(super) fn command_help(
         "crap" => Some(("makevn [--repo PATH] crap [install-analyzer] [--jacoco-xml PATH] [--threshold SCORE] [--max-warnings COUNT]", "Calculate Java CRAP metrics from existing JaCoCo XML coverage.", &["install-analyzer  Download and verify the pinned crap4java release", "--jacoco-xml      Use a specific existing JaCoCo XML report", "--threshold       CRAP score warning threshold (default: 8)", "--max-warnings    Fail when the warning count exceeds this ratchet"])),
         "crap-changes" => Some(("makevn [--repo PATH] crap-changes [--base REF]", "Show CRAP for changed production Java methods using existing JaCoCo coverage.", &["--base  Override the detected base branch/ref"])),
         "pr-verify" => maven_command_help("pr-verify", "Run a local PR-style verification flow.", false),
-        "format" => Some(("makevn [--repo PATH] [--compact] format [--tail] [--apply] [-- EXTRA_MAVEN_ARGS...]", "Check or apply code formatting.", &["--tail     Start in interactive log tail mode", "--compact  Use compact non-interactive output", "--apply    Apply formatting changes"])),
+        "format" => Some(("makevn [--repo PATH] [--compact] format [--tail] [--apply] [--mvnd] [-- EXTRA_MAVEN_ARGS...]", "Check or apply code formatting.", &["--tail     Start in interactive log tail mode", "--compact  Use compact non-interactive output", "--apply    Apply formatting changes", "--mvnd  Use Maven Daemon"])),
         "checkstyle" => Some(("makevn [--repo PATH] [--compact] checkstyle [--tail] [--module MODULE] [--verbose] [-- EXTRA_MAVEN_ARGS...]", "Run Checkstyle code style checks.", &["--tail     Start in interactive log tail mode", "--compact  Use compact non-interactive output", "--module   Maven module to check", "--verbose  Print detailed output"])),
         "docker-up" => tail_command_help("docker-up", "Start boot Docker services while preserving volumes."),
         "docker-down" => tail_command_help("docker-down", "Stop boot Docker services while preserving volumes."),
         "docker-reset" => Some(("makevn [--repo PATH] docker-reset [--tail]", "Delete the selected boot Compose volumes and restart its services. Requires explicit reset authorization; never prunes global volumes.", &["--tail  Start in interactive log tail mode"])),
         "docker-ps" => tail_command_help("docker-ps", "List Docker containers; --compose-file none selects engine-wide diagnostics without Compose, not readiness or repository ownership."),
+        "docker-logs" => Some(("makevn [--repo PATH] docker-logs [--compose boot|karate] [--service NAME]... [--tail N] [--since TIME] [--contains TEXT] [--json]", "Read logs from selected Compose services, including stopped replicas. Defaults to boot and 100 lines per container (1..1000).", &["--compose boot|karate  Select stack", "--service NAME  Repeat to select services", "--tail N  Lines per container, 1..1000", "--json  Emit a structured log snapshot"])),
         "docker-stats" => tail_command_help("docker-stats", "Show Docker CPU and memory stats."),
         "docker-ps-required" => Some(("makevn [--repo PATH] docker-ps-required [--tail] [--compose boot|karate] [--wait-seconds N]", "Validate required Docker services are running and healthy.", &["--tail          Start in interactive log tail mode", "--compose       Compose profile: boot or karate", "--compose-file PATH|none  Override Compose for this execution only", "--wait-seconds  Seconds to wait for services"])),
         "karate-docker-up" => tail_command_help("karate-docker-up", "Start Karate E2E Docker services while preserving volumes."),
@@ -170,6 +172,7 @@ const COMMANDS: &[&str] = &[
     "docker-reset",
     "docker-ps",
     "docker-stats",
+    "docker-logs",
     "docker-ps-required",
     "karate-docker-up",
     "karate-docker-down",
@@ -183,6 +186,7 @@ const COMMANDS: &[&str] = &[
     "jdk",
     "mutation",
     "execution-cleanup",
+    "execution-logs",
     "help",
 ];
 const GLOBAL_FLAGS: &[&str] = &[
@@ -252,10 +256,11 @@ fn rows(output: &mut String, heading: &str, entries: &[&str], literal: &str, col
         return;
     }
     output.push_str(&format!("\n{}\n", paint(heading, "1", color)));
-    let entries: Vec<_> = entries
+    let mut entries: Vec<_> = entries
         .iter()
         .map(|entry| entry.split_once("  ").unwrap_or((entry, "")))
         .collect();
+    entries.sort_by_key(|(name, _)| name.trim_start_matches('-'));
     let width = entries
         .iter()
         .map(|(name, _)| name.len())
@@ -346,7 +351,7 @@ fn render_command(command: &str, color: bool) -> Option<String> {
 }
 
 fn global_flags(command: &str) -> &[&str] {
-    if command.starts_with("agent") || command == "execution-cleanup" {
+    if command.starts_with("agent") || matches!(command, "execution-cleanup" | "execution-logs") {
         &GLOBAL_FLAGS[3..4]
     } else {
         &GLOBAL_FLAGS[..4]

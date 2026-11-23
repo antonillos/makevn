@@ -104,6 +104,18 @@ class ReactorProgressiveTests(unittest.TestCase):
         self.assertIn('core::example.FeatureTest', progressive.load(self.repo)['facts'][
             'core/src/test/java/example/FeatureTest.java']['class'])
 
+    def test_graph_preview_is_read_only_and_reports_ambiguous_identity(self):
+        command = [sys.executable, str(ROOT / 'libexec/makevn/common/progressive_impact.py'),
+                   'preview', str(self.repo), str(self.repo), str(self.java), '--graph', '--graph-json']
+        output = subprocess.run(command + ['--focus', 'core::example.Owner'], capture_output=True, text=True, check=True)
+        result = json.loads(output.stdout)
+        self.assertEqual(result['graph']['focus'], 'core::example.Owner')
+        self.assertIn('core', result['graph']['modules'])
+        self.assertFalse((self.repo / '.makevn').exists())
+        ambiguous = subprocess.run(command + ['--focus', 'example.FeatureTest'], capture_output=True, text=True)
+        self.assertNotEqual(ambiguous.returncode, 0)
+        self.assertIn('Ambiguous class', ambiguous.stderr)
+
     def test_additional_roots_preview_requires_complete_consumer_suites(self):
         pom = self.repo / 'core/pom.xml'
         plugin = ('<build><plugins><plugin><groupId>org.codehaus.mojo</groupId>'
@@ -342,9 +354,23 @@ class ReactorProgressiveTests(unittest.TestCase):
         self.assertIn('target/generated-sources/api',
                       [item['root'] for item in plan['unresolved_roots']])
 
+    def test_explanation_preserves_effective_reactor_plan(self):
+        self.edit()
+        expected = changes_scope.verification_plan(self.repo, self.repo, 'HEAD', [self.source])
+        output = io.StringIO()
+        with patch.dict(os.environ, MAKEVN_CHANGES_EXPLAIN='true', MAKEVN_BACKEND_DETAIL_OUT=''):
+            with contextlib.redirect_stderr(output):
+                actual = changes_scope.verification_plan(self.repo, self.repo, 'HEAD', [self.source])
+        self.assertEqual(actual, expected)
+        self.assertIn('changed input: ' + self.source, output.getvalue())
+        self.assertIn('static reachability', output.getvalue())
+        self.assertIn('complete affected and upstream dependency module suites', output.getvalue())
+
     def test_core_edit_selects_consumers_without_unrelated_tests(self):
         self.edit()
-        self.assertEqual(self.plan(), 'app\texample.FeatureTest\ncore\texample.FeatureTest\nservice\texample.FeatureTest')
+        with patch.object(progressive, 'graph_index', wraps=progressive.graph_index) as build:
+            self.assertEqual(self.plan(), 'app\texample.FeatureTest\ncore\texample.FeatureTest\nservice\texample.FeatureTest')
+            self.assertEqual(build.call_count, 1)
         self.assertFalse((self.repo / '.makevn').exists())
 
     def test_prepared_plan_ignores_empty_changed_test_list(self):

@@ -8,6 +8,65 @@ use std::process;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 #[test]
+fn docker_logs_validates_selectors_and_forwards_repeated_services() {
+    let spec = TOOL_SPECS.iter().find(|spec| spec.name == "docker_logs").unwrap();
+    let mut flags = Vec::new();
+    push_tool_flags(&mut flags, spec, &serde_json::from_value(json!({
+        "compose": "karate", "services": ["app", "db"], "tail": 50
+    })).unwrap()).unwrap();
+    assert_eq!(flags, ["--compose", "karate", "--service", "app", "--service", "db", "--tail", "50"]);
+    for arguments in [
+        json!({"service": "app", "services": ["db"]}),
+        json!({"services": []}), json!({"services": [1]}),
+        json!({"tail": 0}), json!({"tail": 1001}), json!({"tail": 1.5}),
+    ] {
+        assert!(push_tool_flags(&mut Vec::new(), spec,
+            &serde_json::from_value(arguments).unwrap()).is_err());
+    }
+}
+
+#[test]
+fn docker_logs_result_preserves_structured_evidence_and_renders_each_container() {
+    let snapshot = json!({
+        "compose": "karate", "since": "5m", "contains": "ERROR",
+        "containers": [
+            {"service": "app", "container": "app-1", "state": "exited", "health": null,
+             "exitCode": 1, "startedAt": "2026-11-22T18:00:00Z", "readStatus": "ok",
+             "truncated": true, "logs": ["ERROR first", "ERROR second"], "error": null},
+            {"service": "db", "container": "db-1", "state": "running", "health": "healthy",
+             "exitCode": 0, "startedAt": "2026-11-22T18:00:00Z", "readStatus": "error",
+             "truncated": false, "logs": [], "error": "log driver unavailable"}
+        ],
+        "missingServices": ["worker"], "truncated": true
+    });
+    let result = super::ToolCallResult {
+        output: snapshot.to_string(),
+        exit_code: 0,
+        duration_ms: 1,
+        doctor_snapshot: None,
+        next_suggestion: None,
+    };
+    let response = super::standard_tool_result(&result, &json!({"name": "docker_logs"}));
+    let structured = &response["structuredContent"];
+    let data = &structured["untrustedData"];
+    assert_eq!(data["dockerLogs"], snapshot);
+    assert_eq!(data["output"].as_str().unwrap(), [
+        r#"Compose: "karate" | since: "5m" | contains: "ERROR""#,
+        r#"["app"/"app-1"] state="exited" health=null exitCode=1 startedAt="2026-11-22T18:00:00Z" readStatus="ok" truncated=true"#,
+        "ERROR first",
+        "ERROR second",
+        r#"["db"/"db-1"] state="running" health="healthy" exitCode=0 startedAt="2026-11-22T18:00:00Z" readStatus="error" truncated=false"#,
+        "log driver unavailable",
+        r#"Missing services: ["worker"] | truncated: true"#,
+    ].join("\n"));
+    assert_eq!(
+        serde_json::from_str::<serde_json::Value>(response["content"][0]["text"].as_str().unwrap())
+            .unwrap(),
+        *structured,
+    );
+}
+
+#[test]
 fn invalid_execution_status_explains_how_to_find_the_id() {
     let result = super::ToolCallResult::failure("invalid executionId".into());
     let suggestion = super::tool_next_suggestion("execution_status", &result);
@@ -692,6 +751,37 @@ fn unknown_tools_are_protocol_errors_but_execution_errors_are_tool_results() {
 }
 
 #[test]
+fn unknown_readiness_argument_returns_actionable_validation_error() {
+    let mut params = json!({
+        "name": "docker_ps_required",
+        "arguments": {"repo": "/repo", "compose": "boot", "wait-seconds": 30,
+            "pr": "https://github.com/example/repo/pull/1", "compact": true}
+    });
+    let error = super::validate_call(&params).unwrap_err();
+    let response = super::tool_validation_response(json!(1), &params, error);
+    assert_eq!(response["result"]["isError"], true);
+    let structured = &response["result"]["structuredContent"];
+    assert_eq!(structured["errorCode"], "UNKNOWN_ARGUMENT");
+    assert_eq!(structured["argument"], "compact");
+    assert_eq!(structured["exitCode"], -1);
+    assert_eq!(structured["logPaths"], json!([]));
+    assert_eq!(structured["nextSuggestion"],
+        "Remove the unsupported argument identified in the argument field and retry docker_ps_required with its advertised arguments.");
+    assert_eq!(response["result"]["content"][0]["text"], structured.to_string());
+
+    params["arguments"].as_object_mut().unwrap().remove("compact");
+    assert!(super::validate_call(&params).is_ok());
+
+    params["arguments"]["wait-seconds"] = json!("30");
+    let error = super::validate_call(&params).unwrap_err();
+    let response = super::tool_validation_response(json!(2), &params, error);
+    let structured = &response["result"]["structuredContent"];
+    assert!(structured.get("errorCode").is_none());
+    assert_eq!(structured["untrustedData"]["output"],
+        "argument 'wait-seconds' for docker_ps_required must be number");
+}
+
+#[test]
 fn preview_completion_is_analysis_not_verification_success() {
     for exit_code in [0, 1] {
         let result = super::ToolCallResult {
@@ -1279,7 +1369,37 @@ fn configure_cannot_run_inside_a_workflow_before_user_answers() {
         let params = json!({"name": tool, "arguments": {"steps": [
             {"tool": "doctor_configure", "arguments": {"setupToken": "current", "answers": {"local_containers": false}}}
         ]}});
-        assert!(super::validate_call(&params).unwrap_err().contains("separately"));
+        assert!(String::from(super::validate_call(&params).unwrap_err()).contains("separately"));
+    }
+}
+
+#[test]
+fn catalog_advertises_skills_before_tool_arguments() {
+    let skills = [
+        ("doctor", "the makevn skill"),
+        ("execution_logs", "the makevn skill"),
+        ("test", "the makevn and makevn-test skills"),
+        ("verify_changes_preview", "the makevn and makevn-test skills"),
+        ("verify_changes", "the makevn and makevn-test skills"),
+        ("format", "the makevn and makevn-quality skills"),
+        ("coverage_changes", "the makevn, makevn-test and makevn-quality skills"),
+        ("docker_ps_required", "the makevn and makevn-docker skills"),
+        ("docker_logs", "the makevn and makevn-docker skills"),
+        ("karate_docker_up", "the makevn and makevn-docker skills"),
+        ("karate_test", "the makevn and makevn-karate skills"),
+        ("composite_run", "the makevn skill and the specialties advertised by the planned step tools"),
+        ("parallel_run", "the makevn skill and the specialties advertised by the planned step tools"),
+    ];
+    let catalog = super::tools_list();
+    assert!(catalog.iter().all(|tool| tool["description"]
+        .as_str()
+        .unwrap()
+        .starts_with("Before calling, load ")));
+    for (name, expected) in skills {
+        let tool = catalog.iter().find(|tool| tool["name"] == name).unwrap();
+        let description = tool["description"].as_str().unwrap();
+        assert!(description.starts_with(&format!("Before calling, load {expected} if available. ")), "{name}: {description}");
+        assert_eq!(description.matches("Before calling, load ").count(), 1);
     }
 }
 
@@ -1487,4 +1607,70 @@ fn isolated_capture_is_explicit_and_forwarded_only_on_initialization() {
     let mut args = Vec::new();
     super::push_tool_option(&mut args, "isolated", &json!(true)).unwrap();
     assert_eq!(args, ["--isolated"]);
+}
+
+#[test]
+fn test_impact_graph_options_and_structured_result() {
+    let spec = super::TOOL_SPECS.iter().find(|spec| spec.name == "test_impact_preview").unwrap();
+    assert!(spec.options.iter().any(|option| option.name == "graph"));
+    assert!(spec.options.iter().any(|option| option.name == "focus"));
+    let mut args = Vec::new();
+    super::push_tool_option(&mut args, "graph", &json!(true)).unwrap();
+    super::push_tool_option(&mut args, "focus", &json!("example.Foo")).unwrap();
+    assert_eq!(args, ["--graph", "--graph-json", "--focus", "example.Foo"]);
+    let result = super::ToolCallResult { output: json!({"text":"Graph", "graph":{"nodes":[]}}).to_string(),
+        exit_code: 0, duration_ms: 0, doctor_snapshot: None, next_suggestion: None };
+    let response = super::standard_tool_result(&result, &json!({"name":"test_impact_preview", "arguments":{"graph":true}}));
+    assert_eq!(response["structuredContent"]["graph"]["nodes"], json!([]));
+    assert_eq!(response["structuredContent"]["untrustedData"]["output"], "Graph");
+}
+
+#[test]
+fn graph_preview_preserves_non_graph_and_invalid_outputs() {
+    let params = json!({"arguments":{"graph":true}});
+    assert!(super::graph_preview_result("test", &params, "{}").is_none());
+    assert!(super::graph_preview_result("test_impact_preview", &json!({}), "{}").is_none());
+    for output in ["invalid JSON", "{}"] {
+        assert!(super::graph_preview_result("test_impact_preview", &params, output).is_none());
+    }
+}
+
+#[test]
+fn graph_display_options_forward_limits_and_all() {
+    let mut args = Vec::new();
+    for (name, value) in [("graph", json!(false)), ("depth", json!(2)),
+        ("limit", json!(50)), ("all", json!(true)), ("unknown", json!(true))] {
+        super::push_tool_option(&mut args, name, &value).unwrap();
+    }
+    assert_eq!(args, ["--depth", "2", "--limit", "50", "--all"]);
+}
+
+#[test]
+fn changed_preview_explanation_is_explicit() {
+    let spec = super::TOOL_SPECS.iter().find(|spec| spec.name == "verify_changes_preview").unwrap();
+    assert!(spec.options.iter().any(|option| option.name == "explain"));
+    let mut args = Vec::new();
+    super::push_tool_option(&mut args, "explain", &json!(false)).unwrap();
+    assert!(args.is_empty());
+    super::push_tool_option(&mut args, "explain", &json!(true)).unwrap();
+    assert_eq!(args, ["--explain"]);
+}
+
+#[test]
+fn pr_diagram_is_preview_only_and_returns_untrusted_markdown() {
+    assert!(super::validate_workflow_step(&json!({"tool":"verify_changes_preview", "arguments":{"diagram":true}})).is_ok());
+    assert!(super::validate_workflow_step(&json!({"tool":"verify_changes", "arguments":{"diagram":true}})).is_err());
+    let mut args = Vec::new();
+    super::push_tool_option(&mut args, "diagram", &json!(false)).unwrap();
+    assert!(args.is_empty());
+    super::push_tool_option(&mut args, "diagram", &json!(true)).unwrap();
+    assert_eq!(args, ["--diagram"]);
+    let markdown = "```mermaid\nflowchart LR\na --> b\n```";
+    let payload = json!({"format":"mermaid", "markdown":markdown, "status":"planned",
+        "changedInputs":1, "selectedModules":1, "groupedModules":0});
+    let result = super::ToolCallResult { output: format!("Preview scope\nMAKEVN_PR_DIAGRAM_JSON={payload}\n"),
+        exit_code: 0, duration_ms: 0, doctor_snapshot: None, next_suggestion: None };
+    let response = super::standard_tool_result(&result, &json!({"name":"verify_changes_preview", "arguments":{"diagram":true}}));
+    assert_eq!(response["structuredContent"]["untrustedData"]["diagram"]["markdown"], markdown);
+    assert_eq!(response["structuredContent"]["untrustedData"]["output"], "Preview scope");
 }

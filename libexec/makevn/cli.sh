@@ -16,55 +16,56 @@ from the terminal without IDE-specific setup. Agents in OpenCode should prefer
 'makevn' commands over editor-specific instructions.
 
 Usage:
-  makevn [--repo PATH] doctor [--compact] [--reset-config]
-  makevn [--repo PATH] [--compact] init [--dry-run] [--force]
-  makevn [--repo PATH] refresh [--dry-run]
-  makevn [--repo PATH] [--compact] uninstall [--dry-run]
-  makevn [--repo PATH] [--compact] profile refresh
-  makevn [--repo PATH] [--compact] compile [-- EXTRA_MAVEN_ARGS...]
-  makevn [--repo PATH] test-compile [-- EXTRA_MAVEN_ARGS...]
-  makevn [--repo PATH] compile-tests [-- EXTRA_MAVEN_ARGS...]
-  makevn [--repo PATH] validate [-- EXTRA_MAVEN_ARGS...]
-  makevn [--repo PATH] package [-- EXTRA_MAVEN_ARGS...]
   makevn [--repo PATH] build [-- EXTRA_MAVEN_ARGS...]
+  makevn [--repo PATH] checkstyle [--module MODULE] [--verbose] [-- EXTRA_MAVEN_ARGS...]
   makevn [--repo PATH] clean [--clean-generated-contract-targets] [-- EXTRA_MAVEN_ARGS...]
-  makevn [--repo PATH] test [--name TEST]... [--fast] [-- EXTRA_MAVEN_ARGS...]
-  makevn [--repo PATH] verify-ut [-- EXTRA_MAVEN_ARGS...]
-  makevn [--repo PATH] verify-ut-coverage [-- EXTRA_MAVEN_ARGS...]
-  makevn [--repo PATH] verify-it [-- EXTRA_MAVEN_ARGS...]
-  makevn [--repo PATH] verify-it-coverage [-- EXTRA_MAVEN_ARGS...]
-  makevn [--repo PATH] verify [-- EXTRA_MAVEN_ARGS...]
-  makevn [--repo PATH] test-impact-preview
-  makevn [--repo PATH] test-impact-init [--isolated]
-  makevn [--repo PATH] verify-changes-preview [--base REF] [--focused|--exhaustive] [--record-test-impact] [--defer-global-coverage]
-  makevn [--repo PATH] verify-changes [--base REF] [--focused|--exhaustive] [--record-test-impact] [--defer-global-coverage] [-- EXTRA_MAVEN_ARGS...]
-  makevn [--repo PATH] jacoco-inspect
+  makevn [--repo PATH] [--compact] compile [-- EXTRA_MAVEN_ARGS...]
+  makevn [--repo PATH] compile-tests [-- EXTRA_MAVEN_ARGS...]
   makevn [--repo PATH] coverage [--threshold PCT]
   makevn [--repo PATH] coverage-changes [--base REF] [--threshold PCT] [--overall-threshold PCT] [--verbose]
   makevn [--repo PATH] crap [--jacoco-xml PATH] [--threshold SCORE] [--max-warnings COUNT]
-  makevn [--repo PATH] crap-changes [--base REF]
   makevn [--repo PATH] crap install-analyzer
-  makevn [--repo PATH] pr-verify [-- EXTRA_MAVEN_ARGS...]
-  makevn [--repo PATH] format [--apply] [-- EXTRA_MAVEN_ARGS...]
-  makevn [--repo PATH] checkstyle [--module MODULE] [--verbose] [-- EXTRA_MAVEN_ARGS...]
-  makevn [--repo PATH] docker-up [--tail]
+  makevn [--repo PATH] crap-changes [--base REF]
   makevn [--repo PATH] docker-down [--tail]
-  makevn [--repo PATH] docker-reset [--tail]
   makevn [--repo PATH] docker-ps [--tail]
-  makevn [--repo PATH] docker-stats [--tail]
   makevn [--repo PATH] docker-ps-required [--tail] [--compose boot|karate] [--wait-seconds N]
-  makevn [--repo PATH] karate-docker-up [--tail]
+  makevn [--repo PATH] docker-reset [--tail]
+  makevn [--repo PATH] docker-stats [--tail]
+  makevn [--repo PATH] docker-logs [--compose boot|karate] [--service NAME]... [--tail N] [--since TIME] [--contains TEXT] [--json]
+  makevn [--repo PATH] docker-up [--tail]
+  makevn [--repo PATH] doctor [--compact] [--reset-config]
+  makevn [--repo PATH] format [--apply] [--mvnd] [-- EXTRA_MAVEN_ARGS...]
+  makevn [--repo PATH] [--compact] init [--dry-run] [--force]
+  makevn [--repo PATH] jacoco-inspect
+  makevn [--repo PATH] jdk current
+  makevn [--repo PATH] jdk list
+  makevn [--repo PATH] karate-all [--tag TAG] [-- EXTRA_MAVEN_ARGS...]
   makevn [--repo PATH] karate-docker-down [--tail]
   makevn [--repo PATH] karate-docker-reset [--tail]
+  makevn [--repo PATH] karate-docker-up [--tail]
   makevn [--repo PATH] karate-test [--tag TAG] [-- EXTRA_MAVEN_ARGS...]
-  makevn [--repo PATH] karate-all [--tag TAG] [-- EXTRA_MAVEN_ARGS...]
+  makevn [--repo PATH] mutation [--module MODULE] [--verbose]
+  makevn [--repo PATH] package [-- EXTRA_MAVEN_ARGS...]
+  makevn [--repo PATH] pr-verify [-- EXTRA_MAVEN_ARGS...]
+  makevn [--repo PATH] [--compact] profile refresh
+  makevn [--repo PATH] refresh [--dry-run]
+  makevn [--repo PATH] run
   makevn [--repo PATH] run-app
   makevn [--repo PATH] run-app-bg
   makevn [--repo PATH] stop-app
-  makevn [--repo PATH] run
-  makevn [--repo PATH] jdk current
-  makevn [--repo PATH] jdk list
-  makevn [--repo PATH] mutation [--module MODULE] [--verbose]
+  makevn [--repo PATH] test [--name TEST]... [--fast] [--mvnd] [-- EXTRA_MAVEN_ARGS...]
+  makevn [--repo PATH] test-compile [-- EXTRA_MAVEN_ARGS...]
+  makevn [--repo PATH] test-impact-init [--isolated]
+  makevn [--repo PATH] test-impact-preview [--graph [--focus CLASS [--depth N] [--limit N] [--all]]]
+  makevn [--repo PATH] [--compact] uninstall [--dry-run]
+  makevn [--repo PATH] validate [-- EXTRA_MAVEN_ARGS...]
+  makevn [--repo PATH] verify [-- EXTRA_MAVEN_ARGS...]
+  makevn [--repo PATH] verify-changes [--base REF] [--focused|--exhaustive] [--record-test-impact] [--defer-global-coverage] [-- EXTRA_MAVEN_ARGS...]
+  makevn [--repo PATH] verify-changes-preview [--diagram] [--explain] [--base REF] [--focused|--exhaustive] [--record-test-impact] [--defer-global-coverage]
+  makevn [--repo PATH] verify-it [-- EXTRA_MAVEN_ARGS...]
+  makevn [--repo PATH] verify-it-coverage [-- EXTRA_MAVEN_ARGS...]
+  makevn [--repo PATH] verify-ut [-- EXTRA_MAVEN_ARGS...]
+  makevn [--repo PATH] verify-ut-coverage [-- EXTRA_MAVEN_ARGS...]
 
 Examples:
   makevn doctor
@@ -125,7 +126,7 @@ print_command_intro() {
 
 makevn_cli_is_top_level_command() {
   case "$1" in
-    help|doctor|init|uninstall|profile|compile|test-compile|compile-tests|validate|package|clean|build|test|verify-ut|verify-ut-coverage|verify-it|verify-it-coverage|verify|test-impact-preview|test-impact-init|verify-changes-preview|verify-changes|coverage|jacoco-inspect|coverage-changes|crap|crap-changes|pr-verify|format|checkstyle|docker-up|docker-down|docker-reset|docker-ps|docker-stats|docker-ps-required|karate-docker-up|karate-docker-down|karate-docker-reset|karate-test|karate-all|run-app|run-app-bg|stop-app|run|jdk|mutation)
+    help|doctor|init|uninstall|profile|compile|test-compile|compile-tests|validate|package|clean|build|test|verify-ut|verify-ut-coverage|verify-it|verify-it-coverage|verify|test-impact-preview|test-impact-init|verify-changes-preview|verify-changes|coverage|jacoco-inspect|coverage-changes|crap|crap-changes|pr-verify|format|checkstyle|docker-up|docker-down|docker-reset|docker-ps|docker-stats|docker-logs|docker-ps-required|karate-docker-up|karate-docker-down|karate-docker-reset|karate-test|karate-all|run-app|run-app-bg|stop-app|run|jdk|mutation)
       return 0
       ;;
   esac
@@ -134,7 +135,7 @@ makevn_cli_is_top_level_command() {
 
 makevn_cli_option_takes_value() {
   case "$1" in
-    --name|--threshold|--overall-threshold|--max-warnings|--jacoco-xml|--base|--tag|--compose|--module)
+    --name|--threshold|--overall-threshold|--max-warnings|--jacoco-xml|--base|--tag|--compose|--module|--service|--since|--contains)
       return 0
       ;;
   esac
@@ -418,6 +419,9 @@ case "${COMMAND}" in
     ;;
   docker-ps)
     cmd_docker_ps "${REPO_ROOT}" "$@"
+    ;;
+  docker-logs)
+    cmd_docker_logs "${REPO_ROOT}" "$@"
     ;;
   docker-stats)
     cmd_docker_stats "${REPO_ROOT}" "$@"

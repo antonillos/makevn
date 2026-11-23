@@ -89,6 +89,10 @@ makevn_parse_test_options() {
         name_args+=("$2")
         shift 2
         ;;
+      --mvnd)
+        use_mvnd=true
+        shift
+        ;;
       --fast)
         fast_mode=true
         shift
@@ -109,11 +113,16 @@ makevn_parse_test_options() {
 
 # Uses the owning command's local option/argument state (Bash dynamic scope).
 makevn_collect_test_names() {
+  local identifier='[[:alpha:]_][[:alnum:]_]*'
+  local method_selector="^${identifier}(\\\$${identifier})*#[[:alpha:]_\$][[:alnum:]_\$]*$"
   for name_arg in "${name_args[@]-}"; do
     IFS=',' read -r -a split_names <<< "${name_arg}"
     for test_name in "${split_names[@]-}"; do
       test_name="$(makevn_trim "${test_name}")"
       [[ -n "${test_name}" ]] || continue
+      if [[ "${test_name}" == *'#'* && ! "${test_name}" =~ ${method_selector} ]]; then
+        makevn_die 'Invalid test selector. Use Class, Class#method, or Class$Nested#method.'
+      fi
       test_names+=("${test_name}")
     done
   done
@@ -125,15 +134,18 @@ makevn_collect_test_names() {
 makevn_run_all_tests() {
   local repo_root="$1"
   local rc=0
+  local started logs_dir_hint
+  started="$(python3 -c 'import time; print(time.time_ns())')"
+  logs_dir_hint="$(makevn_logs_dir "${repo_root}")"
   # Bash 3.2 treats empty arrays as unset under nounset; preserve zero args.
   if makevn_run_maven_goal "${repo_root}" test test test ${extra_args[@]+"${extra_args[@]}"}; then
     rc=0
   else
     rc=$?
   fi
+  python3 "${MAKEVN_LIBEXEC_DIR}/common/test_run_evidence.py" "${repo_root}" '' \
+    "${started}" '' "${logs_dir_hint}/test.log"
   if [[ ${rc} -ne 0 ]]; then
-    local logs_dir_hint
-    logs_dir_hint="$(makevn_logs_dir "${repo_root}")"
     makevn_hint_stale_generated_sources_if_needed "${logs_dir_hint}/test.log"
     makevn_hint_format_failure "${repo_root}" "${logs_dir_hint}/test.log"
   fi
@@ -169,6 +181,7 @@ makevn_run_test_sequence() {
 cmd_test() {
   local repo_root="$1"
   local fast_mode=false
+  local use_mvnd=false
   local name_arg=""
   local test_name=""
   local failed_names=""
@@ -191,6 +204,10 @@ cmd_test() {
     makevn_die "test --fast requires at least one --name"
   fi
 
+  if [[ "${use_mvnd}" == true && ${#test_names[@]} -eq 0 ]]; then
+    makevn_die "test --mvnd requires at least one --name"
+  fi
+
   if [[ ${#test_names[@]} -eq 0 ]]; then
     makevn_run_all_tests "${repo_root}"
     return $?
@@ -202,7 +219,7 @@ cmd_test() {
     else
       makevn_run_selected_test "${repo_root}" "${test_names[0]}" "${fast_mode}"
     fi
-    return 0
+    return $?
   fi
 
   makevn_run_test_sequence "${repo_root}"
@@ -388,6 +405,7 @@ cmd_pr_verify() {
 cmd_format() {
   local repo_root="$1"
   local apply=false
+  local use_daemon=false
   local maven_base_path=""
   local goal=""
   local -a extra_args
@@ -398,6 +416,10 @@ cmd_format() {
     case "$1" in
       --apply)
         apply=true
+        shift
+        ;;
+      --mvnd)
+        use_daemon=true
         shift
         ;;
       --)
@@ -415,11 +437,8 @@ cmd_format() {
   [[ -n "${maven_base_path}" ]] || makevn_die "No Maven project detected in ${repo_root}"
   goal="$(makevn_format_goal_for_project "${repo_root}" "${maven_base_path}" "${apply}")"
 
-  if [[ ${#extra_args[@]} -gt 0 ]]; then
-    makevn_run_maven_goal "${repo_root}" "${goal}" format format "${extra_args[@]}"
-  else
-    makevn_run_maven_goal "${repo_root}" "${goal}" format format
-  fi
+  makevn_run_maven_goal_with_daemon "${use_daemon}" "${repo_root}" "${goal}" format format \
+    ${extra_args[@]+"${extra_args[@]}"}
 }
 
 makevn_format_goal_for_project() {
@@ -711,7 +730,7 @@ makevn_archive_selected_test() {
 
 makevn_test_sequence_summary() {
   local repo_root="$1" total="$2" passed="$3" failed="$4"
-  local summary="Tests: ${total} executed, ${passed} passed, ${failed} failed"
+  local summary="Test selections: ${total} attempted, ${passed} succeeded, ${failed} failed"
   printf '%s\n' "${summary}"
   [[ -n "${MAKEVN_BACKEND_PHASE_DIR:-}" ]] || return 0
   local rc=0

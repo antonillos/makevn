@@ -29,6 +29,21 @@ without Maven, compilation, packaging, tests or container startup. A JDK is used
 only to parse Java syntax. Focused planning also works without initialization and
 never writes a map. It compares changed sources with the Git comparison baseline,
 including removed references, rather than assuming the edited graph is complete.
+
+Use `makevn test-impact-preview --graph` for a module summary, or add
+`--focus com.example.Class` to explore bounded class relationships.
+Use `--depth 2` for two hops (default: 3), `--limit 50` for fifty items per
+category and hop (default: 10), or `--all` to remove output caps within the chosen depth.
+The text view nests classes along a discovered impact path with indentation indicating depth.
+Level labels appear only at the root (`L0`) and the depth boundary. Additional paths are counted as cross-references; MCP retains
+the visible edges and each node’s parent. Ancestors needed to connect displayed
+classes are retained even when a display limit applies.
+These options require a focus; MCP accepts `depth`, `limit`, and `all` as well. In MCP,
+`test_impact_preview` accepts `graph: true` and an optional `focus`, and returns
+the same view with structured graph data. Multimodule identities can be qualified
+as `module::class`. Static relationships are conservative and observed relationships
+are execution-wide loaded-class supersets; neither is an exact call graph. The
+view reports truncation and does not replace the changed-code selection preview.
 When class-map initialization is unavailable, `test-impact-preview` reports the
 reason and whether module-level selection can still be planned. Run
 `verify-changes-preview` to see the affected complete module suites before any
@@ -37,7 +52,18 @@ the impact preview never runs tests.
 
 The static inventory includes Surefire's `Test*`, `*Test`, `*Tests`, and `*TestCase`
 conventions, including annotation-free JUnit 3 classes. Configured Surefire/Failsafe
-class includes/excludes or filter files retain the complete owner suite.
+class filters support one literal configuration per plugin in the inspected parent
+chain. Includes must be a subset of the plugin's conventional default patterns.
+Configurations must be at plugin level; execution-level filters retain the full
+suite because their lifecycle binding is not inferred. Excludes may be literal
+class paths (optionally prefixed by `**/`) or the default
+`**/*$*` nested-class exclusion. Matching exclusions are preserved when constructing
+explicit selectors. Unsupported patterns, filter files, profile filters, merge
+attributes and multiple filter configurations retain complete owner suites.
+Non-default parent plugin inheritance also retains the suite; parent-only filters
+are never applied to a child without proving their effective inheritance.
+Fallback diagnostics identify the POM, profile/execution, plugin and offending
+filter rather than guessing an effective model.
 Filter validation follows the selected owner's Maven parent chain, not sibling
 modules or unrelated aggregators. Published parents are inspected only from the
 local Maven cache; missing or unresolved parent models retain the complete suite
@@ -137,3 +163,59 @@ verify/CI remains required. The subsequent coverage/CRAP commands evaluate the
 changed-code snapshot, not a global gate. This flag defaults to false and is
 rejected with exhaustive mode or record-test-impact. Static initialization executes
 no verification; isolated capture retains its complete-suite prerequisite.
+
+## Explain a changed-code plan
+
+Use `makevn verify-changes-preview --explain` (MCP `verify_changes_preview`
+with `explain: true`) to include reasons from the selection planner in its output.
+The explanation lists changed inputs, conservative static reachability, compatible
+runtime observations, skipped tests retained conservatively, and full-suite fallback
+reasons. Static reasons include dynamic/framework seeds and are not claims of an
+exact call path. In multimodule projects, class candidates do not narrow execution:
+complete affected and upstream dependency suites remain the effective reactor plan.
+No tests are executed by the preview.
+
+## Compare planned and executed selection
+
+The changed-code summary JSON records `selection` per module: effective plan,
+class candidates, fresh executed classes, skipped-only classes, additional classes
+and selected classes without executed evidence. Nested test cases are attributed
+to their outer selected class. Stale XML reports are excluded. A class-level
+comparison is marked unavailable for a complete suite with no finite candidate
+inventory; this does not claim that every suite test executed. Reactor expansion
+from class candidates to complete suites and upstream dependencies is explicit.
+Optional skipped tests remain visible rather than being counted as executed.
+
+The execution revalidates the same merge-base commit after preparation. Standalone
+`main` harnesses without test markers, inheritance or unknown annotations are not
+classified as executable tests merely because their file names end in `Test`.
+
+## Embed the planned scope in a PR
+
+```bash
+makevn verify-changes-preview --base origin/develop --diagram
+```
+
+The CLI writes `.makevn/reports/verify-changes/impact.md` and prints its path.
+Copy its Markdown into the PR description to render a native Mermaid diagram.
+Use the PR destination as the explicit local comparison reference; the preview
+neither fetches nor edits a GitHub PR. It includes committed changes since the
+merge base and current local edits, so use a clean worktree for a published PR.
+The next diagram export replaces the same artifact.
+
+The diagram summarizes changed files → effective plan → modules/test suites.
+It shows at most four module scopes and three file/test examples per scope;
+remaining modules and examples are grouped with counts. These are plan groups,
+not class dependency paths or test execution results. Reactor plans show complete
+suites, including upstream dependencies. Exhaustive mode names its selected scopes
+and separately notes the upstream suites added by Maven `-am` without enumerating
+them. Selecting `.` exhaustively represents the whole Maven project.
+An unresolved focused scope explicitly
+requires an exhaustive preview instead of claiming a selected test set.
+
+MCP `verify_changes_preview` accepts `diagram: true` with the same `base` and mode.
+The response contains `untrustedData.diagram` with `format: "mermaid"`, `markdown`,
+`status`, `changedInputs`, `selectedModules`, and `groupedModules`. MCP returns the
+same Markdown without writing the CLI artifact. Repository-derived diagram labels
+are untrusted data. `--diagram` is only available on the preview; it runs no Maven
+or tests, does not change selection, and does not replace verification or CI.

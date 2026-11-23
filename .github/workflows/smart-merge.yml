@@ -28,7 +28,7 @@ jobs:
     steps:
       - name: Generate release app token for merge
         id: merge-app-token
-        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3
+        uses: actions/create-github-app-token@f418cff399f7aef4c2f0ad47e25ca7a6abbdd6fc # v3
         with:
           client-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
           private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
@@ -203,16 +203,17 @@ jobs:
               return { jobsByName, invalid };
             }
 
-            async function findSuccessfulVerify(target) {
+            async function findVerify(target, allowPending = false) {
               const runs = await github.rest.actions.listWorkflowRuns({
                 owner,
                 repo,
                 workflow_id: "verify.yml",
                 event: "pull_request",
                 branch: target.head.ref,
-                status: "success",
+                ...(allowPending ? {} : { status: "success" }),
                 per_page: 20,
               });
+              let pending = null;
               for (const candidate of runs.data.workflow_runs) {
                 if (candidate.head_sha !== target.head.sha) continue;
                 const matchesPull = candidate.pull_requests?.some((item) =>
@@ -220,11 +221,16 @@ jobs:
                   item.base.ref === target.base.ref &&
                   item.base.sha === target.base.sha
                 );
-                if (!matchesPull) continue;
+                if (!matchesPull || candidate.display_title === "Verify metadata edit") continue;
+                if (candidate.status !== "completed") {
+                  if (allowPending) pending ??= candidate;
+                  continue;
+                }
+                if (candidate.conclusion !== "success") continue;
                 const candidateJobs = await loadRequiredJobs(candidate.id);
                 if (!candidateJobs.invalid.length) return candidate;
               }
-              return null;
+              return pending;
             }
 
             // Reuse a complete successful pull_request run only when it belongs
@@ -233,7 +239,7 @@ jobs:
             // workflow runs.
             for (const target of targetPulls) {
               if (target.number === pullNumber) continue;
-              if (!await findSuccessfulVerify(target)) {
+              if (!await findVerify(target)) {
                 await comment(
                   `⛔ Stack PR #${target.number} has no successful Verify run for ` +
                   `\`${target.head.sha.slice(0, 12)}\`. Run Verify for that PR, then retry \`/merge\`.`
@@ -242,11 +248,12 @@ jobs:
                 return;
               }
             }
-            let verifyRun = await findSuccessfulVerify(pull);
+            let verifyRun = await findVerify(pull, true);
+            const reusedVerify = Boolean(verifyRun);
 
             // PRs created by GITHUB_TOKEN do not reliably start a usable
-            // pull_request run. Dispatch and track one exact Verify run only
-            // when no complete successful run exists for this head.
+            // pull_request run. Dispatch only if there is no successful or
+            // active compatible pull_request run to follow.
             if (!verifyRun) {
               const dispatchStartedAt = Date.now();
               await github.rest.actions.createWorkflowDispatch({
@@ -258,7 +265,7 @@ jobs:
                   base_ref: pull.base.ref,
                   publish_badge: "false",
                 },
-                request: githubApiRequest,
+                ...githubApiRequest,
               });
 
               while (Date.now() < deadline && !verifyRun) {
@@ -284,8 +291,21 @@ jobs:
               return;
             }
 
+            if (verifyRun.status !== "completed") {
+              await core.summary
+                .addRaw(`Waiting for ${reusedVerify ? "existing" : "dispatched"} [Verify run #${verifyRun.id}](${verifyRun.html_url}).`, true)
+                .write();
+            }
+
             while (verifyRun.status !== "completed" && Date.now() < deadline) {
               await sleep(15000);
+              const current = (await github.rest.pulls.get({ owner, repo, pull_number: pullNumber })).data;
+              if (current.state !== "open" || current.draft || current.head.sha !== pull.head.sha ||
+                  current.base.ref !== pull.base.ref || current.base.sha !== pull.base.sha) {
+                await comment("⛔ The PR changed while waiting for Verify. Run `/merge` again.");
+                core.setFailed("Pull request changed while waiting for Verify.");
+                return;
+              }
               verifyRun = (await github.rest.actions.getWorkflowRun({
                 owner,
                 repo,

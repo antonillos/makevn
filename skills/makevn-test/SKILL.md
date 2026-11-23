@@ -19,10 +19,24 @@ without Compose the tests own container startup, so no `docker_up` is needed.
 | Goal | CLI | MCP | Evidence |
 | --- | --- | --- | --- |
 | Selected UT or IT classes | `makevn test --name ExampleTest,ExampleIT` | `test` with `name` | Selected classes actually ran; fresh reports |
+| One test method | `makevn test --name 'ExampleTest#method'` | `test` with `name: "ExampleTest#method"` | Fresh non-skipped evidence for the method |
 | Complete UT suite | `makevn verify-ut` | `verify_ut` | UT results for requested scope |
 | Complete IT suite | `makevn verify-it` | `verify_it` | IT results after required readiness |
 | Whole project | `makevn verify` | `verify` | Full requested verification results |
 | Changed code | preview then `makevn verify-changes` | `verify_changes_preview`, `verify_changes` | Reviewed scope and fresh Surefire/Failsafe evidence |
+
+An MCP test call with named classes defaults to `mvnd` when it is on the server's PATH.
+For worktrees with a Maven declaration or wrapper, resolve Doctor's
+`use_mvnd` question before relying on the default. Doctor supplies installation
+instructions when the daemon is missing and automatic selection uses project
+Maven. Pass `mvnd: false` to use project Maven for one call. Daemon tests use
+their bundled Maven and honor project Enforcer rules.
+Pass comma-separated names to run several classes sequentially in a single
+`test` call with the same daemon. In `parallel_run`, arrange daemon tests and any other
+build-writing steps in distinct worktrees. An explicit daemon step conflicts
+with another build on the same worktree. When the flag is omitted in a shared
+worktree, the parallel workflow uses the project Maven. On the CLI, pass
+`--mvnd` explicitly.
 
 MCP `test` accepts explicit Maven user properties through `properties`, for example
 `{"name":"ExampleTest","properties":{"skipEnforceSnapshots":"false"}}`.
@@ -31,11 +45,26 @@ do not infer skip flags from another workflow. This forwards the same properties
 as CLI `test --name ExampleTest -- -DskipEnforceSnapshots=false` and lets the
 Maven preflight inspect them. An unresolved property still blocks execution.
 
+Read the `Test evidence` summary in CLI output or MCP `untrustedData.output`
+(for composite runs, inspect each step output). It counts fresh XML testcases
+for each selection, with skipped cases counted separately. If evidence is
+unavailable, report that limitation and consult `execution_logs` for diagnosis.
+An exit code of zero alone does not establish that tests ran. For a particular
+JUnit nested class use `ExampleTest$Nested#method` (single-quote it on the CLI).
+An unqualified method can match multiple classes. If MakeVN reports ambiguity,
+inspect the reported selectors and use the exact nested selector. When the Maven
+build-cache warning is present, use fresh evidence to assess test execution.
+
 Preview and execution must use the same repository and mode. Focused is the
 default; `--exhaustive` / `focused: false` selects complete owner/dependency suites.
 Exhaustive selected suites still differ from whole-project `verify`. Unknown impact
 requires another exhaustive preview and explanation; never silently broaden.
 A successful preview runs no tests. Preserve existing authorization when broadening.
+For a PR-embeddable scope summary, use preview `--diagram` / MCP `diagram: true`
+with the explicit local PR base. CLI writes `.makevn/reports/verify-changes/impact.md`;
+MCP returns the same Markdown in `untrustedData.diagram.markdown` without writing it.
+Copy it only when PR editing is authorized. It summarizes plan groups, not dependency
+paths or executed-test evidence; re-export after edits and retain full CI gates.
 
 If preparation adds shared fixtures and verification reports missing complete
 consumer suites, inspect the named files, preserve applicable prepared fixtures
@@ -52,6 +81,11 @@ runtime evidence are scoped to each module; explicit isolated capture remains
 single-module only. Profile-dependent membership and unresolved models retain
 complete suites or require exhaustive verification.
 Inspect selected classes and fallback reasons; focused does not promise few tests.
+Literal conventional test filters can be supported; profile filters, external files
+and ambiguous configuration merging retain full suites with POM/profile/plugin
+locations in the diagnostic. Inspect the summary's `selection` against fresh
+executed and skipped-only classes; no finite class comparison is claimed for an
+unknown complete-suite inventory.
 
 After doctor/setup, `test-impact-preview` is read-only and `test-impact-init` writes
 a static map without Maven/tests/containers. Normal selected tests and complete

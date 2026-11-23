@@ -297,7 +297,7 @@ makevn_append_coverage_cli_flags() {
 makevn_test_log_token() {
   local token=""
 
-  token="$(printf '%s' "$1" | tr '/ :,=' '_____' | tr -cd '[:alnum:]._-')"
+  token="$(printf '%s' "$1" | tr '/ :,=#$' '_______' | tr -cd '[:alnum:]._-')"
   if [[ -n "${token}" ]]; then
     printf '%s\n' "${token}"
     return 0
@@ -351,9 +351,61 @@ makevn_verify_selected_failsafe_summary() {
   return 0
 }
 
+makevn_maven_daemon() {
+  local command_name="$1" daemon
+
+  if [[ -n "${MAKEVN_MCP_PHASE_OUT:-}" && -z "${MAKEVN_MCP_MVND_SESSION:-}" ]]; then
+    makevn_die "${command_name} --mvnd requires a managed MakeVN MCP step"
+    return 1
+  fi
+  daemon="$(type -P mvnd)" || {
+    makevn_die "${command_name} --mvnd requires mvnd on PATH. ${MAKEVN_MVND_INSTALL_HINT} Omit --mvnd on the CLI or set mvnd: false for this MCP call."
+    return 1
+  }
+  printf '%s\n' "${daemon}"
+}
+
+makevn_mvnd_storage() {
+  local repo_root="$1" maven_base_path="$2" executable="$3"
+  local storage java_home identity
+  storage="$(makevn_state_dir "${repo_root}")/mvnd"
+  if [[ -n "${MAKEVN_MCP_MVND_SESSION:-}" ]]; then
+    java_home="$(makevn_effective_java_home "${repo_root}" code "${maven_base_path}" || true)"
+    identity="$(python3 -c '
+import hashlib
+import os
+import sys
+
+paths = [os.fsencode(os.path.realpath(path)) for path in sys.argv[1:]]
+print(hashlib.sha256(b"\0".join(paths)).hexdigest()[:24])
+' "${executable}" "${java_home:-${JAVA_HOME:-}}")" || return $?
+    storage+="/mcp-${MAKEVN_MCP_MVND_SESSION}/${identity}"
+  fi
+  printf '%s\n' "${storage}"
+}
+
+# Append to the calling runner's Maven argument array.
+makevn_append_mvnd_args() {
+  local daemon_storage
+  daemon_storage="$(makevn_mvnd_storage "$@")" || return $?
+  maven_args+=("-Dmvnd.daemonStorage=${daemon_storage}" "-Dmvnd.registry=${daemon_storage}/registry.bin" -Dmvnd.idleTimeout=15m -T1)
+}
+
+makevn_named_test_filter() {
+  local test_class="$1" method_suffix="$2"
+  printf '%s' "${test_class}${method_suffix}"
+  if [[ -n "${method_suffix}" && "${test_class}" != *'$'* ]]; then
+    printf ',%s$*%s' "${test_class}" "${method_suffix}"
+  fi
+  printf '\n'
+}
+
 makevn_run_selected_test() {
   local repo_root="$1"
-  local test_name="$2"
+  local selector="$2"
+  local selected_class="${selector%%#*}"
+  local test_name="${selected_class%%\$*}"
+  local method_suffix="${selector#"${selected_class}"}"
   local fast_mode="$3"
   local maven_base_path=""
   local maven_executable=""
@@ -362,7 +414,7 @@ makevn_run_selected_test() {
   local module_path=""
   local module_base_path=""
   local package_name=""
-  local full_test_class=""
+  local full_test_class="" maven_selector=""
   local boot_module=""
   local local_containers=""
   local cli_flags_value=""
@@ -371,7 +423,7 @@ makevn_run_selected_test() {
   local title=""
   local test_param=""
   local test_mode="unit"
-  local rc=0
+  local rc=0 evidence_rc=0 started reports_dir=surefire-reports
   local -a cli_flags=()
   local -a prop_flags=()
   local -a maven_args=()
@@ -413,15 +465,21 @@ makevn_run_selected_test() {
     return 1
   fi
 
-  full_test_class="${package_name}.${test_name}"
+  full_test_class="${package_name}.${selected_class}"
+  maven_selector="$(makevn_named_test_filter "${full_test_class}" "${method_suffix}")"
   if [[ "${test_name}" == *IT ]] || grep -Eq '@SpringBootTest|@DataMongoTest|@WebMvcTest|@Testcontainers' "${test_file}"; then
     test_mode="integration"
-    test_param="-Dit.test=${full_test_class}"
+    reports_dir=failsafe-reports
+    test_param="-Dit.test=${maven_selector}"
   else
-    test_param="-Dtest=${full_test_class}"
+    test_param="-Dtest=${maven_selector}"
   fi
 
-  maven_executable="$(makevn_maven_executable "${repo_root}" "${maven_base_path}")" || return $?
+  if [[ "${use_mvnd:-false}" == true ]]; then
+    maven_executable="$(makevn_maven_daemon test)" || return $?
+  else
+    maven_executable="$(makevn_maven_executable "${repo_root}" "${maven_base_path}")" || return $?
+  fi
   cli_flags_value="$(makevn_maven_cli_flags_for_command "${repo_root}" test)"
   cli_flags_value="$(makevn_append_word "${cli_flags_value}" "-nsu")"
   prop_flags_value="$(makevn_maven_prop_flags_for_command "${repo_root}" test)"
@@ -441,8 +499,8 @@ makevn_run_selected_test() {
         printf '%s\n' "$(makevn_warn "Error: test classes not compiled for ${module_path:-root project}. Run 'makevn test --name ${test_name}' first.")" >&2
         return 1
       fi
-      title="test ${test_name} --fast"
-      log_name="test-fast-$(makevn_test_log_token "${test_name}")"
+      title="test ${selector} --fast"
+      log_name="test-fast-$(makevn_test_log_token "${selector}")"
       if [[ -n "${local_containers}" ]]; then
         maven_args=(env "LOCAL_CONTAINERS=${local_containers}" "${maven_executable}")
       else
@@ -458,8 +516,8 @@ makevn_run_selected_test() {
       fi
       maven_args+=(failsafe:integration-test)
     else
-      title="test ${test_name}"
-      log_name="test-$(makevn_test_log_token "${test_name}")"
+      title="test ${selector}"
+      log_name="test-$(makevn_test_log_token "${selector}")"
       if [[ -n "${local_containers}" ]]; then
         maven_args=(env "LOCAL_CONTAINERS=${local_containers}" "${maven_executable}")
       else
@@ -481,11 +539,11 @@ makevn_run_selected_test() {
         printf '%s\n' "$(makevn_warn "Error: test classes not compiled for ${module_path:-root project}. Run 'makevn test --name ${test_name}' first.")" >&2
         return 1
       fi
-      title="test ${test_name} --fast"
-      log_name="test-fast-$(makevn_test_log_token "${test_name}")"
+      title="test ${selector} --fast"
+      log_name="test-fast-$(makevn_test_log_token "${selector}")"
     else
-      title="test ${test_name}"
-      log_name="test-$(makevn_test_log_token "${test_name}")"
+      title="test ${selector}"
+      log_name="test-$(makevn_test_log_token "${selector}")"
     fi
 
     maven_args=("${maven_executable}")
@@ -512,11 +570,15 @@ makevn_run_selected_test() {
   if [[ $# -gt 0 ]]; then
     maven_args+=("$@")
   fi
+  if [[ "${use_mvnd:-false}" == true ]]; then
+    makevn_append_mvnd_args "${repo_root}" "${maven_base_path}" "${maven_executable}" || return $?
+  fi
 
   if [[ "${test_mode}" == "integration" ]]; then
     rm -f "${maven_base_path}/${module_path}/target/failsafe-reports/failsafe-summary.xml"
   fi
 
+  started="$(python3 -c 'import time; print(time.time_ns())')"
   # Logging restores errexit internally. Catch the delegated status before it
   # can terminate the shell and suppress recovery hints.
   if MAKEVN_COMPACT_OUTPUT=1 makevn_run_logged_in_context "${repo_root}" code "${maven_base_path}" "${log_name}" test "${title}" "${maven_args[@]}"; then
@@ -524,6 +586,9 @@ makevn_run_selected_test() {
   else
     rc=$?
   fi
+  local logfile="$(makevn_logs_dir "${repo_root}")/${log_name}.log"
+  python3 "${MAKEVN_LIBEXEC_DIR}/common/test_run_evidence.py" "${module_base_path}" "${reports_dir}" \
+    "${started}" "${full_test_class}${method_suffix}" "${logfile}" || evidence_rc=$?
   if [[ ${rc} -ne 0 ]]; then
     local logs_dir_hint
     logs_dir_hint="$(makevn_logs_dir "${repo_root}")"
@@ -531,6 +596,8 @@ makevn_run_selected_test() {
     makevn_hint_format_failure "${repo_root}" "${logs_dir_hint}/${log_name}.log"
     return ${rc}
   fi
+
+  [[ ${evidence_rc} -eq 0 ]] || return "${evidence_rc}"
 
   if [[ "${test_mode}" == "integration" ]]; then
     makevn_verify_selected_failsafe_summary "${maven_base_path}" "${module_path}" "${test_name}"
@@ -720,6 +787,12 @@ makevn_parse_goal_flags() {
 }
 
 makevn_run_maven_goal() {
+  makevn_run_maven_goal_with_daemon false "$@"
+}
+
+makevn_run_maven_goal_with_daemon() {
+  local use_daemon="$1"
+  shift
   local repo_root="$1"
   local goal="$2"
   local log_name="$3"
@@ -743,7 +816,11 @@ makevn_run_maven_goal() {
     makevn_die "No Maven project detected in ${repo_root}"
   fi
 
-  maven_executable="$(makevn_maven_executable "${repo_root}" "${maven_base_path}")" || return $?
+  if [[ "${use_daemon}" == true ]]; then
+    maven_executable="$(makevn_maven_daemon "${command_name}")" || return $?
+  else
+    maven_executable="$(makevn_maven_executable "${repo_root}" "${maven_base_path}")" || return $?
+  fi
   maven_cli_flags_value="$(makevn_maven_cli_flags_for_command "${repo_root}" "${command_name}")"
   maven_prop_flags_value="$(makevn_maven_prop_flags_for_command "${repo_root}" "${command_name}")"
   command_pre_goals_value="$(makevn_maven_pre_goals_for_command "${repo_root}" "${command_name}")"
@@ -762,6 +839,9 @@ makevn_run_maven_goal() {
   fi
   if [[ $# -gt 0 ]]; then
     maven_args+=("$@")
+  fi
+  if [[ "${use_daemon}" == true ]]; then
+    makevn_append_mvnd_args "${repo_root}" "${maven_base_path}" "${maven_executable}" || return $?
   fi
 
   MAKEVN_COMPACT_OUTPUT=1 makevn_run_logged_in_context "${repo_root}" code "${maven_base_path}" "${log_name}" "${command_name}" "${log_name}" "${maven_args[@]}"

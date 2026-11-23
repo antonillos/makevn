@@ -3,6 +3,7 @@ set -euo pipefail
 ROOT="$(CDPATH= cd -- "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 SCRIPT_DIR="${ROOT}/libexec/makevn"
 source "${SCRIPT_DIR}/commands/test_impact.sh"
+source "${SCRIPT_DIR}/common/ui.sh"
 tmp="$(mktemp -d)"
 trap 'rm -rf "${tmp}"' EXIT
 makevn_die() { printf '%s\n' "$*" >&2; exit 1; }
@@ -22,6 +23,8 @@ python3() {
   if [[ "$1" == */progressive_impact.py ]]; then
     [[ "$2" == preview || "$2" == init ]]
     printf '%s\n' "$2" > "${tmp}/static-mode"
+    printf '%s\n' "$@" > "${tmp}/static-args"
+    if [[ " $* " == *' --graph '* ]]; then printf 'Graph summary\nFocus details\n'; fi
     return "${STATIC_STATUS:-0}"
   fi
   [[ "$2" == status || "$2" == retire ]]
@@ -29,6 +32,15 @@ python3() {
 }
 cmd_test_impact "${tmp}" preview
 [[ ! -e "${tmp}/verified" && ! -e "${tmp}/locked" ]]
+cmd_test_impact "${tmp}" preview --graph --focus example.Foo
+[[ "$(tail -3 "${tmp}/static-args")" == $'--graph\n--focus\nexample.Foo' ]]
+MAKEVN_TEST_IMPACT_GRAPH=true
+MAKEVN_BACKEND_DETAIL_OUT="${tmp}/details"
+: > "${MAKEVN_BACKEND_DETAIL_OUT}"
+makevn_test_impact_status "${tmp}" preview
+[[ "$(cat "${MAKEVN_BACKEND_DETAIL_OUT}")" == $'Graph summary\nFocus details' ]]
+unset MAKEVN_TEST_IMPACT_GRAPH MAKEVN_BACKEND_DETAIL_OUT
+if cmd_test_impact "${tmp}" preview --focus example.Foo; then exit 1; fi
 cmd_test_impact "${tmp}" init
 [[ -e "${tmp}/locked" && ! -e "${tmp}/verified" ]]
 MAKEVN_TEST_IMPACT_LOCK_HELD=true

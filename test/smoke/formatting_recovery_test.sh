@@ -38,6 +38,28 @@ done
 bash "${ROOT}/libexec/makevn/cli.sh" --repo "${tmp}" --compact format --apply >"${tmp}/output" 2>&1
 grep -Fq '[ok]' "${tmp}/output"
 
+mkdir "${tmp}/fake-bin"
+cat > "${tmp}/fake-bin/mvnd" <<'MVND'
+#!/usr/bin/env bash
+printf '%s\n' "$@" > .mvnd-arguments
+MVND
+chmod +x "${tmp}/fake-bin/mvnd"
+for apply in check apply; do
+  args=(--mvnd)
+  expected=validate
+  if [[ "${apply}" == apply ]]; then
+    args+=(--apply)
+    expected=custom-format:apply
+    printf '%s\n' 'MAKEVN_FORMAT_APPLY_GOAL=custom-format:apply' >> "${tmp}/.makevn/config"
+  fi
+  PATH="${tmp}/fake-bin:${PATH}" bash "${ROOT}/libexec/makevn/cli.sh" --repo "${tmp}" --compact \
+    format "${args[@]}" -- '-Dexample=two words' >"${tmp}/output" 2>&1
+  grep -Eq "(^|:)${expected}$" "${tmp}/.mvnd-arguments"
+  grep -Fxq -- '-Dexample=two words' "${tmp}/.mvnd-arguments"
+  grep -Fq -- '-Dmvnd.daemonStorage=' "${tmp}/.mvnd-arguments"
+done
+printf 'MAKEVN_CODE_JAVA_HOME="%s/jdk"\n' "${tmp}" > "${tmp}/.makevn/config"
+
 if [[ -x "${ROOT}/target/release/makevn-mcp" ]]; then
   PYTHONPATH="${ROOT}/test/smoke" python3 - "${ROOT}/target/release/makevn-mcp" "${tmp}" <<'MCP'
 import os, sys

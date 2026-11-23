@@ -979,6 +979,7 @@ test_mcp_tool_listing() {
   python3 -m unittest discover -s "${ROOT_DIR}/test/smoke" -p doctor_setup_test.py
   python3 "${ROOT_DIR}/test/smoke/doctor_configure_mcp_test.py" "${prefix}/bin/makevn-mcp"
   python3 "${ROOT_DIR}/test/smoke/doctor_mcp_test.py" "${prefix}/bin/makevn-mcp"
+  python3 "${ROOT_DIR}/test/smoke/docker_logs_test.py" "${prefix}/bin/makevn" "${prefix}/bin/makevn-mcp"
   python3 "${ROOT_DIR}/test/smoke/docker_lifecycle_test.py" "${prefix}/bin/makevn" "${prefix}/bin/makevn-mcp"
   python3 "${ROOT_DIR}/test/smoke/doctor_reset_test.py" "${prefix}/bin/makevn"
   python3 -m unittest discover -s "${ROOT_DIR}/test/smoke" -p demo_mcp_test.py
@@ -1432,6 +1433,34 @@ printf 'ARGS=%s\n' "$*" >> .mvnw.log
 printf 'JAVA_HOME=%s\n' "${JAVA_HOME:-}" >> .mvnw.log
 printf 'LOCAL_CONTAINERS=%s\n' "${LOCAL_CONTAINERS:-}" >> .mvnw.log
 for arg in "$@"; do
+  case "${arg}" in
+    '-Dtest=com.example.UserRepositoryTest#lookup,com.example.UserRepositoryTest$*#lookup')
+      mkdir -p module-a/target/surefire-reports
+      printf '%s\n' '<testsuite><testcase classname="com.example.UserRepositoryTest" name="lookup[1]"/></testsuite>' \
+        > module-a/target/surefire-reports/TEST-com.example.UserRepositoryTest.xml
+      printf '%s\n' "[WARNING] Cached build doesn't contain all requested plugin executions"
+      ;;
+    '-Dit.test=com.example.UserFlowIT#flow,com.example.UserFlowIT$*#flow')
+      mkdir -p module-a/target/failsafe-reports
+      printf '%s\n' '<testsuite><testcase classname="com.example.UserFlowIT" name="flow"/></testsuite>' \
+        > module-a/target/failsafe-reports/TEST-com.example.UserFlowIT.xml
+      ;;
+    '-Dtest=com.example.UserRepositoryTest#nested,com.example.UserRepositoryTest$*#nested')
+      mkdir -p module-a/target/surefire-reports
+      printf '%s\n' '<testsuite><testcase classname="com.example.UserRepositoryTest$ReadModel" name="nested"/></testsuite>' \
+        > module-a/target/surefire-reports/TEST-com.example.UserRepositoryTest-Nested.xml
+      ;;
+    '-Dtest=com.example.UserRepositoryTest#shared,com.example.UserRepositoryTest$*#shared')
+      mkdir -p module-a/target/surefire-reports
+      printf '%s\n' '<testsuite><testcase classname="com.example.UserRepositoryTest$ReadModel" name="shared"/><testcase classname="com.example.UserRepositoryTest$Other" name="shared"/></testsuite>' \
+        > module-a/target/surefire-reports/TEST-com.example.UserRepositoryTest-Nested.xml
+      ;;
+    '-Dtest=com.example.UserRepositoryTest$ReadModel#shared')
+      mkdir -p module-a/target/surefire-reports
+      printf '%s\n' '<testsuite><testcase classname="com.example.UserRepositoryTest$ReadModel" name="shared"/></testsuite>' \
+        > module-a/target/surefire-reports/TEST-com.example.UserRepositoryTest-Nested.xml
+      ;;
+  esac
   if [[ "${arg}" == "failsafe:integration-test" ]]; then
     mkdir -p module-a/target/failsafe-reports
     cat > module-a/target/failsafe-reports/failsafe-summary.xml <<'XML'
@@ -1508,6 +1537,25 @@ EOF
   mkdir -p "${repo}/module-a/target/test-classes"
   selected_test_output="$(PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" test --name UserRepositoryTest --fast)"
   PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" test --name UserFlowIT >/dev/null
+  local method_output
+  method_output="$(PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" test --name 'UserRepositoryTest#lookup,UserFlowIT#flow')"
+  [[ "${method_output}" == *'Test evidence: 1 executed, 0 failed, 0 skipped'* ]] || fail "expected fresh method counts"
+  [[ "${method_output}" == *'Maven build cache warning:'* ]] || fail "expected build cache warning"
+  [[ "${method_output}" == *'Test selections: 2 attempted, 2 succeeded, 0 failed'* ]] || fail "expected unit and integration method success"
+  for selector in 'UserRepositoryTest#nested' 'UserRepositoryTest$ReadModel#shared'; do
+    method_output="$(PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" test --name "${selector}")"
+    [[ "${method_output}" == *'Test evidence: 1 executed, 0 failed, 0 skipped'* ]] || fail "expected one nested method"
+  done
+  if method_output="$(PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" test --name 'UserRepositoryTest#shared' 2>&1)"; then
+    fail "ambiguous nested methods should not report success"
+  fi
+  [[ "${method_output}" == *'UserRepositoryTest$ReadModel#shared'* ]] || fail "expected exact nested alternative"
+  if PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" test --name 'UserRepositoryTest#missing' >/dev/null 2>&1; then
+    fail "a missing test method should not succeed without fresh evidence"
+  fi
+  if PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" test --name 'UserRepositoryTest#' >/dev/null 2>&1; then
+    fail "an empty method selector should be rejected"
+  fi
   PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" verify >/dev/null
   PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" run >/dev/null
   [[ "${build_output}" == *"[ok] "* ]] || fail "expected build output to include success summary"
@@ -5075,6 +5123,8 @@ python3 "${ROOT_DIR}/test/smoke/test_impact_test.py"
 python3 "${ROOT_DIR}/test/smoke/progressive_impact_test.py"
 python3 "${ROOT_DIR}/test/smoke/reactor_progressive_impact_test.py"
 python3 "${ROOT_DIR}/test/smoke/test_inventory_test.py"
+python3 "${ROOT_DIR}/test/smoke/pr_impact_diagram_test.py"
+bash "${ROOT_DIR}/test/smoke/pr_impact_diagram_test.sh"
 bash "${ROOT_DIR}/test/smoke/test_impact_shell_test.sh"
 bash "${ROOT_DIR}/test/smoke/test_impact_init_test.sh"
 bash "${ROOT_DIR}/test/smoke/test_impact_replay_test.sh"

@@ -1,6 +1,32 @@
 use super::*;
 
 #[test]
+fn format_daemon_is_managed_directly_and_in_workflows() {
+    let cwd = std::env::current_dir().unwrap();
+    let repo = effective_repo(&Value::Null, cwd.to_str()).unwrap();
+    let expected = BTreeSet::from([repo.clone()]);
+    let backend = Path::new("/unused/makevn");
+    let mut direct = json!({"name":"format","arguments":{"apply":true,"mvnd":true}});
+    assert_eq!(daemon_worktrees(&mut direct, &repo, backend).unwrap(), expected);
+    assert_eq!(direct["arguments"]["repo"], repo);
+    direct["arguments"]["mvnd"] = json!(false);
+    assert!(daemon_worktrees(&mut direct, &repo, backend).unwrap().is_empty());
+
+    let mut workflow = json!({"name":"composite_run","arguments":{"steps":[
+        {"tool":"format","arguments":{"mvnd":true}},
+        {"tool":"test","arguments":{"mvnd":true,"name":"ExampleTest"}}
+    ]}});
+    assert_eq!(daemon_worktrees(&mut workflow, &repo, backend).unwrap(), expected);
+    for step in workflow["arguments"]["steps"].as_array().unwrap() {
+        assert_eq!(step["arguments"]["repo"], repo);
+    }
+
+    workflow["name"] = json!("parallel_run");
+    let error = daemon_worktrees(&mut workflow, &repo, backend).unwrap_err();
+    assert!(error.contains("Maven Daemon format shares worktree"));
+}
+
+#[test]
 fn cancellation_preserves_tool_guidance_and_mirrors_the_final_result() {
     for tool in ["docker_up", "docker_down", "docker_ps", "docker_stats",
         "docker_ps_required", "karate_docker_up", "karate_docker_down", "karate_all"] {
@@ -46,4 +72,25 @@ fn cleanup_tool_exposes_options_and_structured_counts() {
     assert!(validate_control_arguments(&json!({"name":"execution_cleanup","arguments":{"retentionDays":7,"dryRun":true}})).is_ok());
     assert!(validate_control_arguments(&json!({"name":"execution_cleanup","arguments":{"dryRun":"yes"}})).is_err());
     assert!(validate_control_arguments(&json!({"name":"execution_cleanup","arguments":{"unknown":true}})).is_err());
+}
+
+#[test]
+fn failed_execution_suggests_the_registered_log_query_and_preserves_guidance() {
+    let id = "0123456789abcdef0123456789abcdef";
+    let params = json!({"name":"execution_logs","arguments":{"executionId":id,"tail":40,"contains":"ERROR"}});
+    assert!(control_name("execution_logs"));
+    assert!(validate_control_arguments(&params).is_ok());
+    let tool = control_tools().into_iter().find(|tool| tool["name"] == "execution_logs").unwrap();
+    assert_eq!(tool["outputSchema"]["properties"]["untrustedData"]["properties"]["executionLogs"]["type"], "object");
+
+    let record: ExecutionRecord = serde_json::from_value(json!({
+        "executionId":id, "sessionId":"session", "command":"compile", "repo":"/repo",
+        "repositories":["/repo"], "pullRequests":[], "startedAtMs":0, "durationMs":1,
+        "state":"failed", "logPaths":[], "exitCode":1
+    })).unwrap();
+    let mut result = json!({"structuredContent":{"nextSuggestion":"Check the compiler error."}});
+    suggest_execution_logs(&mut result, &record);
+    let guidance = result["structuredContent"]["nextSuggestion"].as_str().unwrap();
+    assert!(guidance.contains(&format!("execution_logs {}", json!({"executionId":id}))));
+    assert!(guidance.starts_with("Check the compiler error."));
 }

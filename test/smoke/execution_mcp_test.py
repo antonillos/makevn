@@ -9,6 +9,7 @@ import signal
 import subprocess
 import sys
 import tempfile
+from unittest.mock import patch
 import threading
 import time
 
@@ -55,10 +56,10 @@ class Session:
         self.process.stdin.write(json.dumps(message) + "\n")
         self.process.stdin.flush()
 
-    def begin(self, name, **args):
+    def begin(self, tool, **args):
         request_id = self.next_id
         self.next_id += 1
-        self.send("tools/call", {"name": name, "arguments": args}, request_id)
+        self.send("tools/call", {"name": tool, "arguments": args}, request_id)
         return request_id
 
     def receive(self, request_id, timeout=10):
@@ -77,8 +78,8 @@ class Session:
         self.send(method, params, request_id)
         return self.receive(request_id)
 
-    def call(self, name, **args):
-        response = self.receive(self.begin(name, **args))
+    def call(self, tool, **args):
+        response = self.receive(self.begin(tool, **args))
         result = response["result"]
         assert json.loads(result["content"][0]["text"]) == result["structuredContent"]
         return result
@@ -111,12 +112,30 @@ import time
 
 args = sys.argv[1:]
 repo = Path(args[args.index('--repo') + 1]) if '--repo' in args else Path.cwd()
-command = next(arg for arg in args if arg in ['doctor', 'verify-changes-preview', 'verify-changes', 'verify', 'verify-ut', 'verify-it', 'clean', 'mutation', 'run-app-bg'])
+command = next(arg for arg in args if arg in ['doctor', 'verify-changes-preview', 'verify-changes', 'verify', 'verify-ut', 'verify-it', 'test', 'format', 'clean', 'mutation', 'run-app-bg'])
 if command in ['doctor', 'verify-changes-preview']:
     assert os.environ['MAKEVN_MCP_INSPECTION'] == '1'
     print('inspection completed')
     sys.exit(0)
 assert 'MAKEVN_MCP_INSPECTION' not in os.environ
+if '--mvnd' in args:
+    assert command in ('test', 'format')
+    assert os.environ['MAKEVN_MCP_MVND_SESSION']
+    with (repo / 'mvnd-names').open('a') as file:
+        selection = args[args.index('--name') + 1] if command == 'test' else 'format apply' if '--apply' in args else 'format check'
+        file.write(selection + '\n')
+    with (repo / 'mvnd-groups').open('a') as file:
+        file.write(str(os.getpgrp()) + '\n')
+    if not (repo / 'mvnd-started').exists():
+        subprocess.Popen([sys.executable, str(Path(__file__).with_name('child.py')), str(repo)])
+        (repo / 'mvnd-started').touch()
+    if 'FailingTest' in args:
+        sys.exit(1)
+    if not (repo / 'mvnd-block').exists():
+        sys.exit(0)
+    while True:
+        time.sleep(0.1)
+assert 'MAKEVN_MCP_MVND_SESSION' not in os.environ
 with (repo / 'started').open('a') as file:
     file.write(command + '\n')
 if command in ['clean', 'run-app-bg'] or (repo / 'quick').exists():
@@ -230,6 +249,141 @@ def responsiveness_and_cancellation(first, second, repo, other):
     stopped(second, other_record, other_owned)
     second.receive(other_request)
     assert terminal["executionId"] in [item["executionId"] for item in first.executions(includeFinished=True)]
+
+
+def named_test_conflicts_across_registries(first, executable, state, repo, other):
+    second = Session(executable, state)
+    try:
+        request = first.begin("test", repo=str(repo), name="ExampleTest")
+        record = first.running(repo)
+        owned = pids(repo)
+        conflict = second.call("test", repo=str(repo), name="ExampleTest")
+        assert conflict["isError"] is True
+        assert "Execution conflict for worktree:" in conflict["structuredContent"]["untrustedData"]["output"]
+        assert (repo / "started").read_text().splitlines() == ["test"]
+
+        (other / "quick").touch()
+        assert second.call("test", repo=str(other), name="ExampleTest")["isError"] is False
+        assert all(alive(pid) for pid in owned)
+
+        first.call("execution_cancel", executionId=record["executionId"])
+        stopped(first, record, owned)
+        first.receive(request)
+        (repo / "quick").touch()
+        assert second.call("test", repo=str(repo), name="ExampleTest")["isError"] is False
+    finally:
+        second.close()
+
+
+def managed_daemon_reuses_group_and_cleans_forks(executable, state, repo):
+    client = Session(executable, state)
+    try:
+        args = {"repo": str(repo), "name": "ExampleTest", "mvnd": True}
+        assert client.call("test", repo=str(repo), mvnd=True)["isError"]
+        assert client.call("test", **{**args, "properties": {"mvnd.daemonStorage": "/tmp/foreign"}})["isError"]
+        assert client.call("test", **{**args, "name": " , "})["isError"]
+        quick = repo / "quick"
+        quick.touch()
+        default_args = {"repo": str(repo), "name": "ExampleTest"}
+        config = repo / ".makevn/config"
+        config.parent.mkdir()
+        config.write_text("MAKEVN_USE_MVND=FALSE\n")
+        assert client.call("test", **default_args)["isError"] is False
+        assert not (repo / "mvnd-groups").exists()
+        config.write_text("")
+        assert client.call("test", **default_args, mvnd=False)["isError"] is False
+        assert not (repo / "mvnd-groups").exists()
+        assert client.call("test", **default_args, properties={"mvnd.daemonStorage": "/tmp/foreign"})["isError"]
+        names = "FirstTest,SecondTest"
+        assert client.call("test", **{**args, "name": names})["isError"] is False
+        assert client.call("test", **{**default_args, "name": names})["isError"] is False
+        assert (repo / "mvnd-names").read_text().splitlines() == [names, names]
+        owned = pids(repo, 2)
+        groups = (repo / "mvnd-groups").read_text().splitlines()
+        assert len(groups) == 2 and groups[0] == groups[1]
+        assert all(alive(pid) for pid in owned)
+
+        block = repo / "mvnd-block"
+        block.touch()
+        request = client.begin("test", **args)
+        record = client.running(repo)
+        eventually(lambda: len((repo / "mvnd-groups").read_text().splitlines()) == 3)
+        client.call("execution_cancel", executionId=record["executionId"])
+        stopped(client, record, owned)
+        assert client.receive(request)["result"]["structuredContent"]["exitCode"] == 130
+
+        block.unlink()
+        (repo / "mvnd-started").unlink()
+        assert client.call("test", **args)["isError"] is False
+        restarted = pids(repo, 4)[2:]
+        assert (repo / "mvnd-groups").read_text().splitlines()[-1] != groups[0]
+    finally:
+        client.close()
+    eventually(lambda: all(not alive(pid) for pid in restarted))
+
+
+def mvnd_workflows(client, left, right):
+    def step(**options):
+        return {"tool": "test", "arguments": {"name": "ExampleTest", **options}}
+
+    def groups(repo):
+        return (repo / "mvnd-groups").read_text().splitlines()
+
+    config = left / ".makevn/config"
+    config.parent.mkdir()
+    config.write_text("MAKEVN_USE_MVND=FALSE\n")
+    (left / "quick").touch()
+    assert not client.call("format", repo=str(left))["isError"]
+    config.write_text("MAKEVN_USE_MVND=TRUE\n")
+    assert not client.call("format", repo=str(left), mvnd=False)["isError"]
+    assert not (left / "mvnd-groups").exists()
+    (left / "quick").unlink()
+    (left / "started").unlink()
+    format_step = {"tool": "format", "arguments": {"apply": True}}
+    result = client.call("composite_run", repo=str(left), steps=[format_step, step()])
+    assert result["isError"] is False, result
+    assert (left / "mvnd-names").read_text().splitlines() == ["format apply", "ExampleTest"]
+    initial = groups(left)
+    assert len(initial) == 2 and len(set(initial)) == 1
+    original = pids(left, 2)
+
+    alias = left.with_name(left.name + "-alias")
+    alias.symlink_to(left, target_is_directory=True)
+    conflict = client.call("parallel_run", repo=str(left), steps=[
+        {"tool": "format", "arguments": {"mvnd": True}}, step(repo=str(alias)),
+    ])
+    assert conflict["isError"] is True
+    assert "shares worktree" in conflict["structuredContent"]["untrustedData"]["output"]
+    assert groups(left) == initial
+
+    quick = left / "quick"
+    quick.touch()
+    assert client.call("parallel_run", repo=str(left), steps=[step(), step()])["isError"] is False
+    quick.unlink()
+    assert (left / "started").read_text().splitlines() == ["test", "test"]
+    assert groups(left) == initial
+
+    result = client.call("composite_run", repo=str(left), **{
+        "fail-fast": False,
+        "steps": [step(name="FailingTest"), step()],
+    })
+    workflow = result["structuredContent"]["untrustedData"]["workflow"]
+    assert [entry["exitCode"] for entry in workflow["steps"]] == [1, 0], result
+    assert groups(left)[-2] == initial[0] and groups(left)[-1] != initial[0]
+    assert all(not alive(pid) for pid in original)
+    (left / "mvnd-started").unlink()
+
+    for repo in (left, right):
+        (repo / "mvnd-block").touch()
+    request = client.begin("parallel_run", repo=str(left), steps=[step(), step(repo=str(right), mvnd=True)])
+    record = client.running(left)
+    left_owned = pids(left, 4)[2:]
+    right_owned = pids(right, 2)
+    assert groups(left)[-1] != groups(right)[-1]
+    assert all(alive(pid) for pid in left_owned + right_owned)
+    client.call("execution_cancel", executionId=record["executionId"])
+    stopped(client, record, left_owned + right_owned)
+    assert client.receive(request)["result"]["structuredContent"]["exitCode"] == 130
 
 
 def pr_conflicts(first, second, left, right):
@@ -415,17 +569,32 @@ def run(executable):
         backend.chmod(0o700)
         (root / "child.py").write_text(CHILD)
         state = root / "state"
-        repos = [root / f"repo-{index}" for index in range(15)]
+        repos = [root / f"repo-{index}" for index in range(20)]
         for repo in repos:
             repo.mkdir()
-        first = Session(mcp, state)
-        second = Session(mcp, state)
+        for repo in repos[17:]:
+            (repo / "pom.xml").write_text("<project/>")
+        mvnd = root / "bin" / "mvnd"
+        mvnd.parent.mkdir()
+        mvnd.write_text("#!/bin/sh\nexit 0\n")
+        mvnd.chmod(0o700)
+        daemon_environment = {
+            "PATH": f"{mvnd.parent}{os.pathsep}{os.environ['PATH']}",
+            "MAKEVN_INSTALL_ROOT": str(Path(__file__).resolve().parents[2]),
+        }
+        with patch.dict(os.environ, daemon_environment):
+            first = Session(mcp, state)
+            second = Session(mcp, state)
         try:
             tools = first.call_method("tools/list", {})["result"]["tools"]
             assert {"execution_list", "execution_status", "execution_cancel", "execution_cleanup"} <= {tool["name"] for tool in tools}
             assert next(tool for tool in tools if tool["name"] == "verify")["inputSchema"]["properties"]["pr"]["type"] == "string"
             assert first.call_method("unknown/method", {})["error"]["code"] == -32601
             responsiveness_and_cancellation(first, second, repos[0], repos[1])
+            named_test_conflicts_across_registries(first, mcp, root / "other-state", repos[15], repos[16])
+            with patch.dict(os.environ, daemon_environment):
+                managed_daemon_reuses_group_and_cleans_forks(mcp, state, repos[17])
+            mvnd_workflows(first, repos[18], repos[19])
             pr_conflicts(first, second, repos[2], repos[3])
             notification_and_workflows(first, repos[4], repos[5])
             completion_and_forcing(first, repos[6], repos[7])

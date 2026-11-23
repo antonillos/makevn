@@ -333,6 +333,7 @@ makevn_collect_verify_changes_scope() {
   if [[ "${MAKEVN_VERIFY_CHANGES_PARENT_SPEC}" != HEAD ]]; then
     comparison_base="$(git -C "${git_root}" merge-base "${MAKEVN_VERIFY_CHANGES_PARENT_SPEC%...HEAD}" HEAD)"
   fi
+  MAKEVN_VERIFY_CHANGES_INPUTS="${changed_paths}"
   MAKEVN_VERIFY_CHANGES_POM_FILES="$(printf '%s\n' "${changed_paths}" | grep -E '(^|/)pom\.xml$' || true)"
   makevn_refresh_impact "${repo_root}" "${MAKEVN_VERIFY_CHANGES_MAVEN_BASE_PATH}"
   MAKEVN_VERIFY_CHANGES_MODULES="$(printf '%s\n' "${changed_paths}" | python3 "${SCRIPT_DIR}/common/changes_scope.py" "${git_root}" "${MAKEVN_VERIFY_CHANGES_MAVEN_BASE_PATH}" "${comparison_base}")"
@@ -420,7 +421,7 @@ cmd_verify_changes_preview() {
   shift
   makevn_changes_mode "$@"
   shift "${MAKEVN_VERIFY_CHANGES_MODE_ARGS}"
-  [[ $# -eq 0 ]] || makevn_die "Usage: verify-changes-preview [--base REF] [--focused|--exhaustive] [--record-test-impact] [--defer-global-coverage]"
+  [[ $# -eq 0 ]] || makevn_die "Usage: verify-changes-preview [--diagram] [--explain] [--base REF] [--focused|--exhaustive] [--record-test-impact] [--defer-global-coverage]"
 
   if ! makevn_frontend_owns_loader; then
     print_command_intro "${repo_root}" verify-changes-preview
@@ -428,6 +429,9 @@ cmd_verify_changes_preview() {
 
   makevn_load_profile "${repo_root}"
   makevn_collect_verify_changes_scope "${repo_root}" preview
+  if [[ "${MAKEVN_CHANGES_EXPLAIN:-false}:${MAKEVN_VERIFY_CHANGES_MODE}" == true:exhaustive ]]; then
+    makevn_print_detail_line "Explain: explicit exhaustive mode retains complete selected module suites; class-level narrowing is disabled."
+  fi
   if [[ "${MAKEVN_VERIFY_CHANGES_SCOPE_REQUIRED}" == true ]]; then
     makevn_print_item "compare against" "${MAKEVN_VERIFY_CHANGES_PARENT_SPEC}"
     makevn_print_changes_base "${repo_root}" "${MAKEVN_VERIFY_CHANGES_PARENT_SPEC}"
@@ -435,10 +439,12 @@ cmd_verify_changes_preview() {
     makevn_print_detail_line "Analysis completed; no tests ran and no focused plan was produced."
     [[ -z "${MAKEVN_CHANGES_BASE}" ]] || printf -v next_base ' --base %q' "${MAKEVN_CHANGES_BASE}"
     makevn_print_detail_line "Next: makevn verify-changes-preview${next_base} --exhaustive (MCP focused: false; preserve the same explicit base), then inspect its scope before execution."
+    makevn_print_pr_impact_diagram "${repo_root}"
     return 0
   fi
   makevn_write_verify_changes_plan "${repo_root}"
   makevn_print_verify_changes_preflight "verify-changes-preview"
+  makevn_print_pr_impact_diagram "${repo_root}"
 }
 
 makevn_require_global_coverage_fresh() {
@@ -585,6 +591,7 @@ cmd_verify_changes() {
   makevn_load_profile "${repo_root}"
   makevn_changes_mode "$@"
   shift "${MAKEVN_VERIFY_CHANGES_MODE_ARGS}"
+  [[ "${MAKEVN_CHANGES_DIAGRAM:-false}" != true ]] || makevn_die "--diagram is only supported by verify-changes-preview"
   extra_args=()
   if [[ "${1:-}" == "--" ]]; then
     shift
@@ -653,7 +660,7 @@ No modified Java or POM files detected. Skipping verify-changes."
       [[ "${MAKEVN_TEST_IMPACT_CAPTURE:-false}" == true ]] || makevn_scoped_coverage_finish "${repo_root}" || return $?
       rc=0
     else rc=$?; fi
-    python3 "${SCRIPT_DIR}/common/changes_summary.py" "${repo_root}" "${MAKEVN_VERIFY_CHANGES_MAVEN_BASE_PATH}" "$(makevn_state_dir "${repo_root}")/verify-changes-started" "${rc}" || return $?
+    python3 "${SCRIPT_DIR}/common/changes_summary.py" "${repo_root}" "${MAKEVN_VERIFY_CHANGES_MAVEN_BASE_PATH}" "$(makevn_state_dir "${repo_root}")/verify-changes-started" "${rc}" "${MAKEVN_VERIFY_CHANGES_FOCUSED_PLAN}" "${MAKEVN_VERIFY_CHANGES_SELECTED_PLAN:-}" || return $?
     makevn_clear_verify_changes_plan "${repo_root}"
     return "${rc}"
   fi
