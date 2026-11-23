@@ -118,6 +118,9 @@ makevn_collect_test_names() {
     for test_name in "${split_names[@]-}"; do
       test_name="$(makevn_trim "${test_name}")"
       [[ -n "${test_name}" ]] || continue
+      if [[ "${test_name}" == *'#'* && ! "${test_name}" =~ ^[[:alpha:]_\$][[:alnum:]_\$]*\#[[:alpha:]_\$][[:alnum:]_\$]*$ ]]; then
+        makevn_die "Invalid test selector: ${test_name}. Use Class or Class#method."
+      fi
       test_names+=("${test_name}")
     done
   done
@@ -129,15 +132,18 @@ makevn_collect_test_names() {
 makevn_run_all_tests() {
   local repo_root="$1"
   local rc=0
+  local started logs_dir_hint
+  started="$(python3 -c 'import time; print(time.time_ns())')"
+  logs_dir_hint="$(makevn_logs_dir "${repo_root}")"
   # Bash 3.2 treats empty arrays as unset under nounset; preserve zero args.
   if makevn_run_maven_goal "${repo_root}" test test test ${extra_args[@]+"${extra_args[@]}"}; then
     rc=0
   else
     rc=$?
   fi
+  python3 "${MAKEVN_LIBEXEC_DIR}/common/test_run_evidence.py" "${repo_root}" '' \
+    "${started}" '' "${logs_dir_hint}/test.log"
   if [[ ${rc} -ne 0 ]]; then
-    local logs_dir_hint
-    logs_dir_hint="$(makevn_logs_dir "${repo_root}")"
     makevn_hint_stale_generated_sources_if_needed "${logs_dir_hint}/test.log"
     makevn_hint_format_failure "${repo_root}" "${logs_dir_hint}/test.log"
   fi
@@ -211,7 +217,7 @@ cmd_test() {
     else
       makevn_run_selected_test "${repo_root}" "${test_names[0]}" "${fast_mode}"
     fi
-    return 0
+    return $?
   fi
 
   makevn_run_test_sequence "${repo_root}"
@@ -720,7 +726,7 @@ makevn_archive_selected_test() {
 
 makevn_test_sequence_summary() {
   local repo_root="$1" total="$2" passed="$3" failed="$4"
-  local summary="Tests: ${total} executed, ${passed} passed, ${failed} failed"
+  local summary="Test selections: ${total} attempted, ${passed} succeeded, ${failed} failed"
   printf '%s\n' "${summary}"
   [[ -n "${MAKEVN_BACKEND_PHASE_DIR:-}" ]] || return 0
   local rc=0
