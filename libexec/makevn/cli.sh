@@ -34,7 +34,7 @@ Usage:
   makevn [--repo PATH] docker-logs [--compose boot|karate] [--service NAME]... [--tail N] [--since TIME] [--contains TEXT] [--json]
   makevn [--repo PATH] docker-up [--tail]
   makevn [--repo PATH] doctor [--compact] [--reset-config]
-  makevn [--repo PATH] format [--apply] [-- EXTRA_MAVEN_ARGS...]
+  makevn [--repo PATH] format [--apply] [--mvnd] [-- EXTRA_MAVEN_ARGS...]
   makevn [--repo PATH] [--compact] init [--dry-run] [--force]
   makevn [--repo PATH] jacoco-inspect
   makevn [--repo PATH] jdk current

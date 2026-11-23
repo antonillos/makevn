@@ -100,7 +100,7 @@ def collect_questions(arguments):
                                   java_homes.splitlines(), suggested=java_recommended))
     if arguments[11:12] == ["true"]:
         questions.append(question("use_mvnd",
-                                  "Use Maven Daemon by default for selected MCP tests in this worktree? "
+                                  "Use Maven Daemon by default for MCP formatting and named tests in this worktree? "
                                   f"Project Maven selection: {arguments[12]}. The daemon uses its bundled Maven. "
                                   "Project Enforcer rules still apply.",
                                   "boolean", [True, False]))

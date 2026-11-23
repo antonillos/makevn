@@ -112,17 +112,18 @@ import time
 
 args = sys.argv[1:]
 repo = Path(args[args.index('--repo') + 1]) if '--repo' in args else Path.cwd()
-command = next(arg for arg in args if arg in ['doctor', 'verify-changes-preview', 'verify-changes', 'verify', 'verify-ut', 'verify-it', 'test', 'clean', 'mutation', 'run-app-bg'])
+command = next(arg for arg in args if arg in ['doctor', 'verify-changes-preview', 'verify-changes', 'verify', 'verify-ut', 'verify-it', 'test', 'format', 'clean', 'mutation', 'run-app-bg'])
 if command in ['doctor', 'verify-changes-preview']:
     assert os.environ['MAKEVN_MCP_INSPECTION'] == '1'
     print('inspection completed')
     sys.exit(0)
 assert 'MAKEVN_MCP_INSPECTION' not in os.environ
 if '--mvnd' in args:
-    assert command == 'test'
+    assert command in ('test', 'format')
     assert os.environ['MAKEVN_MCP_MVND_SESSION']
     with (repo / 'mvnd-names').open('a') as file:
-        file.write(args[args.index('--name') + 1] + '\n')
+        selection = args[args.index('--name') + 1] if command == 'test' else 'format apply' if '--apply' in args else 'format check'
+        file.write(selection + '\n')
     with (repo / 'mvnd-groups').open('a') as file:
         file.write(str(os.getpgrp()) + '\n')
     if not (repo / 'mvnd-started').exists():
@@ -330,16 +331,27 @@ def mvnd_workflows(client, left, right):
 
     config = left / ".makevn/config"
     config.parent.mkdir()
+    config.write_text("MAKEVN_USE_MVND=FALSE\n")
+    (left / "quick").touch()
+    assert not client.call("format", repo=str(left))["isError"]
     config.write_text("MAKEVN_USE_MVND=TRUE\n")
-    result = client.call("composite_run", repo=str(left), steps=[step(), step()])
+    assert not client.call("format", repo=str(left), mvnd=False)["isError"]
+    assert not (left / "mvnd-groups").exists()
+    (left / "quick").unlink()
+    (left / "started").unlink()
+    format_step = {"tool": "format", "arguments": {"apply": True}}
+    result = client.call("composite_run", repo=str(left), steps=[format_step, step()])
     assert result["isError"] is False, result
+    assert (left / "mvnd-names").read_text().splitlines() == ["format apply", "ExampleTest"]
     initial = groups(left)
     assert len(initial) == 2 and len(set(initial)) == 1
     original = pids(left, 2)
 
     alias = left.with_name(left.name + "-alias")
     alias.symlink_to(left, target_is_directory=True)
-    conflict = client.call("parallel_run", repo=str(left), steps=[step(mvnd=True), step(repo=str(alias))])
+    conflict = client.call("parallel_run", repo=str(left), steps=[
+        {"tool": "format", "arguments": {"mvnd": True}}, step(repo=str(alias)),
+    ])
     assert conflict["isError"] is True
     assert "shares worktree" in conflict["structuredContent"]["untrustedData"]["output"]
     assert groups(left) == initial

@@ -403,6 +403,7 @@ cmd_pr_verify() {
 cmd_format() {
   local repo_root="$1"
   local apply=false
+  local use_daemon=false
   local maven_base_path=""
   local goal=""
   local -a extra_args
@@ -413,6 +414,10 @@ cmd_format() {
     case "$1" in
       --apply)
         apply=true
+        shift
+        ;;
+      --mvnd)
+        use_daemon=true
         shift
         ;;
       --)
@@ -430,11 +435,8 @@ cmd_format() {
   [[ -n "${maven_base_path}" ]] || makevn_die "No Maven project detected in ${repo_root}"
   goal="$(makevn_format_goal_for_project "${repo_root}" "${maven_base_path}" "${apply}")"
 
-  if [[ ${#extra_args[@]} -gt 0 ]]; then
-    makevn_run_maven_goal "${repo_root}" "${goal}" format format "${extra_args[@]}"
-  else
-    makevn_run_maven_goal "${repo_root}" "${goal}" format format
-  fi
+  makevn_run_maven_goal_with_daemon "${use_daemon}" "${repo_root}" "${goal}" format format \
+    ${extra_args[@]+"${extra_args[@]}"}
 }
 
 makevn_format_goal_for_project() {
