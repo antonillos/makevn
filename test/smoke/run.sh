@@ -1433,6 +1433,19 @@ printf 'ARGS=%s\n' "$*" >> .mvnw.log
 printf 'JAVA_HOME=%s\n' "${JAVA_HOME:-}" >> .mvnw.log
 printf 'LOCAL_CONTAINERS=%s\n' "${LOCAL_CONTAINERS:-}" >> .mvnw.log
 for arg in "$@"; do
+  case "${arg}" in
+    '-Dtest=com.example.UserRepositoryTest#lookup')
+      mkdir -p module-a/target/surefire-reports
+      printf '%s\n' '<testsuite><testcase classname="com.example.UserRepositoryTest" name="lookup[1]"/></testsuite>' \
+        > module-a/target/surefire-reports/TEST-com.example.UserRepositoryTest.xml
+      printf '%s\n' "[WARNING] Cached build doesn't contain all requested plugin executions"
+      ;;
+    '-Dit.test=com.example.UserFlowIT#flow')
+      mkdir -p module-a/target/failsafe-reports
+      printf '%s\n' '<testsuite><testcase classname="com.example.UserFlowIT" name="flow"/></testsuite>' \
+        > module-a/target/failsafe-reports/TEST-com.example.UserFlowIT.xml
+      ;;
+  esac
   if [[ "${arg}" == "failsafe:integration-test" ]]; then
     mkdir -p module-a/target/failsafe-reports
     cat > module-a/target/failsafe-reports/failsafe-summary.xml <<'XML'
@@ -1509,6 +1522,17 @@ EOF
   mkdir -p "${repo}/module-a/target/test-classes"
   selected_test_output="$(PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" test --name UserRepositoryTest --fast)"
   PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" test --name UserFlowIT >/dev/null
+  local method_output
+  method_output="$(PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" test --name 'UserRepositoryTest#lookup,UserFlowIT#flow')"
+  [[ "${method_output}" == *'Test evidence: 1 executed, 0 failed, 0 skipped'* ]] || fail "expected fresh method counts"
+  [[ "${method_output}" == *'Maven build cache warning:'* ]] || fail "expected build cache warning"
+  [[ "${method_output}" == *'Test selections: 2 attempted, 2 succeeded, 0 failed'* ]] || fail "expected unit and integration method success"
+  if PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" test --name 'UserRepositoryTest#missing' >/dev/null 2>&1; then
+    fail "a missing test method should not succeed without fresh evidence"
+  fi
+  if PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" test --name 'UserRepositoryTest#' >/dev/null 2>&1; then
+    fail "an empty method selector should be rejected"
+  fi
   PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" verify >/dev/null
   PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" run >/dev/null
   [[ "${build_output}" == *"[ok] "* ]] || fail "expected build output to include success summary"
