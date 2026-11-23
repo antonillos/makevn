@@ -32,6 +32,7 @@ mod agent_transaction;
 mod docker_resources;
 mod mcp_doctor;
 mod mcp_diagram;
+mod execution_logs;
 mod execution_retention;
 mod mcp_execution;
 mod mcp_runtime;
@@ -39,6 +40,12 @@ mod mcp_server;
 mod mcp_supervisor;
 
 fn main() {
+    if env::args_os().nth(1).as_deref() == Some(std::ffi::OsStr::new("execution-logs")) {
+        match execution_logs::cli(env::args_os().skip(2).collect()) {
+            Ok(()) => return,
+            Err(error) => exit_with_error(error),
+        }
+    }
     if env::args_os().nth(1).as_deref() == Some(std::ffi::OsStr::new("execution-cleanup")) {
         match execution_retention::cli(env::args_os().skip(2).collect()) {
             Ok(()) => return,
@@ -681,7 +688,7 @@ fn validate_command(
             Ok(CommandValidation::Valid)
         }
         "help" | "init" | "refresh" | "uninstall" | "test" | "coverage" | "coverage-changes" | "jacoco-inspect"
-        | "crap" | "crap-changes" | "docker-up" | "docker-down" | "docker-reset" | "docker-ps" | "docker-stats"
+        | "crap" | "crap-changes" | "docker-up" | "docker-down" | "docker-reset" | "docker-ps" | "docker-stats" | "docker-logs"
         | "docker-ps-required" | "karate-docker-up" | "karate-docker-down" | "karate-docker-reset" | "run-app"
         | "run-app-bg" | "stop-app" | "run" => Ok(CommandValidation::Valid),
         "doctor" => {
@@ -896,7 +903,7 @@ fn is_top_level_command(arg: &OsString) -> bool {
             | "docker-down"
             | "docker-reset"
             | "docker-ps"
-            | "docker-stats"
+            | "docker-stats" | "docker-logs"
             | "docker-ps-required"
             | "karate-docker-up"
             | "karate-docker-down"
@@ -927,6 +934,9 @@ fn command_option_takes_value(arg: &OsString) -> bool {
             | "--compose"
             | "--compose-file"
             | "--module"
+            | "--service"
+            | "--since"
+            | "--contains"
     )
 }
 
@@ -938,6 +948,9 @@ fn strip_frontend_tail_flag(
     command: &OsString,
     trailing_args: Vec<OsString>,
 ) -> Result<(Vec<OsString>, bool), String> {
+    if command == "docker-logs" {
+        return Ok((trailing_args, false));
+    }
     let mut forwarded_args = Vec::with_capacity(trailing_args.len());
     let mut tail = false;
     let mut forwarding_passthrough_args = false;
@@ -1066,12 +1079,29 @@ fn frontend_loader_is_available() -> bool {
     )
 }
 
+fn is_docker_logs_json(invocation: &BackendInvocation) -> bool {
+    invocation.args.first().is_some_and(|arg| arg == "docker-logs")
+        && invocation.args.iter().any(|arg| arg == "--json")
+}
+
 fn dispatch_backend_invocations(
     backend_path: &Path,
     current_exe: &Path,
     install_root: &Path,
     backend_invocations: Vec<BackendInvocation>,
 ) -> Result<i32, String> {
+    if let [invocation] = backend_invocations.as_slice() {
+        if is_docker_logs_json(invocation) {
+            let mut command = process::Command::new("bash");
+            command.arg(backend_path).args(&invocation.args);
+            command.env("MAKEVN_BIN_PATH", current_exe);
+            command.env("MAKEVN_INSTALL_ROOT", install_root);
+            command.env("MAKEVN_FRONTEND", "rust");
+            command.env("MAKEVN_FRONTEND_VERSION", makevn_version());
+            command.env("MAKEVN_VERSION", makevn_version());
+            return run_backend_command(command, backend_path);
+        }
+    }
     let mut last_exit_code = 0;
     let started_at = Instant::now();
     let mut completed_summaries: Vec<CommandSummary> = Vec::new();

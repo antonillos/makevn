@@ -1,7 +1,7 @@
 use std::collections::{BTreeSet, HashMap};
 use std::io::{self, BufRead, Read, Write};
-use std::path::PathBuf;
-use std::process::ChildStdin;
+use std::path::{Path, PathBuf};
+use std::process::{ChildStdin, Command};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{mpsc, Arc};
 use std::thread;
@@ -64,22 +64,21 @@ pub fn run(executable: PathBuf, backend: PathBuf) -> Result<i32, String> {
     session.serve(receiver, interrupted)
 }
 
-fn apply_daemon_preference(args: &mut Value, repo: &str) -> Result<(), String> {
+fn apply_daemon_preference(args: &mut Value, repo: &str, backend: &Path) -> Result<(), String> {
     if args.get("mvnd").is_some() {
         return Ok(());
     }
-    let names = args["name"].as_str().unwrap_or_default().split(',');
-    if names.filter(|name| !name.trim().is_empty()).count() == 1 && configured_daemon(repo) {
+    if mcp_server::has_test_names(args) && preferred_daemon(repo, backend) {
         args["mvnd"] = json!(true);
         mcp_server::validate_daemon_test_arguments("test", args)?;
     }
     Ok(())
 }
 
-fn daemon_worktrees(params: &mut Value, repo: &str) -> Result<BTreeSet<String>, String> {
+fn daemon_worktrees(params: &mut Value, repo: &str, backend: &Path) -> Result<BTreeSet<String>, String> {
     if params["name"] == "test" {
         let args = &mut params["arguments"];
-        apply_daemon_preference(args, repo)?;
+        apply_daemon_preference(args, repo, backend)?;
         if args["mvnd"] == true {
             args["repo"] = json!(repo);
             return Ok(BTreeSet::from([repo.to_owned()]));
@@ -95,7 +94,7 @@ fn daemon_worktrees(params: &mut Value, repo: &str) -> Result<BTreeSet<String>, 
     } else {
         HashMap::new()
     };
-    workflow_daemon_worktrees(steps, repo, &writes)
+    workflow_daemon_worktrees(steps, repo, &writes, backend)
 }
 
 fn workflow_write_counts(steps: &[Value], repo: &str) -> Result<HashMap<String, usize>, String> {
@@ -111,26 +110,27 @@ fn workflow_daemon_worktrees(
     steps: &mut [Value],
     repo: &str,
     writes: &HashMap<String, usize>,
+    backend: &Path,
 ) -> Result<BTreeSet<String>, String> {
     let mut worktrees = BTreeSet::new();
     for step in steps.iter_mut().filter(|step| step["tool"] == "test") {
         let args = &mut step["arguments"];
         let worktree = effective_repo(args, Some(repo))?;
-        if configure_workflow_daemon(args, &worktree, writes.get(&worktree).copied().unwrap_or_default())? {
+        if configure_workflow_daemon(args, &worktree, writes.get(&worktree).copied().unwrap_or_default(), backend)? {
             worktrees.insert(worktree);
         }
     }
     Ok(worktrees)
 }
 
-fn configure_workflow_daemon(args: &mut Value, worktree: &str, writes: usize) -> Result<bool, String> {
+fn configure_workflow_daemon(args: &mut Value, worktree: &str, writes: usize, backend: &Path) -> Result<bool, String> {
     if writes > 1 {
         if args["mvnd"] == true {
             return Err(format!("Parallel Maven Daemon test shares worktree {worktree} with another build. Use composite_run or separate worktrees."));
         }
         return Ok(false);
     }
-    apply_daemon_preference(args, worktree)?;
+    apply_daemon_preference(args, worktree, backend)?;
     if args["mvnd"] != true {
         return Ok(false);
     }
@@ -138,16 +138,23 @@ fn configure_workflow_daemon(args: &mut Value, worktree: &str, writes: usize) ->
     Ok(true)
 }
 
-fn configured_daemon(repo: &str) -> bool {
-    let path = std::path::Path::new(repo).join(".makevn/config");
-    // Doctor writes literal TRUE or FALSE values. Do not evaluate shell code at admission.
-    std::fs::read_to_string(path).is_ok_and(|config| {
-        config
-            .lines()
-            .rev()
-            .find_map(|line| line.strip_prefix("MAKEVN_USE_MVND="))
-            == Some("TRUE")
-    })
+fn preferred_daemon(repo: &str, backend: &Path) -> bool {
+    let Ok(install_root) = crate::install_root(backend) else {
+        return false;
+    };
+    Command::new("bash")
+        .args(["-c", r#"
+            source "$1"
+            base_path="$(makevn_detect_maven_base_path "$2")"
+            [[ -n "$base_path" ]] || exit 1
+            makevn_mvnd_status "$2" "$base_path"
+            [[ "$MAKEVN_MVND_STATUS" == mvnd ]]
+        "#, "makevn-mvnd-preference"])
+        .arg(install_root.join("libexec/makevn/common.sh"))
+        .arg(repo)
+        .current_dir(repo)
+        .output()
+        .is_ok_and(|output| output.status.success())
 }
 
 fn read_requests(sender: mpsc::Sender<Event>) {
@@ -311,7 +318,7 @@ impl McpSession {
         locks: Vec<std::fs::File>,
     ) -> Result<(std::process::Child, ChildStdin), String> {
         let mut groups = HashMap::new();
-        for repo in daemon_worktrees(params, &record.repo)? {
+        for repo in daemon_worktrees(params, &record.repo, &self.backend)? {
             let group = mcp_supervisor::DaemonGroup::for_worktree(
                 &mut self.daemon_groups,
                 &repo,
@@ -361,6 +368,7 @@ impl McpSession {
             return Ok(());
         }
         let mut result = mcp_server::standard_tool_result(&result, &params);
+        suggest_execution_logs(&mut result, &record);
         add_identity(&mut result, &record);
         write_message(json!({"jsonrpc":"2.0", "id":id, "result":result}))
     }
@@ -384,6 +392,7 @@ impl McpSession {
         } else {
             let record = self.control_record(params)?;
             add_identity(&mut result, &record);
+            self.attach_execution_logs(&mut result, &record, params)?;
             result["structuredContent"]["execution"] =
                 serde_json::to_value(record).map_err(|error| error.to_string())?;
         }
@@ -391,10 +400,30 @@ impl McpSession {
         Ok(result)
     }
 
+    fn attach_execution_logs(
+        &self,
+        result: &mut Value,
+        record: &ExecutionRecord,
+        params: &Value,
+    ) -> Result<(), String> {
+        if params["name"] == "execution_logs" {
+            result["structuredContent"]["untrustedData"]["executionLogs"] =
+                crate::execution_logs::read(&self.store, record, &params["arguments"])?;
+        }
+        Ok(())
+    }
+
     fn control_record(&mut self, params: &Value) -> Result<ExecutionRecord, String> {
         let id = params["arguments"]["executionId"]
             .as_str()
             .ok_or("executionId is required")?;
+        let resolved;
+        let id = if params["name"] == "execution_logs" {
+            resolved = crate::execution_logs::resolve_id(&self.store, id)?;
+            resolved.as_str()
+        } else {
+            id
+        };
         let mut record = self.store.get(id)?.snapshot();
         if params["name"] == "execution_cancel" {
             self.cancel_execution(&mut record)?;
@@ -494,6 +523,16 @@ fn add_identity(result: &mut Value, record: &ExecutionRecord) {
     mirror_content(result);
 }
 
+fn suggest_execution_logs(result: &mut Value, record: &ExecutionRecord) {
+    if record.state != "failed" {
+        return;
+    }
+    let args = json!({"executionId": record.execution_id});
+    let next = &mut result["structuredContent"]["nextSuggestion"];
+    let existing = next.as_str().unwrap_or_default();
+    *next = json!(format!("{existing} Inspect captured logs with MCP execution_logs {args} or CLI makevn execution-logs {}.", record.execution_id));
+}
+
 fn mirror_content(result: &mut Value) {
     result["content"][0]["text"] = json!(result["structuredContent"].to_string());
 }
@@ -526,7 +565,7 @@ fn cleanup_control(store: &ExecutionStore, params: &Value) -> Result<Value, Stri
 fn control_name(name: &str) -> bool {
     matches!(
         name,
-        "execution_list" | "execution_status" | "execution_cancel"
+        "execution_list" | "execution_status" | "execution_cancel" | "execution_logs"
     )
 }
 
@@ -553,13 +592,18 @@ pub fn control_tools() -> Vec<Value> {
     [("execution_cleanup", "Remove terminal executions and their private logs older than retentionDays (default MAKEVN_RETENTION_DAYS or 3). dryRun previews candidates without deleting."),
      ("execution_list", "List active MakeVN executions across local MCP sessions. includeFinished also returns preserved terminal executions."),
      ("execution_status", "Inspect one execution, including its owning session, repository, PR, state and logs. Pass the 32-character hexadecimal executionId from a MakeVN result or execution_list."),
+     ("execution_logs", "Read a bounded snapshot of captured Maven, stdout, stderr or supervisor logs without rerunning the execution. Supply executionId and optionally stream, step, tail and a case-sensitive literal contains filter. Set paginate only when older evidence is needed. Read structuredContent.untrustedData.executionLogs."),
      ("execution_cancel", "Cancel only an execution owned by this MCP session. Idempotent for stopped executions; cleanup uses five seconds of grace and two seconds of confirmation.")]
         .into_iter().map(|(name, description)| control_tool(name, description)).collect()
 }
 
 fn control_tool(name: &str, description: &str) -> Value {
     let mut output = mcp_server::result_schema();
-    let input = if name == "execution_cleanup" {
+    let input = if name == "execution_logs" {
+        output["properties"]["execution"] = crate::mcp_execution::record_schema();
+        output["properties"]["untrustedData"]["properties"]["executionLogs"] = crate::execution_logs::schema();
+        crate::execution_logs::input_schema()
+    } else if name == "execution_cleanup" {
         output["properties"]["cleanup"] = crate::execution_retention::schema();
         json!({"type":"object", "properties":{"retentionDays":{"type":"integer","minimum":1}, "dryRun":{"type":"boolean","default":false}}, "additionalProperties":false})
     } else if name == "execution_list" {

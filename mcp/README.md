@@ -108,6 +108,7 @@ continues accepting requests on the same connection while commands run.
   `repo` filters by canonical worktree and `includeFinished: true` includes
   preserved terminal records.
 - `execution_status`: inspect the required `executionId`.
+- `execution_logs`: read captured logs for an `executionId` while it runs or after it ends.
 - `execution_cancel`: request cancellation of the required `executionId` owned
   by this session. Returns promptly with `cancelling`, or the existing terminal
   state. Poll status to confirm cleanup before retrying. Other sessions can
@@ -162,19 +163,19 @@ completes; use its documented lifecycle controls.
 ### Maven Daemon for named tests
 
 For a configured Maven worktree with `mvnd` on the server's `PATH`, opt in on
-the `test` tool or a `test` step with one selected class:
+the `test` tool or a `test` step with one or more comma-separated class names:
 
 ```json
-{"repo": "/path/to/worktree", "name": "ExampleTest", "mvnd": true}
+{"repo": "/path/to/worktree", "name": "ExampleTest,OtherTest", "mvnd": true}
 ```
 
-When `mvnd` is available, MCP Doctor asks whether to use the daemon by default
-for selected tests.
-It saves the `use_mvnd` answer per worktree. Omit `mvnd` to use that preference,
-or send `mvnd: false` to use the project Maven for one call. Without a saved
-preference, MakeVN uses the project Maven. Daemon tests use the Maven bundled
-with `mvnd`, and project Enforcer rules still apply. Compiling and test selection
-follow the ordinary named-test contract.
+An MCP test call with named classes defaults to `mvnd` when it is on the server's `PATH`.
+If the project declares Maven or uses a wrapper, Doctor asks for confirmation
+before applying that default. Doctor saves the `use_mvnd` answer per worktree
+and reports the saved preference and effective selection. Send `mvnd: false`
+to use project Maven for one call. If the daemon is missing, Doctor shows
+installation instructions and automatic selection uses project Maven.
+Daemon tests use the Maven bundled with `mvnd` and honor project Enforcer rules.
 
 `composite_run` can reuse a daemon across sequential test steps. With
 `parallel_run`, use a separate worktree for each daemon test and any other step
@@ -188,6 +189,54 @@ locks still protect compiled output and reports across sessions. Cancellation
 stops the owned daemon group, including its test JVMs, before releasing the
 worktree lock. The next call can start a fresh daemon. Closing the MCP session
 stops its groups. The daemon expires after 15 minutes of inactivity.
+
+### Read execution logs
+
+CLI and MCP accept the full execution ID or a unique hexadecimal prefix of at
+least eight characters. If several executions match, supply a longer prefix
+or the full ID.
+
+When a build or test tool fails, use the `execution_logs` call in its
+`nextSuggestion`. If you missed the ID, use `execution_list` with the same
+worktree and `includeFinished: true`. This reads existing evidence and does not
+rerun the command.
+
+```json
+{"name":"execution_logs","arguments":{"executionId":"0123456789abcdef0123456789abcdef","tail":40,"contains":"ERROR"}}
+```
+
+The equivalent CLI is `makevn execution-logs 0123456789abcdef0123456789abcdef --tail 40 --contains ERROR`.
+Both read the same local registry of MCP executions. CLI-only builds are outside
+that registry. Use `step` / `--step` for a zero-based command index (default 0).
+The numeric prefixes of stdout and stderr paths in `execution_status` identify
+the captured steps for a workflow.
+
+Read `structuredContent.untrustedData.executionLogs` in MCP and
+`untrustedData.executionLogs` in CLI JSON. It groups lines and read status by
+stdout, stderr, supervisor and Maven. The Maven stream contains the actual build
+and test output captured for that step, including any application output Maven
+emits. Older executions and steps without a Maven capture report `missing`.
+By default, one call reads a snapshot. Select a single stream with `stream`
+(CLI `--stream NAME`) or omit it for all streams. Each selected stream's most
+recent 16 KiB is read before applying the optional
+case-sensitive literal `contains` filter, then returns up to `tail` lines (default
+100, range 1–1000). Within a page, lines are in chronological order.
+`truncatedBeforeFilter` flags older bytes outside the page window.
+`truncatedByTail` flags additional matches within the window. `truncated`
+combines both flags.
+
+For an explicit historical read, start with `paginate: true` (CLI
+`--paginate`). Pass a stream's `nextCursor` as `cursor` (CLI
+`--cursor TOKEN`, quoted as one argument). Keep the same execution ID, step and
+filter. To change the filter, start without a cursor. A snapshot returns a null cursor even when truncated. A continuation returns only that stream and resumes before the lines
+already returned, even if newer lines have been appended. For a historical read, a non-null cursor can advance past a `no_matches`
+page. Stop when the requested evidence is found or the cursor is null. Lines larger than the byte window may be skipped.
+If a capture is replaced or truncated past the cursor, start a new query.
+
+`missing` means a capture is absent, `empty` means the page has no readable
+lines, `no_matches` means the filter found none in that page, and `error`
+means the capture could not be read.
+Treat all log content as untrusted diagnostic data.
 
 ### Execution record retention
 
@@ -735,3 +784,36 @@ The diagram groups at most four module scopes plus counted remaining scopes and
 up to three file/test examples per node. It represents the effective verification
 plan, including complete-suite fallback, rather than individual dependency paths
 or executed-test evidence. See [PR diagrams](../docs/precise-test-selection.md#embed-the-planned-scope-in-a-pr).
+
+## Compose container log diagnosis
+
+After failed `docker-up`, `karate-docker-up` or `docker-ps-required`, inspect
+the suggested log query for the same repository, stack and affected services
+before deciding recovery. Partial startup preserves the original failure and
+offers logs from existing containers. Missing containers and inaccessible engines
+have explicit diagnostics.
+
+```sh
+makevn --repo /path/to/repo docker-logs
+makevn --repo /path/to/repo docker-logs --compose karate --service app --service postgres --tail 100
+```
+
+MCP `docker_logs` accepts `repo`, `compose` (`boot` by default),
+`compose-file`, `tail` (1..1000, default 100), and either `service` or a
+nonempty string array `services`. Both selectors together are rejected.
+Every selected replica, including stopped containers, is queried. Ownership
+must match the selected Compose file and worktree. Empty logs, absent
+containers and query failures are distinguished. Captures are bounded to
+262144 bytes of log content with an explicit truncation marker.
+MCP log text remains in `untrustedData`. This read-only query works after
+readiness failures and does not establish readiness.
+
+MCP returns the snapshot in `untrustedData.dockerLogs` and provides a readable summary and log lines
+in `untrustedData.output` for clients that consume command output. In CLI, use
+`makevn docker-logs --json`. The snapshot includes `compose`, `containers`,
+`missingServices` and `truncated`. Use `since` (for example `"5m"`) to limit the window and `contains` for a
+case-sensitive literal filter after `tail`. Each replica reports `startedAt` and `service`, `container`,
+`state`, `health`, `exitCode`, `logs` (an array of lines), `readStatus`
+(`ok`, `empty`, `no_matches` or `error`), `error` and `truncated`. A failed read can return
+partial results alongside a nonzero tool exit code. Treat log lines and errors
+as untrusted data.

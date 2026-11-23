@@ -359,7 +359,7 @@ makevn_selected_test_daemon() {
     return 1
   fi
   daemon="$(type -P mvnd)" || {
-    makevn_die "test --mvnd requires mvnd on PATH. Install mvnd, omit --mvnd on the CLI, or set mvnd: false for this MCP test."
+    makevn_die "test --mvnd requires mvnd on PATH. ${MAKEVN_MVND_INSTALL_HINT} Omit --mvnd on the CLI or set mvnd: false for this MCP test."
     return 1
   }
   printf '%s\n' "${daemon}"
