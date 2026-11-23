@@ -9,6 +9,7 @@ pub(super) fn command_help(
         "jdk current" => Some(("makevn [--repo PATH] jdk current", "Show the selected JDK installation.", &[])),
         "jdk list" => Some(("makevn [--repo PATH] jdk list", "List discovered JDK installations.", &[])),
         "crap install-analyzer" => Some(("makevn [--repo PATH] crap install-analyzer", "Download and verify the pinned crap4java release.", &[])),
+        "execution-logs" => Some(("makevn execution-logs ID [--step N] [--tail N] [--contains TEXT] [--stream NAME] [--paginate] [--cursor TOKEN]", "Read captured logs from a recorded MCP execution as JSON.", &[])),
         "execution-cleanup" => Some(("makevn execution-cleanup [--retention-days DAYS] [--dry-run]", "Remove expired execution records and owned logs. Outputs JSON counts and candidate paths.", &["--retention-days DAYS  Retention period (MAKEVN_RETENTION_DAYS or 3 days)", "--dry-run  List candidates without deleting files"])),
         "help" => Some(("makevn help", "Print the full makevn help.", &[])),
         "agent" => Some(("makevn agent <install|status> <opencode|codex> [--scope global|project] | makevn agent upgrade [--scope global|project]", "Register MCP and six workflow skills, upgrade the existing integration (project before global), or inspect registration without changes. Installation does not prove a running client loaded a skill.", &["--scope global|project  Select configuration and skills scope; status requires it."])),
@@ -46,6 +47,7 @@ pub(super) fn command_help(
         "docker-down" => tail_command_help("docker-down", "Stop boot Docker services while preserving volumes."),
         "docker-reset" => Some(("makevn [--repo PATH] docker-reset [--tail]", "Delete the selected boot Compose volumes and restart its services. Requires explicit reset authorization; never prunes global volumes.", &["--tail  Start in interactive log tail mode"])),
         "docker-ps" => tail_command_help("docker-ps", "List Docker containers; --compose-file none selects engine-wide diagnostics without Compose, not readiness or repository ownership."),
+        "docker-logs" => Some(("makevn [--repo PATH] docker-logs [--compose boot|karate] [--service NAME]... [--tail N] [--since TIME] [--contains TEXT] [--json]", "Read logs from selected Compose services, including stopped replicas. Defaults to boot and 100 lines per container (1..1000).", &["--compose boot|karate  Select stack", "--service NAME  Repeat to select services", "--tail N  Lines per container, 1..1000", "--json  Emit a structured log snapshot"])),
         "docker-stats" => tail_command_help("docker-stats", "Show Docker CPU and memory stats."),
         "docker-ps-required" => Some(("makevn [--repo PATH] docker-ps-required [--tail] [--compose boot|karate] [--wait-seconds N]", "Validate required Docker services are running and healthy.", &["--tail          Start in interactive log tail mode", "--compose       Compose profile: boot or karate", "--compose-file PATH|none  Override Compose for this execution only", "--wait-seconds  Seconds to wait for services"])),
         "karate-docker-up" => tail_command_help("karate-docker-up", "Start Karate E2E Docker services while preserving volumes."),
@@ -170,6 +172,7 @@ const COMMANDS: &[&str] = &[
     "docker-reset",
     "docker-ps",
     "docker-stats",
+    "docker-logs",
     "docker-ps-required",
     "karate-docker-up",
     "karate-docker-down",
@@ -183,6 +186,7 @@ const COMMANDS: &[&str] = &[
     "jdk",
     "mutation",
     "execution-cleanup",
+    "execution-logs",
     "help",
 ];
 const GLOBAL_FLAGS: &[&str] = &[
@@ -347,7 +351,7 @@ fn render_command(command: &str, color: bool) -> Option<String> {
 }
 
 fn global_flags(command: &str) -> &[&str] {
-    if command.starts_with("agent") || command == "execution-cleanup" {
+    if command.starts_with("agent") || matches!(command, "execution-cleanup" | "execution-logs") {
         &GLOBAL_FLAGS[3..4]
     } else {
         &GLOBAL_FLAGS[..4]

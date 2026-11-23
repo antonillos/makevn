@@ -334,13 +334,13 @@ makevn_run_logged_in_context() {
       (
         cd "${command_cwd}"
         env JAVA_HOME="${java_home}" PATH="${java_home}/bin:${PATH}" "$@"
-      ) > "${logfile}" 2>&1
-      exit_code=$?
+      ) 2>&1 | tee -a "${logfile}" ${MAKEVN_MCP_MAVEN_LOG:+"${MAKEVN_MCP_MAVEN_LOG}"} > /dev/null
+      exit_code=${PIPESTATUS[0]}
     else
       (
         cd "${command_cwd}"
         env JAVA_HOME="${java_home}" PATH="${java_home}/bin:${PATH}" "$@"
-      ) 2>&1 | tee "${logfile}"
+      ) 2>&1 | tee -a "${logfile}" ${MAKEVN_MCP_MAVEN_LOG:+"${MAKEVN_MCP_MAVEN_LOG}"}
       exit_code=${PIPESTATUS[0]}
     fi
     set -e

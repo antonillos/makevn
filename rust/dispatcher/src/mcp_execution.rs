@@ -358,6 +358,7 @@ pub fn inspection(tool: &str) -> bool {
             | "verify_changes_preview"
             | "docker_ps"
             | "docker_stats"
+            | "docker_logs"
             | "docker_ps_required"
             | "jdk_current"
             | "jdk_list"

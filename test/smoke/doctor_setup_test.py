@@ -88,7 +88,7 @@ class DoctorSetupTests(unittest.TestCase):
 
     def test_daemon_choice_persists_both_answers(self):
         arguments = [str(self.repo), "", "", "", "", "false", "false", "false",
-                     "", "", "", "true"]
+                     "", "", "", "true", "maven 3.9.11"]
         for enabled, setting in ((True, "TRUE"), (False, "FALSE")):
             with self.subTest(enabled=enabled):
                 self.details = setup.collect_questions(arguments)

@@ -24,14 +24,14 @@ without Compose the tests own container startup, so no `docker_up` is needed.
 | Whole project | `makevn verify` | `verify` | Full requested verification results |
 | Changed code | preview then `makevn verify-changes` | `verify_changes_preview`, `verify_changes` | Reviewed scope and fresh Surefire/Failsafe evidence |
 
-For a single named MCP test, omit `mvnd` to use the worktree preference from
-Doctor. Pass `mvnd: false` for one run with the project Maven, or `mvnd: true`
-to opt in explicitly when mvnd is installed. The daemon uses its bundled Maven;
-project Enforcer rules still apply.
-When mvnd is enabled and several tests are requested, use one `composite_run`
-with one named `test` step per class. Pass `mvnd: true` to each step for explicit
-selection, or omit it to inherit the Doctor preference. This can reuse the daemon
-across steps. In `parallel_run`, arrange daemon tests and any other
+An MCP test call with named classes defaults to `mvnd` when it is on the server's PATH.
+For worktrees with a Maven declaration or wrapper, resolve Doctor's
+`use_mvnd` question before relying on the default. Doctor supplies installation
+instructions when the daemon is missing and automatic selection uses project
+Maven. Pass `mvnd: false` to use project Maven for one call. Daemon tests use
+their bundled Maven and honor project Enforcer rules.
+Pass comma-separated names to run several classes sequentially in a single
+`test` call with the same daemon. In `parallel_run`, arrange daemon tests and any other
 build-writing steps in distinct worktrees. An explicit daemon step conflicts
 with another build on the same worktree. When the flag is omitted in a shared
 worktree, the parallel workflow uses the project Maven. On the CLI, pass
