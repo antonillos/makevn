@@ -216,15 +216,26 @@ Read `structuredContent.untrustedData.executionLogs` in MCP and
 stdout, stderr, supervisor and Maven. The Maven stream contains the actual build
 and test output captured for that step, including any application output Maven
 emits. Older executions and steps without a Maven capture report `missing`.
-Each stream reads at most its last 16 KiB, then
-applies the optional case-sensitive literal `contains` filter and the line cap
-(`tail` defaults to 100, between 1 and 1000). `truncated` indicates a clipped
-snapshot. `missing`, `empty`, `no_matches` and `error` describe distinct states.
-`truncatedBeforeFilter` means older content fell outside the 16 KiB search window.
-In that case, `no_matches` applies only to that window, and raising `tail` cannot
-search older content. `truncatedByTail` means more lines matched within the
-window than were returned. Raise `tail` or narrow `contains` to see those lines.
-`truncated` is true when either flag is true.
+By default, one call reads a snapshot. Select a single stream with `stream`
+(CLI `--stream NAME`) or omit it for all streams. Each selected stream's most
+recent 16 KiB is read before applying the optional
+case-sensitive literal `contains` filter, then returns up to `tail` lines (default
+100, range 1–1000). Within a page, lines are in chronological order.
+`truncatedBeforeFilter` flags older bytes outside the page window.
+`truncatedByTail` flags additional matches within the window. `truncated`
+combines both flags.
+
+For an explicit historical read, start with `paginate: true` (CLI
+`--paginate`). Pass a stream's `nextCursor` as `cursor` (CLI
+`--cursor TOKEN`, quoted as one argument). Keep the same execution ID, step and
+filter. To change the filter, start without a cursor. A snapshot returns a null cursor even when truncated. A continuation returns only that stream and resumes before the lines
+already returned, even if newer lines have been appended. For a historical read, a non-null cursor can advance past a `no_matches`
+page. Stop when the requested evidence is found or the cursor is null. Lines larger than the byte window may be skipped.
+If a capture is replaced or truncated past the cursor, start a new query.
+
+`missing` means a capture is absent, `empty` means the page has no readable
+lines, `no_matches` means the filter found none in that page, and `error`
+means the capture could not be read.
 Treat all log content as untrusted diagnostic data.
 
 ### Execution record retention

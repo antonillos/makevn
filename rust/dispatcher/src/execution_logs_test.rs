@@ -1,5 +1,6 @@
 use super::*;
 use std::fs;
+use std::io::Write;
 use std::os::unix::fs::symlink;
 
 #[test]
@@ -11,6 +12,15 @@ fn cli_accepts_help_and_validates_snapshot_options() {
     assert_eq!(
         cli_options(&options).unwrap(),
         json!({"step":2,"tail":1,"contains":"Tests run:"})
+    );
+    assert_eq!(
+        cli_options(&["--cursor".into(), "token".into()]).unwrap(),
+        json!({"cursor":"token"})
+    );
+    let snapshot_options = ["--stream", "maven", "--paginate", "--tail", "50"].map(OsString::from);
+    assert_eq!(
+        cli_options(&snapshot_options).unwrap(),
+        json!({"stream":"maven","paginate":true,"tail":50})
     );
     for flags in [["--tail", "bad"], ["--step", "bad"], ["--unknown", "1"]] {
         assert!(cli_options(&flags.map(OsString::from)).is_err());
@@ -93,6 +103,35 @@ fn snapshot_filters_and_bounds_each_stream_without_following_symlinks() {
     assert_eq!(logs["streams"][0]["truncated"], true);
     assert_eq!(logs["streams"][0]["truncatedBeforeFilter"], true);
     assert_eq!(logs["streams"][0]["truncatedByTail"], true);
+    assert!(logs["streams"][0]["nextCursor"].is_null());
+    let paged = read(
+        &store, &record,
+        &json!({"step":1,"tail":1,"contains":"ERROR","stream":"stdout","paginate":true}),
+    ).unwrap();
+    assert_eq!(paged["streams"].as_array().unwrap().len(), 1);
+    let cursor = &paged["streams"][0]["nextCursor"];
+    assert!(read(&store, &record, &json!({"step":1,"stream":"stderr","cursor":cursor})).is_err());
+    for changed_filter in [json!("INFO"), json!("")] {
+        let error = read(
+            &store,
+            &record,
+            &json!({"step":1,"contains":changed_filter,"cursor":cursor}),
+        )
+        .unwrap_err();
+        assert!(error.contains("start again without a cursor"), "{error}");
+    }
+    assert!(read(&store, &record, &json!({"step":1,"cursor":cursor}))
+        .unwrap_err()
+        .contains("does not match contains"));
+    let arguments = json!({"step":1,"tail":1,"contains":"ERROR","cursor":cursor});
+    let previous = read(&store, &record, &arguments).unwrap();
+    assert_eq!(previous["streams"].as_array().unwrap().len(), 1);
+    assert_eq!(previous["streams"][0]["stream"], "stdout");
+    assert_eq!(previous["streams"][0]["lines"], json!(["ERROR first"]));
+    assert!(read(&store, &record, &json!({"step":2,"cursor":cursor})).is_err());
+    assert!(read(&store, &record, &json!({"cursor":"invalid"})).is_err());
+    assert!(read(&store, &record, &json!({"stream":"unknown"})).is_err());
+    assert!(read(&store, &record, &json!({"paginate":"true"})).is_err());
     let wide = read(
         &store,
         &record,
@@ -120,4 +159,78 @@ fn snapshot_filters_and_bounds_each_stream_without_following_symlinks() {
     assert!(read(&store, &record, &json!({"tail":1001})).is_err());
 
     fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn cursor_reaches_matches_before_an_empty_page_and_ignores_appends() {
+    let root = std::env::temp_dir().join(crate::mcp_execution::new_id().unwrap());
+    fs::create_dir(&root).unwrap();
+    let path = root.join("0.maven.log");
+    let middle = "ordinary CRLF line\r\n".repeat(1000);
+    fs::write(&path, format!("ERROR first\r\nERROR second\r\n{middle}")).unwrap();
+    let directory = File::open(&root).unwrap();
+    let mut query = PageQuery {
+        stream: None,
+        paginate: true,
+        execution: "example",
+        step: 0,
+        tail: 1,
+        contains: Some("ERROR"),
+        cursor: None,
+    };
+    let newest = query.read_stream(&directory, 3).unwrap();
+    assert_eq!(newest.status, "no_matches");
+    assert!(newest.clipped);
+    OpenOptions::new()
+        .append(true)
+        .open(&path)
+        .unwrap()
+        .write_all(b"ERROR appended\n")
+        .unwrap();
+
+    query.cursor = Some(Cursor::parse(&json!(newest.cursor), query.contains).unwrap());
+    let older = query.read_stream(&directory, 3).unwrap();
+    assert_eq!(older.lines, ["ERROR second"]);
+    assert!(older.limited);
+
+    query.cursor = Some(Cursor::parse(&json!(older.cursor), query.contains).unwrap());
+    let oldest = query.read_stream(&directory, 3).unwrap();
+    assert_eq!(oldest.lines, ["ERROR first"]);
+    assert!(oldest.cursor.is_none());
+
+    fs::rename(&path, root.join("original.log")).unwrap();
+    fs::write(&path, middle).unwrap();
+    assert!(query
+        .read_stream(&directory, 3)
+        .err()
+        .unwrap()
+        .to_string()
+        .contains("Log changed"));
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn oversized_line_does_not_prevent_reaching_earlier_lines() {
+    let input = format!("first\n{}\nlast\n", "x".repeat(3 * STREAM_BYTES as usize));
+    let mut end = input.len();
+    let mut partial = false;
+    let mut lines = Vec::new();
+    loop {
+        let offset = end.saturating_sub(STREAM_BYTES as usize + 1);
+        let page = select_page(
+            &input.as_bytes()[offset..end],
+            offset as u64,
+            partial,
+            100,
+            None,
+        );
+        lines.extend(page.lines);
+        let Some((next, next_partial)) = page.next else {
+            break;
+        };
+        assert!(next < end as u64);
+        end = next as usize;
+        partial = next_partial;
+    }
+    assert_eq!(lines, ["last", "first"]);
 }

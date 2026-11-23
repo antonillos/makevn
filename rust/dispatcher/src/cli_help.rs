@@ -9,7 +9,7 @@ pub(super) fn command_help(
         "jdk current" => Some(("makevn [--repo PATH] jdk current", "Show the selected JDK installation.", &[])),
         "jdk list" => Some(("makevn [--repo PATH] jdk list", "List discovered JDK installations.", &[])),
         "crap install-analyzer" => Some(("makevn [--repo PATH] crap install-analyzer", "Download and verify the pinned crap4java release.", &[])),
-        "execution-logs" => Some(("makevn execution-logs ID [--step N] [--tail N] [--contains TEXT]", "Read captured logs from a recorded MCP execution as JSON.", &[])),
+        "execution-logs" => Some(("makevn execution-logs ID [--step N] [--tail N] [--contains TEXT] [--stream NAME] [--paginate] [--cursor TOKEN]", "Read captured logs from a recorded MCP execution as JSON.", &[])),
         "execution-cleanup" => Some(("makevn execution-cleanup [--retention-days DAYS] [--dry-run]", "Remove expired execution records and owned logs. Outputs JSON counts and candidate paths.", &["--retention-days DAYS  Retention period (MAKEVN_RETENTION_DAYS or 3 days)", "--dry-run  List candidates without deleting files"])),
         "help" => Some(("makevn help", "Print the full makevn help.", &[])),
         "agent" => Some(("makevn agent <install|status> <opencode|codex> [--scope global|project] | makevn agent upgrade [--scope global|project]", "Register MCP and six workflow skills, upgrade the existing integration (project before global), or inspect registration without changes. Installation does not prove a running client loaded a skill.", &["--scope global|project  Select configuration and skills scope; status requires it."])),
