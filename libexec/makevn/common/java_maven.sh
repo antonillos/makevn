@@ -386,7 +386,9 @@ print(hashlib.sha256(b"\0".join(paths)).hexdigest()[:24])
 
 makevn_run_selected_test() {
   local repo_root="$1"
-  local test_name="$2"
+  local selector="$2"
+  local test_name="${selector%%#*}"
+  local method_suffix="${selector#"${test_name}"}"
   local fast_mode="$3"
   local maven_base_path=""
   local maven_executable=""
@@ -404,7 +406,7 @@ makevn_run_selected_test() {
   local title=""
   local test_param=""
   local test_mode="unit"
-  local rc=0
+  local rc=0 evidence_rc=0 started reports_dir=surefire-reports
   local -a cli_flags=()
   local -a prop_flags=()
   local -a maven_args=()
@@ -449,9 +451,10 @@ makevn_run_selected_test() {
   full_test_class="${package_name}.${test_name}"
   if [[ "${test_name}" == *IT ]] || grep -Eq '@SpringBootTest|@DataMongoTest|@WebMvcTest|@Testcontainers' "${test_file}"; then
     test_mode="integration"
-    test_param="-Dit.test=${full_test_class}"
+    reports_dir=failsafe-reports
+    test_param="-Dit.test=${full_test_class}${method_suffix}"
   else
-    test_param="-Dtest=${full_test_class}"
+    test_param="-Dtest=${full_test_class}${method_suffix}"
   fi
 
   if [[ "${use_mvnd:-false}" == true ]]; then
@@ -478,8 +481,8 @@ makevn_run_selected_test() {
         printf '%s\n' "$(makevn_warn "Error: test classes not compiled for ${module_path:-root project}. Run 'makevn test --name ${test_name}' first.")" >&2
         return 1
       fi
-      title="test ${test_name} --fast"
-      log_name="test-fast-$(makevn_test_log_token "${test_name}")"
+      title="test ${selector} --fast"
+      log_name="test-fast-$(makevn_test_log_token "${selector}")"
       if [[ -n "${local_containers}" ]]; then
         maven_args=(env "LOCAL_CONTAINERS=${local_containers}" "${maven_executable}")
       else
@@ -495,8 +498,8 @@ makevn_run_selected_test() {
       fi
       maven_args+=(failsafe:integration-test)
     else
-      title="test ${test_name}"
-      log_name="test-$(makevn_test_log_token "${test_name}")"
+      title="test ${selector}"
+      log_name="test-$(makevn_test_log_token "${selector}")"
       if [[ -n "${local_containers}" ]]; then
         maven_args=(env "LOCAL_CONTAINERS=${local_containers}" "${maven_executable}")
       else
@@ -518,11 +521,11 @@ makevn_run_selected_test() {
         printf '%s\n' "$(makevn_warn "Error: test classes not compiled for ${module_path:-root project}. Run 'makevn test --name ${test_name}' first.")" >&2
         return 1
       fi
-      title="test ${test_name} --fast"
-      log_name="test-fast-$(makevn_test_log_token "${test_name}")"
+      title="test ${selector} --fast"
+      log_name="test-fast-$(makevn_test_log_token "${selector}")"
     else
-      title="test ${test_name}"
-      log_name="test-$(makevn_test_log_token "${test_name}")"
+      title="test ${selector}"
+      log_name="test-$(makevn_test_log_token "${selector}")"
     fi
 
     maven_args=("${maven_executable}")
@@ -559,6 +562,7 @@ makevn_run_selected_test() {
     rm -f "${maven_base_path}/${module_path}/target/failsafe-reports/failsafe-summary.xml"
   fi
 
+  started="$(python3 -c 'import time; print(time.time_ns())')"
   # Logging restores errexit internally. Catch the delegated status before it
   # can terminate the shell and suppress recovery hints.
   if MAKEVN_COMPACT_OUTPUT=1 makevn_run_logged_in_context "${repo_root}" code "${maven_base_path}" "${log_name}" test "${title}" "${maven_args[@]}"; then
@@ -566,6 +570,9 @@ makevn_run_selected_test() {
   else
     rc=$?
   fi
+  local logfile="$(makevn_logs_dir "${repo_root}")/${log_name}.log"
+  python3 "${MAKEVN_LIBEXEC_DIR}/common/test_run_evidence.py" "${module_base_path}" "${reports_dir}" \
+    "${started}" "${full_test_class}${method_suffix}" "${logfile}" || evidence_rc=$?
   if [[ ${rc} -ne 0 ]]; then
     local logs_dir_hint
     logs_dir_hint="$(makevn_logs_dir "${repo_root}")"
@@ -573,6 +580,8 @@ makevn_run_selected_test() {
     makevn_hint_format_failure "${repo_root}" "${logs_dir_hint}/${log_name}.log"
     return ${rc}
   fi
+
+  [[ ${evidence_rc} -eq 0 ]] || return "${evidence_rc}"
 
   if [[ "${test_mode}" == "integration" ]]; then
     makevn_verify_selected_failsafe_summary "${maven_base_path}" "${module_path}" "${test_name}"

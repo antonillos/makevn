@@ -294,9 +294,15 @@ makevn test [--name TEST]... [--fast] [-- EXTRA_MAVEN_ARGS...]
 Rules:
 
 - no `--name` means full test execution
-- `--name FooTest` selects one test
+- `--name FooTest` selects a class. Quote `--name 'FooTest#method'` to select
+  one method, using the same plugin as the class. Method selection requires a
+  fresh non-skipped matching testcase in conventional Maven XML.
 - `--name FooTest,BarTest` selects multiple tests sequentially
-- repeated `--name` flags are allowed
+- repeated `--name` flags are allowed, including mixed class and method selectors
+- Each invocation summarizes fresh conventional Surefire/Failsafe XML as executed,
+  failed and skipped counts or reports that evidence is unavailable. For named
+  tests the counts cover the selected class or method. A Maven build-cache warning
+  about missing plugin executions is surfaced when present in the test log.
 - `--fast` requires at least one selected test
 - If test fails with stale generated sources errors, a hint is displayed
   suggesting `makevn clean --clean-generated-contract-targets`
