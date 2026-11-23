@@ -1,4 +1,4 @@
-use std::ffi::{CString, OsString};
+use std::ffi::{CString, OsStr, OsString};
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Read, Seek, SeekFrom};
 use std::os::fd::{AsRawFd, FromRawFd};
@@ -404,18 +404,22 @@ fn cli_options(options: &[OsString]) -> Result<Value, String> {
         }
         let value = options.next().ok_or(HELP)?;
         let value = value.to_str().ok_or("option values must be UTF-8")?;
-        let (key, value) = match flag.to_str() {
-            Some(flag @ ("--step" | "--tail")) => {
-                let key = &flag[2..];
-                let number = value.parse::<u64>().map_err(|_| format!("invalid {key}"))?;
-                (key, json!(number))
-            }
-            Some(flag @ ("--contains" | "--stream" | "--cursor")) => (&flag[2..], json!(value)),
-            _ => return Err(HELP.into()),
-        };
+        let (key, value) = cli_option_value(flag, value)?;
         args[key] = value;
     }
     Ok(args)
+}
+
+fn cli_option_value<'a>(flag: &'a OsStr, value: &str) -> Result<(&'a str, Value), String> {
+    match flag.to_str() {
+        Some(flag @ ("--step" | "--tail")) => {
+            let key = &flag[2..];
+            let number = value.parse::<u64>().map_err(|_| format!("invalid {key}"))?;
+            Ok((key, json!(number)))
+        }
+        Some(flag @ ("--contains" | "--stream" | "--cursor")) => Ok((&flag[2..], json!(value))),
+        _ => Err(HELP.into()),
+    }
 }
 
 #[cfg(test)]
