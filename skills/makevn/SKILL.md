@@ -29,6 +29,10 @@ profile and manifest files are managed state. A skill is not a runtime dependenc
 5. Select the specialty below and load its instructions before that workflow.
 6. Report command, scope, exit status, evidence and any unverified requirement.
 
+Doctor reports the Maven Daemon preference and installation guidance for named
+MCP tests. If a Maven declaration or wrapper requires confirmation, collect
+the user's `use_mvnd` answer and save it through `doctor_configure`.
+
 ## Setup decision table
 
 `doctor` diagnoses; `init` creates or repairs repository integration and detected

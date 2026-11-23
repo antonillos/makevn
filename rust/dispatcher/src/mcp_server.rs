@@ -74,6 +74,7 @@ pub(crate) fn result_schema() -> Value {
             "argument": {"type": "string"},
             "interactive_setup": crate::mcp_doctor::setup_schema(),
             "suggested_next_step": {"type": "object"},
+        "mvnd": {"type": "object"},
             "graph": {"type": "object"},
             "executionId": {"type": "string"},
             "executionState": {"enum": ["queued", "running", "cancelling", "succeeded", "failed", "cancelled"]}
@@ -165,10 +166,19 @@ pub(crate) fn standard_tool_result(result: &ToolCallResult, params: &Value) -> V
         structured["graph"] = graph_result["graph"].clone();
         structured["untrustedData"]["output"] = graph_result["text"].clone();
     }
+    attach_doctor_snapshot(&mut structured, tool, result);
+    json!({"content": [{"type": "text", "text": structured.to_string()}],
+        "structuredContent": structured, "isError": failed})
+}
+
+fn attach_doctor_snapshot(structured: &mut Value, tool: &str, result: &ToolCallResult) {
     if let Some(snapshot) = &result.doctor_snapshot {
         structured["interactive_setup"] = snapshot["interactive_setup"].clone();
         structured["suggested_next_step"] = snapshot["suggested_next_step"].clone();
-        if failed && tool == "doctor_configure" && snapshot["errorCode"] == crate::mcp_doctor::STALE_SETUP_TOKEN {
+        if let Some(mvnd) = snapshot.get("mvnd") {
+            structured["mvnd"] = mvnd.clone();
+        }
+        if result.exit_code != 0 && tool == "doctor_configure" && snapshot["errorCode"] == crate::mcp_doctor::STALE_SETUP_TOKEN {
             structured["errorCode"] = json!(crate::mcp_doctor::STALE_SETUP_TOKEN);
             structured["message"] = json!("Doctor setup changed before the answers could be saved.");
             structured["interactive_setup"]["setupToken"] = Value::Null;
@@ -181,8 +191,6 @@ pub(crate) fn standard_tool_result(result: &ToolCallResult, params: &Value) -> V
             });
         }
     }
-    json!({"content": [{"type": "text", "text": structured.to_string()}],
-        "structuredContent": structured, "isError": failed})
 }
 
 fn attach_docker_logs(result: &mut Value, tool: &str, output: &str) {
@@ -518,7 +526,7 @@ const TOOL_SPECS: &[ToolSpec] = &[
     ToolSpec { name: "package", description: "Compile and package without running tests.", command: &["package"], options: &[COMMON_REPO, COMPACT] },
     ToolSpec { name: "build", description: "Full Maven build (compile, test, package).", command: &["build"], options: &[COMMON_REPO, COMPACT] },
     ToolSpec { name: "clean", description: "Clean Maven build output; first archive manifest-owned legacy focused JaCoCo HTML while preserving XML, CSV and snapshot evidence. For diagnosed stale generated-source compilation failures, set clean-generated-contract-targets=true, then retry the original test or verification without fast. If cleanup fails, inspect untrustedData and logPaths before retrying; do not move the cleanup flag to test or verification tools.", command: &["clean"], options: &[COMMON_REPO, CLEAN_GENERATED_CONTRACT_TARGETS, COMPACT] },
-    ToolSpec { name: "test", description: "Run tests with optional name filter. When mvnd is enabled explicitly or by Doctor and multiple tests are requested, use one composite_run with one named test per step. Preserve explicit mvnd=true on each step or omit mvnd to inherit the Doctor preference. Use fast=true only after a successful compile or test run when sources have not changed.", command: &["test"], options: &[COMMON_REPO, ToolOption { name: "name", ty: "string", description: "Test class name or comma-separated names", required: false }, ToolOption { name: "fast", ty: "boolean", description: "Skip compilation only after a successful compile or test run when sources have not changed. Do not use on the first test run.", required: false }, ToolOption { name: "mvnd", ty: "boolean", description: "Override the Doctor preference for Maven Daemon on a single named test. Requires mvnd on PATH. In parallel workflows use a separate worktree for a daemon step.", required: false }, ToolOption { name: "properties", ty: "object", description: "Explicit Maven user properties as string values, forwarded as -Dname=value. Do not infer skip values or copy flags from other workflows.", required: false }, COMPACT] },
+    ToolSpec { name: "test", description: "Run tests with optional name filter. One named test prefers an installed mvnd unless disabled or awaiting Doctor confirmation for a Maven declaration or wrapper. When mvnd is selected and multiple tests are requested, use one composite_run with one named test per step. Preserve explicit mvnd=true on each step or omit mvnd to inherit the Doctor preference. Use fast=true only after a successful compile or test run when sources have not changed.", command: &["test"], options: &[COMMON_REPO, ToolOption { name: "name", ty: "string", description: "Test class name or comma-separated names", required: false }, ToolOption { name: "fast", ty: "boolean", description: "Skip compilation only after a successful compile or test run when sources have not changed. Do not use on the first test run.", required: false }, ToolOption { name: "mvnd", ty: "boolean", description: "Override the Doctor preference for Maven Daemon on a single named test. Requires mvnd on PATH. In parallel workflows use a separate worktree for a daemon step.", required: false }, ToolOption { name: "properties", ty: "object", description: "Explicit Maven user properties as string values, forwarded as -Dname=value. Do not infer skip values or copy flags from other workflows.", required: false }, COMPACT] },
     ToolSpec { name: "verify_ut", description: "Run unit-test-only verification.", command: &["verify-ut"], options: &[COMMON_REPO, COMPACT] },
     ToolSpec { name: "verify_ut_coverage", description: "Run unit-test-only verification with coverage.", command: &["verify-ut-coverage"], options: &[COMMON_REPO, COMPACT] },
     ToolSpec { name: "verify_it", description: "Run integration-test-only verification.", command: &["verify-it"], options: &[COMMON_REPO, COMPACT, COMPOSE_FILE] },

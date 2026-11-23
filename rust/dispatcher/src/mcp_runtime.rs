@@ -1,7 +1,7 @@
 use std::collections::{BTreeSet, HashMap};
 use std::io::{self, BufRead, Read, Write};
-use std::path::PathBuf;
-use std::process::ChildStdin;
+use std::path::{Path, PathBuf};
+use std::process::{ChildStdin, Command};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{mpsc, Arc};
 use std::thread;
@@ -64,22 +64,22 @@ pub fn run(executable: PathBuf, backend: PathBuf) -> Result<i32, String> {
     session.serve(receiver, interrupted)
 }
 
-fn apply_daemon_preference(args: &mut Value, repo: &str) -> Result<(), String> {
+fn apply_daemon_preference(args: &mut Value, repo: &str, backend: &Path) -> Result<(), String> {
     if args.get("mvnd").is_some() {
         return Ok(());
     }
     let names = args["name"].as_str().unwrap_or_default().split(',');
-    if names.filter(|name| !name.trim().is_empty()).count() == 1 && configured_daemon(repo) {
+    if names.filter(|name| !name.trim().is_empty()).count() == 1 && preferred_daemon(repo, backend) {
         args["mvnd"] = json!(true);
         mcp_server::validate_daemon_test_arguments("test", args)?;
     }
     Ok(())
 }
 
-fn daemon_worktrees(params: &mut Value, repo: &str) -> Result<BTreeSet<String>, String> {
+fn daemon_worktrees(params: &mut Value, repo: &str, backend: &Path) -> Result<BTreeSet<String>, String> {
     if params["name"] == "test" {
         let args = &mut params["arguments"];
-        apply_daemon_preference(args, repo)?;
+        apply_daemon_preference(args, repo, backend)?;
         if args["mvnd"] == true {
             args["repo"] = json!(repo);
             return Ok(BTreeSet::from([repo.to_owned()]));
@@ -95,7 +95,7 @@ fn daemon_worktrees(params: &mut Value, repo: &str) -> Result<BTreeSet<String>, 
     } else {
         HashMap::new()
     };
-    workflow_daemon_worktrees(steps, repo, &writes)
+    workflow_daemon_worktrees(steps, repo, &writes, backend)
 }
 
 fn workflow_write_counts(steps: &[Value], repo: &str) -> Result<HashMap<String, usize>, String> {
@@ -111,26 +111,27 @@ fn workflow_daemon_worktrees(
     steps: &mut [Value],
     repo: &str,
     writes: &HashMap<String, usize>,
+    backend: &Path,
 ) -> Result<BTreeSet<String>, String> {
     let mut worktrees = BTreeSet::new();
     for step in steps.iter_mut().filter(|step| step["tool"] == "test") {
         let args = &mut step["arguments"];
         let worktree = effective_repo(args, Some(repo))?;
-        if configure_workflow_daemon(args, &worktree, writes.get(&worktree).copied().unwrap_or_default())? {
+        if configure_workflow_daemon(args, &worktree, writes.get(&worktree).copied().unwrap_or_default(), backend)? {
             worktrees.insert(worktree);
         }
     }
     Ok(worktrees)
 }
 
-fn configure_workflow_daemon(args: &mut Value, worktree: &str, writes: usize) -> Result<bool, String> {
+fn configure_workflow_daemon(args: &mut Value, worktree: &str, writes: usize, backend: &Path) -> Result<bool, String> {
     if writes > 1 {
         if args["mvnd"] == true {
             return Err(format!("Parallel Maven Daemon test shares worktree {worktree} with another build. Use composite_run or separate worktrees."));
         }
         return Ok(false);
     }
-    apply_daemon_preference(args, worktree)?;
+    apply_daemon_preference(args, worktree, backend)?;
     if args["mvnd"] != true {
         return Ok(false);
     }
@@ -138,16 +139,23 @@ fn configure_workflow_daemon(args: &mut Value, worktree: &str, writes: usize) ->
     Ok(true)
 }
 
-fn configured_daemon(repo: &str) -> bool {
-    let path = std::path::Path::new(repo).join(".makevn/config");
-    // Doctor writes literal TRUE or FALSE values. Do not evaluate shell code at admission.
-    std::fs::read_to_string(path).is_ok_and(|config| {
-        config
-            .lines()
-            .rev()
-            .find_map(|line| line.strip_prefix("MAKEVN_USE_MVND="))
-            == Some("TRUE")
-    })
+fn preferred_daemon(repo: &str, backend: &Path) -> bool {
+    let Ok(install_root) = crate::install_root(backend) else {
+        return false;
+    };
+    Command::new("bash")
+        .args(["-c", r#"
+            source "$1"
+            base_path="$(makevn_detect_maven_base_path "$2")"
+            [[ -n "$base_path" ]] || exit 1
+            makevn_mvnd_status "$2" "$base_path"
+            [[ "$MAKEVN_MVND_STATUS" == mvnd ]]
+        "#, "makevn-mvnd-preference"])
+        .arg(install_root.join("libexec/makevn/common.sh"))
+        .arg(repo)
+        .current_dir(repo)
+        .output()
+        .is_ok_and(|output| output.status.success())
 }
 
 fn read_requests(sender: mpsc::Sender<Event>) {
@@ -311,7 +319,7 @@ impl McpSession {
         locks: Vec<std::fs::File>,
     ) -> Result<(std::process::Child, ChildStdin), String> {
         let mut groups = HashMap::new();
-        for repo in daemon_worktrees(params, &record.repo)? {
+        for repo in daemon_worktrees(params, &record.repo, &self.backend)? {
             let group = mcp_supervisor::DaemonGroup::for_worktree(
                 &mut self.daemon_groups,
                 &repo,
