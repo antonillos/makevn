@@ -107,7 +107,7 @@ print_doctor() {
 
   if [[ "${MAKEVN_DOCTOR_REPO_SUPPORT_STATUS}" == supported && -n "${MAKEVN_MVND_STATUS:-}" ]]; then
     makevn_print_item "MAKEVN_USE_MVND" "${MAKEVN_MVND_PREFERENCE}"
-    makevn_print_item "Maven Daemon for named MCP tests" "${MAKEVN_MVND_STATUS}"
+    makevn_print_item "Maven Daemon for MCP format and named tests" "${MAKEVN_MVND_STATUS}"
     case "${MAKEVN_MVND_STATUS}" in
       missing) makevn_print_detail_line "Warning: mvnd is unavailable on PATH. Using project Maven. ${MAKEVN_MVND_INSTALL_HINT}" ;;
       confirmation) makevn_print_detail_line "Using project Maven pending confirmation of mvnd for ${MAKEVN_MVND_PIN}." ;;

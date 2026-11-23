@@ -21,6 +21,13 @@ Load [makevn-test](../makevn-test/SKILL.md) for verification and
 | Install CRAP analyzer | `makevn crap install-analyzer` | `crap_install_analyzer` | Pinned download passes SHA-256 verification |
 | Mutation | `makevn mutation` | `mutation` | Supported PIT report and requested result |
 
+For MCP `format`, omit `mvnd` to use Doctor's worktree preference. Set
+`mvnd: false` to use project Maven for one call, or `mvnd: true` to opt in
+explicitly when compatible. On the CLI, use `format --mvnd`, with `--apply` when
+authorized. A planned sequence of format and named test steps can reuse the
+daemon through `composite_run`. When recovering from a formatter failure,
+inspect the formatting diff before retrying the original test.
+
 For Checkstyle, inspect doctor's `Checkstyle support: yes` signal (CLI JSON:
 `repository_analysis.checkstyle_available` is `yes`). This reports availability;
 run `checkstyle` and inspect its exit status to establish success. See the

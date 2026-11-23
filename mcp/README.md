@@ -160,7 +160,7 @@ locks until owned descendants have stopped. The explicitly background
 `run_app_bg` command retains its detached contract after its launch command
 completes; use its documented lifecycle controls.
 
-### Maven Daemon for named tests
+### Maven Daemon for formatting and named tests
 
 For a configured Maven worktree with `mvnd` on the server's `PATH`, opt in on
 the `test` tool or a `test` step with one or more comma-separated class names:
@@ -169,16 +169,17 @@ the `test` tool or a `test` step with one or more comma-separated class names:
 {"repo": "/path/to/worktree", "name": "ExampleTest,OtherTest", "mvnd": true}
 ```
 
-An MCP test call with named classes defaults to `mvnd` when it is on the server's `PATH`.
+The `format` tool and format steps also accept `mvnd` for both check and apply.
+MCP format and named tests default to `mvnd` when it is on the server's `PATH`.
 If the project declares Maven or uses a wrapper, Doctor asks for confirmation
 before applying that default. Doctor saves the `use_mvnd` answer per worktree
 and reports the saved preference and effective selection. Send `mvnd: false`
 to use project Maven for one call. If the daemon is missing, Doctor shows
 installation instructions and automatic selection uses project Maven.
-Daemon tests use the Maven bundled with `mvnd` and honor project Enforcer rules.
+Daemon steps use the Maven bundled with `mvnd` and honor project Enforcer rules.
 
-`composite_run` can reuse a daemon across sequential test steps. With
-`parallel_run`, use a separate worktree for each daemon test and any other step
+`composite_run` can reuse a daemon across sequential format and named test steps.
+With `parallel_run`, use a separate worktree for each daemon step and any other step
 that writes build output. A shared-worktree parallel workflow keeps its normal
 Maven behavior when `mvnd` is omitted. An explicit `mvnd: true` on a conflicting
 step is rejected before any step starts. Use `composite_run` to run those steps

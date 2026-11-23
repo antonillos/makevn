@@ -64,21 +64,26 @@ pub fn run(executable: PathBuf, backend: PathBuf) -> Result<i32, String> {
     session.serve(receiver, interrupted)
 }
 
-fn apply_daemon_preference(args: &mut Value, repo: &str, backend: &Path) -> Result<(), String> {
+fn supports_daemon(tool: &Value) -> bool {
+    matches!(tool.as_str(), Some("test" | "format"))
+}
+
+fn apply_daemon_preference(tool: &str, args: &mut Value, repo: &str, backend: &Path) -> Result<(), String> {
     if args.get("mvnd").is_some() {
         return Ok(());
     }
-    if mcp_server::has_test_names(args) && preferred_daemon(repo, backend) {
+    if (tool == "format" || mcp_server::has_test_names(args)) && preferred_daemon(repo, backend) {
         args["mvnd"] = json!(true);
-        mcp_server::validate_daemon_test_arguments("test", args)?;
+        mcp_server::validate_daemon_test_arguments(tool, args)?;
     }
     Ok(())
 }
 
 fn daemon_worktrees(params: &mut Value, repo: &str, backend: &Path) -> Result<BTreeSet<String>, String> {
-    if params["name"] == "test" {
+    if supports_daemon(&params["name"]) {
+        let tool = params["name"].as_str().unwrap_or_default().to_owned();
         let args = &mut params["arguments"];
-        apply_daemon_preference(args, repo, backend)?;
+        apply_daemon_preference(&tool, args, repo, backend)?;
         if args["mvnd"] == true {
             args["repo"] = json!(repo);
             return Ok(BTreeSet::from([repo.to_owned()]));
@@ -113,24 +118,25 @@ fn workflow_daemon_worktrees(
     backend: &Path,
 ) -> Result<BTreeSet<String>, String> {
     let mut worktrees = BTreeSet::new();
-    for step in steps.iter_mut().filter(|step| step["tool"] == "test") {
+    for step in steps.iter_mut().filter(|step| supports_daemon(&step["tool"])) {
+        let tool = step["tool"].as_str().unwrap_or_default().to_owned();
         let args = &mut step["arguments"];
         let worktree = effective_repo(args, Some(repo))?;
-        if configure_workflow_daemon(args, &worktree, writes.get(&worktree).copied().unwrap_or_default(), backend)? {
+        if configure_workflow_daemon(&tool, args, &worktree, writes.get(&worktree).copied().unwrap_or_default(), backend)? {
             worktrees.insert(worktree);
         }
     }
     Ok(worktrees)
 }
 
-fn configure_workflow_daemon(args: &mut Value, worktree: &str, writes: usize, backend: &Path) -> Result<bool, String> {
+fn configure_workflow_daemon(tool: &str, args: &mut Value, worktree: &str, writes: usize, backend: &Path) -> Result<bool, String> {
     if writes > 1 {
         if args["mvnd"] == true {
-            return Err(format!("Parallel Maven Daemon test shares worktree {worktree} with another build. Use composite_run or separate worktrees."));
+            return Err(format!("Parallel Maven Daemon {tool} shares worktree {worktree} with another build. Use composite_run or separate worktrees."));
         }
         return Ok(false);
     }
-    apply_daemon_preference(args, worktree, backend)?;
+    apply_daemon_preference(tool, args, worktree, backend)?;
     if args["mvnd"] != true {
         return Ok(false);
     }

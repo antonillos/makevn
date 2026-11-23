@@ -351,15 +351,15 @@ makevn_verify_selected_failsafe_summary() {
   return 0
 }
 
-makevn_selected_test_daemon() {
-  local daemon
+makevn_maven_daemon() {
+  local command_name="$1" daemon
 
   if [[ -n "${MAKEVN_MCP_PHASE_OUT:-}" && -z "${MAKEVN_MCP_MVND_SESSION:-}" ]]; then
-    makevn_die "test --mvnd requires a managed MakeVN MCP test step"
+    makevn_die "${command_name} --mvnd requires a managed MakeVN MCP step"
     return 1
   fi
   daemon="$(type -P mvnd)" || {
-    makevn_die "test --mvnd requires mvnd on PATH. ${MAKEVN_MVND_INSTALL_HINT} Omit --mvnd on the CLI or set mvnd: false for this MCP test."
+    makevn_die "${command_name} --mvnd requires mvnd on PATH. ${MAKEVN_MVND_INSTALL_HINT} Omit --mvnd on the CLI or set mvnd: false for this MCP call."
     return 1
   }
   printf '%s\n' "${daemon}"
@@ -382,6 +382,13 @@ print(hashlib.sha256(b"\0".join(paths)).hexdigest()[:24])
     storage+="/mcp-${MAKEVN_MCP_MVND_SESSION}/${identity}"
   fi
   printf '%s\n' "${storage}"
+}
+
+# Append to the calling runner's Maven argument array.
+makevn_append_mvnd_args() {
+  local daemon_storage
+  daemon_storage="$(makevn_mvnd_storage "$@")" || return $?
+  maven_args+=("-Dmvnd.daemonStorage=${daemon_storage}" "-Dmvnd.registry=${daemon_storage}/registry.bin" -Dmvnd.idleTimeout=15m -T1)
 }
 
 makevn_run_selected_test() {
@@ -458,7 +465,7 @@ makevn_run_selected_test() {
   fi
 
   if [[ "${use_mvnd:-false}" == true ]]; then
-    maven_executable="$(makevn_selected_test_daemon)" || return $?
+    maven_executable="$(makevn_maven_daemon test)" || return $?
   else
     maven_executable="$(makevn_maven_executable "${repo_root}" "${maven_base_path}")" || return $?
   fi
@@ -553,9 +560,7 @@ makevn_run_selected_test() {
     maven_args+=("$@")
   fi
   if [[ "${use_mvnd:-false}" == true ]]; then
-    local daemon_storage
-    daemon_storage="$(makevn_mvnd_storage "${repo_root}" "${maven_base_path}" "${maven_executable}")" || return $?
-    maven_args+=("-Dmvnd.daemonStorage=${daemon_storage}" "-Dmvnd.registry=${daemon_storage}/registry.bin" -Dmvnd.idleTimeout=15m -T1)
+    makevn_append_mvnd_args "${repo_root}" "${maven_base_path}" "${maven_executable}" || return $?
   fi
 
   if [[ "${test_mode}" == "integration" ]]; then
@@ -771,6 +776,12 @@ makevn_parse_goal_flags() {
 }
 
 makevn_run_maven_goal() {
+  makevn_run_maven_goal_with_daemon false "$@"
+}
+
+makevn_run_maven_goal_with_daemon() {
+  local use_daemon="$1"
+  shift
   local repo_root="$1"
   local goal="$2"
   local log_name="$3"
@@ -794,7 +805,11 @@ makevn_run_maven_goal() {
     makevn_die "No Maven project detected in ${repo_root}"
   fi
 
-  maven_executable="$(makevn_maven_executable "${repo_root}" "${maven_base_path}")" || return $?
+  if [[ "${use_daemon}" == true ]]; then
+    maven_executable="$(makevn_maven_daemon "${command_name}")" || return $?
+  else
+    maven_executable="$(makevn_maven_executable "${repo_root}" "${maven_base_path}")" || return $?
+  fi
   maven_cli_flags_value="$(makevn_maven_cli_flags_for_command "${repo_root}" "${command_name}")"
   maven_prop_flags_value="$(makevn_maven_prop_flags_for_command "${repo_root}" "${command_name}")"
   command_pre_goals_value="$(makevn_maven_pre_goals_for_command "${repo_root}" "${command_name}")"
@@ -813,6 +828,9 @@ makevn_run_maven_goal() {
   fi
   if [[ $# -gt 0 ]]; then
     maven_args+=("$@")
+  fi
+  if [[ "${use_daemon}" == true ]]; then
+    makevn_append_mvnd_args "${repo_root}" "${maven_base_path}" "${maven_executable}" || return $?
   fi
 
   MAKEVN_COMPACT_OUTPUT=1 makevn_run_logged_in_context "${repo_root}" code "${maven_base_path}" "${log_name}" "${command_name}" "${log_name}" "${maven_args[@]}"

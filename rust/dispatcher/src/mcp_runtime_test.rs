@@ -1,6 +1,32 @@
 use super::*;
 
 #[test]
+fn format_daemon_is_managed_directly_and_in_workflows() {
+    let cwd = std::env::current_dir().unwrap();
+    let repo = effective_repo(&Value::Null, cwd.to_str()).unwrap();
+    let expected = BTreeSet::from([repo.clone()]);
+    let backend = Path::new("/unused/makevn");
+    let mut direct = json!({"name":"format","arguments":{"apply":true,"mvnd":true}});
+    assert_eq!(daemon_worktrees(&mut direct, &repo, backend).unwrap(), expected);
+    assert_eq!(direct["arguments"]["repo"], repo);
+    direct["arguments"]["mvnd"] = json!(false);
+    assert!(daemon_worktrees(&mut direct, &repo, backend).unwrap().is_empty());
+
+    let mut workflow = json!({"name":"composite_run","arguments":{"steps":[
+        {"tool":"format","arguments":{"mvnd":true}},
+        {"tool":"test","arguments":{"mvnd":true,"name":"ExampleTest"}}
+    ]}});
+    assert_eq!(daemon_worktrees(&mut workflow, &repo, backend).unwrap(), expected);
+    for step in workflow["arguments"]["steps"].as_array().unwrap() {
+        assert_eq!(step["arguments"]["repo"], repo);
+    }
+
+    workflow["name"] = json!("parallel_run");
+    let error = daemon_worktrees(&mut workflow, &repo, backend).unwrap_err();
+    assert!(error.contains("Maven Daemon format shares worktree"));
+}
+
+#[test]
 fn cancellation_preserves_tool_guidance_and_mirrors_the_final_result() {
     for tool in ["docker_up", "docker_down", "docker_ps", "docker_stats",
         "docker_ps_required", "karate_docker_up", "karate_docker_down", "karate_all"] {
