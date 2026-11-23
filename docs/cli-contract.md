@@ -640,7 +640,7 @@ validate JSON health status, application semantics, or Kafka availability.
 ### Maven Daemon diagnostics
 
 Doctor reports the saved `MAKEVN_USE_MVND` preference, availability and
-effective executor for single named MCP tests. If the daemon is missing,
+effective executor for MCP test calls with named classes. If the daemon is missing,
 Doctor displays installation guidance and automatic selection uses the
 project Maven. For direct CLI tests, select the daemon with `test --mvnd`.
 

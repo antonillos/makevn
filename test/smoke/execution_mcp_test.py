@@ -121,6 +121,8 @@ assert 'MAKEVN_MCP_INSPECTION' not in os.environ
 if '--mvnd' in args:
     assert command == 'test'
     assert os.environ['MAKEVN_MCP_MVND_SESSION']
+    with (repo / 'mvnd-names').open('a') as file:
+        file.write(args[args.index('--name') + 1] + '\n')
     with (repo / 'mvnd-groups').open('a') as file:
         file.write(str(os.getpgrp()) + '\n')
     if not (repo / 'mvnd-started').exists():
@@ -278,8 +280,7 @@ def managed_daemon_reuses_group_and_cleans_forks(executable, state, repo):
         args = {"repo": str(repo), "name": "ExampleTest", "mvnd": True}
         assert client.call("test", repo=str(repo), mvnd=True)["isError"]
         assert client.call("test", **{**args, "properties": {"mvnd.daemonStorage": "/tmp/foreign"}})["isError"]
-        invalid = {**args, "name": "FirstTest,SecondTest"}
-        assert client.call("composite_run", steps=[{"tool": "test", "arguments": invalid}])["isError"]
+        assert client.call("test", **{**args, "name": " , "})["isError"]
         quick = repo / "quick"
         quick.touch()
         default_args = {"repo": str(repo), "name": "ExampleTest"}
@@ -292,8 +293,10 @@ def managed_daemon_reuses_group_and_cleans_forks(executable, state, repo):
         assert client.call("test", **default_args, mvnd=False)["isError"] is False
         assert not (repo / "mvnd-groups").exists()
         assert client.call("test", **default_args, properties={"mvnd.daemonStorage": "/tmp/foreign"})["isError"]
-        for _ in range(2):
-            assert client.call("test", **default_args)["isError"] is False
+        names = "FirstTest,SecondTest"
+        assert client.call("test", **{**args, "name": names})["isError"] is False
+        assert client.call("test", **{**default_args, "name": names})["isError"] is False
+        assert (repo / "mvnd-names").read_text().splitlines() == [names, names]
         owned = pids(repo, 2)
         groups = (repo / "mvnd-groups").read_text().splitlines()
         assert len(groups) == 2 and groups[0] == groups[1]

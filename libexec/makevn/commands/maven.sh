@@ -196,8 +196,8 @@ cmd_test() {
     makevn_die "test --fast requires at least one --name"
   fi
 
-  if [[ "${use_mvnd}" == true && ${#test_names[@]} -ne 1 ]]; then
-    makevn_die "test --mvnd requires exactly one --name"
+  if [[ "${use_mvnd}" == true && ${#test_names[@]} -eq 0 ]]; then
+    makevn_die "test --mvnd requires at least one --name"
   fi
 
   if [[ ${#test_names[@]} -eq 0 ]]; then
