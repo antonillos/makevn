@@ -297,7 +297,7 @@ makevn_append_coverage_cli_flags() {
 makevn_test_log_token() {
   local token=""
 
-  token="$(printf '%s' "$1" | tr '/ :,=' '_____' | tr -cd '[:alnum:]._-')"
+  token="$(printf '%s' "$1" | tr '/ :,=#$' '_______' | tr -cd '[:alnum:]._-')"
   if [[ -n "${token}" ]]; then
     printf '%s\n' "${token}"
     return 0
@@ -391,11 +391,21 @@ makevn_append_mvnd_args() {
   maven_args+=("-Dmvnd.daemonStorage=${daemon_storage}" "-Dmvnd.registry=${daemon_storage}/registry.bin" -Dmvnd.idleTimeout=15m -T1)
 }
 
+makevn_named_test_filter() {
+  local test_class="$1" method_suffix="$2"
+  printf '%s' "${test_class}${method_suffix}"
+  if [[ -n "${method_suffix}" && "${test_class}" != *'$'* ]]; then
+    printf ',%s$*%s' "${test_class}" "${method_suffix}"
+  fi
+  printf '\n'
+}
+
 makevn_run_selected_test() {
   local repo_root="$1"
   local selector="$2"
-  local test_name="${selector%%#*}"
-  local method_suffix="${selector#"${test_name}"}"
+  local selected_class="${selector%%#*}"
+  local test_name="${selected_class%%\$*}"
+  local method_suffix="${selector#"${selected_class}"}"
   local fast_mode="$3"
   local maven_base_path=""
   local maven_executable=""
@@ -404,7 +414,7 @@ makevn_run_selected_test() {
   local module_path=""
   local module_base_path=""
   local package_name=""
-  local full_test_class=""
+  local full_test_class="" maven_selector=""
   local boot_module=""
   local local_containers=""
   local cli_flags_value=""
@@ -455,13 +465,14 @@ makevn_run_selected_test() {
     return 1
   fi
 
-  full_test_class="${package_name}.${test_name}"
+  full_test_class="${package_name}.${selected_class}"
+  maven_selector="$(makevn_named_test_filter "${full_test_class}" "${method_suffix}")"
   if [[ "${test_name}" == *IT ]] || grep -Eq '@SpringBootTest|@DataMongoTest|@WebMvcTest|@Testcontainers' "${test_file}"; then
     test_mode="integration"
     reports_dir=failsafe-reports
-    test_param="-Dit.test=${full_test_class}${method_suffix}"
+    test_param="-Dit.test=${maven_selector}"
   else
-    test_param="-Dtest=${full_test_class}${method_suffix}"
+    test_param="-Dtest=${maven_selector}"
   fi
 
   if [[ "${use_mvnd:-false}" == true ]]; then

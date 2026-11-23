@@ -435,7 +435,10 @@ before retrying. For example, omit `compact` from `docker_ps_required`; MCP
 already configures compact output for the command.
 
 For `test`, pass a class or `Class#method` as `name`; comma-separated
-selectors run sequentially. The output reports fresh Surefire/Failsafe testcase
+selectors run sequentially. An unqualified method matches the outer class and
+its nested classes. Use `Class$Nested#method` to target one nested class. If
+multiple declaring classes executed the method, the call fails with their
+selectors. The output reports fresh Surefire/Failsafe testcase
 counts or unavailable evidence for each invocation. Method selectors require
 fresh non-skipped matching evidence. The output also surfaces Maven build-cache
 warnings about missing plugin executions when found in the test log.

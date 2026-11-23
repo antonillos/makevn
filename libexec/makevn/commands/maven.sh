@@ -113,13 +113,15 @@ makevn_parse_test_options() {
 
 # Uses the owning command's local option/argument state (Bash dynamic scope).
 makevn_collect_test_names() {
+  local identifier='[[:alpha:]_][[:alnum:]_]*'
+  local method_selector="^${identifier}(\\\$${identifier})*#[[:alpha:]_\$][[:alnum:]_\$]*$"
   for name_arg in "${name_args[@]-}"; do
     IFS=',' read -r -a split_names <<< "${name_arg}"
     for test_name in "${split_names[@]-}"; do
       test_name="$(makevn_trim "${test_name}")"
       [[ -n "${test_name}" ]] || continue
-      if [[ "${test_name}" == *'#'* && ! "${test_name}" =~ ^[[:alpha:]_\$][[:alnum:]_\$]*\#[[:alpha:]_\$][[:alnum:]_\$]*$ ]]; then
-        makevn_die "Invalid test selector: ${test_name}. Use Class or Class#method."
+      if [[ "${test_name}" == *'#'* && ! "${test_name}" =~ ${method_selector} ]]; then
+        makevn_die 'Invalid test selector. Use Class, Class#method, or Class$Nested#method.'
       fi
       test_names+=("${test_name}")
     done
