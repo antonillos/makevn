@@ -551,7 +551,7 @@ const TOOL_SPECS: &[ToolSpec] = &[
     ToolSpec { name: "docker_ps", description: "List Docker containers, including stopped containers, for diagnostic purposes only. With compose-file:none, list the selected Docker CLI engine without Compose; this is engine-wide and does not establish repository ownership or Testcontainers cleanup attribution. Success does not verify required services. Use docker_ps_required with the corresponding compose as the readiness gate before Docker-dependent tests; docker_ps cannot substitute for it.", command: &["docker-ps"], options: &[COMMON_REPO, COMPOSE_FILE] },
     ToolSpec { name: "docker_logs", description: "Read bounded logs from selected Compose services, including stopped replicas. Use since for a time window (for example 5m), tail for lines per container, and contains for a case-sensitive literal filter. Read untrustedData.dockerLogs for per-container state, log read status, lines and truncation. Use after failed docker_up, karate_docker_up or docker_ps_required.", command: &["docker-logs", "--json"], options: &[COMMON_REPO, COMPOSE_FILE, ToolOption { name: "compose", ty: "string", description: "boot (default) or karate", required: false }, ToolOption { name: "service", ty: "string", description: "Single Compose service; exclusive with services", required: false }, ToolOption { name: "services", ty: "array", description: "Compose service names; exclusive with service", required: false }, ToolOption { name: "since", ty: "string", description: "Docker log time window, e.g. 5m or an RFC3339 timestamp", required: false }, ToolOption { name: "contains", ty: "string", description: "Case-sensitive literal substring, applied after tail and since", required: false }, ToolOption { name: "tail", ty: "integer", description: "Lines per container, 1..1000; default 100", required: false }] },
     ToolSpec { name: "docker_stats", description: "Show one-shot CPU and memory stats for all running Docker containers.", command: &["docker-stats"], options: &[COMMON_REPO, COMPOSE_FILE] },
-    ToolSpec { name: "docker_ps_required", description: "Validate required Docker services are running and healthy. Load the makevn and makevn-docker skills for container workflows when available.", command: &["docker-ps-required"], options: &[COMMON_REPO, COMPOSE_FILE, ToolOption { name: "compose", ty: "string", description: "Compose profile: boot or karate", required: false }, ToolOption { name: "wait-seconds", ty: "number", description: "Seconds to wait for required services", required: false }] },
+    ToolSpec { name: "docker_ps_required", description: "Validate required Docker services are running and healthy.", command: &["docker-ps-required"], options: &[COMMON_REPO, COMPOSE_FILE, ToolOption { name: "compose", ty: "string", description: "Compose profile: boot or karate", required: false }, ToolOption { name: "wait-seconds", ty: "number", description: "Seconds to wait for required services", required: false }] },
     ToolSpec { name: "karate_docker_up", description: "Start all Karate E2E compose services while preserving volumes; no teardown or volume pruning. Reuse existing startup authorization. After success, run docker_ps_required with compose: karate before tests.", command: &["karate-docker-up"], options: &[COMMON_REPO, COMPOSE_FILE] },
     ToolSpec { name: "karate_docker_down", description: "Stop and remove Karate E2E compose containers and networks while preserving volumes. No volume pruning.", command: &["karate-docker-down"], options: &[COMMON_REPO, COMPOSE_FILE] },
     ToolSpec { name: "karate_docker_reset", description: "Reset the selected Karate E2E Compose project: remove its containers and volumes, then start services. Requires explicit authorization to delete that project data; ordinary startup or test authorization is insufficient. Never prunes global volumes. Verify readiness after success.", command: &["karate-docker-reset"], options: &[COMMON_REPO, COMPOSE_FILE] },
@@ -571,7 +571,32 @@ const TOOL_SPECS: &[ToolSpec] = &[
 pub(crate) fn tools_list() -> Vec<Value> {
     let mut tools: Vec<_> = TOOL_SPECS.iter().map(tool).collect();
     tools.extend(crate::mcp_runtime::control_tools());
+    for tool in &mut tools {
+        let name = tool["name"].as_str().expect("catalog tool name");
+        let description = tool["description"].as_str().expect("catalog tool description");
+        tool["description"] = json!(format!("{} {description}", skill_guidance(name)));
+    }
     tools
+}
+
+fn skill_guidance(name: &str) -> &'static str {
+    match name {
+        "test" | "verify" | "verify_ut" | "verify_it" | "verify_changes"
+        | "verify_changes_preview" | "test_impact_init" | "test_impact_preview" | "pr_verify" =>
+            "Before calling, load the makevn and makevn-test skills if available.",
+        "verify_ut_coverage" | "verify_it_coverage" | "coverage_changes" | "crap_changes" =>
+            "Before calling, load the makevn, makevn-test and makevn-quality skills if available.",
+        "format" | "checkstyle" | "coverage" | "jacoco_inspect" | "crap" | "crap_install_analyzer" | "mutation" =>
+            "Before calling, load the makevn and makevn-quality skills if available.",
+        "docker_up" | "docker_down" | "docker_reset" | "docker_ps" | "docker_logs" | "docker_stats"
+        | "docker_ps_required" | "karate_docker_up" | "karate_docker_down" | "karate_docker_reset" =>
+            "Before calling, load the makevn and makevn-docker skills if available.",
+        "karate_test" | "karate_all" | "run_app" | "run_app_bg" | "stop_app" =>
+            "Before calling, load the makevn and makevn-karate skills if available.",
+        "composite_run" | "parallel_run" =>
+            "Before calling, load the makevn skill and the specialties advertised by the planned step tools if available.",
+        _ => "Before calling, load the makevn skill if available.",
+    }
 }
 
 fn tool(spec: &ToolSpec) -> Value {
