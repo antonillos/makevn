@@ -49,7 +49,10 @@ Read the `Test evidence` summary in CLI output or MCP `untrustedData.output`
 (for composite runs, inspect each step output). It counts fresh XML testcases
 for each selection, with skipped cases counted separately. If evidence is
 unavailable, report that limitation and consult `execution_logs` for diagnosis.
-An exit code of zero alone does not establish that tests ran. When the Maven
+An exit code of zero alone does not establish that tests ran. For a particular
+JUnit nested class use `ExampleTest$Nested#method` (single-quote it on the CLI).
+An unqualified method can match multiple classes. If MakeVN reports ambiguity,
+inspect the reported selectors and use the exact nested selector. When the Maven
 build-cache warning is present, use fresh evidence to assess test execution.
 
 Preview and execution must use the same repository and mode. Focused is the

@@ -295,8 +295,10 @@ Rules:
 
 - no `--name` means full test execution
 - `--name FooTest` selects a class. Quote `--name 'FooTest#method'` to select
-  one method, using the same plugin as the class. Method selection requires a
-  fresh non-skipped matching testcase in conventional Maven XML.
+  one method in the outer class or its nested classes, using the same plugin
+  as the outer class. Quote `--name 'FooTest$Nested#method'` to select an exact
+  nested class. A method requires fresh non-skipped matching Maven XML. If
+  more than one class ran that method, MakeVN reports ambiguity and fails.
 - `--name FooTest,BarTest` selects multiple tests sequentially
 - repeated `--name` flags are allowed, including mixed class and method selectors
 - Each invocation summarizes fresh conventional Surefire/Failsafe XML as executed,
