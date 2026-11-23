@@ -68,8 +68,7 @@ fn apply_daemon_preference(args: &mut Value, repo: &str, backend: &Path) -> Resu
     if args.get("mvnd").is_some() {
         return Ok(());
     }
-    let names = args["name"].as_str().unwrap_or_default().split(',');
-    if names.filter(|name| !name.trim().is_empty()).count() == 1 && preferred_daemon(repo, backend) {
+    if mcp_server::has_test_names(args) && preferred_daemon(repo, backend) {
         args["mvnd"] = json!(true);
         mcp_server::validate_daemon_test_arguments("test", args)?;
     }

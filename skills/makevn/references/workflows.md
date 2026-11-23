@@ -175,9 +175,9 @@ installation path. Compose answers use an offered path, an absolute path to an e
 profiles use literal comma-separated names. Doctor offers `use_mvnd` when
 the daemon is on the server's PATH, the project has a Maven declaration or
 wrapper, and no answer is saved. An available daemon is otherwise preferred
-for a single named MCP test unless disabled. Doctor displays the choice and
+for MCP test calls with named classes unless disabled. Doctor displays the choice and
 provides installation instructions when the daemon is missing.
-The saved choice applies to single named MCP tests and eligible workflow steps.
+The saved choice applies to MCP test calls with named classes and eligible workflow steps.
 See the makevn-test skill for parallel worktree isolation and per-call overrides.
 The tool validates the whole batch
 before atomically updating `.makevn/config`, preserves unrelated settings and

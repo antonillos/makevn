@@ -163,13 +163,13 @@ completes; use its documented lifecycle controls.
 ### Maven Daemon for named tests
 
 For a configured Maven worktree with `mvnd` on the server's `PATH`, opt in on
-the `test` tool or a `test` step with one selected class:
+the `test` tool or a `test` step with one or more comma-separated class names:
 
 ```json
-{"repo": "/path/to/worktree", "name": "ExampleTest", "mvnd": true}
+{"repo": "/path/to/worktree", "name": "ExampleTest,OtherTest", "mvnd": true}
 ```
 
-A named MCP test defaults to `mvnd` when it is on the server's `PATH`.
+An MCP test call with named classes defaults to `mvnd` when it is on the server's `PATH`.
 If the project declares Maven or uses a wrapper, Doctor asks for confirmation
 before applying that default. Doctor saves the `use_mvnd` answer per worktree
 and reports the saved preference and effective selection. Send `mvnd: false`
