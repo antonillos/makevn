@@ -8,7 +8,9 @@ description: >-
 
 Load [makevn](../makevn/SKILL.md) first if not already read; finish doctor/setup.
 Read [application and E2E details](references/workflows.md) before execution.
-Confirm Karate and E2E capabilities in doctor; do not assume every repository has them.
+Confirm Karate capabilities and the application JDK in `doctor` before managed
+startup. If the JDK is unresolved, follow the [JDK recovery steps](references/workflows.md#application-jdk-recovery)
+before retrying or checking HTTP readiness.
 Load [makevn-docker](../makevn-docker/SKILL.md) when containers are required, including
 authorization for the startup invoked by `karate-all`. Its container startup
 preserves volumes; deleting E2E data requires an explicitly authorized
@@ -19,6 +21,10 @@ preserves volumes; deleting E2E data requires an explicitly authorized
 | Managed application + E2E | `makevn karate-all --tag @smoke` | `karate_all` with `tag` | Required services ready, HTTP health ready, Karate results, application cleanup |
 | Existing external application | `makevn karate-test --tag @smoke` | `karate_test` with `tag` | Target application confirmed and requested Karate tests ran |
 | Manual managed application | `makevn run-app-bg`, then `makevn karate-test`, finally `makevn stop-app` | `run_app_bg`, `karate_test`, `stop_app` | Stop after any prerequisite failure; perform application cleanup even on test failure |
+
+For UTC snapshots, pass `"app-timezone": "UTC"` to MCP `karate_all` or
+`run_app_bg`. Keep startup and cleanup in MakeVN and use `stop_app` for an
+application started manually with `run_app_bg`.
 
 `karate-all` owns application cleanup; do not assume it tears down containers.
 Container teardown is a separate authorized operation. Do not stop an externally

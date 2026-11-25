@@ -14,6 +14,29 @@ and `execution_status`. Cancel only matching executions owned by this session,
 confirm terminal status, and retry the affected operation. Never reset Docker
 merely because a call timed out. See the [common execution rules](../../makevn/SKILL.md#common-policy).
 
+### Application JDK recovery
+
+If MakeVN reports `Could not resolve code JDK`, application startup failed.
+Use the MCP `doctor` result for the same repository and inspect its JDK
+diagnostics even when the tool call succeeds. An asdf shim on PATH only
+identifies a launcher. If it reports that no version is set, use the project
+Java requirements and Doctor's compatible JDK candidates to resolve the setup.
+
+When Doctor asks for a JDK choice, obtain the user's selection and submit it
+through `doctor_configure` with the current setup token. If no compatible JDK
+is available, report the missing prerequisite. Retry through MakeVN once the
+diagnosis shows a resolved application JDK. Skip HTTP probes and Karate tests
+after a failed startup. Let MakeVN wait for readiness after a successful launch.
+
+### Application JVM time zone
+
+When the project requires UTC snapshots, set `"app-timezone": "UTC"` on MCP
+`karate_all` or use `makevn karate-all --app-timezone UTC`. For the manual
+managed flow, pass the same option to `run_app_bg` or `makevn run-app-bg`,
+then use `karate_test` and `stop_app`. The option applies to the application
+JVM for that invocation. Keep the application under MakeVN management for
+readiness and cleanup.
+
 ### Strict Karate HTTP readiness
 
 `makevn karate-all` requires a configured or detected application health URL

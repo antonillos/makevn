@@ -556,9 +556,9 @@ const TOOL_SPECS: &[ToolSpec] = &[
     ToolSpec { name: "karate_docker_down", description: "Stop and remove Karate E2E compose containers and networks while preserving volumes. No volume pruning.", command: &["karate-docker-down"], options: &[COMMON_REPO, COMPOSE_FILE] },
     ToolSpec { name: "karate_docker_reset", description: "Reset the selected Karate E2E Compose project: remove its containers and volumes, then start services. Requires explicit authorization to delete that project data; ordinary startup or test authorization is insufficient. Never prunes global volumes. Verify readiness after success.", command: &["karate-docker-reset"], options: &[COMMON_REPO, COMPOSE_FILE] },
     ToolSpec { name: "karate_test", description: "Run Karate tests.", command: &["karate-test"], options: &[COMMON_REPO, ToolOption { name: "tag", ty: "string", description: "Karate tag filter", required: false }] },
-    ToolSpec { name: "karate_all", description: "Run the full Karate application and test lifecycle.", command: &["karate-all"], options: &[COMMON_REPO, ToolOption { name: "tag", ty: "string", description: "Karate tag filter", required: false }] },
+    ToolSpec { name: "karate_all", description: "Run the full Karate application and test lifecycle with managed readiness and cleanup. Set app-timezone to UTC when the project requires UTC snapshots.", command: &["karate-all"], options: &[COMMON_REPO, ToolOption { name: "tag", ty: "string", description: "Karate tag filter", required: false }, ToolOption { name: "app-timezone", ty: "string", description: "Managed application JVM time zone ID, e.g. UTC for Karate snapshots", required: false }] },
     ToolSpec { name: "run_app", description: "Run the detected application in the foreground.", command: &["run-app"], options: &[COMMON_REPO] },
-    ToolSpec { name: "run_app_bg", description: "Run the detected application in the background.", command: &["run-app-bg"], options: &[COMMON_REPO] },
+    ToolSpec { name: "run_app_bg", description: "Run the detected application in the background.", command: &["run-app-bg"], options: &[COMMON_REPO, ToolOption { name: "app-timezone", ty: "string", description: "Managed application JVM time zone ID, e.g. UTC for Karate snapshots", required: false }] },
     ToolSpec { name: "stop_app", description: "Stop the background application started by makevn.", command: &["stop-app"], options: &[COMMON_REPO] },
     ToolSpec { name: "run", description: "Run the detected application using repository defaults.", command: &["run"], options: &[COMMON_REPO] },
     ToolSpec { name: "jdk_current", description: "Show the currently resolved JDK version.", command: &["jdk", "current"], options: &[COMMON_REPO] },
@@ -1239,6 +1239,9 @@ fn validate_tool_arguments(spec: &ToolSpec, args: &Map<String, Value>) -> Result
     if spec.name == "docker_logs" {
         validate_docker_log_arguments(args)?;
     }
+    if args.get("app-timezone").is_some_and(|value| nonempty_option_text(value).is_none()) {
+        return Err("app-timezone must be a nonempty string".into());
+    }
     Ok(())
 }
 
@@ -1297,7 +1300,7 @@ fn push_tool_option(cmd_args: &mut Vec<String>, name: &str, value: &Value) -> Re
         "tail" | "threshold" | "overall-threshold" | "max-warnings" | "wait-seconds" => {
             push_value_option(cmd_args, name, value.as_f64().map(format_number))
         }
-        "since" | "contains" | "service" | "base" | "compose" | "compose-file" | "jacoco-xml" | "module" | "name" | "tag" | "focus" => {
+        "since" | "contains" | "service" | "base" | "compose" | "compose-file" | "jacoco-xml" | "module" | "name" | "tag" | "focus" | "app-timezone" => {
             push_value_option(cmd_args, name, nonempty_option_text(value))
         }
         _ => { push_additional_tool_option(cmd_args, name, value); }
