@@ -79,6 +79,11 @@ preference, not engine startup or proof of readiness.
 | Managed application E2E or an externally managed application | [makevn-karate](../makevn-karate/SKILL.md) |
 | Format, Checkstyle, coverage, CRAP or mutation | [makevn-quality](../makevn-quality/SKILL.md) |
 
+When asked to format and test, load `makevn-quality` and `makevn-test`. Run MCP
+`format` with `apply: true`, then run the requested tests only if formatting succeeds.
+Use MakeVN for both steps so MCP formatting and named tests honor the repository's
+`mvnd` preference. Never invoke the formatter plugin or Maven Daemon directly.
+
 For product validation against real repositories, load
 [makevn-product-test](../makevn-product-test/SKILL.md).
 
