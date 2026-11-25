@@ -35,14 +35,14 @@ def checked_run(command, deadline, code):
     return result.stdout
 
 
-def containers(compose, compose_file, deadline=None):
+def containers(compose, compose_file, deadline=None, *, owned_only=False):
     services = checked_run(compose + ["config", "--services"], deadline, "compose_config_failed").split()
     if not services:
         raise DockerQueryError("compose_config_failed", "No services defined in the selected Compose stack.")
-    return services, inspect_containers(compose, compose_file, services, deadline)
+    return services, inspect_containers(compose, compose_file, services, deadline, owned_only=owned_only)
 
 
-def inspect_containers(compose, compose_file, services, deadline):
+def inspect_containers(compose, compose_file, services, deadline, *, owned_only=False):
     ids = checked_run(compose + ["ps", "-aq"], deadline, "container_listing_failed").split()
     if not ids:
         return []
@@ -52,6 +52,8 @@ def inspect_containers(compose, compose_file, services, deadline):
         raise DockerQueryError("inspection_failed", "Docker inspect did not return every selected container.")
     expected_file = os.path.realpath(compose_file)
     expected_directory = os.path.dirname(expected_file)
+    owned = []
+    conflicts = []
     for record in records:
         labels = record.get("Config", {}).get("Labels") or {}
         directory = labels.get("com.docker.compose.project.working_dir", "")
@@ -60,13 +62,16 @@ def inspect_containers(compose, compose_file, services, deadline):
         if (not directory or os.path.realpath(directory) != expected_directory
                 or expected_file not in [os.path.realpath(path) for path in files if path]
                 or service not in services):
-            raise OwnershipError(
-                f"Compose container ownership could not be verified for this worktree. "
-                f"Container: {record['Id'][:12]}; expected working_dir={expected_directory!r}, "
-                f"config_files containing {expected_file!r} and a configured service; "
-                f"observed working_dir={directory!r}, config_files={files!r}, service={service!r}."
-            )
-    return records
+            conflicts.append(dict(id=record["Id"], service=service, workingDir=directory,
+                                  configFiles=files))
+        else:
+            owned.append(record)
+    if conflicts and not owned_only:
+        error = OwnershipError(f"Compose ownership could not be verified. Expected working_dir={expected_directory!r} and config_files containing {expected_file!r}.")
+        error.conflicts = conflicts
+        error.mixed = bool(owned)
+        raise error
+    return owned
 
 
 def publish_suggestion(suggestion, *, display=True):
@@ -278,7 +283,7 @@ def show_logs(args, services, records):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("mode", choices=["logs", "suggest", "readiness", "ownership"])
+    parser.add_argument("mode", choices=["logs", "suggest", "readiness", "ownership", "owned-down"])
     parser.add_argument("--wait-seconds", type=int, default=0)
     parser.add_argument("--repo", required=True)
     parser.add_argument("--compose", choices=["boot", "karate"], default="boot")
@@ -295,7 +300,14 @@ def main():
     try:
         if args.mode == "readiness":
             return readiness(args, command)
-        services, records = containers(command, args.file)
+        services, records = containers(command, args.file, owned_only=args.mode == "owned-down")
+        if args.mode == "owned-down":
+            ids = [record["Id"] for record in records]
+            if ids:
+                checked_run(["docker", "stop", "--"] + ids, None, "owned_stop_failed")
+                checked_run(["docker", "rm", "--"] + ids, None, "owned_remove_failed")
+            print(f"Removed {len(ids)} verified containers. Volumes and networks were preserved.")
+            return 0
         if args.mode == "ownership":
             return 0
         if args.mode == "suggest":
@@ -303,10 +315,20 @@ def main():
             return 0
         return show_logs(args, services, records)
     except OwnershipError as error:
-        diagnosis("ownership_unverified", detail=str(error))
-        publish_suggestion("Compose ownership is unverified. Check the expected and observed Compose "
-                           "labels in untrustedData.output. Resolve the worktree or Compose selection "
-                           "before starting, stopping, resetting or reading container logs.")
+        diagnosis("ownership_unverified", detail=str(error), conflicts=error.conflicts, mixed=error.mixed)
+        tool = "docker_down" if args.compose == "boot" else "karate_docker_down"
+        arguments = {"repo": args.repo, "compose-file": args.file, "owned-only": True}
+        if error.mixed:
+            publish_suggestion(
+                "Ask the user for approval through the client's question interface before removing "
+                "this worktree's verified containers. Offer to preserve volumes and networks or leave "
+                f"the stack as it is. Only after approval, call {tool} with arguments {json.dumps(arguments)}. "
+                "Other checkouts' containers remain in place. Handle them from their owning checkouts. "
+                "A project-wide reset is blocked while ownership is mixed."
+            )
+        else:
+            publish_suggestion("Compose ownership is unverified. Check the expected and observed Compose "
+                               "labels and select the owning checkout before attempting lifecycle operations.")
         return 1
     except DockerQueryError as error:
         diagnosis(error.code, detail=str(error))
@@ -314,6 +336,8 @@ def main():
             "compose_config_failed": "Check the reported Compose configuration error for the selected file before retrying.",
             "container_listing_failed": "Check Docker engine access for the selected Compose project before starting services.",
             "inspection_failed": "Resolve the container inspection failure before starting services or retrying readiness.",
+            "owned_stop_failed": "Inspect the reported stop failure and rerun owned-only recovery after resolving it.",
+            "owned_remove_failed": "Inspect the reported removal failure and rerun owned-only recovery after resolving it.",
         }[error.code])
         return 1
     except (OSError, ValueError, RuntimeError, subprocess.TimeoutExpired) as error:

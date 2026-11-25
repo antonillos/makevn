@@ -19,7 +19,23 @@ read that execution log once for the relevant diagnostic. If setup is stale,
 follow doctor's repair flow and check readiness once without a wait. A successful
 repair establishes initialization status only. If ownership is still unresolved,
 report the blocker and stop the dependent workflow until the scope is clarified.
-Starting, stopping or resetting the stack requires verified scope.
+
+For mixed ownership, ask a question through the client's question interface before
+removing containers. Offer **Stop and remove this checkout's verified containers**
+and **Leave the stack as it is**. State that this preserves volumes and networks and
+leaves other checkouts' containers in place. Apply the user's answer only to the
+specified checkout and stack. On approval, use the suggested `docker_down` or
+`karate_docker_down` with `owned-only: true` (CLI `--owned-only`). When another
+checkout also needs cleanup, verify its scope and obtain approval for that scope.
+Preserve the Git worktree during recovery so its Compose scope remains verifiable.
+Do not offer reset as a way to resolve mixed ownership.
+
+For a new stack, opt in to a per-worktree project name by setting
+`MAKEVN_COMPOSE_PROJECT_SCOPE=worktree` in the MakeVN process environment. Use the
+same setting for startup, readiness, logs and teardown. Recover an existing mixed
+project under its original name first. Isolated projects use separate Compose-managed
+volumes and networks. Explicit resource names, external resources and fixed host
+ports still follow the Compose configuration.
 
 For Testcontainers repositories, distinguish the Docker engine from Compose
 services. With no Compose stack, do not call `docker_up` or invent a Compose file:

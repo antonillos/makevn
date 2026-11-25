@@ -119,18 +119,22 @@ pub(super) fn tail_command_help(
 ) -> Option<(&'static str, &'static str, &'static [&'static str])> {
     let usage = match command {
         "docker-up" => "makevn [--repo PATH] docker-up [--tail]",
-        "docker-down" => "makevn [--repo PATH] docker-down [--tail]",
+        "docker-down" => "makevn [--repo PATH] docker-down [--tail] [--owned-only]",
         "docker-ps" => "makevn [--repo PATH] docker-ps [--tail]",
         "docker-stats" => "makevn [--repo PATH] docker-stats [--tail]",
         "karate-docker-up" => "makevn [--repo PATH] karate-docker-up [--tail]",
-        "karate-docker-down" => "makevn [--repo PATH] karate-docker-down [--tail]",
+        "karate-docker-down" => "makevn [--repo PATH] karate-docker-down [--tail] [--owned-only]",
         _ => return None,
     };
-    Some((
-        usage,
-        description,
-        &["--tail  Start in interactive log tail mode", "--compose-file PATH|none  Override Compose for this execution only"],
-    ))
+    let options: &[&str] = match command {
+        "docker-down" | "karate-docker-down" => &[
+            "--tail  Start in interactive log tail mode",
+            "--compose-file PATH|none  Override Compose for this execution only",
+            "--owned-only  Remove only verified checkout containers, preserving volumes and networks",
+        ],
+        _ => &["--tail  Start in interactive log tail mode", "--compose-file PATH|none  Override Compose for this execution only"],
+    };
+    Some((usage, description, options))
 }
 
 use std::io::{self, IsTerminal};

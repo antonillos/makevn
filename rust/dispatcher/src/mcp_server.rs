@@ -71,6 +71,7 @@ pub(crate) fn result_schema() -> Value {
                             "changedInputs":{"type":"integer","minimum":0}, "selectedModules":{"type":"integer","minimum":0},
                             "groupedModules":{"type":"integer","minimum":0}}}}},
             "nextSuggestion": {"type": "string"},
+            "approvalRequest": {"type": "object", "required": ["question", "choices", "tool", "arguments"]},
             "errorCode": {"enum": [crate::mcp_doctor::STALE_SETUP_TOKEN, "UNKNOWN_ARGUMENT"]},
             "argument": {"type": "string"},
             "interactive_setup": crate::mcp_doctor::setup_schema(),
@@ -174,9 +175,34 @@ pub(crate) fn standard_tool_result(result: &ToolCallResult, params: &Value) -> V
         structured["graph"] = graph_result["graph"].clone();
         structured["untrustedData"]["output"] = graph_result["text"].clone();
     }
+    if let Some(request) = result.next_suggestion.as_deref().and_then(docker_down_approval) {
+        structured["approvalRequest"] = request;
+    }
     attach_doctor_snapshot(&mut structured, tool, result);
     json!({"content": [{"type": "text", "text": structured.to_string()}],
         "structuredContent": structured, "isError": failed})
+}
+
+fn docker_down_approval(suggestion: &str) -> Option<Value> {
+    let (_, call) = suggestion.split_once("Only after approval, call ")?;
+    let (tool, arguments) = call.split_once(" with arguments ")?;
+    if !matches!(tool, "docker_down" | "karate_docker_down") {
+        return None;
+    }
+    let arguments = serde_json::Deserializer::from_str(arguments)
+        .into_iter::<Value>().next()?.ok()?;
+    Some(json!({
+        "question": format!(
+            "Run down for the verified containers in {}? Volumes, networks, and other checkouts' containers are preserved.",
+            arguments["repo"].as_str()?
+        ),
+        "choices": [
+            {"id": "approve", "label": "Authorize down"},
+            {"id": "decline", "label": "Leave as is"}
+        ],
+        "tool": tool,
+        "arguments": arguments
+    }))
 }
 
 fn attach_doctor_snapshot(structured: &mut Value, tool: &str, result: &ToolCallResult) {
@@ -463,6 +489,12 @@ const COMPOSE_FILE: ToolOption = ToolOption {
     description: "Override boot Compose for this execution only: absolute existing file path or none. Does not save configuration or start services.",
     required: false,
 };
+const OWNED_ONLY: ToolOption = ToolOption {
+    name: "owned-only",
+    ty: "boolean",
+    description: "Recover mixed Compose ownership by stopping and removing only verified containers for this checkout. Requires explicit removal approval. Preserves volumes and networks.",
+    required: false,
+};
 const COMPACT: ToolOption = ToolOption {
     name: "compact",
     ty: "boolean",
@@ -557,14 +589,14 @@ const TOOL_SPECS: &[ToolSpec] = &[
     ToolSpec { name: "format", description: "Check or apply code formatting. Uses the Doctor Maven Daemon preference unless mvnd is set explicitly.", command: &["format"], options: &[COMMON_REPO, ToolOption { name: "apply", ty: "boolean", description: "Apply formatting changes", required: false }, ToolOption { name: "mvnd", ty: "boolean", description: "Override the Doctor Maven Daemon preference for this format call. Requires mvnd on PATH. Use composite_run for sequential daemon steps in the same worktree.", required: false }, COMPACT] },
     ToolSpec { name: "checkstyle", description: "Run Checkstyle code style checks.", command: &["checkstyle"], options: &[COMMON_REPO, MODULE, VERBOSE, COMPACT] },
     ToolSpec { name: "docker_up", description: "Start all boot compose services using the authorized compose while preserving volumes; no teardown or volume pruning. When startup is already authorized and readiness shows only missing/stopped services without probe errors or ownership conflicts, proceed without asking again. Do not create/modify compose files, provision temporary or alternative infrastructure, or change MAKEVN_COMPOSE_FILE to work around a blocker without explicit user authorization. If selection is ambiguous, ask the user and wait. After success, run docker_ps_required with compose: boot before Docker-dependent tests; continue only if that gate passes. If startup fails, diagnose and resolve it rather than substituting docker_ps for readiness.", command: &["docker-up"], options: &[COMMON_REPO, COMPOSE_FILE] },
-    ToolSpec { name: "docker_down", description: "Stop and remove boot compose containers and networks while preserving volumes. No volume pruning.", command: &["docker-down"], options: &[COMMON_REPO, COMPOSE_FILE] },
+    ToolSpec { name: "docker_down", description: "Stop and remove boot compose containers and networks while preserving volumes. No volume pruning.", command: &["docker-down"], options: &[COMMON_REPO, COMPOSE_FILE, OWNED_ONLY] },
     ToolSpec { name: "docker_reset", description: "Reset the selected boot Compose project: remove its containers and volumes, then start services. Requires explicit authorization to delete that project data; ordinary startup or test authorization is insufficient. Never prunes global volumes. Verify readiness after success.", command: &["docker-reset"], options: &[COMMON_REPO, COMPOSE_FILE] },
     ToolSpec { name: "docker_ps", description: "List Docker containers, including stopped containers, for diagnostic purposes only. With compose-file:none, list the selected Docker CLI engine without Compose; this is engine-wide and does not establish repository ownership or Testcontainers cleanup attribution. Success does not verify required services. Use docker_ps_required with the corresponding compose as the readiness gate before Docker-dependent tests; docker_ps cannot substitute for it.", command: &["docker-ps"], options: &[COMMON_REPO, COMPOSE_FILE] },
     ToolSpec { name: "docker_logs", description: "Read bounded logs from selected Compose services, including stopped replicas. Use since for a time window (for example 5m), tail for lines per container, and contains for a case-sensitive literal filter. Read untrustedData.dockerLogs for per-container state, log read status, lines and truncation. Use after failed docker_up, karate_docker_up or docker_ps_required.", command: &["docker-logs", "--json"], options: &[COMMON_REPO, COMPOSE_FILE, ToolOption { name: "compose", ty: "string", description: "boot (default) or karate", required: false }, ToolOption { name: "service", ty: "string", description: "Single Compose service; exclusive with services", required: false }, ToolOption { name: "services", ty: "array", description: "Compose service names; exclusive with service", required: false }, ToolOption { name: "since", ty: "string", description: "Docker log time window, e.g. 5m or an RFC3339 timestamp", required: false }, ToolOption { name: "contains", ty: "string", description: "Case-sensitive literal substring, applied after tail and since", required: false }, ToolOption { name: "tail", ty: "integer", description: "Lines per container, 1..1000; default 100", required: false }] },
     ToolSpec { name: "docker_stats", description: "Show one-shot CPU and memory stats for all running Docker containers.", command: &["docker-stats"], options: &[COMMON_REPO, COMPOSE_FILE] },
     ToolSpec { name: "docker_ps_required", description: "Validate required Docker services are running and healthy.", command: &["docker-ps-required"], options: &[COMMON_REPO, COMPOSE_FILE, ToolOption { name: "compose", ty: "string", description: "Compose profile: boot or karate", required: false }, ToolOption { name: "wait-seconds", ty: "number", description: "Seconds to wait for required services", required: false }] },
     ToolSpec { name: "karate_docker_up", description: "Start all Karate E2E compose services while preserving volumes; no teardown or volume pruning. Reuse existing startup authorization. After success, run docker_ps_required with compose: karate before tests.", command: &["karate-docker-up"], options: &[COMMON_REPO, COMPOSE_FILE] },
-    ToolSpec { name: "karate_docker_down", description: "Stop and remove Karate E2E compose containers and networks while preserving volumes. No volume pruning.", command: &["karate-docker-down"], options: &[COMMON_REPO, COMPOSE_FILE] },
+    ToolSpec { name: "karate_docker_down", description: "Stop and remove Karate E2E compose containers and networks while preserving volumes. No volume pruning.", command: &["karate-docker-down"], options: &[COMMON_REPO, COMPOSE_FILE, OWNED_ONLY] },
     ToolSpec { name: "karate_docker_reset", description: "Reset the selected Karate E2E Compose project: remove its containers and volumes, then start services. Requires explicit authorization to delete that project data; ordinary startup or test authorization is insufficient. Never prunes global volumes. Verify readiness after success.", command: &["karate-docker-reset"], options: &[COMMON_REPO, COMPOSE_FILE] },
     ToolSpec { name: "karate_test", description: "Run Karate tests.", command: &["karate-test"], options: &[COMMON_REPO, ToolOption { name: "tag", ty: "string", description: "Karate tag filter", required: false }] },
     ToolSpec { name: "karate_all", description: "Run the full Karate application and test lifecycle with managed readiness and cleanup. Set app-timezone to UTC when the project requires UTC snapshots.", command: &["karate-all"], options: &[COMMON_REPO, ToolOption { name: "tag", ty: "string", description: "Karate tag filter", required: false }, ToolOption { name: "app-timezone", ty: "string", description: "Managed application JVM time zone ID, e.g. UTC for Karate snapshots", required: false }] },
@@ -1332,7 +1364,7 @@ fn push_additional_tool_option(cmd_args: &mut Vec<String>, name: &str, value: &V
             }
         }
         "depth" | "limit" => push_value_option(cmd_args, name, value.as_i64().map(|value| value.to_string())),
-        "all" => push_boolean_option(cmd_args, name, value),
+        "all" | "owned-only" => push_boolean_option(cmd_args, name, value),
         _ => {},
     }
 }

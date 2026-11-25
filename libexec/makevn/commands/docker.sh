@@ -24,7 +24,7 @@ makevn_publish_compose_resources() {
   temporary="$(mktemp "${output}.tmp.XXXXXX" 2>/dev/null)" || return 0
   if {
     printf '%s\n' "${repo_root}" "${command_words[@]}" &&
-      makevn_collect_compose_args "${compose_file}" "${override_file}"
+      makevn_collect_compose_args "${compose_file}" "${override_file}" "${repo_root}"
   } > "${temporary}"; then
     mv "${temporary}" "${output}" 2>/dev/null || true
   fi
@@ -207,7 +207,7 @@ cmd_docker_ps_required() {
   makevn_publish_compose_resources "${repo_root}" "${docker_compose_cmd}" "${compose_file}" "${compose_override_file}"
 
   read -r -a command_words <<< "${docker_compose_cmd}"
-  while IFS= read -r arg; do compose_args+=("${arg}"); done < <(makevn_collect_compose_args "${compose_file}" "${compose_override_file}")
+  while IFS= read -r arg; do compose_args+=("${arg}"); done < <(makevn_collect_compose_args "${compose_file}" "${compose_override_file}" "${repo_root}")
   if [[ "${compose_kind}" == karate && -n "${PROFILE:-}" ]]; then
     compose_args+=(--profile "${PROFILE}")
   fi
@@ -226,11 +226,18 @@ cmd_docker_ps_required() {
 makevn_run_docker_lifecycle() {
   local repo_root="$1" compose_kind="$2" action="$3"
   local title="docker-${action}"
-  local compose_file="" compose_override_file="" docker_compose_cmd=""
+  local compose_file="" compose_override_file="" docker_compose_cmd="" arg=""
   local -a docker_compose=() compose_args=()
 
   shift 3
-  makevn_parse_docker_args "$@"
+  local owned_only=false
+  for arg in "$@"; do
+    if [[ "${arg}" == --owned-only && "${action}" == down ]]; then
+      owned_only=true
+    else
+      makevn_parse_docker_args "${arg}"
+    fi
+  done
   [[ "${compose_kind}" != karate ]] || title="karate-${title}"
   compose_file="$(makevn_docker_compose_file_for_kind "${repo_root}" "${compose_kind}" || true)"
   compose_override_file="$(makevn_docker_compose_override_file_for_kind "${repo_root}" "${compose_kind}" || true)"
@@ -251,12 +258,18 @@ makevn_run_docker_lifecycle() {
   read -r -a docker_compose <<< "${docker_compose_cmd}"
   while IFS= read -r arg; do
     compose_args+=("${arg}")
-  done < <(makevn_collect_compose_args "${compose_file}" "${compose_override_file}")
+  done < <(makevn_collect_compose_args "${compose_file}" "${compose_override_file}" "${repo_root}")
   if [[ "${compose_kind}" == karate && -n "${PROFILE:-}" ]]; then
     compose_args+=(--profile "${PROFILE}")
   fi
 
   makevn_publish_compose_resources "${repo_root}" "${docker_compose_cmd}" "${compose_file}" "${compose_override_file}"
+  if [[ "${owned_only}" == true ]]; then
+    makevn_run_logged "${repo_root}" "${title}" "${title}" "${title}" \
+      python3 "${MAKEVN_LIBEXEC_DIR}/docker/logs.py" owned-down --repo "${repo_root}" \
+      --compose "${compose_kind}" --file "${compose_file}" -- "${docker_compose[@]}" "${compose_args[@]}"
+    return $?
+  fi
   makevn_docker_log_query "${repo_root}" "${compose_kind}" ownership || return $?
   local status=0
   makevn_run_logged "${repo_root}" "${title}" "${title}" "${title}" bash -e -c '
@@ -287,7 +300,7 @@ makevn_docker_log_query() {
   [[ -f "${compose_file}" ]] || makevn_die "Docker compose file not found for ${compose_kind}"
   compose_command="$(makevn_resolve_docker_compose_command)" || return 1
   read -r -a command_words <<< "${compose_command}"
-  while IFS= read -r arg; do compose_args+=("${arg}"); done < <(makevn_collect_compose_args "${compose_file}" "${override_file}")
+  while IFS= read -r arg; do compose_args+=("${arg}"); done < <(makevn_collect_compose_args "${compose_file}" "${override_file}" "${repo_root}")
   if [[ "${compose_kind}" == karate && -n "${PROFILE:-}" ]]; then
     compose_args+=(--profile "${PROFILE}")
   fi

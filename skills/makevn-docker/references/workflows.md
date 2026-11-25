@@ -88,6 +88,7 @@ When doctor/configuration or the approved workflow requires boot containers:
 | Daemon, Compose or inspection errors | Resolve the reported prerequisite first. Rows marked missing alongside probe errors do not establish that startup is the remedy. |
 | Ambiguous Compose or unresolved initialization/configuration | Use MCP `doctor` and its setup flow in the same repository. Missing containers alone do not justify doctor, init, or `doctor --reset-config`. |
 | Confirmed bind mismatch | Diagnose the checkout and mount before changing the environment. |
+| Mixed Compose ownership | Use the returned `approvalRequest` to ask the user. Present **Authorize down** and **Leave as is** as selectable options. On approval, use the supplied `docker_down` or `karate_docker_down` arguments with `owned-only: true`. This removes only verified containers from that checkout and preserves volumes and networks. If another checkout must release containers, ask for that checkout separately. A reset remains blocked while ownership is mixed. |
 | Unknown ownership | Check the selected Compose file and worktree against the returned diagnostics. Repair stale setup if doctor recommends it, then probe once without a wait. A successful setup repair or readiness probe alone does not establish ownership. If ownership remains unresolved, report the blocker and stop the dependent workflow. |
 | Diagnosed need for fresh service data | Use the matching reset tool only with explicit authorization for deletion of that Compose project's data; do not reuse ordinary startup authorization. |
 
@@ -102,7 +103,10 @@ failure before attributing it to existing containers. Do not down containers wit
 unknown or different project ownership, and do not use reset unless deleting
 project volume data was explicitly authorized.
 
-In an MCP session, perform these calls through MCP and collect decisions in chat.
+In an MCP session, perform these calls through MCP. If recovery requires a
+volume-preserving down and stop authorization is still missing, use the client's
+question interface with **Authorize down** and **Leave as is**. State the exact
+stack and checkout and which resources the operation preserves.
 Saving doctor preferences and resetting Docker data are separate operations.
 Reuse previously supplied authorization and ask only unresolved decisions.
 
