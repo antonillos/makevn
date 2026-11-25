@@ -110,6 +110,9 @@ test_karate_preflight_and_lifecycle() (
   assert_rejected 'positive integer' cmd_karate_all /fake/repo
   [[ ! -f "${TMP_ROOT}/steps" ]]
   MAKEVN_APP_HEALTH_TIMEOUT=7
+  assert_rejected "Missing value for --app-timezone" cmd_karate_all /fake/repo --app-timezone
+  assert_rejected "Missing value for --tag" cmd_karate_all /fake/repo --tag
+  assert_rejected "Unknown karate-all option" cmd_karate_all /fake/repo --unknown
   assert_rejected "Invalid --app-timezone" cmd_karate_all /fake/repo --app-timezone "-invalid"
   [[ ! -f "${TMP_ROOT}/steps" ]]
   expected_timezone=UTC

@@ -99,16 +99,8 @@ makevn_run_karate_phase() (
   "$@"
 )
 
-cmd_karate_all() {
-  local repo_root="$1"
-  local test_rc=0
-  local maven_base_path=""
-  local health_url=""
-  local health_timeout=""
-  local app_timezone=""
-  local -a test_args=()
-
-  shift
+# Set the owning command's application time zone and forwarded test arguments.
+makevn_parse_karate_all_options() {
   while [[ $# -gt 0 ]]; do
     case "$1" in
       --app-timezone)
@@ -131,6 +123,19 @@ cmd_karate_all() {
         ;;
     esac
   done
+}
+
+cmd_karate_all() {
+  local repo_root="$1"
+  local test_rc=0
+  local maven_base_path=""
+  local health_url=""
+  local health_timeout=""
+  local app_timezone=""
+  local -a test_args=()
+
+  shift
+  makevn_parse_karate_all_options "$@"
 
   maven_base_path="$(makevn_detect_maven_base_path "${repo_root}" || true)"
   if ! makevn_detect_app_runnable "${repo_root}" "${maven_base_path}"; then

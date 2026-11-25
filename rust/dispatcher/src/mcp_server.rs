@@ -1239,6 +1239,9 @@ fn validate_tool_arguments(spec: &ToolSpec, args: &Map<String, Value>) -> Result
     if spec.name == "docker_logs" {
         validate_docker_log_arguments(args)?;
     }
+    if args.get("app-timezone").is_some_and(|value| nonempty_option_text(value).is_none()) {
+        return Err("app-timezone must be a nonempty string".into());
+    }
     Ok(())
 }
 
@@ -1297,12 +1300,7 @@ fn push_tool_option(cmd_args: &mut Vec<String>, name: &str, value: &Value) -> Re
         "tail" | "threshold" | "overall-threshold" | "max-warnings" | "wait-seconds" => {
             push_value_option(cmd_args, name, value.as_f64().map(format_number))
         }
-        "app-timezone" => {
-            let timezone = nonempty_option_text(value)
-                .ok_or("app-timezone must be a nonempty string")?;
-            cmd_args.extend(["--app-timezone".into(), timezone]);
-        }
-        "since" | "contains" | "service" | "base" | "compose" | "compose-file" | "jacoco-xml" | "module" | "name" | "tag" | "focus" => {
+        "since" | "contains" | "service" | "base" | "compose" | "compose-file" | "jacoco-xml" | "module" | "name" | "tag" | "focus" | "app-timezone" => {
             push_value_option(cmd_args, name, nonempty_option_text(value))
         }
         _ => { push_additional_tool_option(cmd_args, name, value); }
