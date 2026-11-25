@@ -1297,6 +1297,11 @@ fn push_tool_option(cmd_args: &mut Vec<String>, name: &str, value: &Value) -> Re
         "tail" | "threshold" | "overall-threshold" | "max-warnings" | "wait-seconds" => {
             push_value_option(cmd_args, name, value.as_f64().map(format_number))
         }
+        "app-timezone" => {
+            let timezone = nonempty_option_text(value)
+                .ok_or("app-timezone must be a nonempty string")?;
+            cmd_args.extend(["--app-timezone".into(), timezone]);
+        }
         "since" | "contains" | "service" | "base" | "compose" | "compose-file" | "jacoco-xml" | "module" | "name" | "tag" | "focus" => {
             push_value_option(cmd_args, name, nonempty_option_text(value))
         }

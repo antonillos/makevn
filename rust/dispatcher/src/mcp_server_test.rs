@@ -8,6 +8,21 @@ use std::process;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 #[test]
+fn managed_application_tools_forward_the_app_timezone() {
+    for name in ["karate_all", "run_app_bg"] {
+        let spec = TOOL_SPECS.iter().find(|spec| spec.name == name).unwrap();
+        let mut flags = Vec::new();
+        let args = json!({"app-timezone": "UTC"});
+        push_tool_flags(&mut flags, spec, args.as_object().unwrap()).unwrap();
+        assert_eq!(flags, ["--app-timezone", "UTC"]);
+        for value in [json!(""), json!(true)] {
+            let args = json!({"app-timezone": value});
+            assert!(push_tool_flags(&mut Vec::new(), spec, args.as_object().unwrap()).is_err());
+        }
+    }
+}
+
+#[test]
 fn docker_logs_validates_selectors_and_forwards_repeated_services() {
     let spec = TOOL_SPECS.iter().find(|spec| spec.name == "docker_logs").unwrap();
     let mut flags = Vec::new();
