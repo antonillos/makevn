@@ -1181,7 +1181,7 @@ fn changed_code_preview_requires_docker_readiness_before_execution() {
     for text in [
         "run doctor",
         "doctor/config/profile",
-        "first run docker_ps_required with wait-seconds: 30",
+        "first run docker_ps_required without wait-seconds",
         "Reuse healthy running services",
         "do not call docker_up when this gate passes",
         "volume-preserving docker_up",
