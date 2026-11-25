@@ -623,6 +623,8 @@ for fqcn, file_path, row in matched_rows:
         "module": module,
         "inst_pct": pct(inst_covered, inst_missed),
         "branch_pct": pct(branch_covered, branch_missed),
+        "branch_covered": branch_covered,
+        "branch_total": branch_covered + branch_missed,
         "line_covered": line_covered,
         "line_total": line_covered + line_missed,
     }
@@ -674,7 +676,8 @@ for module in sorted(module_totals):
             print(
                 f"│  {class_icon} {class_info['fqcn']}: "
                 f"instructions {class_info['inst_pct']:.2f}%, "
-                f"branches {class_info['branch_pct']:.2f}%{line_fragment}"
+                f"branches {class_info['branch_pct']:.2f}% "
+                f"({class_info['branch_covered']}/{class_info['branch_total']}){line_fragment}"
             )
     if verbose:
         print("│")

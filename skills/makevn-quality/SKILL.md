@@ -40,6 +40,11 @@ rerun the appropriate coverage-producing flow. Do not switch to raw Maven.
 
 ### Changed-code checks
 
+For line and branch coverage by changed class, use MCP `coverage_changes` with
+`verbose: true` on fresh JaCoCo evidence. Its class rows include covered/total
+counts for branches and executable lines. Use those rows directly when reporting
+coverage for changed classes.
+
 Before queuing coverage/CRAP steps, inspect the fixture's effective JaCoCo
 agent configuration, including inherited parents and active profiles. Use
 MCP `jacoco_inspect` (CLI `makevn jacoco-inspect`) for explicit Maven effective
