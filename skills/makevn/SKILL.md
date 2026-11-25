@@ -79,10 +79,15 @@ preference, not engine startup or proof of readiness.
 | Managed application E2E or an externally managed application | [makevn-karate](../makevn-karate/SKILL.md) |
 | Format, Checkstyle, coverage, CRAP or mutation | [makevn-quality](../makevn-quality/SKILL.md) |
 
-When asked to format and test, load `makevn-quality` and `makevn-test`. Run MCP
-`format` with `apply: true`, then run the requested tests only if formatting succeeds.
-Use MakeVN for both steps so MCP formatting and named tests honor the repository's
-`mvnd` preference. Never invoke the formatter plugin or Maven Daemon directly.
+For a request to format and run named tests, delegate the entire run to one
+low-cost subagent at low reasoning effort when the client supports delegation.
+Pass the worktree and exact test names. Have it load `makevn-quality` and
+`makevn-test` and call `composite_run` once with `fail-fast: true` and two steps:
+1. `format` with `apply: true`.
+2. `test` with all requested names in one comma-separated `name` value.
+
+Omit `mvnd` on both steps to honor the worktree preference. Wait for the result
+and check the test execution evidence before proceeding to any requested commit.
 
 For product validation against real repositories, load
 [makevn-product-test](../makevn-product-test/SKILL.md).
