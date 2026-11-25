@@ -8,7 +8,9 @@ description: >-
 
 Load [makevn](../makevn/SKILL.md) first if not already read; finish doctor/setup.
 Read [application and E2E details](references/workflows.md) before execution.
-Confirm Karate and E2E capabilities in doctor; do not assume every repository has them.
+Confirm Karate capabilities and the application JDK in `doctor` before managed
+startup. If the JDK is unresolved, follow the [JDK recovery steps](references/workflows.md#application-jdk-recovery)
+before retrying or checking HTTP readiness.
 Load [makevn-docker](../makevn-docker/SKILL.md) when containers are required, including
 authorization for the startup invoked by `karate-all`. Its container startup
 preserves volumes; deleting E2E data requires an explicitly authorized
