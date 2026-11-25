@@ -20,6 +20,10 @@ preserves volumes; deleting E2E data requires an explicitly authorized
 | Existing external application | `makevn karate-test --tag @smoke` | `karate_test` with `tag` | Target application confirmed and requested Karate tests ran |
 | Manual managed application | `makevn run-app-bg`, then `makevn karate-test`, finally `makevn stop-app` | `run_app_bg`, `karate_test`, `stop_app` | Stop after any prerequisite failure; perform application cleanup even on test failure |
 
+For UTC snapshots, pass `"app-timezone": "UTC"` to MCP `karate_all` or
+`run_app_bg`. Keep startup and cleanup in MakeVN and use `stop_app` for an
+application started manually with `run_app_bg`.
+
 `karate-all` owns application cleanup; do not assume it tears down containers.
 Container teardown is a separate authorized operation. Do not stop an externally
 managed application. Standalone process liveness is not HTTP readiness, and HTTP

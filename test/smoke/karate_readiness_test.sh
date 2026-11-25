@@ -76,7 +76,7 @@ test_wait_exited_process() (
   grep -Fq 'startup failure detail' "${TMP_ROOT}/wait"
 )
 test_karate_preflight_and_lifecycle() (
-  local url='' karate_test_rc=0
+  local url='' karate_test_rc=0 expected_timezone=''
   makevn_detect_maven_base_path() { echo /fake/code; }
   makevn_detect_app_runnable() { return 0; }
   makevn_load_config() { :; }
@@ -87,9 +87,21 @@ test_karate_preflight_and_lifecycle() (
   cmd_run_app_bg() {
     assert_equal "$2" http://resolved/health
     assert_equal "$3" 7
+    assert_equal "$4" "${expected_timezone}"
     echo ready >>"${TMP_ROOT}/steps"
   }
-  cmd_karate_test() { echo tests >>"${TMP_ROOT}/steps"; return "${karate_test_rc}"; }
+  cmd_karate_test() {
+    shift
+    if [[ -n "${expected_timezone}" ]]; then
+      assert_equal "$#" 4
+      assert_equal "$1" --tag
+      assert_equal "$2" @smoke
+      assert_equal "$3" --
+      assert_equal "$4" '-Dexample=two words'
+    fi
+    echo tests >>"${TMP_ROOT}/steps"
+    return "${karate_test_rc}"
+  }
   cmd_stop_app() { echo stop >>"${TMP_ROOT}/steps"; }
   assert_rejected MAKEVN_APP_HEALTH_URL cmd_karate_all /fake/repo
   [[ ! -f "${TMP_ROOT}/steps" ]]
@@ -98,7 +110,11 @@ test_karate_preflight_and_lifecycle() (
   assert_rejected 'positive integer' cmd_karate_all /fake/repo
   [[ ! -f "${TMP_ROOT}/steps" ]]
   MAKEVN_APP_HEALTH_TIMEOUT=7
-  cmd_karate_all /fake/repo
+  assert_rejected "Invalid --app-timezone" cmd_karate_all /fake/repo --app-timezone "-invalid"
+  [[ ! -f "${TMP_ROOT}/steps" ]]
+  expected_timezone=UTC
+  cmd_karate_all /fake/repo --tag @smoke --app-timezone UTC -- "-Dexample=two words"
+  expected_timezone=""
   assert_equal "$(tr '\n' ' ' <"${TMP_ROOT}/steps")" 'docker package ready tests stop '
   : >"${TMP_ROOT}/steps"
   karate_test_rc=42
@@ -107,6 +123,17 @@ test_karate_preflight_and_lifecycle() (
   assert_equal "${rc}" 42
   assert_equal "$(tail -n 1 "${TMP_ROOT}/steps")" stop
 )
+test_run_app_bg_timezone() (
+  makevn_start_app_background() {
+    assert_equal "$2" run-app-bg
+    assert_equal "$3" ''
+    assert_equal "$4" ''
+    assert_equal "$5" Europe/Madrid
+  }
+  assert_rejected "Usage: makevn run-app-bg" cmd_run_app_bg /fake/repo --app-timezone
+  cmd_run_app_bg /fake/repo --app-timezone Europe/Madrid
+)
+test_run_app_bg_timezone
 test_timeout_validation
 test_url_precedence
 test_probe_statuses_and_limits

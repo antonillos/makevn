@@ -14,6 +14,15 @@ and `execution_status`. Cancel only matching executions owned by this session,
 confirm terminal status, and retry the affected operation. Never reset Docker
 merely because a call timed out. See the [common execution rules](../../makevn/SKILL.md#common-policy).
 
+### Application JVM time zone
+
+When the project requires UTC snapshots, set `"app-timezone": "UTC"` on MCP
+`karate_all` or use `makevn karate-all --app-timezone UTC`. For the manual
+managed flow, pass the same option to `run_app_bg` or `makevn run-app-bg`,
+then use `karate_test` and `stop_app`. The option applies to the application
+JVM for that invocation. Keep the application under MakeVN management for
+readiness and cleanup.
+
 ### Strict Karate HTTP readiness
 
 `makevn karate-all` requires a configured or detected application health URL

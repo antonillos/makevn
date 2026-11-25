@@ -307,11 +307,22 @@ makevn_ensure_app_jar() {
   MAKEVN_ENSURED_APP_JAR="${jar_file}"
 }
 
+makevn_validate_app_timezone() {
+  [[ "$1" =~ ^[A-Za-z][A-Za-z0-9_+/-]*$ ]] ||
+    makevn_die "Invalid --app-timezone: use a Java time zone ID such as UTC or Europe/Madrid."
+}
+
 makevn_start_app_background() {
   local repo_root="$1"
   local mode="$2"
   local resolved_health_url="${3:-}"
   local health_timeout="${4:-}"
+  local app_timezone="${5:-}"
+  local -a java_args=(java)
+
+  if [[ -n "${app_timezone}" ]]; then
+    java_args+=("-Duser.timezone=${app_timezone}")
+  fi
   local maven_base_path=""
   local boot_module=""
   local java_home=""
@@ -390,7 +401,7 @@ makevn_start_app_background() {
     "${repo_root}" \
     "${log_file}" \
     ".makevn/app/app.log" \
-    "$(if [[ -n "${local_containers}" ]]; then makevn_quote_command env JAVA_HOME="${java_home}" LOCAL_CONTAINERS="${local_containers}" java -jar "${jar_file}"; else makevn_quote_command env JAVA_HOME="${java_home}" java -jar "${jar_file}"; fi)" \
+    "$(if [[ -n "${local_containers}" ]]; then makevn_quote_command env JAVA_HOME="${java_home}" LOCAL_CONTAINERS="${local_containers}" "${java_args[@]}" -jar "${jar_file}"; else makevn_quote_command env JAVA_HOME="${java_home}" "${java_args[@]}" -jar "${jar_file}"; fi)" \
     "code" \
     "${mode}"
 
@@ -412,17 +423,17 @@ makevn_start_app_background() {
       fi
       if [[ -n "${local_containers}" ]]; then
         printf "LOCAL_CONTAINERS: %s\n" "${local_containers}"
-        printf "command: %s\n" "$(makevn_quote_command env JAVA_HOME="${java_home}" LOCAL_CONTAINERS="${local_containers}" java -jar "${jar_file}")"
+        printf "command: %s\n" "$(makevn_quote_command env JAVA_HOME="${java_home}" LOCAL_CONTAINERS="${local_containers}" "${java_args[@]}" -jar "${jar_file}")"
       else
-        printf "command: %s\n" "$(makevn_quote_command env JAVA_HOME="${java_home}" java -jar "${jar_file}")"
+        printf "command: %s\n" "$(makevn_quote_command env JAVA_HOME="${java_home}" "${java_args[@]}" -jar "${jar_file}")"
       fi
       printf '\n'
     } > "${log_header}" 2>&1
     mv -f "${log_header}" "${log_file}"
     if [[ -n "${local_containers}" ]]; then
-      exec env JAVA_HOME="${java_home}" PATH="${java_home}/bin:${PATH}" LOCAL_CONTAINERS="${local_containers}" java -jar "${jar_file}" >> "${log_file}" 2>&1
+      exec env JAVA_HOME="${java_home}" PATH="${java_home}/bin:${PATH}" LOCAL_CONTAINERS="${local_containers}" "${java_args[@]}" -jar "${jar_file}" >> "${log_file}" 2>&1
     fi
-    exec env JAVA_HOME="${java_home}" PATH="${java_home}/bin:${PATH}" java -jar "${jar_file}" >> "${log_file}" 2>&1
+    exec env JAVA_HOME="${java_home}" PATH="${java_home}/bin:${PATH}" "${java_args[@]}" -jar "${jar_file}" >> "${log_file}" 2>&1
   ) &
   app_pid=$!
   printf '%s\n' "${app_pid}" > "${pid_file}"
@@ -460,7 +471,15 @@ makevn_start_app_background() {
 
 cmd_run_app_bg() {
   local repo_root="$1"
-  makevn_start_app_background "${repo_root}" run-app-bg "${2:-}" "${3:-}"
+  local app_timezone="${4:-}"
+  if [[ "${2:-}" == --app-timezone ]]; then
+    [[ $# -eq 3 ]] || makevn_die "Usage: makevn run-app-bg [--app-timezone ZONE]"
+    app_timezone="$3"
+    makevn_validate_app_timezone "${app_timezone}"
+    makevn_start_app_background "${repo_root}" run-app-bg "" "" "${app_timezone}"
+    return
+  fi
+  makevn_start_app_background "${repo_root}" run-app-bg "${2:-}" "${3:-}" "${app_timezone}"
 }
 
 cmd_run_app() {

@@ -105,8 +105,32 @@ cmd_karate_all() {
   local maven_base_path=""
   local health_url=""
   local health_timeout=""
+  local app_timezone=""
+  local -a test_args=()
 
   shift
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --app-timezone)
+        [[ $# -ge 2 ]] || makevn_die "Missing value for --app-timezone"
+        app_timezone="$2"
+        makevn_validate_app_timezone "${app_timezone}"
+        shift 2
+        ;;
+      --tag)
+        [[ $# -ge 2 ]] || makevn_die "Missing value for --tag"
+        test_args+=("$1" "$2")
+        shift 2
+        ;;
+      --)
+        test_args+=("$@")
+        break
+        ;;
+      *)
+        makevn_die "Unknown karate-all option: $1"
+        ;;
+    esac
+  done
 
   maven_base_path="$(makevn_detect_maven_base_path "${repo_root}" || true)"
   if ! makevn_detect_app_runnable "${repo_root}" "${maven_base_path}"; then
@@ -140,15 +164,15 @@ cmd_karate_all() {
   fi
 
   if [[ -n "${MAKEVN_EFFECTIVE_KARATE_APP_PROFILES}" ]]; then
-    SPRING_PROFILES_ACTIVE="${MAKEVN_EFFECTIVE_KARATE_APP_PROFILES}" makevn_run_karate_phase 3 cmd_run_app_bg "${repo_root}" "${health_url}" "${health_timeout}"
+    SPRING_PROFILES_ACTIVE="${MAKEVN_EFFECTIVE_KARATE_APP_PROFILES}" makevn_run_karate_phase 3 cmd_run_app_bg "${repo_root}" "${health_url}" "${health_timeout}" "${app_timezone}"
   else
-    makevn_run_karate_phase 3 cmd_run_app_bg "${repo_root}" "${health_url}" "${health_timeout}"
+    makevn_run_karate_phase 3 cmd_run_app_bg "${repo_root}" "${health_url}" "${health_timeout}" "${app_timezone}"
   fi
   trap 'cmd_stop_app "'"${repo_root}"'" >/dev/null 2>&1 || true' EXIT INT TERM
 
   makevn_run_karate_phase 4 cmd_docker_ps_required "${repo_root}" --compose karate
   set +e
-  MAKEVN_KARATE_CONTAINERS_CHECKED=yes makevn_run_karate_phase 5 cmd_karate_test "${repo_root}" "$@"
+  MAKEVN_KARATE_CONTAINERS_CHECKED=yes makevn_run_karate_phase 5 cmd_karate_test "${repo_root}" ${test_args[@]+"${test_args[@]}"}
   test_rc=$?
   set -e
 
