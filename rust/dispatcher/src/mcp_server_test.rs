@@ -8,6 +8,26 @@ use std::process;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 #[test]
+fn mixed_compose_approval_requires_a_valid_scoped_down_call() {
+    let suggestion = r#"Only after approval, call docker_down with arguments {"repo":"/worktree","owned-only":true}. Next"#;
+    let approval = super::docker_down_approval(suggestion).unwrap();
+    assert_eq!(approval["tool"], "docker_down");
+    assert_eq!(approval["arguments"]["owned-only"], true);
+    assert!(approval["question"].as_str().unwrap().contains("/worktree"));
+    let karate = suggestion.replace("docker_down", "karate_docker_down");
+    assert_eq!(super::docker_down_approval(&karate).unwrap()["tool"], "karate_docker_down");
+    for invalid in [
+        "unrelated",
+        "Only after approval, call docker_reset with arguments {}",
+        "Only after approval, call docker_down with arguments {",
+        r#"Only after approval, call docker_down with arguments {}"#,
+        "Only after approval, call docker_down",
+    ] {
+        assert!(super::docker_down_approval(invalid).is_none(), "{invalid}");
+    }
+}
+
+#[test]
 fn managed_application_tools_forward_the_app_timezone() {
     for name in ["karate_all", "run_app_bg"] {
         let spec = TOOL_SPECS.iter().find(|spec| spec.name == name).unwrap();
@@ -338,6 +358,27 @@ fn tool_call_validates_name_and_composite_steps() {
             .unwrap()
             .contains("steps")
     );
+}
+
+#[test]
+fn composite_stops_for_pending_doctor_even_without_fail_fast() {
+    let nonce = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
+    let dir = std::env::temp_dir().join(format!("makevn-pending-{}-{nonce}", process::id()));
+    fs::create_dir(&dir).unwrap();
+    let bin = dir.join("makevn");
+    fs::write(&bin, r##"#!/bin/sh
+printf '%s' '{"interactive_setup":{"required":true,"status":"pending","questions":[{"id":"use_mvnd"}],"setupToken":"token"},"suggested_next_step":{"next":""}}' > "$MAKEVN_MCP_DOCTOR_METADATA_OUT"
+"##).unwrap();
+    fs::set_permissions(&bin, fs::Permissions::from_mode(0o700)).unwrap();
+    let args = json!({"repo": dir.to_str().unwrap(), "fail-fast": false,
+                      "steps": [{"tool": "doctor"}, {"tool": "validate"}]});
+    let output = super::handle_composite_run(&bin, args.as_object().unwrap()).unwrap();
+    let workflow: serde_json::Value = serde_json::from_str(&output).unwrap();
+    assert_eq!(workflow["setupPending"], true);
+    assert_eq!(workflow["exitCode"], 1);
+    assert_eq!(workflow["executedSteps"], 1);
+    assert_eq!(workflow["steps"][0]["interactive_setup"]["questions"][0]["id"], "use_mvnd");
+    fs::remove_dir_all(dir).unwrap();
 }
 
 #[test]
@@ -1181,7 +1222,7 @@ fn changed_code_preview_requires_docker_readiness_before_execution() {
     for text in [
         "run doctor",
         "doctor/config/profile",
-        "first run docker_ps_required with wait-seconds: 30",
+        "first run docker_ps_required without wait-seconds",
         "Reuse healthy running services",
         "do not call docker_up when this gate passes",
         "volume-preserving docker_up",

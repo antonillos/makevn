@@ -66,6 +66,14 @@ with tempfile.TemporaryDirectory(prefix="makevn-doctor-chat-") as directory:
                                             "local_containers", "karate_app_profiles"}, doctor
     assert doctor["interactive_setup"]["requires_tty"] is False
     assert "configuration is pending" in doctor["message"]
+    composite = call(repo, "composite_run", error=True, **{"fail-fast": False},
+                     steps=[{"tool": "doctor"}, {"tool": "doctor"}])
+    workflow = composite["untrustedData"]["workflow"]
+    assert workflow["setupPending"] is True
+    assert workflow["executedSteps"] == 1
+    assert questions(workflow["steps"][0]) == available
+    assert workflow["steps"][0]["interactive_setup"]["setupToken"] == doctor["interactive_setup"]["setupToken"]
+    assert "ask the user" in composite["nextSuggestion"]
     with patch.dict(os.environ, {"SPRING_PROFILES_ACTIVE": "", "LOCAL_CONTAINERS": ""}):
         overridden = questions(call(repo, "doctor"))
         assert "local_containers" not in overridden and "karate_app_profiles" not in overridden
@@ -120,6 +128,21 @@ with tempfile.TemporaryDirectory(prefix="makevn-doctor-chat-") as directory:
     result = subprocess.run(["bash", "-c", 'source "$1"; printf "%s" "$MAKEVN_APP_HEALTH_URL"',
                              "bash", str(config)], cwd=repo, text=True, capture_output=True, check=True)
     assert result.stdout == special_url
+
+    config.write_text("\n".join(line for line in config.read_text().splitlines()
+                                  if not line.startswith("MAKEVN_KARATE_APP_PROFILES=")) + "\n")
+    second_workflow = workflows / "karate-b.yml"
+    ambiguous_workflow = second_workflow.read_text()
+    second_workflow.unlink()
+    automatic = call(repo, "doctor")
+    profiles = questions(automatic)["karate_app_profiles"]
+    assert profiles["suggestedValue"] == "local", profiles
+    assert profiles["options"] == ["@auto"], profiles
+    confirmed = configure(repo, automatic, {"karate_app_profiles": "@auto"})
+    assert "karate_app_profiles" not in questions(confirmed)
+    assert "MAKEVN_KARATE_APP_PROFILES=@auto" in config.read_text()
+    second_workflow.write_text(ambiguous_workflow)
+    assert questions(call(repo, "doctor"))["karate_app_profiles"]["options"] == []
 
 with tempfile.TemporaryDirectory(prefix="makevn-doctor-unsupported-") as directory:
     repo = Path(directory)

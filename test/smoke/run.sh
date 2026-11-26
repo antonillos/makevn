@@ -1478,9 +1478,10 @@ EOF
 #!/usr/bin/env bash
 set -euo pipefail
 printf 'docker-compose %s\n' "$*" >> .docker-compose.log
-if [[ "$1" == "-f" ]]; then
-  printf 'fake-service-id\n'
-fi
+case "$*" in
+  *" config --services") printf 'db\n' ;;
+  *" ps -aq") printf 'fake-service-id\n' ;;
+esac
 EOF
   chmod +x "${repo}/fake-bin/docker-compose"
   cat > "${repo}/fake-bin/docker" <<'EOF'
@@ -1488,6 +1489,11 @@ EOF
 set -euo pipefail
 printf 'docker %s\n' "$*" >> .docker.log
 if [[ "$1" == "compose" && "${2:-}" == "version" ]]; then
+  exit 0
+fi
+if [[ "$1" == "inspect" && "${2:-}" == "fake-service-id" ]]; then
+  compose_dir="${PWD}/code/boot/src/test/resources/compose"
+  printf '[{"Id":"fake-service-id","Config":{"Labels":{"com.docker.compose.project.working_dir":"%s","com.docker.compose.project.config_files":"%s/docker-compose.yml","com.docker.compose.service":"db"}},"State":{"Status":"running","Health":{"Status":"healthy"}}}]\n' "${compose_dir}" "${compose_dir}"
   exit 0
 fi
 if [[ "$1" == "inspect" && "${2:-}" == "-f" ]]; then
@@ -1662,9 +1668,10 @@ test_docker_commands() {
 #!/usr/bin/env bash
 set -euo pipefail
 printf 'docker-compose %s\n' "$*" >> .docker-compose.log
-if [[ "$*" == *" ps -aq db" ]]; then
-  printf 'abc123def456\n'
-fi
+case "$*" in
+  *" config --services") printf 'db\n' ;;
+  *" ps -aq db" ) printf 'abc123def456\n' ;;
+esac
 EOF
   chmod +x "${repo}/fake-bin/docker-compose"
 
@@ -1710,7 +1717,6 @@ EOF
 
   PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" init >/dev/null
   PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" docker-up >/dev/null
-  assert_not_contains "${repo}/.docker-compose.log" " ps -aq "
   PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" docker-down >/dev/null
   output="$(PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" docker-ps)"
   stats_output="$(PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" docker-stats)"
@@ -1809,9 +1815,10 @@ test_docker_ps_required_wait_seconds() {
 #!/usr/bin/env bash
 set -euo pipefail
 printf 'docker-compose %s\n' "$*" >> .docker-compose.log
-if [[ "$1" == "-f" ]]; then
-  printf 'fake-service-id\n'
-fi
+case "$*" in
+  *" config --services") printf 'db\n' ;;
+  *" ps -aq"|*" ps -aq db" ) printf 'fake-service-id\n' ;;
+esac
 EOF
   chmod +x "${repo}/fake-bin/docker-compose"
 
@@ -1820,6 +1827,17 @@ EOF
 set -euo pipefail
 printf 'docker %s\n' "$*" >> .docker.log
 if [[ "$1" == "compose" && "${2:-}" == "version" ]]; then
+  exit 0
+fi
+if [[ "$1" == "inspect" && "${2:-}" == "fake-service-id" ]]; then
+  health=healthy
+  count=0
+  if [[ -f .docker-health-count ]]; then count="$(cat .docker-health-count)"; fi
+  count=$((count + 1))
+  printf '%s\n' "${count}" > .docker-health-count
+  (( count >= 3 )) || health=starting
+  compose_dir="${PWD}/code/boot/src/test/resources/compose"
+  printf '[{"Id":"fake-service-id","Config":{"Labels":{"com.docker.compose.project.working_dir":"%s","com.docker.compose.project.config_files":"%s/docker-compose.yml","com.docker.compose.service":"db"}},"State":{"Status":"running","Health":{"Status":"%s"}}}]\n' "${compose_dir}" "${compose_dir}" "${health}"
   exit 0
 fi
 if [[ "$1" == "inspect" && "${2:-}" == "-f" ]]; then
@@ -1864,7 +1882,7 @@ MAKEVN_RUN_CMD=""
 EOF
 
   PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" docker-ps-required --wait-seconds 5 >/dev/null
-  assert_contains "${repo}/.docker.log" "docker inspect -f {{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}} fake-service-id"
+  assert_contains "${repo}/.docker.log" "docker inspect fake-service-id"
 
   set +e
   PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" docker-ps-required --wait-seconds nope >"${invalid_output_file}" 2>&1
@@ -1963,9 +1981,10 @@ EOF
 #!/usr/bin/env bash
 set -euo pipefail
 printf 'docker-compose %s\n' "$*" >> .docker-compose.log
-if [[ "$*" == *" ps -aq "* ]]; then
-  printf 'fake-service-id\n'
-fi
+case "$*" in
+  *" config --services") printf 'db\n' ;;
+  *" ps -aq"|*" ps -aq db" ) printf 'fake-service-id\n' ;;
+esac
 EOF
   chmod +x "${repo}/fake-bin/docker-compose"
 
@@ -1977,6 +1996,12 @@ if [[ "$1" == "compose" && "${2:-}" == "version" ]]; then
   exit 0
 fi
 if [[ "$1" == "volume" && "${2:-}" == "prune" && "${3:-}" == "-f" ]]; then
+  exit 0
+fi
+if [[ "$1" == "inspect" && "${2:-}" == "fake-service-id" ]]; then
+  health=healthy
+  compose_dir="${PWD}/e2e/karate/src/test/resources/compose"
+  printf '[{"Id":"fake-service-id","Config":{"Labels":{"com.docker.compose.project.working_dir":"%s","com.docker.compose.project.config_files":"%s/docker-compose.yml","com.docker.compose.service":"db"}},"State":{"Status":"running","Health":{"Status":"%s"}}}]\n' "${compose_dir}" "${compose_dir}" "${health}"
   exit 0
 fi
 if [[ "$1" == "inspect" && "${2:-}" == "-f" ]]; then
@@ -2020,7 +2045,6 @@ MAKEVN_RUN_CMD=""
 EOF
 
   PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" karate-docker-up >/dev/null
-  assert_not_contains "${repo}/.docker-compose.log" " ps -aq "
   PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" karate-docker-down >/dev/null
   PATH="${repo}/fake-bin:${PATH}" ${CLI} --repo "${repo}" docker-ps-required --compose karate >/dev/null
   printf 'not-a-real-jar\n' > "${repo}/code/boot/target/app.jar"
@@ -2031,7 +2055,7 @@ EOF
 
   assert_matches "${repo}/.docker-compose.log" '^docker-compose -f .*/e2e/karate/src/test/resources/compose/docker-compose\.yml -f .*/e2e/karate/src/test/resources/compose/docker-compose\.override\.yml down$'
   assert_matches "${repo}/.docker-compose.log" '^docker-compose -f .*/e2e/karate/src/test/resources/compose/docker-compose\.yml -f .*/e2e/karate/src/test/resources/compose/docker-compose\.override\.yml up --detach$'
-  assert_matches "${repo}/.docker-compose.log" '^docker-compose -f .*/e2e/karate/src/test/resources/compose/docker-compose\.yml -f .*/e2e/karate/src/test/resources/compose/docker-compose\.override\.yml ps -aq db$'
+  assert_matches "${repo}/.docker-compose.log" '^docker-compose -f .*/e2e/karate/src/test/resources/compose/docker-compose\.yml -f .*/e2e/karate/src/test/resources/compose/docker-compose\.override\.yml ps -aq$'
   assert_matches "${repo}/.mvnw.log" '^ARGS=-nsu -f .*/e2e/karate/pom\.xml test -Dkarate\.env=local -Dkarate\.report\.options=--showLog true -Dkarate\.options=-t@smoke$'
   assert_matches "${repo}/.mvnw.log" '^ARGS=-f .*/code/pom\.xml package -DskipTests -Dmaven\.build\.cache\.enabled=false$'
   assert_contains "${repo}/.mvnw.log" "JAVA_HOME=${java_home}"
@@ -2461,9 +2485,10 @@ EOF
   cat > "${repo}/fake-bin/docker-compose" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
-if [[ "$*" == *" ps -aq "* ]]; then
-  printf 'fake-service-id\n'
-fi
+case "$*" in
+  *" config --services") printf 'db\n' ;;
+  *" ps -aq") printf 'fake-service-id\n' ;;
+esac
 EOF
   chmod +x "${repo}/fake-bin/docker-compose"
 
@@ -2471,6 +2496,11 @@ EOF
 #!/usr/bin/env bash
 set -euo pipefail
 if [[ "${1:-}" == "volume" ]]; then
+  exit 0
+fi
+if [[ "${1:-}" == "inspect" && "${2:-}" == "fake-service-id" ]]; then
+  compose_dir="${PWD}/e2e/karate/src/test/resources/compose"
+  printf '[{"Id":"fake-service-id","Config":{"Labels":{"com.docker.compose.project.working_dir":"%s","com.docker.compose.project.config_files":"%s/docker-compose.yml","com.docker.compose.service":"db"}},"State":{"Status":"running","Health":{"Status":"healthy"}}}]\n' "${compose_dir}" "${compose_dir}"
   exit 0
 fi
 if [[ "${1:-}" == "inspect" && "${2:-}" == "-f" ]]; then
@@ -2547,9 +2577,10 @@ EOF
 #!/usr/bin/env bash
 set -euo pipefail
 printf 'docker-compose %s\n' "$*" >> .docker-compose.log
-if [[ "$1" == "-f" ]]; then
-  printf 'fake-service-id\n'
-fi
+case "$*" in
+  *" config --services") printf 'db\n' ;;
+  *" ps -aq"|*" ps -aq db" ) printf 'fake-service-id\n' ;;
+esac
 EOF
   chmod +x "${repo}/fake-bin/docker-compose"
 
@@ -2558,6 +2589,12 @@ EOF
 set -euo pipefail
 printf 'docker %s\n' "$*" >> .docker.log
 if [[ "$1" == "compose" && "${2:-}" == "version" ]]; then
+  exit 0
+fi
+if [[ "$1" == "inspect" && "${2:-}" == "fake-service-id" ]]; then
+  health=healthy
+  compose_dir="${PWD}/code/boot/src/test/resources/compose"
+  printf '[{"Id":"fake-service-id","Config":{"Labels":{"com.docker.compose.project.working_dir":"%s","com.docker.compose.project.config_files":"%s/docker-compose.yml","com.docker.compose.service":"db"}},"State":{"Status":"running","Health":{"Status":"%s"}}}]\n' "${compose_dir}" "${compose_dir}" "${health}"
   exit 0
 fi
 if [[ "$1" == "inspect" && "${2:-}" == "-f" ]]; then
@@ -2603,7 +2640,7 @@ EOF
   assert_matches "${repo}/.mvnw.log" '^ARGS=-f .*/pom\.xml verify -Djacoco\.skip=false -DskipUTs -Dskip\.unit\.tests=true -DfailIfNoTests=false -Dmaven\.test\.failure\.ignore=false -Dmaven\.build\.cache\.enabled=false$'
   assert_matches "${repo}/.mvnw.log" '^ARGS=-B -nsu -f .*/pom\.xml clean verify -Djacoco\.skip=false -DskipITs -DfailIfNoTests=false -Dmaven\.test\.failure\.ignore=false -Dmaven\.build\.cache\.enabled=false$'
   assert_contains "${repo}/.mvnw.log" "JAVA_HOME=${java_home}"
-  assert_matches "${repo}/.docker-compose.log" '^docker-compose -f .*/code/boot/src/test/resources/compose/docker-compose\.yml -f .*/code/boot/src/test/resources/compose/docker-compose\.override\.yml ps -aq db$'
+  assert_matches "${repo}/.docker-compose.log" '^docker-compose -f .*/code/boot/src/test/resources/compose/docker-compose\.yml -f .*/code/boot/src/test/resources/compose/docker-compose\.override\.yml ps -aq$'
   [[ "${output}" == *"[ok] "* ]] || fail "expected verify-ut output to include success summary"
   [[ "${pr_output}" == *"[ok] "* ]] || fail "expected pr-verify output to include success summary"
 
@@ -2634,7 +2671,9 @@ EOF
 #!/usr/bin/env bash
 set -euo pipefail
 printf 'docker-compose %s\n' "$*" >> .docker-compose.log
-exit 0
+case "$*" in
+  *" config --services") printf 'db\n' ;;
+esac
 EOF
   chmod +x "${repo}/fake-bin/docker-compose"
 
@@ -2745,9 +2784,10 @@ EOF
 #!/usr/bin/env bash
 set -euo pipefail
 printf 'docker-compose %s\n' "$*" >> .docker-compose.log
-if [[ "$1" == "-f" ]]; then
-  printf 'fake-service-id\n'
-fi
+case "$*" in
+  *" config --services") printf 'db\n' ;;
+  *" ps -aq") printf 'fake-service-id\n' ;;
+esac
 EOF
   chmod +x "${repo}/fake-bin/docker-compose"
   cat > "${repo}/fake-bin/docker" <<'EOF'
@@ -2755,6 +2795,11 @@ EOF
 set -euo pipefail
 printf 'docker %s\n' "$*" >> .docker.log
 if [[ "$1" == "compose" && "${2:-}" == "version" ]]; then
+  exit 0
+fi
+if [[ "$1" == "inspect" && "${2:-}" == "fake-service-id" ]]; then
+  compose_dir="${PWD}/code/boot/src/test/resources/compose"
+  printf '[{"Id":"fake-service-id","Config":{"Labels":{"com.docker.compose.project.working_dir":"%s","com.docker.compose.project.config_files":"%s/docker-compose.yml","com.docker.compose.service":"db"}},"State":{"Status":"running","Health":{"Status":"healthy"}}}]\n' "${compose_dir}" "${compose_dir}"
   exit 0
 fi
 if [[ "$1" == "inspect" && "${2:-}" == "-f" ]]; then
@@ -2836,9 +2881,10 @@ EOF
 #!/usr/bin/env bash
 set -euo pipefail
 printf 'docker-compose %s\n' "$*" >> .docker-compose.log
-if [[ "$1" == "-f" ]]; then
-  printf 'fake-service-id\n'
-fi
+case "$*" in
+  *" config --services") printf 'db\n' ;;
+  *" ps -aq") printf 'fake-service-id\n' ;;
+esac
 EOF
   chmod +x "${repo}/fake-bin/docker-compose"
   cat > "${repo}/fake-bin/docker" <<'EOF'
@@ -2855,6 +2901,11 @@ case "$1 ${2:-}" in
     ;;
 esac
 if [[ "$1" == "compose" && "${2:-}" == "version" ]]; then
+  exit 0
+fi
+if [[ "$1" == "inspect" && "${2:-}" == "fake-service-id" ]]; then
+  compose_dir="${PWD}/code/boot/src/test/resources/compose"
+  printf '[{"Id":"fake-service-id","Config":{"Labels":{"com.docker.compose.project.working_dir":"%s","com.docker.compose.project.config_files":"%s/docker-compose.yml","com.docker.compose.service":"db"}},"State":{"Status":"running","Health":{"Status":"healthy"}}}]\n' "${compose_dir}" "${compose_dir}"
   exit 0
 fi
 if [[ "$1" == "inspect" && "${2:-}" == "-f" ]]; then
@@ -2929,15 +2980,21 @@ EOF
   cat > "${repo}/fake-bin/docker-compose" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
-if [[ "$1" == "-f" ]]; then
-  printf 'fake-service-id\n'
-fi
+case "$*" in
+  *" config --services") printf 'db\n' ;;
+  *" ps -aq") printf 'fake-service-id\n' ;;
+esac
 EOF
   chmod +x "${repo}/fake-bin/docker-compose"
   cat > "${repo}/fake-bin/docker" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
 if [[ "$1" == "compose" && "${2:-}" == "version" ]]; then
+  exit 0
+fi
+if [[ "$1" == "inspect" && "${2:-}" == "fake-service-id" ]]; then
+  compose_dir="${PWD}/code/boot/src/test/resources/compose"
+  printf '[{"Id":"fake-service-id","Config":{"Labels":{"com.docker.compose.project.working_dir":"%s","com.docker.compose.project.config_files":"%s/docker-compose.yml","com.docker.compose.service":"db"}},"State":{"Status":"running","Health":{"Status":"healthy"}}}]\n' "${compose_dir}" "${compose_dir}"
   exit 0
 fi
 if [[ "$1" == "inspect" && "${2:-}" == "-f" ]]; then
@@ -3003,15 +3060,21 @@ EOF
   cat > "${repo}/fake-bin/docker-compose" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
-if [[ "$1" == "-f" ]]; then
-  printf 'fake-service-id\n'
-fi
+case "$*" in
+  *" config --services") printf 'db\n' ;;
+  *" ps -aq") printf 'fake-service-id\n' ;;
+esac
 EOF
   chmod +x "${repo}/fake-bin/docker-compose"
   cat > "${repo}/fake-bin/docker" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
 if [[ "$1" == "compose" && "${2:-}" == "version" ]]; then
+  exit 0
+fi
+if [[ "$1" == "inspect" && "${2:-}" == "fake-service-id" ]]; then
+  compose_dir="${PWD}/code/boot/src/test/resources/compose"
+  printf '[{"Id":"fake-service-id","Config":{"Labels":{"com.docker.compose.project.working_dir":"%s","com.docker.compose.project.config_files":"%s/docker-compose.yml","com.docker.compose.service":"db"}},"State":{"Status":"running","Health":{"Status":"healthy"}}}]\n' "${compose_dir}" "${compose_dir}"
   exit 0
 fi
 if [[ "$1" == "inspect" && "${2:-}" == "-f" ]]; then
@@ -4305,9 +4368,10 @@ EOF
 #!/usr/bin/env bash
 set -euo pipefail
 printf 'docker-compose %s\n' "$*" >> .docker-compose.log
-if [[ "$1" == "-f" ]]; then
-  printf 'fake-service-id\n'
-fi
+case "$*" in
+  *" config --services") printf 'db\n' ;;
+  *" ps -aq") printf 'fake-service-id\n' ;;
+esac
 EOF
   chmod +x "${repo}/fake-bin/docker-compose"
   cat > "${repo}/fake-bin/docker" <<'EOF'
@@ -4315,6 +4379,11 @@ EOF
 set -euo pipefail
 printf 'docker %s\n' "$*" >> .docker.log
 if [[ "$1" == "compose" && "${2:-}" == "version" ]]; then
+  exit 0
+fi
+if [[ "$1" == "inspect" && "${2:-}" == "fake-service-id" ]]; then
+  compose_dir="${PWD}/code/boot/src/test/resources/compose"
+  printf '[{"Id":"fake-service-id","Config":{"Labels":{"com.docker.compose.project.working_dir":"%s","com.docker.compose.project.config_files":"%s/docker-compose.yml","com.docker.compose.service":"db"}},"State":{"Status":"running","Health":{"Status":"healthy"}}}]\n' "${compose_dir}" "${compose_dir}"
   exit 0
 fi
 if [[ "$1" == "inspect" && "${2:-}" == "-f" ]]; then
@@ -4398,13 +4467,21 @@ EOF
   cat > "${repo}/fake-bin/docker-compose" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
-printf 'fake-service-id\n'
+case "$*" in
+  *" config --services") printf 'db\n' ;;
+  *" ps -aq") printf 'fake-service-id\n' ;;
+esac
 EOF
   chmod +x "${repo}/fake-bin/docker-compose"
   cat > "${repo}/fake-bin/docker" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
 if [[ "$1" == "compose" && "${2:-}" == "version" ]]; then
+  exit 0
+fi
+if [[ "$1" == "inspect" && "${2:-}" == "fake-service-id" ]]; then
+  compose_dir="${PWD}/code/boot/src/test/resources/compose"
+  printf '[{"Id":"fake-service-id","Config":{"Labels":{"com.docker.compose.project.working_dir":"%s","com.docker.compose.project.config_files":"%s/docker-compose.yml","com.docker.compose.service":"db"}},"State":{"Status":"running","Health":{"Status":"healthy"}}}]\n' "${compose_dir}" "${compose_dir}"
   exit 0
 fi
 if [[ "$1" == "inspect" && "${2:-}" == "-f" ]]; then

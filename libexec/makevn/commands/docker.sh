@@ -24,7 +24,7 @@ makevn_publish_compose_resources() {
   temporary="$(mktemp "${output}.tmp.XXXXXX" 2>/dev/null)" || return 0
   if {
     printf '%s\n' "${repo_root}" "${command_words[@]}" &&
-      makevn_collect_compose_args "${compose_file}" "${override_file}"
+      makevn_collect_compose_args "${compose_file}" "${override_file}" "${repo_root}"
   } > "${temporary}"; then
     mv "${temporary}" "${output}" 2>/dev/null || true
   fi
@@ -152,20 +152,22 @@ makevn_verify_requires_boot_docker() {
   [[ -n "${local_containers}" ]]
 }
 
+makevn_docker_diagnosis() {
+  local code="$1" suggestion="$2"
+  printf 'Docker diagnosis: {"code":"%s"}\n%s\n' "${code}" "${suggestion}"
+  if [[ -n "${MAKEVN_DOCKER_LOG_SUGGESTION_OUT:-}" ]]; then
+    printf '%s' "${suggestion}" > "${MAKEVN_DOCKER_LOG_SUGGESTION_OUT}"
+  fi
+}
+
 cmd_docker_ps_required() {
   local repo_root="$1"
   local compose_kind="boot"
   local wait_seconds=0
   local compose_file=""
   local compose_override_file=""
-  local docker_ps_script="${MAKEVN_LIBEXEC_DIR}/docker/ps.sh"
-  local extract_services_script="${MAKEVN_LIBEXEC_DIR}/docker/extract_services.sh"
-  local services=""
-  local docker_compose_cmd=""
-  local compose_args=""
-  local output=""
-  local elapsed=0
-  local readiness_started_epoch=0
+  local docker_compose_cmd="" arg=""
+  local -a command_words=() compose_args=()
 
   shift
   while [[ $# -gt 0 ]]; do
@@ -192,57 +194,31 @@ cmd_docker_ps_required() {
 
   compose_file="$(makevn_docker_compose_file_for_kind "${repo_root}" "${compose_kind}" || true)"
   compose_override_file="$(makevn_docker_compose_override_file_for_kind "${repo_root}" "${compose_kind}" || true)"
-  [[ -f "${compose_file}" ]] || makevn_die "Docker compose file not found for ${compose_kind}: ${compose_file}"
-  [[ -f "${docker_ps_script}" && -f "${extract_services_script}" ]] || makevn_die "Docker helper scripts not found"
-
-  services="$(bash "${extract_services_script}" "${compose_file}" || true)"
-  [[ -n "${services}" ]] || makevn_die "No services defined in compose file: ${compose_file}"
-
-  docker_compose_cmd="$(makevn_resolve_docker_compose_command || true)"
-  [[ -n "${docker_compose_cmd}" ]] || makevn_die "Neither docker-compose nor 'docker compose' is available."
-
-  compose_args="-f ${compose_file}"
-  if [[ -f "${compose_override_file}" ]]; then
-    compose_args+=" -f ${compose_override_file}"
+  if [[ ! -f "${compose_file}" ]]; then
+    makevn_docker_diagnosis compose_selection_unresolved \
+      "Verify the selected ${compose_kind} Compose file. Run doctor in this worktree if no file is configured."
+    makevn_die "Docker compose file not found for ${compose_kind}: ${compose_file}"
   fi
-
+  docker_compose_cmd="$(makevn_resolve_docker_compose_command || true)"
+  if [[ -z "${docker_compose_cmd}" ]]; then
+    makevn_docker_diagnosis compose_unavailable "Restore Docker Compose availability before retrying readiness."
+    makevn_die "Neither docker-compose nor 'docker compose' is available."
+  fi
   makevn_publish_compose_resources "${repo_root}" "${docker_compose_cmd}" "${compose_file}" "${compose_override_file}"
 
-  readiness_started_epoch="$(date +%s)"
-  while true; do
-    output="$(cd "${repo_root}" && MAKEVN_EXECUTION_COMPOSE_FILE="${compose_file}" COMPOSE_ARGS="${compose_args}" SERVICES="${services}" DOCKER_COMPOSE="${docker_compose_cmd}" bash "${docker_ps_script}" || true)"
-    if [[ -z "${output}" ]]; then
-      break
-    fi
-    if (( elapsed >= wait_seconds )); then
-      break
-    fi
-    sleep 1
-    elapsed=$((elapsed + 1))
-  done
-
-  if [[ -z "${output}" ]] && command -v python3 >/dev/null 2>&1; then
-    local mount_output=""
-    if mount_output="$(python3 "${MAKEVN_LIBEXEC_DIR}/docker/bind_mounts.py" required "${repo_root}" "${compose_file}" "${compose_override_file}")"; then
-      [[ -z "${mount_output}" ]] || printf '%s\n' "${mount_output}"
-    else
-      output="${mount_output:-Bind mount validation failed without diagnostics.}"
-    fi
+  read -r -a command_words <<< "${docker_compose_cmd}"
+  while IFS= read -r arg; do compose_args+=("${arg}"); done < <(makevn_collect_compose_args "${compose_file}" "${compose_override_file}" "${repo_root}")
+  if [[ "${compose_kind}" == karate && -n "${PROFILE:-}" ]]; then
+    compose_args+=(--profile "${PROFILE}")
   fi
-  if ! MAKEVN_LOG_STARTED_EPOCH="${readiness_started_epoch}" makevn_run_logged "${repo_root}" docker-ps-required docker-ps-required docker-ps-required bash -c '
-    output="$1"
-    wait_seconds="$2"
-    elapsed="$3"
-    if [[ -n "${output}" ]]; then
-      printf "%s\n" "${output}"
-      if (( wait_seconds > 0 )); then
-        printf "Waited %ss for required Docker services.\n" "${elapsed}"
-      fi
-      printf "%s\n" "Required Docker services are not running or healthy, or bind mounts failed validation. Inspect diagnostics before retrying; do not repeat tests until prerequisites are corrected."
-      exit 1
-    fi
-  ' bash "${output}" "${wait_seconds}" "${elapsed}"; then
-    makevn_docker_log_query "${repo_root}" "${compose_kind}" suggest || true
+  makevn_run_logged "${repo_root}" docker-ps-required docker-ps-required docker-ps-required \
+    python3 "${MAKEVN_LIBEXEC_DIR}/docker/logs.py" readiness --repo "${repo_root}" \
+    --compose "${compose_kind}" --file "${compose_file}" --wait-seconds "${wait_seconds}" \
+    -- "${command_words[@]}" "${compose_args[@]}" || return $?
+
+  if ! python3 "${MAKEVN_LIBEXEC_DIR}/docker/bind_mounts.py" required "${repo_root}" "${compose_file}" "${compose_override_file}"; then
+    makevn_docker_diagnosis bind_mount_check_failed \
+      "Resolve the reported bind mount validation failure before retrying readiness."
     return 1
   fi
 }
@@ -250,15 +226,24 @@ cmd_docker_ps_required() {
 makevn_run_docker_lifecycle() {
   local repo_root="$1" compose_kind="$2" action="$3"
   local title="docker-${action}"
-  local compose_file="" compose_override_file="" docker_compose_cmd=""
+  local compose_file="" compose_override_file="" docker_compose_cmd="" arg=""
   local -a docker_compose=() compose_args=()
 
   shift 3
-  makevn_parse_docker_args "$@"
+  local owned_only=false
+  for arg in "$@"; do
+    if [[ "${arg}" == --owned-only && "${action}" == down ]]; then
+      owned_only=true
+    else
+      makevn_parse_docker_args "${arg}"
+    fi
+  done
   [[ "${compose_kind}" != karate ]] || title="karate-${title}"
   compose_file="$(makevn_docker_compose_file_for_kind "${repo_root}" "${compose_kind}" || true)"
   compose_override_file="$(makevn_docker_compose_override_file_for_kind "${repo_root}" "${compose_kind}" || true)"
   if [[ ! -f "${compose_file}" ]]; then
+    makevn_docker_diagnosis compose_selection_unresolved \
+      "Verify the selected ${compose_kind} Compose file. Run doctor in this worktree if no file is configured."
     if [[ "${compose_kind}" == boot ]]; then
       makevn_die "Docker compose selection failed. $(makevn_boot_compose_resolution_error "${repo_root}")"
     fi
@@ -266,16 +251,26 @@ makevn_run_docker_lifecycle() {
   fi
 
   docker_compose_cmd="$(makevn_resolve_docker_compose_command || true)"
-  [[ -n "${docker_compose_cmd}" ]] || makevn_die "Neither docker-compose nor 'docker compose' is available."
+  if [[ -z "${docker_compose_cmd}" ]]; then
+    makevn_docker_diagnosis compose_unavailable "Restore Docker Compose availability before retrying."
+    makevn_die "Neither docker-compose nor 'docker compose' is available."
+  fi
   read -r -a docker_compose <<< "${docker_compose_cmd}"
   while IFS= read -r arg; do
     compose_args+=("${arg}")
-  done < <(makevn_collect_compose_args "${compose_file}" "${compose_override_file}")
+  done < <(makevn_collect_compose_args "${compose_file}" "${compose_override_file}" "${repo_root}")
   if [[ "${compose_kind}" == karate && -n "${PROFILE:-}" ]]; then
     compose_args+=(--profile "${PROFILE}")
   fi
 
   makevn_publish_compose_resources "${repo_root}" "${docker_compose_cmd}" "${compose_file}" "${compose_override_file}"
+  if [[ "${owned_only}" == true ]]; then
+    makevn_run_logged "${repo_root}" "${title}" "${title}" "${title}" \
+      python3 "${MAKEVN_LIBEXEC_DIR}/docker/logs.py" owned-down --repo "${repo_root}" \
+      --compose "${compose_kind}" --file "${compose_file}" -- "${docker_compose[@]}" "${compose_args[@]}"
+    return $?
+  fi
+  makevn_docker_log_query "${repo_root}" "${compose_kind}" ownership || return $?
   local status=0
   makevn_run_logged "${repo_root}" "${title}" "${title}" "${title}" bash -e -c '
     action="$1"
@@ -305,7 +300,7 @@ makevn_docker_log_query() {
   [[ -f "${compose_file}" ]] || makevn_die "Docker compose file not found for ${compose_kind}"
   compose_command="$(makevn_resolve_docker_compose_command)" || return 1
   read -r -a command_words <<< "${compose_command}"
-  while IFS= read -r arg; do compose_args+=("${arg}"); done < <(makevn_collect_compose_args "${compose_file}" "${override_file}")
+  while IFS= read -r arg; do compose_args+=("${arg}"); done < <(makevn_collect_compose_args "${compose_file}" "${override_file}" "${repo_root}")
   if [[ "${compose_kind}" == karate && -n "${PROFILE:-}" ]]; then
     compose_args+=(--profile "${PROFILE}")
   fi

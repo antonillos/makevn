@@ -92,8 +92,15 @@ def collect_questions(arguments):
                                   "A suggested URL is not verified. You may specify changes to its port or path "
                                   "instead of retyping the whole URL.", "string", suggested=health))
     if profiles_pending == "true":
-        questions.append(question("karate_app_profiles", "Which literal comma-separated Spring profiles "
-                                  f"should the Karate application use? Detected candidates: {profiles}", "string"))
+        ambiguous = arguments[13:14] in ([], ["ambiguous"])
+        prompt = ("Which literal comma-separated Spring profiles should the Karate application use? "
+                  f"Detected candidates: {profiles}")
+        options = [] if ambiguous else ["@auto"]
+        suggested = arguments[14] if not ambiguous and len(arguments) > 14 else ""
+        if options:
+            prompt += " Choose @auto to keep automatic profile selection."
+        questions.append(question("karate_app_profiles", prompt, "string",
+                                  options, suggested=suggested or None))
     if java_homes:
         questions.append(question("code_java_home", "Which compatible JDK should this repository use? "
                                   f"The lowest compatible major is recommended.\n{java_details}", "choice",
@@ -132,7 +139,7 @@ def answer_updates(setup, answers):
                 raise ValueError(f"{identifier} must select a currently available option.")
             if identifier == "app_health_url" and not valid_health_url(value):
                 raise ValueError("Use an HTTP(S) health URL without whitespace.")
-            if identifier == "karate_app_profiles" and not valid_profiles(value):
+            if identifier == "karate_app_profiles" and value not in item["options"] and not valid_profiles(value):
                 raise ValueError("Use a comma-separated list of literal Spring profile names.")
         updates[SETTINGS[identifier]] = value
     return updates

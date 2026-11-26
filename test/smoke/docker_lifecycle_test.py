@@ -113,11 +113,12 @@ class DockerLifecycleTests(unittest.TestCase):
                     interface(prefix + "-up")
                     interface(prefix + "-up")
                     interface(prefix + "-down")
-                    self.assertEqual([args[-2:] for args in self.records()[:2]],
+                    lifecycle = [args for args in self.records() if "up" in args or "down" in args]
+                    self.assertEqual([args[-2:] for args in lifecycle[:2]],
                                      [["up", "--detach"], ["up", "--detach"]])
-                    self.assertEqual(len(self.records()), 3)
-                    self.assertEqual(self.records()[-1][-1], "down")
-                    self.assertNotIn("-v", self.records()[-1])
+                    self.assertEqual(len(lifecycle), 3)
+                    self.assertEqual(lifecycle[-1][-1], "down")
+                    self.assertNotIn("-v", lifecycle[-1])
                     for kind in ("boot", "karate", "unrelated"):
                         self.assertEqual((self.repo / f"{kind}.data").read_text(), f"saved-{kind}")
                     self.assertEqual((self.repo / "engine.jsonl").read_text(), "")
@@ -129,11 +130,12 @@ class DockerLifecycleTests(unittest.TestCase):
                     self.seed_volumes()
                     self.clear_logs()
                     interface(prefix + "-reset")
-                    self.assertEqual(len(self.records()), 2)
-                    self.assertEqual(self.records()[0][-3:], ["down", "-v", "--remove-orphans"])
-                    self.assertEqual(self.records()[1][-2:], ["up", "--detach"])
-                    self.assertEqual(self.records()[0][:-3], self.records()[1][:-2])
-                    self.assertEqual(self.records()[0].count("-f"), 2)
+                    lifecycle = [args for args in self.records() if "up" in args or "down" in args]
+                    self.assertEqual(len(lifecycle), 2)
+                    self.assertEqual(lifecycle[0][-3:], ["down", "-v", "--remove-orphans"])
+                    self.assertEqual(lifecycle[1][-2:], ["up", "--detach"])
+                    self.assertEqual(lifecycle[0][:-3], lifecycle[1][:-2])
+                    self.assertEqual(lifecycle[0].count("-f"), 2)
                     for volume in ("boot", "karate", "unrelated"):
                         expected = "fresh" if volume == kind else f"saved-{volume}"
                         self.assertEqual((self.repo / f"{volume}.data").read_text(), expected)

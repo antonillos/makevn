@@ -29,6 +29,24 @@ class DockerLogsTest(unittest.TestCase):
     def args(self, **values):
         return SimpleNamespace(repo="/repo", compose="boot", file="/repo/compose.yml", service=[], tail=100, **values)
 
+    def test_isolated_compose_names_are_stable_and_distinct(self):
+        import os
+        import subprocess
+
+        script = ROOT / "libexec/makevn/docker/project_scope.py"
+        shared_file = str(ROOT / "docker-compose.yml")
+
+        def project(repo, scope):
+            return subprocess.check_output([sys.executable, str(script), str(repo), shared_file],
+                                           env=dict(os.environ, MAKEVN_COMPOSE_PROJECT_SCOPE=scope),
+                                           text=True).splitlines()
+
+        first = project(ROOT, "worktree")
+        self.assertEqual(first[0], "-p")
+        self.assertEqual(first, project(ROOT / ".", "worktree"))
+        self.assertNotEqual(first, project(ROOT.parent, "worktree"))
+        self.assertEqual(project(ROOT, ""), [])
+
     def test_read_stopped_and_running_replicas_without_mutation(self):
         records = [record(), record(state="running", replica="2")]
         commands = []
@@ -66,6 +84,39 @@ class DockerLogsTest(unittest.TestCase):
         with patch.object(LOGS, "run", side_effect=responses):
             with self.assertRaisesRegex(RuntimeError, "ownership"):
                 LOGS.containers(["docker-compose"], "/repo/compose.yml")
+
+    def test_same_checkout_orphan_is_owned_and_does_not_block_readiness(self):
+        orphan = record("old-service")
+        responses = [SimpleNamespace(returncode=0, stdout="app", stderr=""),
+                     SimpleNamespace(returncode=0, stdout="old-service1", stderr=""),
+                     SimpleNamespace(returncode=0, stdout=json.dumps([orphan]), stderr="")]
+        with patch.object(LOGS, "run", side_effect=responses):
+            services, records = LOGS.containers(["docker-compose"], "/repo/compose.yml")
+        self.assertEqual(services, ["app"])
+        self.assertEqual(records, [orphan])
+        args = self.args(wait_seconds=0)
+        with patch.object(LOGS, "containers", return_value=(["app"], [record(state="running"), orphan])):
+            self.assertEqual(LOGS.readiness(args, ["docker-compose"]), 0)
+        with patch.object(LOGS, "containers", return_value=(["app"], [orphan])), \
+                contextlib.redirect_stdout(io.StringIO()) as output:
+            self.assertEqual(LOGS.readiness(args, ["docker-compose"]), 1)
+        self.assertIn('"missingServices": ["app"]', output.getvalue())
+
+    def test_readiness_waits_only_while_health_is_starting(self):
+        args = self.args(wait_seconds=60)
+        output = io.StringIO()
+        with patch.object(LOGS, "containers", return_value=(["app"], [record()])) as initial, \
+                patch.object(LOGS.time, "sleep") as sleep, contextlib.redirect_stdout(output):
+            self.assertEqual(LOGS.readiness(args, ["docker-compose"]), 1)
+            initial.assert_called_once()
+            sleep.assert_not_called()
+        self.assertIn("call docker_up", output.getvalue())
+        with patch.object(LOGS, "containers", return_value=(["app"], [record(state="running", health="starting")])), \
+                patch.object(LOGS, "inspect_containers", return_value=[record(state="running", health="healthy")]) as inspect, \
+                patch.object(LOGS.time, "sleep") as sleep:
+            self.assertEqual(LOGS.readiness(args, ["docker-compose"]), 0)
+            sleep.assert_called_once_with(1)
+            inspect.assert_called_once()
 
     def test_missing_empty_and_unknown_services(self):
         output = io.StringIO()
@@ -191,16 +242,27 @@ if Path(sys.argv[0]).name == "docker-compose":
         sys.exit(23)
     elif "ps" in args:
         print("app1")
+        if os.environ.get("LOG_TEST_MIXED"):
+            print("foreign1")
+elif args[0] in ("stop", "rm"):
+    with (repo / "recovery.log").open("a") as log:
+        print(" ".join(args), file=log)
 elif args[0] == "inspect":
     if "-f" in args:
         template = args[args.index("-f") + 1]
         print("exited" if "Status" in template and "Health" not in template else "none" if "Health" in template else "1")
     else:
-        print(json.dumps([{"Id":"app1", "Name":"/app-1",
-            "Config":{"Labels":{"com.docker.compose.project.working_dir":str(repo),
+        records = [{"Id":"app1", "Name":"/app-1",
+            "Config":{"Labels":{"com.docker.compose.project.working_dir":os.environ.get("LOG_TEST_FOREIGN", str(repo)),
             "com.docker.compose.project.config_files":str(repo / "docker-compose.yml"),
             "com.docker.compose.service":"app"}},
-            "State":{"Status":"exited"}}]))
+            "State":{"Status":"exited"}}]
+        if os.environ.get("LOG_TEST_MIXED"):
+            records.append({"Id":"foreign1", "Name":"/app-foreign", "Config":{"Labels":{
+                "com.docker.compose.project.working_dir":"/other-worktree",
+                "com.docker.compose.project.config_files":"/other-worktree/docker-compose.yml",
+                "com.docker.compose.service":"app"}}, "State":{"Status":"running"}})
+        print(json.dumps(records))
 elif args[0] == "logs":
     print("specific application failure")
 """
@@ -219,8 +281,14 @@ elif args[0] == "logs":
                         "params": {"name": tool, "arguments": arguments}})["result"]["structuredContent"]
                     self.assertNotEqual(result["exitCode"], 0, result)
                     suggestion = result["nextSuggestion"]
-                    self.assertTrue(suggestion.startswith("Use docker_logs with arguments "), result)
                     query = json.JSONDecoder().raw_decode(suggestion.split("arguments ", 1)[1])[0]
+                    if tool == "docker_ps_required":
+                        startup = "docker_up" if extra["compose"] == "boot" else "karate_docker_up"
+                        self.assertIn("call " + startup, suggestion)
+                        self.assertNotIn("compose", query)
+                        self.assertEqual(result["untrustedData"]["dockerDiagnosis"]["containers"][0]["state"], "exited")
+                        continue
+                    self.assertTrue(suggestion.startswith("Use docker_logs with arguments "), result)
                     self.assertEqual(query["services"], ["app"])
                     query.update(since="5m", contains="application")
                     logs = request(str(mcp), {"jsonrpc": "2.0", "id": 2, "method": "tools/call",
@@ -232,6 +300,36 @@ elif args[0] == "logs":
                     self.assertEqual(snapshot["containers"][0]["logs"], ["specific application failure"])
                     self.assertEqual(snapshot["containers"][0]["state"], "exited")
                     self.assertEqual(snapshot["containers"][0]["readStatus"], "ok")
+                with patch.dict(os.environ, {"LOG_TEST_FOREIGN": "/other-worktree"}):
+                    for tool in ("docker_ps_required", "docker_up", "docker_logs"):
+                        result = request(str(mcp), {"jsonrpc": "2.0", "id": 3, "method": "tools/call",
+                            "params": {"name": tool, "arguments": {
+                                "repo": str(repo), "compose-file": str(compose)}}})["result"]["structuredContent"]
+                        self.assertEqual(result["exitCode"], 1, result)
+                        self.assertEqual(result["untrustedData"]["dockerDiagnosis"]["code"],
+                                         "ownership_unverified", result)
+                        self.assertIn("Compose ownership is unverified", result["nextSuggestion"])
+                        self.assertNotIn("original startup failure", result["untrustedData"]["output"])
+                with patch.dict(os.environ, {"LOG_TEST_MIXED": "1"}):
+                    arguments = {"repo": str(repo), "compose-file": str(compose)}
+                    def call(tool, args):
+                        return request(str(mcp), {"jsonrpc": "2.0", "id": 4, "method": "tools/call",
+                            "params": {"name": tool, "arguments": args}})["result"]["structuredContent"]
+
+                    blocked = call("docker_down", arguments)
+                    self.assertEqual(blocked["exitCode"], 1, blocked)
+                    self.assertTrue(blocked["untrustedData"]["dockerDiagnosis"]["mixed"])
+                    approval = blocked["approvalRequest"]
+                    self.assertEqual(approval["tool"], "docker_down")
+                    self.assertEqual(approval["arguments"],
+                                     dict(arguments, repo=str(repo.resolve()), **{"owned-only": True}))
+                    self.assertEqual([option["id"] for option in approval["choices"]], ["approve", "decline"])
+                    self.assertEqual(call("docker_reset", arguments)["exitCode"], 1)
+                    self.assertFalse((repo / "recovery.log").exists())
+                    recovered = call(approval["tool"], approval["arguments"])
+                    self.assertEqual(recovered["exitCode"], 0, recovered)
+                    self.assertEqual((repo / "recovery.log").read_text().splitlines(),
+                                     ["stop -- app1", "rm -- app1"])
                 cli = subprocess.run([str(binary), "--repo", str(repo), "docker-logs",
                                       "--compose-file", str(compose), "--service", "app", "--tail", "50", "--since", "5m",
                                       "--contains", "application", "--json"],

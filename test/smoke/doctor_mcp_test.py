@@ -14,7 +14,7 @@ with tempfile.TemporaryDirectory() as tmp:
         "<artifactId>x</artifactId><version>1</version></project>\n"
     )
 
-    def call(tool, _data=False, **arguments):
+    def call(tool, _data=False, _error=False, **arguments):
         request = {"jsonrpc": "2.0", "id": 1, "method": "tools/call",
                    "params": {"name": tool, "arguments": {"repo": tmp, **arguments}}}
         result = mcp_request(mcp, request)["result"]
@@ -37,12 +37,15 @@ with tempfile.TemporaryDirectory() as tmp:
             else:
                 assert "without running init" in data["nextSuggestion"]
         assert json.loads(result["content"][0]["text"]) == result["structuredContent"]
-        assert result["isError"] is False
+        assert result["isError"] is _error, result
         assert "\x1b" not in output, output
         assert "Working for" not in output, output
         if tool == "doctor" and not _data:
             for workflow_tool in ["composite_run", "parallel_run"]:
-                workflow = call(workflow_tool, _data=True, steps=[{"tool": "doctor"}])
+                pending = data["interactive_setup"]["required"]
+                workflow = call(workflow_tool, _data=True,
+                                _error=pending and workflow_tool == "composite_run",
+                                steps=[{"tool": "doctor"}])
                 step = workflow["untrustedData"]["workflow"]["steps"][0]
                 assert step["nextSuggestion"] == data["nextSuggestion"], step
                 assert step["exitCode"] == data["exitCode"]

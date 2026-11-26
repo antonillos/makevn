@@ -238,8 +238,12 @@ fn tail_command_help_covers_all_interactive_commands() {
         let (usage, description, options) = tail_command_help(command, "description").unwrap();
         assert!(usage.contains(command));
         assert_eq!(description, "description");
-        assert_eq!(options.len(), 2);
+        assert!(options.iter().any(|option| option.starts_with("--tail")));
         assert!(options.iter().any(|option| option.starts_with("--compose-file")));
+        assert_eq!(
+            options.iter().any(|option| option.starts_with("--owned-only")),
+            matches!(command, "docker-down" | "karate-docker-down")
+        );
     }
     assert!(tail_command_help("verify", "description").is_none());
     for command in ["docker-reset", "karate-docker-reset"] {

@@ -15,6 +15,9 @@ fn doctor_exposes_questions_and_configure_in_the_mcp_contract() {
     let configure = tools.iter().find(|tool| tool["name"] == "doctor_configure").unwrap();
     assert_eq!(configure["inputSchema"]["properties"]["answers"], super::answers_schema());
     assert_eq!(configure["inputSchema"]["properties"]["answers"]["properties"]["code_java_home"]["type"], "string");
+    assert_eq!(configure["inputSchema"]["properties"]["answers"]["properties"]["karate_app_profiles"]["type"], "string");
+    assert!(configure["inputSchema"]["properties"]["answers"]["properties"]["karate_app_profiles"]["description"]
+        .as_str().is_some_and(|description| description.contains("@auto")));
     assert_eq!(configure["outputSchema"]["properties"]["interactive_setup"], super::setup_schema());
     assert!(!crate::mcp_execution::inspection("doctor_configure"));
 }

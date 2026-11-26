@@ -5,6 +5,7 @@ ROOT_DIR="$(CDPATH= cd -- "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 source "${ROOT_DIR}/libexec/makevn/common.sh"
 source "${ROOT_DIR}/libexec/makevn/commands/init.sh"
 source "${ROOT_DIR}/libexec/makevn/commands/maven.sh"
+source "${ROOT_DIR}/libexec/makevn/commands/docker.sh"
 TMP_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/makevn-bash-crap.XXXXXX")"
 trap 'rm -rf "${TMP_ROOT}"' EXIT
 
@@ -143,6 +144,17 @@ test_verify_it_property_filtering() (
 )
 
 
+test_docker_log_options() (
+  makevn_docker_log_query() { printf '%s\n' "$@" > "${TMP_ROOT}/docker-log-arguments"; }
+  cmd_docker_logs root --compose karate --tail 40 --service db --since 5m --contains failed --json
+  local -a args=()
+  while IFS= read -r line; do args+=("${line}"); done < "${TMP_ROOT}/docker-log-arguments"
+  assert_equal "${args[*]}" 'root karate logs --tail 40 --service db --since=5m --contains=failed --json'
+  assert_rejected 'Missing value' cmd_docker_logs root --tail
+  assert_rejected 'Unknown docker logs option' cmd_docker_logs root --invalid value
+)
+
+test_docker_log_options
 test_option_parsers
 test_checkstyle_arguments
 test_goal_flag_arrays

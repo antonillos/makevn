@@ -26,7 +26,7 @@ makevn_resolve_karate_profiles() {
   if [[ -n "${SPRING_PROFILES_ACTIVE+x}" ]]; then
     MAKEVN_EFFECTIVE_KARATE_APP_PROFILES="${SPRING_PROFILES_ACTIVE}"
     MAKEVN_EFFECTIVE_KARATE_APP_PROFILES_SOURCE="environment (SPRING_PROFILES_ACTIVE)"
-  elif [[ -n "${MAKEVN_KARATE_APP_PROFILES:-}" ]]; then
+  elif [[ -n "${MAKEVN_KARATE_APP_PROFILES:-}" && "${MAKEVN_KARATE_APP_PROFILES}" != @auto ]]; then
     MAKEVN_EFFECTIVE_KARATE_APP_PROFILES="${MAKEVN_KARATE_APP_PROFILES}"
     MAKEVN_EFFECTIVE_KARATE_APP_PROFILES_SOURCE="config (MAKEVN_KARATE_APP_PROFILES)"
   fi
@@ -38,7 +38,11 @@ makevn_doctor_karate_profiles() {
   if [[ -n "$(makevn_detect_karate_base_path "${repo_root}" || true)" || "${MAKEVN_DETECTED_KARATE_APP_PROFILES_STATUS}" != missing ]]; then
     eligible="yes"
   fi
-  if [[ "${eligible}" == yes && "${app_runnable}" == yes && -z "${SPRING_PROFILES_ACTIVE+x}" && -z "${MAKEVN_KARATE_APP_PROFILES:-}" && -f "$(makevn_config_path "${repo_root}")" && -t 0 && -t 2 && "${MAKEVN_COMPACT_OUTPUT:-}" != "1" ]]; then
+  MAKEVN_DOCTOR_KARATE_PROFILES_OFFERED=false
+  if [[ "${eligible}" == yes && "${app_runnable}" == yes && -z "${SPRING_PROFILES_ACTIVE+x}" && -z "${MAKEVN_KARATE_APP_PROFILES:-}" && -f "$(makevn_config_path "${repo_root}")" ]]; then
+    MAKEVN_DOCTOR_KARATE_PROFILES_OFFERED=true
+  fi
+  if [[ "${MAKEVN_DOCTOR_KARATE_PROFILES_OFFERED}" == true && -t 0 && -t 2 && "${MAKEVN_COMPACT_OUTPUT:-}" != "1" ]]; then
     makevn_pause_frontend_for_prompt
     default_value="${MAKEVN_DETECTED_KARATE_APP_PROFILES:-skip}"
     makevn_print_question "Karate Spring profiles: ${MAKEVN_DETECTED_KARATE_APP_PROFILES_CANDIDATES:-not detected}"

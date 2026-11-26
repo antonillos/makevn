@@ -6,6 +6,8 @@ import shutil
 import subprocess
 import sys
 
+from project_scope import project_args
+
 
 def query(argv, cwd):
     try:
@@ -23,6 +25,7 @@ def compose_command(repo, compose, override):
         if version is None or version.returncode:
             return None
         command = ["docker", "compose"]
+    command += project_args(repo, compose)
     command += ["-f", str(Path(compose).resolve())]
     if override and Path(override).is_file():
         command += ["-f", str(Path(override).resolve())]
