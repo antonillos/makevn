@@ -1478,9 +1478,10 @@ EOF
 #!/usr/bin/env bash
 set -euo pipefail
 printf 'docker-compose %s\n' "$*" >> .docker-compose.log
-if [[ "$1" == "-f" ]]; then
-  printf 'fake-service-id\n'
-fi
+case "$*" in
+  *" config --services") printf 'db\n' ;;
+  *" ps -aq") printf 'fake-service-id\n' ;;
+esac
 EOF
   chmod +x "${repo}/fake-bin/docker-compose"
   cat > "${repo}/fake-bin/docker" <<'EOF'
@@ -1488,6 +1489,11 @@ EOF
 set -euo pipefail
 printf 'docker %s\n' "$*" >> .docker.log
 if [[ "$1" == "compose" && "${2:-}" == "version" ]]; then
+  exit 0
+fi
+if [[ "$1" == "inspect" && "${2:-}" == "fake-service-id" ]]; then
+  compose_dir="${PWD}/code/boot/src/test/resources/compose"
+  printf '[{"Id":"fake-service-id","Config":{"Labels":{"com.docker.compose.project.working_dir":"%s","com.docker.compose.project.config_files":"%s/docker-compose.yml","com.docker.compose.service":"db"}},"State":{"Status":"running","Health":{"Status":"healthy"}}}]\n' "${compose_dir}" "${compose_dir}"
   exit 0
 fi
 if [[ "$1" == "inspect" && "${2:-}" == "-f" ]]; then
