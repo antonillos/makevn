@@ -124,6 +124,7 @@ fn workflow_schema() -> Value {
             "totalSteps": {"type": "integer", "minimum": 1},
             "executedSteps": {"type": "integer", "minimum": 0},
             "failed": {"type": "boolean"},
+            "setupPending": {"type": "boolean"},
             "exitCode": {"type": "integer"},
             "steps": {"type": "array", "items": {
                 "type": "object",
@@ -135,7 +136,10 @@ fn workflow_schema() -> Value {
                     "durationMs": {"type": "integer", "minimum": 0},
                     "output": {"type": "string"},
                     "logPaths": {"type": "array", "items": {"type": "string"}},
-                    "nextSuggestion": {"type": "string"}
+                    "nextSuggestion": {"type": "string"},
+                    "interactive_setup": crate::mcp_doctor::setup_schema(),
+                    "suggested_next_step": {"type": "object"},
+                    "mvnd": {"type": "object"}
                 }
             }}
         }
@@ -162,6 +166,13 @@ pub(crate) fn standard_tool_result(result: &ToolCallResult, params: &Value) -> V
         "untrustedData": {"output": if workflow.is_some() { "" } else { &output }, "workflow": workflow},
         "nextSuggestion": docker_interface_guidance(tool, tool_next_suggestion(tool, result))
     });
+    if structured["untrustedData"]["workflow"]["setupPending"] == true {
+        structured["message"] = json!("Workflow stopped for pending doctor configuration.");
+        structured["nextSuggestion"] = json!(format!(
+            "Use interactive_setup from the doctor step in untrustedData.workflow.steps. {}",
+            crate::mcp_doctor::PENDING_GUIDANCE
+        ));
+    }
     crate::mcp_diagram::attach(&mut structured, diagram);
     attach_docker_logs(&mut structured, tool, &output);
     if failed && (tool.starts_with("docker_") || tool.starts_with("karate_docker_")) {
@@ -432,9 +443,11 @@ fn step_result(i: usize, tool: &str, output: &str, exit_code: i32, duration_ms: 
 
 fn step_tool_result(i: usize, tool: &str, result: &ToolCallResult) -> Value {
     let (output, log_paths) = extract_log_headers(&result.output);
-    json!({"step": i, "tool": tool, "exitCode": result.exit_code, "durationMs": result.duration_ms,
-        "output": output, "logPaths": log_paths,
-        "nextSuggestion": docker_interface_guidance(tool, tool_next_suggestion(tool, &result))})
+    let mut step = json!({"step": i, "tool": tool, "exitCode": result.exit_code,
+        "durationMs": result.duration_ms, "output": output, "logPaths": log_paths,
+        "nextSuggestion": docker_interface_guidance(tool, tool_next_suggestion(tool, result))});
+    attach_doctor_snapshot(&mut step, tool, result);
+    step
 }
 
 fn resolve_makevn_bin(current_exe: &Path) -> Result<PathBuf, String> {
@@ -1131,6 +1144,7 @@ fn handle_composite_run(makevn_bin: &Path, args: &Map<String, Value>) -> Result<
 
     let mut results = Vec::new();
     let mut overall_exit_code = 0;
+    let mut setup_pending = false;
 
     for (i, step) in steps.iter().enumerate() {
         if crate::mcp_supervisor::cancelled() { overall_exit_code = 130; break; }
@@ -1140,7 +1154,13 @@ fn handle_composite_run(makevn_bin: &Path, args: &Map<String, Value>) -> Result<
 
         let result = execute_workflow_step(makevn_bin, step, global_repo, trace_output(args) == "1");
         let exit_code = result.exit_code;
-        results.push(step_tool_result(i, step_tool, &result));
+        let step_result = step_tool_result(i, step_tool, &result);
+        setup_pending = step_result["interactive_setup"]["required"] == true;
+        results.push(step_result);
+        if setup_pending {
+            overall_exit_code = if exit_code == 0 { 1 } else { exit_code };
+            break;
+        }
         if exit_code != 0 {
             overall_exit_code = exit_code;
             if fail_fast {
@@ -1154,6 +1174,7 @@ fn handle_composite_run(makevn_bin: &Path, args: &Map<String, Value>) -> Result<
         "totalSteps": steps.len(),
         "executedSteps": results.len(),
         "failed": overall_exit_code != 0,
+        "setupPending": setup_pending,
         "exitCode": overall_exit_code,
     });
 

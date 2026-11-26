@@ -149,7 +149,7 @@ cmd_karate_all() {
   makevn_validate_app_health_timeout "${health_timeout}"
 
   makevn_resolve_karate_profiles "${repo_root}"
-  if [[ "${MAKEVN_DETECTED_KARATE_APP_PROFILES_STATUS}" == ambiguous && -z "${SPRING_PROFILES_ACTIVE+x}" && -z "${MAKEVN_KARATE_APP_PROFILES:-}" ]]; then
+  if [[ "${MAKEVN_DETECTED_KARATE_APP_PROFILES_STATUS}" == ambiguous && "${MAKEVN_EFFECTIVE_KARATE_APP_PROFILES_SOURCE}" == CI:* ]]; then
     makevn_die "Ambiguous Karate Spring profiles: ${MAKEVN_DETECTED_KARATE_APP_PROFILES_CANDIDATES}. Configure MAKEVN_KARATE_APP_PROFILES in .makevn/config or set SPRING_PROFILES_ACTIVE explicitly."
   fi
   if [[ "${MAKEVN_EFFECTIVE_KARATE_APP_PROFILES_SOURCE}" == config* && ! "${MAKEVN_EFFECTIVE_KARATE_APP_PROFILES}" =~ ^[A-Za-z0-9_.-]+(,[A-Za-z0-9_.-]+)*$ ]]; then

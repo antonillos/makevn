@@ -664,7 +664,11 @@ makevn_doctor_interactive_setup_status() {
     MAKEVN_DOCTOR_MVND_PENDING=true
     MAKEVN_DOCTOR_INTERACTIVE_REQUIRED=true
   fi
-  if [[ "${MAKEVN_DOCTOR_KARATE_APP_PROFILES:-}" == 'unresolved (explicit selection required)' && -z "${SPRING_PROFILES_ACTIVE+x}" && -z "${MAKEVN_KARATE_APP_PROFILES:-}" ]]; then
+  if [[ "${MAKEVN_DOCTOR_KARATE_APP_PROFILES:-}" == 'unresolved (explicit selection required)' &&
+        -z "${SPRING_PROFILES_ACTIVE+x}" &&
+        ( -z "${MAKEVN_KARATE_APP_PROFILES:-}" || "${MAKEVN_KARATE_APP_PROFILES}" == @auto ) ]] ||
+     [[ "${MAKEVN_MCP_INSPECTION:-}" == 1 && "${MAKEVN_DOCTOR_KARATE_PROFILES_OFFERED:-false}" == true &&
+        -z "${MAKEVN_KARATE_APP_PROFILES:-}" ]]; then
     MAKEVN_DOCTOR_INTERACTIVE_REQUIRED=true
     MAKEVN_DOCTOR_PROFILES_PENDING=true
   fi
@@ -698,7 +702,7 @@ makevn_doctor_collect_setup() {
   if [[ "${mvnd_pin}" == "Maven Wrapper (mvnw)" ]]; then
     mvnd_pin="${mvnd_pin}: ${MAKEVN_DOCTOR_CODE_MAVEN_DIAGNOSTIC}"
   fi
-  details="$(python3 "${MAKEVN_LIBEXEC_DIR}/common/doctor_setup.py" questions "${repo_root}" "${boot}" "${e2e}" "${health}" "${MAKEVN_DOCTOR_KARATE_APP_PROFILES_CANDIDATES}" "${MAKEVN_DOCTOR_LOCAL_PENDING}" "${MAKEVN_DOCTOR_HEALTH_PENDING}" "${MAKEVN_DOCTOR_PROFILES_PENDING}" "${MAKEVN_DOCTOR_JAVA_CANDIDATES:-}" "${MAKEVN_DOCTOR_JAVA_RECOMMENDED:-}" "${MAKEVN_DOCTOR_JAVA_DETAILS:-}" "${MAKEVN_DOCTOR_MVND_PENDING:-false}" "${mvnd_pin}")"
+  details="$(python3 "${MAKEVN_LIBEXEC_DIR}/common/doctor_setup.py" questions "${repo_root}" "${boot}" "${e2e}" "${health}" "${MAKEVN_DOCTOR_KARATE_APP_PROFILES_CANDIDATES}" "${MAKEVN_DOCTOR_LOCAL_PENDING}" "${MAKEVN_DOCTOR_HEALTH_PENDING}" "${MAKEVN_DOCTOR_PROFILES_PENDING}" "${MAKEVN_DOCTOR_JAVA_CANDIDATES:-}" "${MAKEVN_DOCTOR_JAVA_RECOMMENDED:-}" "${MAKEVN_DOCTOR_JAVA_DETAILS:-}" "${MAKEVN_DOCTOR_MVND_PENDING:-false}" "${mvnd_pin}" "${MAKEVN_DETECTED_KARATE_APP_PROFILES_STATUS:-ambiguous}" "${MAKEVN_DETECTED_KARATE_APP_PROFILES:-}")"
   details="${details#\{}"
   MAKEVN_DOCTOR_SETUP_DETAILS="${details%\}}"
 }

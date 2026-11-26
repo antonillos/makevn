@@ -334,6 +334,10 @@ def mvnd_workflows(client, left, right):
     config.write_text("MAKEVN_USE_MVND=FALSE\n")
     (left / "quick").touch()
     assert not client.call("format", repo=str(left))["isError"]
+    assert not client.call("composite_run", repo=str(left), steps=[
+        {"tool": "format", "arguments": {"apply": True}}, step(),
+    ])["isError"]
+    assert not (left / "mvnd-groups").exists()
     config.write_text("MAKEVN_USE_MVND=TRUE\n")
     assert not client.call("format", repo=str(left), mvnd=False)["isError"]
     assert not (left / "mvnd-groups").exists()
