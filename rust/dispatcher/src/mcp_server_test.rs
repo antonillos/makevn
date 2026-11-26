@@ -361,6 +361,27 @@ fn tool_call_validates_name_and_composite_steps() {
 }
 
 #[test]
+fn composite_stops_for_pending_doctor_even_without_fail_fast() {
+    let nonce = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
+    let dir = std::env::temp_dir().join(format!("makevn-pending-{}-{nonce}", process::id()));
+    fs::create_dir(&dir).unwrap();
+    let bin = dir.join("makevn");
+    fs::write(&bin, r##"#!/bin/sh
+printf '%s' '{"interactive_setup":{"required":true,"status":"pending","questions":[{"id":"use_mvnd"}],"setupToken":"token"},"suggested_next_step":{"next":""}}' > "$MAKEVN_MCP_DOCTOR_METADATA_OUT"
+"##).unwrap();
+    fs::set_permissions(&bin, fs::Permissions::from_mode(0o700)).unwrap();
+    let args = json!({"repo": dir.to_str().unwrap(), "fail-fast": false,
+                      "steps": [{"tool": "doctor"}, {"tool": "validate"}]});
+    let output = super::handle_composite_run(&bin, args.as_object().unwrap()).unwrap();
+    let workflow: serde_json::Value = serde_json::from_str(&output).unwrap();
+    assert_eq!(workflow["setupPending"], true);
+    assert_eq!(workflow["exitCode"], 1);
+    assert_eq!(workflow["executedSteps"], 1);
+    assert_eq!(workflow["steps"][0]["interactive_setup"]["questions"][0]["id"], "use_mvnd");
+    fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
 fn tool_call_forwards_arguments_and_reports_process_failure() {
     let nonce = SystemTime::now()
         .duration_since(UNIX_EPOCH)
