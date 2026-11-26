@@ -8,6 +8,26 @@ use std::process;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 #[test]
+fn mixed_compose_approval_requires_a_valid_scoped_down_call() {
+    let suggestion = r#"Only after approval, call docker_down with arguments {"repo":"/worktree","owned-only":true}. Next"#;
+    let approval = super::docker_down_approval(suggestion).unwrap();
+    assert_eq!(approval["tool"], "docker_down");
+    assert_eq!(approval["arguments"]["owned-only"], true);
+    assert!(approval["question"].as_str().unwrap().contains("/worktree"));
+    let karate = suggestion.replace("docker_down", "karate_docker_down");
+    assert_eq!(super::docker_down_approval(&karate).unwrap()["tool"], "karate_docker_down");
+    for invalid in [
+        "unrelated",
+        "Only after approval, call docker_reset with arguments {}",
+        "Only after approval, call docker_down with arguments {",
+        r#"Only after approval, call docker_down with arguments {}"#,
+        "Only after approval, call docker_down",
+    ] {
+        assert!(super::docker_down_approval(invalid).is_none(), "{invalid}");
+    }
+}
+
+#[test]
 fn managed_application_tools_forward_the_app_timezone() {
     for name in ["karate_all", "run_app_bg"] {
         let spec = TOOL_SPECS.iter().find(|spec| spec.name == name).unwrap();

@@ -175,13 +175,7 @@ pub(crate) fn standard_tool_result(result: &ToolCallResult, params: &Value) -> V
     }
     crate::mcp_diagram::attach(&mut structured, diagram);
     attach_docker_logs(&mut structured, tool, &output);
-    if failed && (tool.starts_with("docker_") || tool.starts_with("karate_docker_")) {
-        if let Some(diagnosis) = output.lines().find_map(|line| {
-            serde_json::from_str::<Value>(line.strip_prefix("Docker diagnosis: ")?).ok()
-        }) {
-            structured["untrustedData"]["dockerDiagnosis"] = diagnosis;
-        }
-    }
+    attach_docker_diagnosis(&mut structured, tool, &output, failed);
     if let Some(graph_result) = graph_preview_result(tool, params, &output) {
         structured["graph"] = graph_result["graph"].clone();
         structured["untrustedData"]["output"] = graph_result["text"].clone();
@@ -192,6 +186,16 @@ pub(crate) fn standard_tool_result(result: &ToolCallResult, params: &Value) -> V
     attach_doctor_snapshot(&mut structured, tool, result);
     json!({"content": [{"type": "text", "text": structured.to_string()}],
         "structuredContent": structured, "isError": failed})
+}
+
+fn attach_docker_diagnosis(structured: &mut Value, tool: &str, output: &str, failed: bool) {
+    if failed && (tool.starts_with("docker_") || tool.starts_with("karate_docker_")) {
+        if let Some(diagnosis) = output.lines().find_map(|line| {
+            serde_json::from_str::<Value>(line.strip_prefix("Docker diagnosis: ")?).ok()
+        }) {
+            structured["untrustedData"]["dockerDiagnosis"] = diagnosis;
+        }
+    }
 }
 
 fn docker_down_approval(suggestion: &str) -> Option<Value> {
