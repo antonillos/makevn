@@ -1152,9 +1152,7 @@ fn handle_composite_run(makevn_bin: &Path, args: &Map<String, Value>) -> Result<
 
     for (i, step) in steps.iter().enumerate() {
         if crate::mcp_supervisor::cancelled() { overall_exit_code = 130; break; }
-        let step_tool = step["tool"]
-            .as_str()
-            .ok_or_else(|| String::from("each step must have a 'tool' field"))?;
+        let step_tool = step["tool"].as_str().expect("parse_steps validates the tool name");
 
         let result = execute_workflow_step(makevn_bin, step, global_repo, trace_output(args) == "1");
         let exit_code = result.exit_code;
