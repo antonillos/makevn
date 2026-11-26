@@ -85,6 +85,23 @@ class DockerLogsTest(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "ownership"):
                 LOGS.containers(["docker-compose"], "/repo/compose.yml")
 
+    def test_same_checkout_orphan_is_owned_and_does_not_block_readiness(self):
+        orphan = record("old-service")
+        responses = [SimpleNamespace(returncode=0, stdout="app", stderr=""),
+                     SimpleNamespace(returncode=0, stdout="old-service1", stderr=""),
+                     SimpleNamespace(returncode=0, stdout=json.dumps([orphan]), stderr="")]
+        with patch.object(LOGS, "run", side_effect=responses):
+            services, records = LOGS.containers(["docker-compose"], "/repo/compose.yml")
+        self.assertEqual(services, ["app"])
+        self.assertEqual(records, [orphan])
+        args = self.args(wait_seconds=0)
+        with patch.object(LOGS, "containers", return_value=(["app"], [record(state="running"), orphan])):
+            self.assertEqual(LOGS.readiness(args, ["docker-compose"]), 0)
+        with patch.object(LOGS, "containers", return_value=(["app"], [orphan])), \
+                contextlib.redirect_stdout(io.StringIO()) as output:
+            self.assertEqual(LOGS.readiness(args, ["docker-compose"]), 1)
+        self.assertIn('"missingServices": ["app"]', output.getvalue())
+
     def test_readiness_waits_only_while_health_is_starting(self):
         args = self.args(wait_seconds=60)
         output = io.StringIO()

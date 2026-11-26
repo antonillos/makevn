@@ -61,7 +61,7 @@ def inspect_containers(compose, compose_file, services, deadline, *, owned_only=
         service = labels.get("com.docker.compose.service")
         if (not directory or os.path.realpath(directory) != expected_directory
                 or expected_file not in [os.path.realpath(path) for path in files if path]
-                or service not in services):
+                or not service):
             conflicts.append(dict(id=record["Id"], service=service, workingDir=directory,
                                   configFiles=files))
         else:
@@ -87,8 +87,9 @@ def readiness(args, command):
     deadline = time.monotonic() + args.wait_seconds if args.wait_seconds else None
     services, records = containers(command, args.file, deadline)
     while True:
-        missing = sorted(set(services) - {service_of(record) for record in records})
-        failed = [record for record in records if replica_status(record) not in
+        selected = [record for record in records if service_of(record) in services]
+        missing = sorted(set(services) - {service_of(record) for record in selected})
+        failed = [record for record in selected if replica_status(record) not in
                   {("running", "none"), ("running", "healthy")}]
         if not missing and not failed:
             return 0
