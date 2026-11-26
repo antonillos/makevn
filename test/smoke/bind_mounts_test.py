@@ -5,6 +5,7 @@ import importlib.util
 import json
 from pathlib import Path
 import subprocess
+import sys
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -12,7 +13,8 @@ from unittest.mock import patch
 root = Path(__file__).resolve().parents[2]
 spec = importlib.util.spec_from_file_location("bind_mounts", root / "libexec/makevn/docker/bind_mounts.py")
 module = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(module)
+with patch.object(sys, "path", [str(Path(spec.origin).parent), *sys.path]):
+    spec.loader.exec_module(module)
 
 class BindMountTests(unittest.TestCase):
     def setUp(self):
