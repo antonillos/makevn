@@ -16,6 +16,10 @@ authorization for the startup invoked by `karate-all`. Its container startup
 preserves volumes; deleting E2E data requires an explicitly authorized
 `karate_docker_reset` operation.
 
+Before running a single feature or scenario, verify its tag selects the requested
+scope and pass it explicitly. Ask before widening the run. See
+[reproducing one failure from CI](references/workflows.md#reproducing-one-failure-from-ci).
+
 | Intent | CLI | MCP | Evidence |
 | --- | --- | --- | --- |
 | Managed application + E2E | `makevn karate-all --tag @smoke` | `karate_all` with `tag` | Required services ready, HTTP health ready, Karate results, application cleanup |
