@@ -1,3 +1,9 @@
+### Reproducing one failure from CI
+
+For a single feature or a failing CI scenario, read the target `.feature` and check where its tags are used across the Karate suite. Select a tag that covers exactly the requested feature or scenario, accounting for inherited feature tags. Pass it explicitly to `karate_all` for managed startup and cleanup, or `karate_test` when the intended application is already running and ready. If no tag selects the requested scope, explain what the closest tag would run and ask before widening the run. Never fall back to an unfiltered suite or retry a zero-match result without the filter.
+
+For example, if `@orderLookup` selects the target, call `karate_all` with `{"tag":"@orderLookup"}`. This single call owns readiness and cleanup. With an already running target, use `karate_test` with the same arguments. Check the report for the requested feature and scenario before reporting the reproduction result.
+
 ### Managed E2E lifecycle
 
 Prefer `karate_all` for the managed application/test lifecycle after doctor/setup
