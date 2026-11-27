@@ -76,13 +76,13 @@ test_wait_exited_process() (
   grep -Fq 'startup failure detail' "${TMP_ROOT}/wait"
 )
 test_karate_preflight_and_lifecycle() (
-  local url='' karate_test_rc=0 expected_timezone=''
+  local url='' karate_test_rc=0 readiness_rc=0 expected_timezone=''
   makevn_detect_maven_base_path() { echo /fake/code; }
   makevn_detect_app_runnable() { return 0; }
   makevn_load_config() { :; }
   makevn_app_health_url() { printf '%s' "${url}"; }
   cmd_karate_docker_up() { echo docker >>"${TMP_ROOT}/steps"; }
-  cmd_docker_ps_required() { :; }
+  cmd_docker_ps_required() { echo readiness >>"${TMP_ROOT}/steps"; return "${readiness_rc}"; }
   cmd_package() { echo package >>"${TMP_ROOT}/steps"; }
   cmd_run_app_bg() {
     assert_equal "$2" http://resolved/health
@@ -115,10 +115,17 @@ test_karate_preflight_and_lifecycle() (
   assert_rejected "Unknown karate-all option" cmd_karate_all /fake/repo --unknown
   assert_rejected "Invalid --app-timezone" cmd_karate_all /fake/repo --app-timezone "-invalid"
   [[ ! -f "${TMP_ROOT}/steps" ]]
+  readiness_rc=23
+  local blocked_rc=0
+  cmd_karate_all /fake/repo || blocked_rc=$?
+  assert_equal "${blocked_rc}" 23
+  assert_equal "$(tr '\n' ' ' <"${TMP_ROOT}/steps")" 'docker readiness '
+  : >"${TMP_ROOT}/steps"
+  readiness_rc=0
   expected_timezone=UTC
   cmd_karate_all /fake/repo --tag @smoke --app-timezone UTC -- "-Dexample=two words"
   expected_timezone=""
-  assert_equal "$(tr '\n' ' ' <"${TMP_ROOT}/steps")" 'docker package ready tests stop '
+  assert_equal "$(tr '\n' ' ' <"${TMP_ROOT}/steps")" 'docker readiness package ready tests stop '
   : >"${TMP_ROOT}/steps"
   karate_test_rc=42
   local rc=0

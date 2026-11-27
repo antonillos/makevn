@@ -456,6 +456,13 @@ makevn_start_app_background() {
     fi
     wait "${app_pid}" 2>/dev/null || true
     rm -f "${pid_file}" "${jar_record}"
+    if [[ "${MAKEVN_KARATE_MANAGED_APP:-}" == yes ]] &&
+      grep -Fq 'password authentication failed for user' "${log_file}"; then
+      printf '%s\n' \
+        'The application log reports a PostgreSQL authentication failure. Karate did not run.' \
+        'Check whether the role exists and whether the active application profile uses the intended PostgreSQL instance and credentials.' \
+        'Inspect PostgreSQL startup logs with makevn docker-logs --compose karate --service <postgres-service>.' >&2
+    fi
     return "${health_rc}"
   fi
 

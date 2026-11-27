@@ -160,22 +160,23 @@ cmd_karate_all() {
     makevn_report_run_detail "No explicit Karate profiles selected. If CI requires profiles, configure MAKEVN_KARATE_APP_PROFILES in .makevn/config."
   fi
 
+  local -x MAKEVN_KARATE_MANAGED_APP=yes
   makevn_run_karate_phase 1 cmd_karate_docker_up "${repo_root}"
+  makevn_run_karate_phase 2 cmd_docker_ps_required "${repo_root}" --compose karate --wait-seconds 30 || return $?
 
   if [[ "${SKIP_PACKAGE:-false}" == "false" ]]; then
-    makevn_run_karate_phase 2 cmd_package "${repo_root}"
+    makevn_run_karate_phase 3 cmd_package "${repo_root}"
   else
     printf '%s\n' "$(makevn_dim "Skipping package step (SKIP_PACKAGE=true)")"
   fi
 
   if [[ -n "${MAKEVN_EFFECTIVE_KARATE_APP_PROFILES}" ]]; then
-    SPRING_PROFILES_ACTIVE="${MAKEVN_EFFECTIVE_KARATE_APP_PROFILES}" makevn_run_karate_phase 3 cmd_run_app_bg "${repo_root}" "${health_url}" "${health_timeout}" "${app_timezone}"
+    SPRING_PROFILES_ACTIVE="${MAKEVN_EFFECTIVE_KARATE_APP_PROFILES}" makevn_run_karate_phase 4 cmd_run_app_bg "${repo_root}" "${health_url}" "${health_timeout}" "${app_timezone}"
   else
-    makevn_run_karate_phase 3 cmd_run_app_bg "${repo_root}" "${health_url}" "${health_timeout}" "${app_timezone}"
+    makevn_run_karate_phase 4 cmd_run_app_bg "${repo_root}" "${health_url}" "${health_timeout}" "${app_timezone}"
   fi
   trap 'cmd_stop_app "'"${repo_root}"'" >/dev/null 2>&1 || true' EXIT INT TERM
 
-  makevn_run_karate_phase 4 cmd_docker_ps_required "${repo_root}" --compose karate
   set +e
   MAKEVN_KARATE_CONTAINERS_CHECKED=yes makevn_run_karate_phase 5 cmd_karate_test "${repo_root}" ${test_args[@]+"${test_args[@]}"}
   test_rc=$?

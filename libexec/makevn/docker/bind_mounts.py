@@ -91,7 +91,11 @@ def verify_visible(command, repo, service, target, samples, check):
                 check.update(status="unverified", reason="Container visibility probe unavailable (test executable/permissions/runtime).")
                 return
             if visible.returncode == 1:
-                check.update(status="error", reason="bind_mount_visibility_mismatch: host entry is absent or inaccessible inside the container; mount sharing or permissions require investigation.")
+                check.update(
+                    status="error",
+                    reason=f"bind_mount_visibility_mismatch: sampled entry {sample or '.'!r} "
+                    "is absent or inaccessible inside the container; check mount sharing and permissions.",
+                )
                 return
     check["status"] = "visible"
 
